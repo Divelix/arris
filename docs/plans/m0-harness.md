@@ -83,7 +83,7 @@ STEP. No Rerun (M3). No publishing of the workspace crates (backlog).
   cube gives 8, 24, closed; the same cube with one triangle flipped is not
   closed; a cube with a triangle removed is open and its volume is reported
   as unreliable.
-- [ ] Step 5 — Rasteriser. `arris_debug::render_png(&TriMesh, &[Polyline],
+- [x] Step 5 — Rasteriser. `arris_debug::render_png(&TriMesh, &[Polyline],
   View, Option<Highlight>, path)`: orthographic projection for `Iso`,
   `Top`, `Front`, `Right`, z-buffer, flat shading, one deterministic colour
   per face id, polylines in black, vertices as dots, highlight in red,
@@ -181,6 +181,13 @@ tag `m0` (the human's).
   bounding box in `arris-math`, mesh re-exports it (design delta then).
   `arris-mesh` depends on `arris-topo` directly for the ids, as well as
   on `arris-check`.
+
+- Step 5: `render` (to a `Raster`) is split from `render_png` (to a file)
+  so tests count pixels without touching the filesystem; `Highlight` has
+  `Face`, `Edge` and `Point` (a probe point is the thing most worth
+  pointing at). Lines get a small depth bias toward the viewer so an edge
+  on a face wins the z-test; shading is quantised to 32 levels so the two
+  triangles of one planar face never differ by a rounding bit.
 
 ## Open questions
 

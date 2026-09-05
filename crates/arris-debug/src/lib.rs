@@ -9,3 +9,7 @@
 //! reserves the Rerun stream for the human.
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
+
+pub mod render;
+
+pub use render::{Highlight, Raster, RenderError, View, render, render_png};

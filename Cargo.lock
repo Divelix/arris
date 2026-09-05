@@ -45,8 +45,10 @@ dependencies = [
  "arris-io",
  "arris-mesh",
  "arris-ops",
+ "arris-topo",
  "image",
  "proptest",
+ "thiserror",
 ]
 
 [[package]]

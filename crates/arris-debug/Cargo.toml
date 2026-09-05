@@ -12,10 +12,12 @@ license.workspace = true
 rerun = []
 
 [dependencies]
+arris-topo.workspace = true
 arris-ops.workspace = true
 arris-mesh.workspace = true
 arris-io.workspace = true
 image.workspace = true
+thiserror.workspace = true
 
 # Property tests never run on wasm, and proptest's random source does not
 # build for wasm32-unknown-unknown; the `prop` module follows this cfg.

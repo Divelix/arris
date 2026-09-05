@@ -20,7 +20,7 @@ that lands them updates the commands here in the same step.
 |---|---|---|
 | Is it valid? | `arris-check` — `Model::check(shape)` | Every violated invariant with the entity that violates it. Read this first; most "wrong picture" bugs are a checker line. |
 | What is it, exactly? | text dump — `arris_debug::dump_text(&model, shape)` | Entities, ids, orientations, geometry parameters, tolerances, pcurves; deterministic, diffable, what a fixture stores. |
-| What does it look like? | PNG — `arris_debug::render_png(&model, shape, View::Iso, path)` | Orthographic render to `target/inspect/<name>.png`, faces coloured by id, edges drawn, vertices marked. **Read the PNG with the Read tool** — it renders as an image. Three standard views plus iso; pass a `Highlight` to colour one entity. |
+| What does it look like? | PNG — `arris_debug::render_png(&mesh, &polylines, View::Iso, highlight, "name")` over a `TriMesh` and `Polyline`s (M3 adds the body → mesh step) | Orthographic 800×600 render to `target/inspect/<name>.png`, one flat colour per face id, edges black with hidden parts hidden, dots at edge ends, `Some(Highlight::Face(id) / Edge(id) / Point(p))` in red. `View::{Iso, Top, Front, Right}`; `Iso` looks from (+1, −1, +1) so +x, −y and +z faces are visible. **Read the PNG with the Read tool** — it renders as an image. `arris_debug::render` returns the pixel buffer for a test that counts colours. |
 | Is it right? | oracle — `tools/oracle/compare.py <fixture>` | Arris's volume, area, centroid, counts and point classifications against Open CASCADE's, with the fixture's tolerance. |
 
 For the human: `arris_debug::rerun(&model, shape)` streams the same scene to
