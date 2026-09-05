@@ -225,7 +225,7 @@ debug sampler of step 2.
   `tests/fixtures/README.md` describe the kind. A convention mismatch here
   is fixed in Arris in this step: the oracle is the parametrisation's
   ground truth (02 §Conventions).
-- [ ] Step 8 — NURBS types and evaluation. `NurbsCurve`, `NurbsCurve2`,
+- [x] Step 8 — NURBS types and evaluation. `NurbsCurve`, `NurbsCurve2`,
   `NurbsSurface` per 02 §NURBS (degree, knots, control points, positive
   weights; validating constructors returning `GeomError::Degenerate`
   for a bad knot vector); de Boor evaluation with derivatives to order 2,
@@ -372,6 +372,25 @@ recommendation; kept here so `/work` does not re-ask.
   the seam. `serde_json` gained `float_roundtrip`: its default parser
   reads a 17-digit coordinate an ulp off, which moved the recipe hash
   and would have moved every comparison.
+- **Step 8, what the NURBS variants cost the enums.** `Curve` and
+  `Surface` own a `Vec` now, so they are `Clone` and no longer `Copy`;
+  `Surface::frame()` returns `Option<&Frame>` (`None` for a NURBS). Both
+  are public signature changes, named in the commit. Periodicity is not
+  a flag: the constructor derives `period()` from the knot spacing
+  repeating and the last `p` control points repeating the first `p`
+  (02 §NURBS), so an unclamped open B-spline is simply open. The degree
+  is bounded by `MAX_DEGREE = 25` (Open CASCADE's), which is what lets
+  the evaluator keep its basis tables on the stack and the crate keep
+  "evaluation never allocates". Projection onto a NURBS curve found its
+  first real case in the tests: the nearest point of a *closed clamped*
+  curve just past the seam, where the best sample is the seam itself and
+  the bracket on its side of the domain has no sign change — the search
+  now also tries the bracket at the other end when the first and last
+  points coincide to rounding. The derivative tests use fourth-order
+  stencils at `h = 1e-4`: a rational piece whose weights differ by a
+  factor of four has a sixth derivative large enough that the
+  second-order stencil's truncation error exceeds `1e-6·scale` at every
+  usable step.
 - **Step 5, the root method.** Neither closed forms nor a companion
   matrix: real-root isolation by the derivative. The real roots of `p'`
   (found recursively) split the line into monotone intervals, each

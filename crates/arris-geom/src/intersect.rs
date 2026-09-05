@@ -57,8 +57,8 @@ pub enum SurfaceIntersection {
 /// let wall = Surface::Cylinder { frame: Frame::world(), radius: 2.0 };
 /// let hit = intersect_surfaces(&cap, &wall, Precision::DEFAULT.tolerance()).unwrap();
 /// let SurfaceIntersection::Transversal(curves) = hit else { panic!() };
-/// let Curve::Circle { frame, radius } = curves[0] else { panic!() };
-/// assert_eq!(radius, 2.0);
+/// let Curve::Circle { frame, radius } = &curves[0] else { panic!() };
+/// assert_eq!(*radius, 2.0);
 /// assert_eq!(frame.origin(), Point3::new(0.0, 0.0, 5.0));
 /// ```
 pub fn intersect_surfaces(
@@ -82,12 +82,14 @@ pub fn intersect_surfaces(
             | Surface::Cylinder { .. }
             | Surface::Cone { .. }
             | Surface::Sphere { .. }
-            | Surface::Torus { .. },
+            | Surface::Torus { .. }
+            | Surface::Nurbs(_),
             Surface::Plane { .. }
             | Surface::Cylinder { .. }
             | Surface::Cone { .. }
             | Surface::Sphere { .. }
-            | Surface::Torus { .. },
+            | Surface::Torus { .. }
+            | Surface::Nurbs(_),
         ) => Err(GeomError::Unsupported {
             a: GeomKind::Surface(a.kind()),
             b: GeomKind::Surface(b.kind()),
@@ -226,10 +228,10 @@ mod tests {
         else {
             panic!()
         };
-        let Curve::Line { origin, direction } = curves[0] else {
+        let Curve::Line { origin, direction } = &curves[0] else {
             panic!()
         };
-        assert_eq!(origin, Point3::new(3.0, 0.0, 0.0));
+        assert_eq!(*origin, Point3::new(3.0, 0.0, 0.0));
         assert_eq!(direction.into_inner().abs(), Vec3::y());
     }
 

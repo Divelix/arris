@@ -69,6 +69,8 @@ impl Surface {
     /// torus's centre circle. A point on a sphere's axis off its centre
     /// projects to the pole, whose `u` is `0` by convention: the point is
     /// unique, only the degenerate parameter is not.
+    /// [`GeomError::Unsupported`] for a NURBS surface, which has no closed
+    /// form (cycle 1 does not project onto one).
     ///
     /// ```
     /// use arris_geom::Surface;
@@ -83,7 +85,12 @@ impl Surface {
     /// assert!(cyl.project(Point3::new(0.0, 0.0, 7.0)).is_err());
     /// ```
     pub fn project(&self, p: Point3) -> Result<SurfaceProjection, GeomError> {
-        let frame = self.frame();
+        let Some(frame) = self.frame() else {
+            return Err(GeomError::Unsupported {
+                a: GeomKind::Point,
+                b: GeomKind::Surface(self.kind()),
+            });
+        };
         let q = frame.to_local(p);
         let noise = local_noise_scale(frame, p);
         let rho = q.x.hypot(q.y);
@@ -93,7 +100,9 @@ impl Surface {
             point: p,
         };
         let (u, v, distance) = match *self {
-            Surface::Plane { .. } => (q.x, q.y, q.z.abs()),
+            // A NURBS has no frame and returned above; the arm is here so
+            // the match stays exhaustive without a wildcard.
+            Surface::Plane { .. } | Surface::Nurbs(_) => (q.x, q.y, q.z.abs()),
             Surface::Cylinder { radius, .. } => {
                 if is_negligible(rho, noise) {
                     return Err(ambiguous(AmbiguousLocus::Axis));
@@ -180,7 +189,9 @@ impl Curve {
     /// inside its evolute, where two mirror-image points are equally
     /// near. An ellipse projects through the quartic of
     /// [`arris_math::roots`]; the residual `(p − C(t)) · C′(t)` is zero
-    /// to rounding.
+    /// to rounding. A NURBS curve projects by sampling and bracketed
+    /// Newton ([`crate::NurbsCurve::project_parameter`]): the nearest local
+    /// minimum from the best sample, never `Ambiguous`.
     ///
     /// ```
     /// use arris_geom::Curve;
@@ -194,8 +205,8 @@ impl Curve {
     /// assert!(c.project(Point3::new(0.0, 0.0, 3.0)).is_err());
     /// ```
     pub fn project(&self, p: Point3) -> Result<CurveProjection, GeomError> {
-        match *self {
-            Curve::Line { origin, direction } => {
+        match self {
+            &Curve::Line { origin, direction } => {
                 let t = (p - origin).dot(&direction);
                 let point = origin + t * direction.into_inner();
                 Ok(CurveProjection {
@@ -204,7 +215,7 @@ impl Curve {
                     distance: (p - point).norm(),
                 })
             }
-            Curve::Circle { frame, radius } => {
+            &Curve::Circle { frame, radius } => {
                 let q = frame.to_local(p);
                 let rho = q.x.hypot(q.y);
                 if is_negligible(rho, local_noise_scale(&frame, p)) {
@@ -221,7 +232,7 @@ impl Curve {
                     distance: (rho - radius).hypot(q.z),
                 })
             }
-            Curve::Ellipse {
+            &Curve::Ellipse {
                 frame,
                 major_radius,
                 minor_radius,
@@ -238,6 +249,15 @@ impl Curve {
                     t,
                     point: self.point(t),
                     distance: in_plane.hypot(q.z),
+                })
+            }
+            Curve::Nurbs(c) => {
+                let t = c.project_parameter(p);
+                let point = c.eval(t).point;
+                Ok(CurveProjection {
+                    t,
+                    point,
+                    distance: (p - point).norm(),
                 })
             }
         }

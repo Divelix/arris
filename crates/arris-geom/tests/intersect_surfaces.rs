@@ -27,11 +27,14 @@ fn tol() -> Tolerance {
 
 /// The distance from `p` to the surface by its implicit form.
 fn implicit_distance(s: &Surface, p: Point3) -> f64 {
-    let q = s.frame().to_local(p);
-    match *s {
+    let q = s.frame().unwrap().to_local(p);
+    match s {
         Surface::Plane { .. } => q.z.abs(),
-        Surface::Cylinder { radius, .. } => (q.x.hypot(q.y) - radius).abs(),
-        Surface::Cone { .. } | Surface::Sphere { .. } | Surface::Torus { .. } => {
+        &Surface::Cylinder { radius, .. } => (q.x.hypot(q.y) - radius).abs(),
+        Surface::Cone { .. }
+        | Surface::Sphere { .. }
+        | Surface::Torus { .. }
+        | Surface::Nurbs(_) => {
             unreachable!("only planes and cylinders intersect in cycle 1")
         }
     }
@@ -42,6 +45,7 @@ fn on_both(c: &Curve, a: &Surface, b: &Surface) -> Result<(), TestCaseError> {
     let range = match c {
         Curve::Line { .. } => -DEFAULT_SCALE..=DEFAULT_SCALE,
         Curve::Circle { .. } | Curve::Ellipse { .. } => 0.0..=TAU,
+        Curve::Nurbs(c) => c.domain().lo()..=c.domain().hi(),
     };
     for i in 0..SAMPLES {
         let s = i as f64 / (SAMPLES - 1) as f64;
@@ -335,10 +339,10 @@ fn two_random_planes_meet_along_a_line_on_both() {
         let [Curve::Line { origin, direction }] = c.as_slice() else {
             return Err(TestCaseError::fail(format!("{r:?}")));
         };
-        prop_assert!(direction.dot(&a.frame().z()).abs() <= EXACT);
-        prop_assert!(direction.dot(&b.frame().z()).abs() <= EXACT);
+        prop_assert!(direction.dot(&a.frame().unwrap().z()).abs() <= EXACT);
+        prop_assert!(direction.dot(&b.frame().unwrap().z()).abs() <= EXACT);
         // The origin is the point of the line nearest a's origin.
-        prop_assert!((origin - a.frame().origin()).dot(direction).abs() <= EXACT);
+        prop_assert!((origin - a.frame().unwrap().origin()).dot(direction).abs() <= EXACT);
         Ok(())
     });
 }
@@ -354,8 +358,8 @@ fn parallel_planes_are_coincident_or_empty_by_the_gap() {
             any::<bool>(),
         ),
         |(a, anchor, gap, flip, lift)| {
-            let n = a.frame().z().into_inner();
-            let in_plane = anchor - n.dot(&(anchor - a.frame().origin())) * n;
+            let n = a.frame().unwrap().z().into_inner();
+            let in_plane = anchor - n.dot(&(anchor - a.frame().unwrap().origin())) * n;
             let origin = if lift { in_plane + gap * n } else { in_plane };
             let sign = if flip { -1.0 } else { 1.0 };
             let b = Surface::Plane {
@@ -398,10 +402,10 @@ fn a_tilted_plane_is_oblique_never_a_guess() {
     // A normal a hair off the axis is oblique, not a circle: the plan's
     // tolerance is angular and the ellipse it returns is the exact section.
     check((cylinder(), unit_vec3()), |(cyl, n)| {
-        let axis = cyl.frame().z();
+        let axis = cyl.frame().unwrap().z();
         let tilt = n.cross(&axis).norm().atan2(n.dot(&axis).abs());
         let plane = Surface::Plane {
-            frame: Frame::from_z(cyl.frame().origin(), n.into_inner()).unwrap(),
+            frame: Frame::from_z(cyl.frame().unwrap().origin(), n.into_inner()).unwrap(),
         };
         let r = common_properties(&plane, &cyl)?;
         if tilt > tol().angular && FRAC_PI_2 - tilt > tol().angular {
@@ -446,6 +450,6 @@ fn through_hole_faces_against_the_hole() {
         };
         assert_eq!(*radius, 4.0);
         assert_eq!(frame.origin(), Point3::new(20.0, 15.0, z));
-        assert_eq!(frame.z(), hole.frame().z());
+        assert_eq!(frame.z(), hole.frame().unwrap().z());
     }
 }

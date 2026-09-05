@@ -4,13 +4,15 @@ use core::fmt;
 
 use arris_math::{Frame, Interval, Isometry, Point3, UnitVec3, Vec3};
 
+use crate::NurbsCurve;
+
 /// A 3D curve with the parametrisation of `docs/02-data-model.md` §Curves
 /// (Open CASCADE's, so STEP round-trips without re-parametrising).
 ///
 /// The fields are plain data: a `Curve` is a value the arena stores once
 /// and never modifies, and its validity (positive radii, `major_radius ≥
-/// minor_radius`) is the checker's to enforce. Evaluation of any finite
-/// parameter never panics.
+/// minor_radius`) is the checker's to enforce; the NURBS variant is valid
+/// by its constructor. Evaluation of any finite parameter never panics.
 ///
 /// ```
 /// use arris_geom::Curve;
@@ -22,7 +24,7 @@ use arris_math::{Frame, Interval, Isometry, Point3, UnitVec3, Vec3};
 /// assert!((e.point - Point3::new(-2.0, 0.0, 0.0)).norm() < 1e-15);
 /// assert!((e.d1.y + 2.0).abs() < 1e-15); // tangent at π points along −Y
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Curve {
     /// `P(t) = O + t·D`; `t` is arc length because `D` is unit.
     Line {
@@ -47,6 +49,8 @@ pub enum Curve {
         /// `b`.
         minor_radius: f64,
     },
+    /// A rational B-spline; parametrised by its knots.
+    Nurbs(NurbsCurve),
 }
 
 /// The fieldless twin of [`Curve`], for errors and dispatch tables.
@@ -58,6 +62,8 @@ pub enum CurveKind {
     Circle,
     /// [`Curve::Ellipse`].
     Ellipse,
+    /// [`Curve::Nurbs`].
+    Nurbs,
 }
 
 impl fmt::Display for CurveKind {
@@ -66,6 +72,7 @@ impl fmt::Display for CurveKind {
             CurveKind::Line => "line",
             CurveKind::Circle => "circle",
             CurveKind::Ellipse => "ellipse",
+            CurveKind::Nurbs => "NURBS",
         })
     }
 }
@@ -89,19 +96,21 @@ impl Curve {
             Curve::Line { .. } => CurveKind::Line,
             Curve::Circle { .. } => CurveKind::Circle,
             Curve::Ellipse { .. } => CurveKind::Ellipse,
+            Curve::Nurbs(_) => CurveKind::Nurbs,
         }
     }
 
     /// The point and its derivatives at `t`. Defined for every finite
-    /// parameter: a periodic curve wraps, a line extends.
+    /// parameter: a periodic curve wraps, a line extends, a clamped NURBS
+    /// extrapolates its end piece.
     pub fn eval(&self, t: f64) -> CurveEval {
-        match *self {
-            Curve::Line { origin, direction } => CurveEval {
+        match self {
+            &Curve::Line { origin, direction } => CurveEval {
                 point: origin + t * direction.into_inner(),
                 d1: direction.into_inner(),
                 d2: Vec3::zeros(),
             },
-            Curve::Circle { frame, radius } => {
+            &Curve::Circle { frame, radius } => {
                 let (st, ct) = t.sin_cos();
                 let (x, y) = (frame.x().into_inner(), frame.y().into_inner());
                 let radial = ct * x + st * y;
@@ -111,7 +120,7 @@ impl Curve {
                     d2: -radius * radial,
                 }
             }
-            Curve::Ellipse {
+            &Curve::Ellipse {
                 frame,
                 major_radius,
                 minor_radius,
@@ -125,6 +134,7 @@ impl Curve {
                     d2: -radial,
                 }
             }
+            Curve::Nurbs(c) => c.eval(t),
         }
     }
 
@@ -134,19 +144,22 @@ impl Curve {
     }
 
     /// The parametric domain: [`Interval::REAL`] for a line, the closed
-    /// fundamental interval `[0, 2π]` for a circle or an ellipse.
+    /// fundamental interval `[0, 2π]` for a circle or an ellipse, the
+    /// knot range for a NURBS.
     pub fn domain(&self) -> Interval {
         match self {
             Curve::Line { .. } => Interval::REAL,
             Curve::Circle { .. } | Curve::Ellipse { .. } => Interval::TURN,
+            Curve::Nurbs(c) => c.domain(),
         }
     }
 
-    /// The period, `None` for a line.
+    /// The period, `None` for a line or a NURBS whose knots do not wrap.
     pub fn period(&self) -> Option<f64> {
         match self {
             Curve::Line { .. } => None,
             Curve::Circle { .. } | Curve::Ellipse { .. } => Some(core::f64::consts::TAU),
+            Curve::Nurbs(c) => c.period(),
         }
     }
 
@@ -154,16 +167,16 @@ impl Curve {
     /// `moved.eval(t).point == motion.apply(self.eval(t).point)` to
     /// rounding.
     pub fn transformed(&self, motion: &Isometry) -> Curve {
-        match *self {
-            Curve::Line { origin, direction } => Curve::Line {
+        match self {
+            &Curve::Line { origin, direction } => Curve::Line {
                 origin: motion.apply(origin),
                 direction: motion.apply_unit(direction),
             },
-            Curve::Circle { frame, radius } => Curve::Circle {
+            &Curve::Circle { frame, radius } => Curve::Circle {
                 frame: frame.transformed(motion),
                 radius,
             },
-            Curve::Ellipse {
+            &Curve::Ellipse {
                 frame,
                 major_radius,
                 minor_radius,
@@ -172,6 +185,7 @@ impl Curve {
                 major_radius,
                 minor_radius,
             },
+            Curve::Nurbs(c) => Curve::Nurbs(c.transformed(motion)),
         }
     }
 }

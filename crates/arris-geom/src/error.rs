@@ -4,7 +4,7 @@ use core::fmt;
 
 use arris_math::{Point3, Tolerance};
 
-use crate::{CurveKind, SurfaceKind};
+use crate::{Curve2Kind, CurveKind, SurfaceKind};
 
 /// The kind of a geometric operand, for errors that name a pair.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -13,6 +13,8 @@ pub enum GeomKind {
     Surface(SurfaceKind),
     /// A [`crate::Curve`] variant.
     Curve(CurveKind),
+    /// A `Curve2` variant (`docs/02-data-model.md` §Pcurves).
+    Curve2(Curve2Kind),
     /// A point, the first operand of a projection.
     Point,
 }
@@ -22,6 +24,7 @@ impl fmt::Display for GeomKind {
         match self {
             GeomKind::Surface(k) => write!(f, "{k} surface"),
             GeomKind::Curve(k) => write!(f, "{k} curve"),
+            GeomKind::Curve2(k) => write!(f, "{k} pcurve"),
             GeomKind::Point => f.write_str("point"),
         }
     }
@@ -36,6 +39,12 @@ impl From<SurfaceKind> for GeomKind {
 impl From<CurveKind> for GeomKind {
     fn from(k: CurveKind) -> Self {
         GeomKind::Curve(k)
+    }
+}
+
+impl From<Curve2Kind> for GeomKind {
+    fn from(k: Curve2Kind) -> Self {
+        GeomKind::Curve2(k)
     }
 }
 
@@ -88,7 +97,8 @@ pub enum GeomError {
         b: GeomKind,
     },
     /// An operand has no valid representation for the query: a frame
-    /// with a non-finite axis, later a knot vector that is not one.
+    /// with a non-finite axis, a knot vector that is not one, a knot
+    /// insertion that would break one.
     #[error("degenerate {kind}: {reason}")]
     Degenerate {
         /// The operand.

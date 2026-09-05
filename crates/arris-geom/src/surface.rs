@@ -5,14 +5,17 @@ use core::fmt;
 
 use arris_math::{Frame, Interval, Isometry, Point3, UnitVec3, Vec3, is_negligible};
 
+use crate::NurbsSurface;
+
 /// A surface, placed by its frame, with the parametrisation of
 /// `docs/02-data-model.md` §Surfaces (the one Open CASCADE's `Geom`
 /// classes use, so STEP round-trips without re-parametrising).
 ///
 /// The fields are plain data: a `Surface` is a value the arena stores once
 /// and never modifies, and its validity (positive radii, a torus with
-/// `major_radius > minor_radius`) is the checker's to enforce. Evaluation
-/// of any finite value never panics.
+/// `major_radius > minor_radius`) is the checker's to enforce; the NURBS
+/// variant is valid by its constructor. Evaluation of any finite value
+/// never panics.
 ///
 /// ```
 /// use arris_geom::Surface;
@@ -25,7 +28,7 @@ use arris_math::{Frame, Interval, Isometry, Point3, UnitVec3, Vec3, is_negligibl
 /// let n = cyl.normal(FRAC_PI_2, 3.0).unwrap();
 /// assert!((n.y - 1.0).abs() < 1e-15);
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Surface {
     /// `P(u, v) = O + u·X + v·Y`; normal `Z`.
     Plane {
@@ -66,6 +69,8 @@ pub enum Surface {
         /// `r`, the tube's radius; `r < R` in cycle 1.
         minor_radius: f64,
     },
+    /// A rational B-spline; parametrised by its knots, no frame.
+    Nurbs(NurbsSurface),
 }
 
 /// The fieldless twin of [`Surface`], for errors and dispatch tables.
@@ -81,6 +86,8 @@ pub enum SurfaceKind {
     Sphere,
     /// [`Surface::Torus`].
     Torus,
+    /// [`Surface::Nurbs`].
+    Nurbs,
 }
 
 impl fmt::Display for SurfaceKind {
@@ -91,6 +98,7 @@ impl fmt::Display for SurfaceKind {
             SurfaceKind::Cone => "cone",
             SurfaceKind::Sphere => "sphere",
             SurfaceKind::Torus => "torus",
+            SurfaceKind::Nurbs => "NURBS",
         })
     }
 }
@@ -123,38 +131,44 @@ impl Surface {
             Surface::Cone { .. } => SurfaceKind::Cone,
             Surface::Sphere { .. } => SurfaceKind::Sphere,
             Surface::Torus { .. } => SurfaceKind::Torus,
+            Surface::Nurbs(_) => SurfaceKind::Nurbs,
         }
     }
 
-    /// The placing frame.
-    pub fn frame(&self) -> &Frame {
+    /// The placing frame of an analytic surface; `None` for a NURBS, which
+    /// is placed by its control points.
+    pub fn frame(&self) -> Option<&Frame> {
         match self {
             Surface::Plane { frame }
             | Surface::Cylinder { frame, .. }
             | Surface::Cone { frame, .. }
             | Surface::Sphere { frame, .. }
-            | Surface::Torus { frame, .. } => frame,
+            | Surface::Torus { frame, .. } => Some(frame),
+            Surface::Nurbs(_) => None,
         }
     }
 
     /// The point and its derivatives to second order at `(u, v)`. Defined
     /// for every finite parameter, inside the domain or not: a periodic
-    /// parameter wraps, an unbounded one extends.
+    /// parameter wraps, an unbounded one extends, a clamped NURBS
+    /// extrapolates its end piece.
     pub fn eval(&self, u: f64, v: f64) -> SurfaceEval {
-        let f = self.frame();
-        let (x, y, z) = (f.x().into_inner(), f.y().into_inner(), f.z().into_inner());
-        let o = f.origin();
         let zero = Vec3::zeros();
-        match *self {
-            Surface::Plane { .. } => SurfaceEval {
-                point: o + u * x + v * y,
-                du: x,
-                dv: y,
-                duu: zero,
-                duv: zero,
-                dvv: zero,
-            },
-            Surface::Cylinder { radius, .. } => {
+        match self {
+            Surface::Nurbs(s) => s.eval(u, v),
+            Surface::Plane { frame } => {
+                let (o, x, y, _) = axes(frame);
+                SurfaceEval {
+                    point: o + u * x + v * y,
+                    du: x,
+                    dv: y,
+                    duu: zero,
+                    duv: zero,
+                    dvv: zero,
+                }
+            }
+            &Surface::Cylinder { ref frame, radius } => {
+                let (o, x, y, z) = axes(frame);
                 let (su, cu) = u.sin_cos();
                 let radial = cu * x + su * y;
                 let tangential = -su * x + cu * y;
@@ -167,9 +181,12 @@ impl Surface {
                     dvv: zero,
                 }
             }
-            Surface::Cone {
-                radius, half_angle, ..
+            &Surface::Cone {
+                ref frame,
+                radius,
+                half_angle,
             } => {
+                let (o, x, y, z) = axes(frame);
                 let (su, cu) = u.sin_cos();
                 let (sa, ca) = half_angle.sin_cos();
                 let rho = radius + v * sa;
@@ -184,7 +201,8 @@ impl Surface {
                     dvv: zero,
                 }
             }
-            Surface::Sphere { radius, .. } => {
+            &Surface::Sphere { ref frame, radius } => {
+                let (o, x, y, z) = axes(frame);
                 let (su, cu) = u.sin_cos();
                 let (sv, cv) = v.sin_cos();
                 let radial = cu * x + su * y;
@@ -198,11 +216,12 @@ impl Surface {
                     dvv: (-radius * cv) * radial - (radius * sv) * z,
                 }
             }
-            Surface::Torus {
+            &Surface::Torus {
+                ref frame,
                 major_radius,
                 minor_radius,
-                ..
             } => {
+                let (o, x, y, z) = axes(frame);
                 let (su, cu) = u.sin_cos();
                 let (sv, cv) = v.sin_cos();
                 let rho = major_radius + minor_radius * cv;
@@ -228,13 +247,15 @@ impl Surface {
     /// The surface normal `∂P/∂u × ∂P/∂v` normalised (plane `Z`; cylinder,
     /// cone and sphere radially outward; torus outward from the tube), or
     /// `None` where the parametrisation is singular: a cone's apex, a
-    /// sphere's poles, and any surface whose radius is zero. Singular means
+    /// sphere's poles, any surface whose radius is zero, and a NURBS point
+    /// where the two derivatives are parallel or vanish. Singular means
     /// the radial scale factor is zero to rounding
     /// ([`arris_math::is_negligible`]), so `v = π/2` in `f64` is the pole
     /// even though `cos(π/2)` is not exactly `0`. Never a direction made
     /// of rounding noise.
     pub fn normal(&self, u: f64, v: f64) -> Option<UnitVec3> {
         let singular = match *self {
+            Surface::Nurbs(ref s) => return s.normal(u, v),
             Surface::Plane { .. } => false,
             Surface::Cylinder { radius, .. } => radius == 0.0,
             Surface::Cone {
@@ -263,13 +284,15 @@ impl Surface {
 
     /// The parametric domain `[u, v]`: the closed fundamental interval
     /// `[0, 2π]` of a periodic direction, `[−π/2, π/2]` for the sphere's
-    /// `v`, [`Interval::REAL`] where the table says ℝ.
+    /// `v`, [`Interval::REAL`] where the table says ℝ, the knot ranges of
+    /// a NURBS.
     pub fn domain(&self) -> [Interval; 2] {
         match self {
             Surface::Plane { .. } => [Interval::REAL, Interval::REAL],
             Surface::Cylinder { .. } | Surface::Cone { .. } => [Interval::TURN, Interval::REAL],
             Surface::Sphere { .. } => [Interval::TURN, latitude()],
             Surface::Torus { .. } => [Interval::TURN, Interval::TURN],
+            Surface::Nurbs(s) => s.domain(),
         }
     }
 
@@ -281,6 +304,7 @@ impl Surface {
                 [Some(TAU), None]
             }
             Surface::Torus { .. } => [Some(TAU), Some(TAU)],
+            Surface::Nurbs(s) => s.period(),
         }
     }
 
@@ -288,15 +312,16 @@ impl Surface {
     /// parametrisation is carried along, so `moved.eval(u, v).point ==
     /// motion.apply(self.eval(u, v).point)` to rounding.
     pub fn transformed(&self, motion: &Isometry) -> Surface {
-        match *self {
-            Surface::Plane { frame } => Surface::Plane {
+        match self {
+            Surface::Nurbs(s) => Surface::Nurbs(s.transformed(motion)),
+            &Surface::Plane { frame } => Surface::Plane {
                 frame: frame.transformed(motion),
             },
-            Surface::Cylinder { frame, radius } => Surface::Cylinder {
+            &Surface::Cylinder { frame, radius } => Surface::Cylinder {
                 frame: frame.transformed(motion),
                 radius,
             },
-            Surface::Cone {
+            &Surface::Cone {
                 frame,
                 radius,
                 half_angle,
@@ -305,11 +330,11 @@ impl Surface {
                 radius,
                 half_angle,
             },
-            Surface::Sphere { frame, radius } => Surface::Sphere {
+            &Surface::Sphere { frame, radius } => Surface::Sphere {
                 frame: frame.transformed(motion),
                 radius,
             },
-            Surface::Torus {
+            &Surface::Torus {
                 frame,
                 major_radius,
                 minor_radius,
@@ -320,6 +345,16 @@ impl Surface {
             },
         }
     }
+}
+
+/// A frame's origin and axes as plain vectors.
+fn axes(f: &Frame) -> (Point3, Vec3, Vec3, Vec3) {
+    (
+        f.origin(),
+        f.x().into_inner(),
+        f.y().into_inner(),
+        f.z().into_inner(),
+    )
 }
 
 /// `[−π/2, π/2]`: the sphere's `v`. Constants in order and not NaN, so the

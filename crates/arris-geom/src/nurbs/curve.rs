@@ -1,0 +1,348 @@
+//! Rational B-spline curves in 3D and in the (u, v) plane.
+
+use arris_math::{Interval, Isometry, Point2, Point3};
+
+use super::spline::Spline;
+use crate::{Curve2Eval, Curve2Kind, CurveEval, CurveKind, GeomError, GeomKind};
+
+/// A rational B-spline curve in 3D (`docs/02-data-model.md` §NURBS):
+/// degree `p`, `n + p + 1` non-decreasing knots, `n` control points and
+/// as many positive weights, valid by construction.
+///
+/// Guarantees: `eval` never panics or allocates for any finite `t`; the
+/// domain is `[knots[p], knots[n]]`; `period()` is `Some` exactly when the
+/// knots and control points wrap (unclamped knots whose spacing repeats
+/// every `n − p` places and whose last `p` control points repeat the
+/// first `p`, to rounding), and then `eval` wraps `t` into the domain
+/// before evaluating; otherwise a `t` outside the domain evaluates the
+/// nearest polynomial piece.
+///
+/// ```
+/// use arris_geom::NurbsCurve;
+/// use arris_math::Point3;
+///
+/// // A quadratic Bézier arc: a quarter circle as a rational curve.
+/// let w = core::f64::consts::FRAC_1_SQRT_2;
+/// let arc = NurbsCurve::new(
+///     2,
+///     vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+///     vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+///     vec![1.0, w, 1.0],
+/// ).unwrap();
+/// let mid = arc.eval(0.5).point;
+/// assert!((mid.coords.norm() - 1.0).abs() < 1e-15);
+/// assert!(arc.period().is_none());
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub struct NurbsCurve {
+    spline: Spline<3>,
+}
+
+/// A rational B-spline curve in a surface's (u, v) plane: the same
+/// representation and guarantees as [`NurbsCurve`] in two dimensions.
+///
+/// ```
+/// use arris_geom::NurbsCurve2;
+/// use arris_math::Point2;
+///
+/// let seg = NurbsCurve2::new(
+///     1,
+///     vec![0.0, 0.0, 2.0, 2.0],
+///     vec![Point2::new(0.0, 0.0), Point2::new(4.0, 2.0)],
+///     vec![1.0, 1.0],
+/// ).unwrap();
+/// assert_eq!(seg.eval(1.0).point, Point2::new(2.0, 1.0));
+/// assert_eq!(seg.eval(1.0).d1, arris_math::Vec2::new(2.0, 1.0));
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub struct NurbsCurve2 {
+    spline: Spline<2>,
+}
+
+fn degenerate(kind: GeomKind) -> impl Fn(String) -> GeomError {
+    move |reason| GeomError::Degenerate { kind, reason }
+}
+
+impl NurbsCurve {
+    /// A validated curve. Errors: [`GeomError::Degenerate`] naming what is
+    /// wrong — a degree outside `1..=MAX_DEGREE`, the wrong number of
+    /// knots or weights, decreasing or non-finite knots, an empty domain,
+    /// a knot multiplicity above the degree inside the domain or above
+    /// the degree plus one anywhere, a non-finite control point, a
+    /// weight that is not finite and positive.
+    pub fn new(
+        degree: usize,
+        knots: Vec<f64>,
+        control_points: Vec<Point3>,
+        weights: Vec<f64>,
+    ) -> Result<Self, GeomError> {
+        Spline::new(degree, knots, control_points, weights)
+            .map(|spline| NurbsCurve { spline })
+            .map_err(degenerate(GeomKind::Curve(CurveKind::Nurbs)))
+    }
+
+    /// `p`.
+    pub fn degree(&self) -> usize {
+        self.spline.degree()
+    }
+
+    /// The `n + p + 1` knots, non-decreasing.
+    pub fn knots(&self) -> &[f64] {
+        self.spline.knots()
+    }
+
+    /// The `n` control points, Cartesian.
+    pub fn control_points(&self) -> &[Point3] {
+        self.spline.points()
+    }
+
+    /// The `n` weights, all positive.
+    pub fn weights(&self) -> &[f64] {
+        self.spline.weights()
+    }
+
+    /// `[knots[p], knots[n]]`.
+    pub fn domain(&self) -> Interval {
+        self.spline.domain()
+    }
+
+    /// The domain's length when the knots and control points wrap, else
+    /// `None`.
+    pub fn period(&self) -> Option<f64> {
+        self.spline.period()
+    }
+
+    /// The point and its derivatives at `t` (de Boor on the homogeneous
+    /// control points, then the quotient rule).
+    pub fn eval(&self, t: f64) -> CurveEval {
+        let d = self.spline.eval(t);
+        CurveEval {
+            point: d.point,
+            d1: d.d1,
+            d2: d.d2,
+        }
+    }
+
+    /// The same curve with `t` inserted `times` more times as a knot: the
+    /// image over the domain is unchanged to rounding, the control
+    /// polygon is refined. `t` is wrapped into the domain of a periodic
+    /// curve; the result's knots no longer wrap, so its `period()` is
+    /// `None` and outside the domain it extrapolates. Errors:
+    /// [`GeomError::Degenerate`] when `t` is outside `[knots[p],
+    /// knots[n])` or the multiplicity would exceed the degree.
+    ///
+    /// ```
+    /// use arris_geom::NurbsCurve;
+    /// use arris_math::Point3;
+    ///
+    /// let c = NurbsCurve::new(
+    ///     2,
+    ///     vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+    ///     vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 2.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+    ///     vec![1.0, 1.0, 1.0],
+    /// ).unwrap();
+    /// let refined = c.insert_knot(0.5, 1).unwrap();
+    /// assert_eq!(refined.control_points().len(), 4);
+    /// assert!((refined.eval(0.3).point - c.eval(0.3).point).norm() < 1e-15);
+    /// ```
+    pub fn insert_knot(&self, t: f64, times: usize) -> Result<Self, GeomError> {
+        self.spline
+            .insert_knot(t, times)
+            .map(|spline| NurbsCurve { spline })
+            .map_err(degenerate(GeomKind::Curve(CurveKind::Nurbs)))
+    }
+
+    /// The parameter of the nearest point to `p`: the best of `2p + 2`
+    /// samples per span, polished by bracketed Newton on the derivative
+    /// of the squared distance. It is the nearest *local* minimum from
+    /// that sample — never an error, and never a guarantee that a nearer
+    /// point the sampling missed does not exist. In the domain; in
+    /// `[knots[p], knots[n])` for a periodic curve.
+    pub fn project_parameter(&self, p: Point3) -> f64 {
+        self.spline.project(&p)
+    }
+
+    /// The same curve with every control point moved by `motion`;
+    /// weights and knots unchanged, so `moved.eval(t).point ==
+    /// motion.apply(self.eval(t).point)` to rounding.
+    pub fn transformed(&self, motion: &Isometry) -> NurbsCurve {
+        NurbsCurve {
+            spline: self.spline.map_points(|p| motion.apply(*p)),
+        }
+    }
+}
+
+impl NurbsCurve2 {
+    /// A validated curve; errors as [`NurbsCurve::new`].
+    pub fn new(
+        degree: usize,
+        knots: Vec<f64>,
+        control_points: Vec<Point2>,
+        weights: Vec<f64>,
+    ) -> Result<Self, GeomError> {
+        Spline::new(degree, knots, control_points, weights)
+            .map(|spline| NurbsCurve2 { spline })
+            .map_err(degenerate(GeomKind::Curve2(Curve2Kind::Nurbs)))
+    }
+
+    /// `p`.
+    pub fn degree(&self) -> usize {
+        self.spline.degree()
+    }
+
+    /// The `n + p + 1` knots, non-decreasing.
+    pub fn knots(&self) -> &[f64] {
+        self.spline.knots()
+    }
+
+    /// The `n` control points, Cartesian.
+    pub fn control_points(&self) -> &[Point2] {
+        self.spline.points()
+    }
+
+    /// The `n` weights, all positive.
+    pub fn weights(&self) -> &[f64] {
+        self.spline.weights()
+    }
+
+    /// `[knots[p], knots[n]]`.
+    pub fn domain(&self) -> Interval {
+        self.spline.domain()
+    }
+
+    /// The domain's length when the knots and control points wrap, else
+    /// `None`.
+    pub fn period(&self) -> Option<f64> {
+        self.spline.period()
+    }
+
+    /// The point and its derivatives at `t`.
+    pub fn eval(&self, t: f64) -> Curve2Eval {
+        let d = self.spline.eval(t);
+        Curve2Eval {
+            point: d.point,
+            d1: d.d1,
+            d2: d.d2,
+        }
+    }
+
+    /// The same curve with `t` inserted `times` more times as a knot; as
+    /// [`NurbsCurve::insert_knot`].
+    pub fn insert_knot(&self, t: f64, times: usize) -> Result<Self, GeomError> {
+        self.spline
+            .insert_knot(t, times)
+            .map(|spline| NurbsCurve2 { spline })
+            .map_err(degenerate(GeomKind::Curve2(Curve2Kind::Nurbs)))
+    }
+
+    /// The parameter of the nearest point to `p`; as
+    /// [`NurbsCurve::project_parameter`].
+    pub fn project_parameter(&self, p: Point2) -> f64 {
+        self.spline.project(&p)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cubic() -> NurbsCurve {
+        NurbsCurve::new(
+            3,
+            vec![0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 2.0, 2.0],
+            vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 1.0, 0.0),
+                Point3::new(2.0, -1.0, 1.0),
+                Point3::new(3.0, 0.0, 0.0),
+                Point3::new(4.0, 2.0, 0.0),
+            ],
+            vec![1.0, 2.0, 1.0, 0.5, 1.0],
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn a_clamped_curve_starts_and_ends_at_its_control_points() {
+        let c = cubic();
+        assert_eq!(c.eval(0.0).point, Point3::new(0.0, 0.0, 0.0));
+        assert_eq!(c.eval(2.0).point, Point3::new(4.0, 2.0, 0.0));
+        assert_eq!(c.domain(), Interval::new(0.0, 2.0).unwrap());
+        assert_eq!(c.period(), None);
+        assert_eq!(c.degree(), 3);
+        assert_eq!(c.knots().len(), 9);
+        assert_eq!(c.weights()[1], 2.0);
+    }
+
+    #[test]
+    fn the_constructor_names_the_fault() {
+        let err = NurbsCurve::new(
+            2,
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            vec![Point3::origin(); 3],
+            vec![1.0, 0.0, 1.0],
+        )
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            GeomError::Degenerate {
+                kind: GeomKind::Curve(CurveKind::Nurbs),
+                ..
+            }
+        ));
+        assert!(err.to_string().contains("weight 1"), "{err}");
+        let err = NurbsCurve2::new(
+            1,
+            vec![0.0, 1.0, 1.0],
+            vec![Point2::origin(); 2],
+            vec![1.0; 2],
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("3 knots"), "{err}");
+        assert!(matches!(
+            err,
+            GeomError::Degenerate {
+                kind: GeomKind::Curve2(Curve2Kind::Nurbs),
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn knot_insertion_refuses_what_would_break_the_curve() {
+        let c = cubic();
+        assert!(c.insert_knot(2.0, 1).is_err());
+        assert!(c.insert_knot(-0.5, 1).is_err());
+        assert!(c.insert_knot(1.0, 3).is_err());
+        let twice = c.insert_knot(1.0, 2).unwrap();
+        assert_eq!(twice.control_points().len(), 7);
+        assert_eq!(c.insert_knot(0.5, 0).unwrap(), c);
+        let e = c.insert_knot(f64::NAN, 1).unwrap_err();
+        assert!(e.to_string().contains("outside"), "{e}");
+    }
+
+    #[test]
+    fn a_periodic_curve_wraps_and_a_clamped_one_extrapolates() {
+        // Uniform quadratic with three distinct control points wrapped.
+        let pts = [
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+        ];
+        let c = NurbsCurve::new(
+            2,
+            (0..8).map(f64::from).collect(),
+            vec![pts[0], pts[1], pts[2], pts[0], pts[1]],
+            vec![1.0; 5],
+        )
+        .unwrap();
+        assert_eq!(c.period(), Some(3.0));
+        let (a, b) = (c.eval(2.7), c.eval(5.7));
+        assert!((a.point - b.point).norm() < 1e-14);
+        assert!((a.d1 - b.d1).norm() < 1e-14);
+        assert!(c.transformed(&Isometry::identity()).period().is_some());
+        let unwrapped = c.insert_knot(3.5, 1).unwrap();
+        assert_eq!(unwrapped.period(), None);
+        assert!((unwrapped.eval(4.2).point - c.eval(4.2).point).norm() < 1e-14);
+    }
+}

@@ -248,8 +248,8 @@ analytic pairs never route through it.
   samplers that feed it a curve or a surface without a body (`polyline_of`,
   `wireframe_of`), the Rerun stream, the fixture loader and corpus lint
   (`fixtures`), and the seeded property-test runner and strategies (`prop`,
-  with every analytic surface and curve in a random pose under
-  `prop::geom`). It is a
+  with every analytic surface and curve in a random pose and random
+  clamped NURBS curves and surfaces under `prop::geom`). It is a
   dev-dependency of the workspace's crates and never of a consumer. For
   the crates below it (`math`, `geom`, `topo`) that dev-dependency is a
   cycle, so their property tests are integration tests under

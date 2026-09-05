@@ -43,12 +43,12 @@ fn param_error(s: &Surface, got: (f64, f64), expected: (f64, f64)) -> f64 {
 /// The distance from `p` to the surface by its implicit form, written
 /// independently of `Surface::project`: both nappes of the cone count.
 fn implicit_distance(s: &Surface, p: Point3) -> f64 {
-    let q = s.frame().to_local(p);
+    let q = s.frame().unwrap().to_local(p);
     let rho = q.x.hypot(q.y);
-    match *s {
+    match s {
         Surface::Plane { .. } => q.z.abs(),
-        Surface::Cylinder { radius, .. } => (rho - radius).abs(),
-        Surface::Cone {
+        &Surface::Cylinder { radius, .. } => (rho - radius).abs(),
+        &Surface::Cone {
             radius, half_angle, ..
         } => {
             let (sa, ca) = half_angle.sin_cos();
@@ -56,12 +56,13 @@ fn implicit_distance(s: &Surface, p: Point3) -> f64 {
             let other = (ca * (rho + radius) + sa * q.z).abs();
             main.min(other)
         }
-        Surface::Sphere { radius, .. } => (q.coords.norm() - radius).abs(),
-        Surface::Torus {
+        &Surface::Sphere { radius, .. } => (q.coords.norm() - radius).abs(),
+        &Surface::Torus {
             major_radius,
             minor_radius,
             ..
         } => ((rho - major_radius).hypot(q.z) - minor_radius).abs(),
+        Surface::Nurbs(_) => unreachable!("the analytic strategies yield no NURBS"),
     }
 }
 
@@ -135,10 +136,10 @@ fn torus_projection_properties() {
 /// point as its nearest: half the distance to the nearest ambiguous
 /// locus, scaled by `raw ∈ [−1, 1]`.
 fn safe_offset(s: &Surface, v: f64, raw: f64) -> f64 {
-    match *s {
+    match s {
         Surface::Plane { .. } => raw * DEFAULT_SCALE,
-        Surface::Cylinder { radius, .. } | Surface::Sphere { radius, .. } => raw * radius / 2.0,
-        Surface::Cone {
+        &Surface::Cylinder { radius, .. } | &Surface::Sphere { radius, .. } => raw * radius / 2.0,
+        &Surface::Cone {
             radius, half_angle, ..
         } => {
             // Height above the plane through the apex, in units of the
@@ -147,11 +148,12 @@ fn safe_offset(s: &Surface, v: f64, raw: f64) -> f64 {
             let above = (v * ca + radius * ca / sa) / sa;
             raw * (radius / 2.0).min(above / 2.0)
         }
-        Surface::Torus {
+        &Surface::Torus {
             major_radius,
             minor_radius,
             ..
         } => raw * (minor_radius / 2.0).min((major_radius - minor_radius) / 2.0),
+        Surface::Nurbs(_) => unreachable!("the analytic strategies yield no NURBS"),
     }
 }
 
@@ -228,7 +230,7 @@ fn assert_ambiguous(
 
 /// The axis of a cylinder, cone or torus, wherever along it.
 fn on_axis(s: &Surface, t: f64) -> Point3 {
-    s.frame().origin() + t * s.frame().z().into_inner()
+    s.frame().unwrap().origin() + t * s.frame().unwrap().z().into_inner()
 }
 
 #[test]
@@ -271,7 +273,10 @@ fn the_sphere_centre_is_ambiguous_and_its_axis_projects_to_a_pole() {
     check(
         (sphere(), finite_f64(0.1..=DEFAULT_SCALE), any::<bool>()),
         |(s, t, north)| {
-            assert_ambiguous(s.project(s.frame().origin()), AmbiguousLocus::Centre)?;
+            assert_ambiguous(
+                s.project(s.frame().unwrap().origin()),
+                AmbiguousLocus::Centre,
+            )?;
             let t = if north { t } else { -t };
             let proj = unwrap_projection(s.project(on_axis(&s, t)))?;
             let v = if north { FRAC_PI_2 } else { -FRAC_PI_2 };

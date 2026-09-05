@@ -109,12 +109,13 @@ pub fn intersect_curve_surface(
             circle_cylinder(curve, surface, cf, *radius, frame, *big, tol)
         }
         (
-            Curve::Line { .. } | Curve::Circle { .. } | Curve::Ellipse { .. },
+            Curve::Line { .. } | Curve::Circle { .. } | Curve::Ellipse { .. } | Curve::Nurbs(_),
             Surface::Plane { .. }
             | Surface::Cylinder { .. }
             | Surface::Cone { .. }
             | Surface::Sphere { .. }
-            | Surface::Torus { .. },
+            | Surface::Torus { .. }
+            | Surface::Nurbs(_),
         ) => Err(GeomError::Unsupported {
             a: GeomKind::Curve(curve.kind()),
             b: GeomKind::Surface(surface.kind()),

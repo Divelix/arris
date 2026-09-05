@@ -36,10 +36,10 @@ fn params() -> impl Strategy<Value = (f64, f64)> {
 fn local_surface(s: &Surface, u: f64, v: f64) -> Point3 {
     let (su, cu) = u.sin_cos();
     let (sv, cv) = v.sin_cos();
-    match *s {
+    match s {
         Surface::Plane { .. } => Point3::new(u, v, 0.0),
-        Surface::Cylinder { radius: r, .. } => Point3::new(r * cu, r * su, v),
-        Surface::Cone {
+        &Surface::Cylinder { radius: r, .. } => Point3::new(r * cu, r * su, v),
+        &Surface::Cone {
             radius: r,
             half_angle: a,
             ..
@@ -47,8 +47,8 @@ fn local_surface(s: &Surface, u: f64, v: f64) -> Point3 {
             let rho = r + v * a.sin();
             Point3::new(rho * cu, rho * su, v * a.cos())
         }
-        Surface::Sphere { radius: r, .. } => Point3::new(r * cv * cu, r * cv * su, r * sv),
-        Surface::Torus {
+        &Surface::Sphere { radius: r, .. } => Point3::new(r * cv * cu, r * cv * su, r * sv),
+        &Surface::Torus {
             major_radius: big,
             minor_radius: small,
             ..
@@ -56,35 +56,37 @@ fn local_surface(s: &Surface, u: f64, v: f64) -> Point3 {
             let rho = big + small * cv;
             Point3::new(rho * cu, rho * su, small * sv)
         }
+        Surface::Nurbs(_) => unreachable!("the analytic strategies yield no NURBS"),
     }
 }
 
 fn local_curve(c: &Curve, t: f64) -> Point3 {
     let (st, ct) = t.sin_cos();
-    match *c {
+    match c {
         Curve::Line { .. } => Point3::new(0.0, 0.0, t),
-        Curve::Circle { radius: r, .. } => Point3::new(r * ct, r * st, 0.0),
-        Curve::Ellipse {
+        &Curve::Circle { radius: r, .. } => Point3::new(r * ct, r * st, 0.0),
+        &Curve::Ellipse {
             major_radius: a,
             minor_radius: b,
             ..
         } => Point3::new(a * ct, b * st, 0.0),
+        Curve::Nurbs(_) => unreachable!("the analytic strategies yield no NURBS"),
     }
 }
 
 fn with_frame(s: &Surface, frame: Frame) -> Surface {
-    match *s {
+    match s {
         Surface::Plane { .. } => Surface::Plane { frame },
-        Surface::Cylinder { radius, .. } => Surface::Cylinder { frame, radius },
-        Surface::Cone {
+        &Surface::Cylinder { radius, .. } => Surface::Cylinder { frame, radius },
+        &Surface::Cone {
             radius, half_angle, ..
         } => Surface::Cone {
             frame,
             radius,
             half_angle,
         },
-        Surface::Sphere { radius, .. } => Surface::Sphere { frame, radius },
-        Surface::Torus {
+        &Surface::Sphere { radius, .. } => Surface::Sphere { frame, radius },
+        &Surface::Torus {
             major_radius,
             minor_radius,
             ..
@@ -93,22 +95,26 @@ fn with_frame(s: &Surface, frame: Frame) -> Surface {
             major_radius,
             minor_radius,
         },
+        Surface::Nurbs(_) => unreachable!("the analytic strategies yield no NURBS"),
     }
 }
 
 /// The frame a curve is posed by: a line's is the frame whose `z` is its
 /// direction through its origin.
 fn curve_frame(c: &Curve) -> Frame {
-    match *c {
-        Curve::Line { origin, direction } => Frame::from_z(origin, direction.into_inner()).unwrap(),
-        Curve::Circle { frame, .. } | Curve::Ellipse { frame, .. } => frame,
+    match c {
+        &Curve::Line { origin, direction } => {
+            Frame::from_z(origin, direction.into_inner()).unwrap()
+        }
+        &Curve::Circle { frame, .. } | &Curve::Ellipse { frame, .. } => frame,
+        Curve::Nurbs(_) => unreachable!("the analytic strategies yield no NURBS"),
     }
 }
 
 #[test]
 fn posed_surface_equals_the_local_closed_form_moved_by_the_pose() {
     check((surface(), params()), |(s, (u, v))| {
-        let pose = s.frame().as_isometry();
+        let pose = s.frame().unwrap().as_isometry();
         let expected = pose.apply(local_surface(&s, u, v));
         let got = s.eval(u, v).point;
         prop_assert!(
@@ -219,7 +225,7 @@ fn normal_is_unit_and_orthogonal_to_both_derivatives() {
         prop_assert!(n.dot(&dv).abs() <= UNIT, "n·dv = {}", n.dot(&dv));
         // Outward: away from the axis for the cylinder and cone, from the
         // centre for the sphere, from the tube's centre circle for the torus.
-        let f = s.frame();
+        let f = s.frame().unwrap();
         let outward = match s {
             Surface::Plane { .. } => f.z().into_inner(),
             Surface::Cylinder { .. } | Surface::Cone { .. } => {
@@ -232,6 +238,7 @@ fn normal_is_unit_and_orthogonal_to_both_derivatives() {
                 let radial = (d - d.dot(&f.z()) * f.z().into_inner()).normalize();
                 e.point - (f.origin() + major_radius * radial)
             }
+            Surface::Nurbs(_) => unreachable!("the analytic strategies yield no NURBS"),
         };
         prop_assert!(
             n.dot(&outward) > 0.0,
@@ -300,13 +307,13 @@ fn frames_and_kinds_survive_a_transform() {
             };
             let m = f.as_isometry().inverse();
             let back = s.transformed(&m);
-            prop_assert!((back.frame().origin() - Point3::origin()).norm() <= EXACT);
-            prop_assert!((back.frame().z().into_inner() - Vec3::z()).norm() <= 1e-14);
+            prop_assert!((back.frame().unwrap().origin() - Point3::origin()).norm() <= EXACT);
+            prop_assert!((back.frame().unwrap().z().into_inner() - Vec3::z()).norm() <= 1e-14);
             let l = Curve::Line {
                 origin: f.origin(),
                 direction: d,
             };
-            let Curve::Line { direction, .. } = l.transformed(&m) else {
+            let Curve::Line { direction, .. } = &l.transformed(&m) else {
                 unreachable!("a moved line is a line")
             };
             prop_assert!((direction.norm() - 1.0).abs() <= UNIT);

@@ -30,11 +30,14 @@ fn tol() -> Tolerance {
 
 /// The distance from `p` to the surface by its implicit form.
 fn implicit_distance(s: &Surface, p: Point3) -> f64 {
-    let q = s.frame().to_local(p);
-    match *s {
+    let q = s.frame().unwrap().to_local(p);
+    match s {
         Surface::Plane { .. } => q.z.abs(),
-        Surface::Cylinder { radius, .. } => (q.x.hypot(q.y) - radius).abs(),
-        Surface::Cone { .. } | Surface::Sphere { .. } | Surface::Torus { .. } => {
+        &Surface::Cylinder { radius, .. } => (q.x.hypot(q.y) - radius).abs(),
+        Surface::Cone { .. }
+        | Surface::Sphere { .. }
+        | Surface::Torus { .. }
+        | Surface::Nurbs(_) => {
             unreachable!("only planes and cylinders are hit in cycle 1")
         }
     }
@@ -165,8 +168,8 @@ fn a_line_crossing_a_plane_hits_once_at_the_built_parameter() {
         ),
         |(p, u, v, phase, tilt, s)| {
             let point = p.point(u, v);
-            let (a, _) = around(p.frame(), phase);
-            let d = tilt.cos() * a + tilt.sin() * p.frame().z().into_inner();
+            let (a, _) = around(p.frame().unwrap(), phase);
+            let d = tilt.cos() * a + tilt.sin() * p.frame().unwrap().z().into_inner();
             let c = Curve::Line {
                 origin: point - s * d,
                 direction: arris_math::UnitVec3::new_normalize(d),
@@ -191,9 +194,9 @@ fn a_line_parallel_to_a_plane_is_empty_or_coincident_by_the_gap() {
             any::<bool>(),
         ),
         |(p, anchor, phase, gap, lift)| {
-            let n = p.frame().z().into_inner();
-            let in_plane = anchor - n.dot(&(anchor - p.frame().origin())) * n;
-            let (a, _) = around(p.frame(), phase);
+            let n = p.frame().unwrap().z().into_inner();
+            let in_plane = anchor - n.dot(&(anchor - p.frame().unwrap().origin())) * n;
+            let (a, _) = around(p.frame().unwrap(), phase);
             let c = Curve::Line {
                 origin: if lift { in_plane + gap * n } else { in_plane },
                 direction: arris_math::UnitVec3::new_normalize(a),

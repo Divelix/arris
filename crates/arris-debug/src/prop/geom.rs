@@ -1,12 +1,16 @@
-//! Strategies for every analytic surface and curve in a random pose.
+//! Strategies for every analytic surface and curve in a random pose, and
+//! for random clamped NURBS curves and surfaces.
 //!
 //! Radii and angles come from the named ranges below, chosen so a
 //! test's tolerance can be stated against [`super::DEFAULT_SCALE`]: every
 //! coordinate a strategy produces is within a few multiples of it.
+//! [`surface`] and [`curve`] draw the analytic variants only; the NURBS
+//! strategies are separate because most cycle-1 queries are
+//! `Unsupported` on them by design.
 
 use core::ops::RangeInclusive;
 
-use arris_geom::{Curve, Surface};
+use arris_geom::{Curve, NurbsCurve, NurbsSurface, Surface};
 use proptest::prelude::*;
 
 use super::{DEFAULT_SCALE, finite_f64, frame, point_in_box, radius, unit_vec3};
@@ -93,4 +97,78 @@ pub fn ellipse() -> impl Strategy<Value = Curve> {
 /// Any analytic curve, each variant equally likely.
 pub fn curve() -> impl Strategy<Value = Curve> {
     prop_oneof![line(), circle(), ellipse()]
+}
+
+/// Degrees of the NURBS strategies: from linear to quintic, so the
+/// derivative tables are exercised past the second order they compute.
+pub const NURBS_DEGREE_RANGE: RangeInclusive<usize> = 1..=5;
+/// How many spans a random NURBS curve's domain has.
+pub const NURBS_SPAN_RANGE: RangeInclusive<usize> = 1..=6;
+/// Weights of the NURBS strategies: positive, within a factor of two of
+/// one, so a rational evaluation is exercised without a nearly singular
+/// homogeneous divisor.
+pub const NURBS_WEIGHT_RANGE: RangeInclusive<f64> = 0.5..=2.0;
+
+/// A clamped knot vector of `degree` with the interior knots at the
+/// integers `1..spans` and the given multiplicities (each in
+/// `1..=degree`), on `[0, spans]`.
+fn clamped_knots(degree: usize, multiplicities: &[usize]) -> Vec<f64> {
+    let spans = multiplicities.len() + 1;
+    let mut knots = vec![0.0; degree + 1];
+    for (i, &m) in multiplicities.iter().enumerate() {
+        knots.extend(core::iter::repeat_n((i + 1) as f64, m));
+    }
+    knots.extend(core::iter::repeat_n(spans as f64, degree + 1));
+    knots
+}
+
+/// Clamped rational B-spline curves: a degree in [`NURBS_DEGREE_RANGE`],
+/// a domain of [`NURBS_SPAN_RANGE`] unit spans whose interior knots
+/// carry random multiplicities up to the degree, control points uniform
+/// in the default box and weights in [`NURBS_WEIGHT_RANGE`].
+pub fn nurbs_curve() -> impl Strategy<Value = NurbsCurve> {
+    (NURBS_DEGREE_RANGE, NURBS_SPAN_RANGE)
+        .prop_flat_map(|(degree, spans)| {
+            (
+                Just(degree),
+                proptest::collection::vec(1..=degree, spans - 1),
+            )
+        })
+        .prop_flat_map(|(degree, mults)| {
+            let knots = clamped_knots(degree, &mults);
+            let n = knots.len() - degree - 1;
+            (
+                Just(degree),
+                Just(knots),
+                proptest::collection::vec(point_in_box(DEFAULT_SCALE), n),
+                proptest::collection::vec(finite_f64(NURBS_WEIGHT_RANGE), n),
+            )
+        })
+        .prop_map(|(degree, knots, points, weights)| {
+            NurbsCurve::new(degree, knots, points, weights)
+                .expect("the strategy builds a valid knot vector and positive weights")
+        })
+}
+
+/// Clamped rational B-spline surfaces: degrees in [`NURBS_DEGREE_RANGE`]
+/// capped at three, one to three uniform unit spans per direction,
+/// control points uniform in the default box and weights in
+/// [`NURBS_WEIGHT_RANGE`].
+pub fn nurbs_surface() -> impl Strategy<Value = NurbsSurface> {
+    (1..=3usize, 1..=3usize, 1..=3usize, 1..=3usize)
+        .prop_flat_map(|(p, q, su, sv)| {
+            let ku = clamped_knots(p, &vec![1; su - 1]);
+            let kv = clamped_knots(q, &vec![1; sv - 1]);
+            let n = (ku.len() - p - 1) * (kv.len() - q - 1);
+            (
+                Just([p, q]),
+                Just([ku, kv]),
+                proptest::collection::vec(point_in_box(DEFAULT_SCALE), n),
+                proptest::collection::vec(finite_f64(NURBS_WEIGHT_RANGE), n),
+            )
+        })
+        .prop_map(|(degree, knots, points, weights)| {
+            NurbsSurface::new(degree, knots, points, weights)
+                .expect("the strategy builds a valid net")
+        })
 }

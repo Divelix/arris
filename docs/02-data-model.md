@@ -79,7 +79,7 @@ With `O, X, Y, Z` the frame and `c = cos`, `s = sin`:
 | Cone | `O + (R + v·s α)(c u·X + s u·Y) + v·c α·Z` | u ∈ [0, 2π), v ∈ ℝ | u | seam at u = 0; apex at v = −R / s α, a degenerate edge. `α` ∈ (0, π/2) is the half-angle; `R` the radius at v = 0 |
 | Sphere | `O + R c v (c u·X + s u·Y) + R s v·Z` | u ∈ [0, 2π), v ∈ [−π/2, π/2] | u | seam at u = 0; poles at v = ±π/2, degenerate edges |
 | Torus | `O + (R + r c v)(c u·X + s u·Y) + r s v·Z` | u, v ∈ [0, 2π) | u and v | seams at u = 0 and v = 0; `R > r` in cycle 1 (no self-intersecting tori until an operation needs them) |
-| Nurbs | Piegl & Tiller, clamped knots, rational weights | knot range | either, if the knots say so | as the knots say |
+| Nurbs | Piegl & Tiller, rational; clamped or not (§NURBS) | knot range | either, where the knots and net wrap | as the knots say |
 
 The surface normal is `∂P/∂u × ∂P/∂v`, normalised. For the analytic types
 that is: plane `Z`; cylinder, cone and sphere radially outward; torus
@@ -112,7 +112,12 @@ off its centre projects to the pole with `u = 0`: the point is unique,
 only the degenerate parameter is not.
 
 `SurfaceKind` is the fieldless twin of the enum, used in errors and
-dispatch tables.
+dispatch tables. `Surface::frame()` is the placing frame of an analytic
+variant and `None` for `Nurbs`, which is placed by its control points;
+`project` onto a `Nurbs` is `GeomError::Unsupported` in cycle 1 (there is
+no closed form, and no operation asks for it yet). `Surface` and `Curve`
+are `Clone`, not `Copy`: the NURBS variants own their knots and control
+points.
 
 ### Curves
 
@@ -130,7 +135,7 @@ pub enum Curve {
 | Line | `O + t·D` | ℝ | — |
 | Circle | `O + R(c t·X + s t·Y)` | [0, 2π) | 2π |
 | Ellipse | `O + a c t·X + b s t·Y`, `a ≥ b` | [0, 2π) | 2π |
-| Nurbs | clamped, rational | knot range | if the knots say so |
+| Nurbs | rational; clamped or not (§NURBS) | knot range | where the knots and control points wrap |
 
 The tangent is `dP/dt`, never normalised in the enum's own evaluation; a
 line's parameter is arc length because `D` is unit. `Curve::eval(t)` returns
@@ -142,13 +147,19 @@ through the quartic in `tan(t/2)` of `arris_math::roots`, every candidate
 polished so the residual `(p − C(t)) · C′(t)` is zero to rounding. A point
 on a circle's axis, at an ellipse's centre, or on the open segment of an
 ellipse's major axis inside its evolute (two mirror-image nearest points)
-is `GeomError::Ambiguous` naming the locus.
+is `GeomError::Ambiguous` naming the locus. A NURBS curve projects by
+sampling every span (`2p + 2` parameters each) and bracketed Newton on
+the derivative of the squared distance around the best sample, across
+the seam of a closed or periodic curve: the nearest *local* minimum from
+that sample, never `Ambiguous` and never a guarantee against a nearer
+point the sampling missed.
 
 `intersect_surfaces(a, b, tol)` returns `SurfaceIntersection::{Empty,
 Coincident, Transversal(Vec<Curve>), Tangent(Vec<Curve>)}` for the pairs
 with a closed form and `GeomError::Unsupported` naming the pair for every
 other — in cycle 1, plane–plane (a line) and plane–cylinder (a circle, an
-ellipse, two rulings, one tangent ruling, or nothing). `tol.angular`
+ellipse, two rulings, one tangent ruling, or nothing); every pair with a
+`Nurbs` operand is an explicit `Unsupported` arm. `tol.angular`
 decides parallel and perpendicular, `tol.linear` decides coincident,
 tangent and empty. An intersection curve's frame is Arris's own
 deterministic choice, matching Open CASCADE only where the *surface's*
@@ -208,11 +219,25 @@ checker verifies the pcurve against the 3D curve (§Invariants E4).
 ### NURBS
 
 `NurbsCurve`, `NurbsCurve2` and `NurbsSurface` follow *The NURBS Book*:
-degree `p`, clamped knot vector with `p + 1` multiplicity at the ends,
-homogeneous control points (weights stored separately, all positive),
-de Boor evaluation, knot insertion and degree elevation as the primitive
-edits. Periodic NURBS are represented by unclamped knots and the `period`
-they imply; the checker confirms the wrap.
+degree `p` in `1..=MAX_DEGREE` (25, Open CASCADE's bound, which also
+sizes the evaluator's stack buffers so evaluation never allocates), a
+non-decreasing knot vector of `n + p + 1` knots, `n` Cartesian control
+points with their positive weights stored separately, de Boor evaluation
+with derivatives to second order (the quotient rule over the homogeneous
+sums), and knot insertion as the primitive edit (degree elevation is in
+the backlog). The constructors validate and return
+`GeomError::Degenerate` naming the fault: a knot value's multiplicity is
+at most `p + 1`, and at most `p` strictly inside the domain
+`[knots[p], knots[n]]`, which is non-empty and whose last span is not.
+A knot vector need not be clamped. A curve or a surface direction is
+**periodic** exactly when its structure wraps: the knots repeat `n − p`
+places on shifted by the domain's length and the last `p` control points
+(rows, for a surface) repeat the first `p`, both to rounding; `period()`
+is then the domain's length and evaluation wraps the parameter into the
+domain first. Any other parameter outside the domain evaluates the
+nearest polynomial piece. Knot insertion (`insert_knot(t, times)`)
+leaves the image over the domain unchanged; on a periodic curve it
+breaks the wrap the knots implied, so the result's `period()` is `None`.
 
 ## Topology
 
