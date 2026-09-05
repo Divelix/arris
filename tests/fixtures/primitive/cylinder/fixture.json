@@ -1,0 +1,21 @@
+{
+  "description": "cylinder r 4, h 12, axis z, base at the origin: one seam edge, two caps",
+  "steps": [
+    {"name": "cyl", "op": "cylinder", "base": [0, 0, 0], "axis": [0, 0, 1], "radius": 4, "height": 12}
+  ],
+  "result": "cyl",
+  "probes": [
+    {"label": "inside", "point": [1, 1, 6], "expect": "in"},
+    {"label": "outside", "point": [5, 0, 6], "expect": "out"},
+    {"label": "on_wall", "point": [4, 0, 6], "expect": "on"},
+    {"label": "on_edge", "point": [0, 4, 12], "expect": "on"},
+    {"label": "on_axis", "point": [0, 0, 6], "expect": "in"}
+  ],
+  "analytic": {
+    "volume": "pi * 16 * 12",
+    "area": "2 * pi * 16 + 2 * pi * 4 * 12",
+    "centroid": [0, 0, 6],
+    "counts": {"vertices": 2, "edges": 3, "faces": 3, "loops": 3, "shells": 1},
+    "genus": 0
+  }
+}

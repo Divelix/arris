@@ -1,0 +1,23 @@
+{
+  "description": "box [0,0,0]–[40,30,10] − a cylinder clear of it: the target unchanged, every tool entity Deleted in provenance",
+  "steps": [
+    {"name": "plate", "op": "box", "min": [0, 0, 0], "max": [40, 30, 10]},
+    {"name": "tool", "op": "cylinder", "base": [60, 15, -1], "axis": [0, 0, 1], "radius": 4, "height": 12},
+    {"name": "result", "op": "cut", "target": "plate", "tool": "tool"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [20, 15, 5], "expect": "in"},
+    {"label": "outside", "point": [60, 15, 5], "expect": "out"},
+    {"label": "on_face", "point": [20, 15, 10], "expect": "on"},
+    {"label": "on_edge", "point": [40, 15, 10], "expect": "on"},
+    {"label": "on_tool_axis", "point": [60, 15, 20], "expect": "out"}
+  ],
+  "analytic": {
+    "volume": 12000,
+    "area": 3800,
+    "centroid": [20, 15, 5],
+    "counts": {"vertices": 8, "edges": 12, "faces": 6, "loops": 6, "shells": 1},
+    "genus": 0
+  }
+}

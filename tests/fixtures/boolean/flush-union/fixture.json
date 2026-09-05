@@ -1,0 +1,23 @@
+{
+  "description": "box [0,0,0]–[40,30,10] ∪ box [40,0,0]–[80,30,10]: the shared face vanishes, coplanar neighbours are not merged (as Open CASCADE)",
+  "steps": [
+    {"name": "a", "op": "box", "min": [0, 0, 0], "max": [40, 30, 10]},
+    {"name": "b", "op": "box", "min": [40, 0, 0], "max": [80, 30, 10]},
+    {"name": "result", "op": "fuse", "a": "a", "b": "b"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [40, 15, 5], "expect": "in"},
+    {"label": "outside", "point": [90, 15, 5], "expect": "out"},
+    {"label": "on_face", "point": [60, 15, 10], "expect": "on"},
+    {"label": "on_edge", "point": [40, 30, 10], "expect": "on"},
+    {"label": "on_former_edge", "point": [40, 15, 10], "expect": "on"}
+  ],
+  "analytic": {
+    "volume": 24000,
+    "area": 7000,
+    "centroid": [40, 15, 5],
+    "counts": {"vertices": 12, "edges": 20, "faces": 10, "loops": 10, "shells": 1},
+    "genus": 0
+  }
+}

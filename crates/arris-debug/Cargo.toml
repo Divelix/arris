@@ -18,6 +18,9 @@ arris-mesh.workspace = true
 arris-io.workspace = true
 image.workspace = true
 thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
 
 # Property tests never run on wasm, and proptest's random source does not
 # build for wasm32-unknown-unknown; the `prop` module follows this cfg.

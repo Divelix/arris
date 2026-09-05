@@ -1,0 +1,759 @@
+//! The fixture corpus: `tests/fixtures/<area>/<slug>/` with a recipe
+//! (`fixture.json`) both sides evaluate and the oracle's answer
+//! (`expected.json`). The format is `tests/fixtures/README.md`; this module
+//! is its Rust reading, and [`lint`] is the corpus lint the facade's tests
+//! run over every directory.
+
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+
+pub mod expr;
+
+pub use expr::{ExprError, eval};
+
+/// A number in a recipe: a literal, or an expression over the recipe's
+/// params (`"50 + R * cos(radians(45))"`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Num {
+    /// A JSON number.
+    Literal(f64),
+    /// An expression; see [`expr::eval`].
+    Expr(String),
+}
+
+impl Num {
+    /// The value under `params`.
+    pub fn eval(&self, params: &BTreeMap<String, f64>) -> Result<f64, ExprError> {
+        match self {
+            Num::Literal(v) => Ok(*v),
+            Num::Expr(text) => expr::eval(text, params),
+        }
+    }
+}
+
+impl From<f64> for Num {
+    fn from(v: f64) -> Self {
+        Num::Literal(v)
+    }
+}
+
+/// Where a point lies relative to a solid.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Class {
+    /// Strictly inside the material.
+    In,
+    /// Strictly outside.
+    Out,
+    /// On the boundary, within tolerance.
+    On,
+}
+
+/// A point both sides classify.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Probe {
+    /// A name for the report; unique within the fixture.
+    pub label: String,
+    /// The point.
+    pub point: [Num; 3],
+    /// The classification the fixture's author expects, if the answer is
+    /// the same in every variant; `None` leaves it to the oracle.
+    #[serde(default)]
+    pub expect: Option<Class>,
+}
+
+/// The plane of a profile, by origin and two orthogonal in-plane axes.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Plane {
+    /// Origin.
+    pub origin: [Num; 3],
+    /// The u axis (normalised by the interpreter).
+    pub x: [Num; 3],
+    /// The v axis.
+    pub y: [Num; 3],
+}
+
+/// One segment of a profile loop, from the previous point.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Segment {
+    /// A straight segment to a point.
+    Line {
+        /// The end point in (u, v).
+        line_to: [Num; 2],
+    },
+    /// A circular arc through `via` to a point.
+    Arc {
+        /// The end point in (u, v).
+        arc_to: [Num; 2],
+        /// A point on the arc between the ends.
+        via: [Num; 2],
+    },
+}
+
+/// A closed loop of a profile.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Loop {
+    /// A full circle.
+    Circle {
+        /// The circle.
+        circle: Circle,
+    },
+    /// A chain of segments starting at `start` and returning to it.
+    Path {
+        /// The first point in (u, v).
+        start: [Num; 2],
+        /// The segments; the last ends at `start`.
+        segments: Vec<Segment>,
+    },
+}
+
+/// A circle in a profile plane.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Circle {
+    /// Centre in (u, v).
+    pub center: [Num; 2],
+    /// Radius.
+    pub radius: Num,
+}
+
+/// A revolve axis.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Axis {
+    /// A point on the axis.
+    pub origin: [Num; 3],
+    /// Its direction.
+    pub direction: [Num; 3],
+}
+
+/// The rotation part of a transform.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Rotate {
+    /// The axis direction.
+    pub axis: [Num; 3],
+    /// A point on the axis; the origin if absent.
+    #[serde(default)]
+    pub origin: Option<[Num; 3]>,
+    /// The angle in degrees, right-handed about `axis`.
+    pub angle_deg: Num,
+}
+
+/// One step of a recipe. The `name` is what later steps refer to.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "op", rename_all = "lowercase")]
+pub enum Step {
+    /// An axis-aligned box.
+    Box {
+        /// Step name.
+        name: String,
+        /// Minimum corner.
+        min: [Num; 3],
+        /// Maximum corner.
+        max: [Num; 3],
+    },
+    /// A cylinder from `base` along `axis`.
+    Cylinder {
+        /// Step name.
+        name: String,
+        /// Centre of the base cap.
+        base: [Num; 3],
+        /// Axis direction.
+        axis: [Num; 3],
+        /// Radius.
+        radius: Num,
+        /// Height along the axis.
+        height: Num,
+    },
+    /// A planar face from an outer loop and holes.
+    Profile {
+        /// Step name.
+        name: String,
+        /// The plane.
+        plane: Plane,
+        /// The outer loop.
+        outer: Loop,
+        /// Holes.
+        #[serde(default)]
+        holes: Vec<Loop>,
+    },
+    /// A profile swept along a direction.
+    Extrude {
+        /// Step name.
+        name: String,
+        /// The profile step.
+        profile: String,
+        /// Direction (normalised by the interpreter).
+        direction: [Num; 3],
+        /// Distance.
+        length: Num,
+    },
+    /// A profile swept about an axis.
+    Revolve {
+        /// Step name.
+        name: String,
+        /// The profile step.
+        profile: String,
+        /// The axis.
+        axis: Axis,
+        /// Angle in degrees, 360 for a full turn.
+        angle_deg: Num,
+    },
+    /// A rigid transform of a step's shape: rotate, then translate.
+    Transform {
+        /// Step name.
+        name: String,
+        /// The step transformed.
+        of: String,
+        /// Translation.
+        #[serde(default)]
+        translate: Option<[Num; 3]>,
+        /// Rotation.
+        #[serde(default)]
+        rotate: Option<Rotate>,
+    },
+    /// Boolean union.
+    Fuse {
+        /// Step name.
+        name: String,
+        /// First operand.
+        a: String,
+        /// Second operand.
+        b: String,
+    },
+    /// Boolean intersection.
+    Common {
+        /// Step name.
+        name: String,
+        /// First operand.
+        a: String,
+        /// Second operand.
+        b: String,
+    },
+    /// Boolean difference.
+    Cut {
+        /// Step name.
+        name: String,
+        /// The body cut from.
+        target: String,
+        /// The body cut away.
+        tool: String,
+    },
+}
+
+impl Step {
+    /// The step's name.
+    pub fn name(&self) -> &str {
+        match self {
+            Step::Box { name, .. }
+            | Step::Cylinder { name, .. }
+            | Step::Profile { name, .. }
+            | Step::Extrude { name, .. }
+            | Step::Revolve { name, .. }
+            | Step::Transform { name, .. }
+            | Step::Fuse { name, .. }
+            | Step::Common { name, .. }
+            | Step::Cut { name, .. } => name,
+        }
+    }
+}
+
+/// Comparison tolerances of a fixture. Counts and classifications are
+/// always exact.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Tolerances {
+    /// Relative, on volume.
+    pub volume_rel: f64,
+    /// Relative, on area.
+    pub area_rel: f64,
+    /// Absolute, on the centroid's distance.
+    pub centroid_abs: f64,
+    /// The distance within which a probe is "on" the boundary.
+    pub probe: f64,
+}
+
+impl Default for Tolerances {
+    /// The oracle's `DEFAULT_TOLERANCES`.
+    fn default() -> Self {
+        Tolerances {
+            volume_rel: 1e-9,
+            area_rel: 1e-9,
+            centroid_abs: 1e-7,
+            probe: 1e-7,
+        }
+    }
+}
+
+/// Entity counts of a result.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Counts {
+    /// Unique vertices.
+    pub vertices: usize,
+    /// Unique edges; a seam counts once.
+    pub edges: usize,
+    /// Faces.
+    pub faces: usize,
+    /// Loops (wires).
+    pub loops: usize,
+    /// Shells.
+    #[serde(default = "one")]
+    pub shells: usize,
+    /// Solids.
+    #[serde(default = "one")]
+    pub solids: usize,
+}
+
+fn one() -> usize {
+    1
+}
+
+/// The closed forms a fixture's author states, cross-checking the oracle.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Analytic {
+    /// The result has no volume (Arris: `OpError::Degenerate`).
+    pub degenerate: bool,
+    /// Volume.
+    pub volume: Option<Num>,
+    /// Surface area.
+    pub area: Option<Num>,
+    /// Centroid.
+    pub centroid: Option<[Num; 3]>,
+    /// Entity counts.
+    pub counts: Option<Counts>,
+    /// Genus.
+    pub genus: Option<i64>,
+}
+
+/// A `fixture.json`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Recipe {
+    /// What the fixture is for.
+    #[serde(default)]
+    pub description: String,
+    /// Named numbers the steps may use in expressions.
+    #[serde(default)]
+    pub params: BTreeMap<String, f64>,
+    /// Param overrides, each a variant with its own `expected` result.
+    #[serde(default)]
+    pub variants: BTreeMap<String, BTreeMap<String, f64>>,
+    /// The steps, in order.
+    pub steps: Vec<Step>,
+    /// The step whose shape is the fixture's result.
+    pub result: String,
+    /// Probe points.
+    #[serde(default)]
+    pub probes: Vec<Probe>,
+    /// Comparison tolerances.
+    #[serde(default)]
+    pub tolerances: Tolerances,
+    /// Closed forms.
+    #[serde(default)]
+    pub analytic: Analytic,
+}
+
+impl Recipe {
+    /// The variant names, `default` first.
+    pub fn variant_names(&self) -> Vec<String> {
+        let mut v = vec![String::from("default")];
+        v.extend(self.variants.keys().cloned());
+        v
+    }
+
+    /// The params of a variant, or `None` for an unknown one.
+    pub fn params_of(&self, variant: &str) -> Option<BTreeMap<String, f64>> {
+        let mut p = self.params.clone();
+        if variant != "default" {
+            p.extend(
+                self.variants
+                    .get(variant)?
+                    .iter()
+                    .map(|(k, v)| (k.clone(), *v)),
+            );
+        }
+        Some(p)
+    }
+}
+
+/// A probe's classification by the oracle.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProbeResult {
+    /// The probe's label.
+    pub label: String,
+    /// The point.
+    pub point: [f64; 3],
+    /// The oracle's answer.
+    pub class: Class,
+}
+
+/// The oracle's measurements of one variant's result.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Measured {
+    /// No solid in the result.
+    pub degenerate: bool,
+    /// Entity counts.
+    pub counts: Counts,
+    /// Volume; absent when degenerate.
+    #[serde(default)]
+    pub volume: Option<f64>,
+    /// Area.
+    #[serde(default)]
+    pub area: Option<f64>,
+    /// Centroid.
+    #[serde(default)]
+    pub centroid: Option<[f64; 3]>,
+    /// `V − E + 2F − L`.
+    #[serde(default)]
+    pub euler_characteristic: Option<i64>,
+    /// `S − χ / 2`.
+    #[serde(default)]
+    pub genus: Option<i64>,
+    /// Probe classifications.
+    #[serde(default)]
+    pub probes: Vec<ProbeResult>,
+}
+
+/// An `expected.json`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Expected {
+    /// The `cadquery-ocp` version that wrote it.
+    pub occt: String,
+    /// The recipe hash it was computed from; see [`recipe_hash`].
+    pub recipe_sha256: String,
+    /// One result per variant, `default` always present.
+    pub results: BTreeMap<String, Measured>,
+}
+
+/// A loaded fixture directory.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Fixture {
+    /// The directory.
+    pub dir: PathBuf,
+    /// `<area>/<slug>`.
+    pub name: String,
+    /// The recipe.
+    pub recipe: Recipe,
+    /// The hash of the recipe as loaded, to check against `expected`.
+    pub recipe_sha256: String,
+    /// The oracle's answer.
+    pub expected: Expected,
+}
+
+/// Why a fixture could not be loaded.
+#[derive(Debug, thiserror::Error)]
+pub enum FixtureError {
+    /// A file is missing or unreadable.
+    #[error("{path}: {source}")]
+    Io {
+        /// The file.
+        path: PathBuf,
+        /// The cause.
+        source: std::io::Error,
+    },
+    /// A file is not valid for its schema.
+    #[error("{path}: {source}")]
+    Json {
+        /// The file.
+        path: PathBuf,
+        /// The cause.
+        source: serde_json::Error,
+    },
+}
+
+/// The corpus root: `tests/fixtures/` at the workspace root.
+pub fn corpus_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures")
+}
+
+/// Every fixture directory under [`corpus_root`] (a directory holding a
+/// `fixture.json`), sorted by path.
+pub fn corpus() -> Vec<PathBuf> {
+    fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        let mut paths: Vec<PathBuf> = entries.flatten().map(|e| e.path()).collect();
+        paths.sort();
+        for p in paths {
+            if p.is_dir() {
+                if p.join("fixture.json").is_file() {
+                    out.push(p);
+                } else {
+                    walk(&p, out);
+                }
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(&corpus_root(), &mut out);
+    out
+}
+
+fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T, FixtureError> {
+    let text = std::fs::read_to_string(path).map_err(|source| FixtureError::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    serde_json::from_str(&text).map_err(|source| FixtureError::Json {
+        path: path.to_path_buf(),
+        source,
+    })
+}
+
+/// The SHA-256 the oracle records: over the recipe's `params`, `variants`,
+/// `steps`, `result` and `probes` as parsed, encoded with sorted keys and no
+/// whitespace (serde_json's float formatting; the oracle matches it).
+/// Editing `analytic` or `description` does not change it.
+pub fn recipe_hash(raw: &serde_json::Value) -> String {
+    let mut evaluated = serde_json::Map::new();
+    for key in ["params", "variants", "steps", "result", "probes"] {
+        evaluated.insert(
+            key.to_string(),
+            raw.get(key).cloned().unwrap_or(serde_json::Value::Null),
+        );
+    }
+    let text = serde_json::Value::Object(evaluated).to_string();
+    let digest = Sha256::digest(text.as_bytes());
+    digest.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Loads a fixture directory: both files, and the recipe's hash.
+pub fn load(dir: &Path) -> Result<Fixture, FixtureError> {
+    let raw: serde_json::Value = read_json(&dir.join("fixture.json"))?;
+    let recipe: Recipe =
+        serde_json::from_value(raw.clone()).map_err(|source| FixtureError::Json {
+            path: dir.join("fixture.json"),
+            source,
+        })?;
+    let expected: Expected = read_json(&dir.join("expected.json"))?;
+    let name = dir
+        .components()
+        .rev()
+        .take(2)
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect::<Vec<_>>()
+        .join("/");
+    Ok(Fixture {
+        dir: dir.to_path_buf(),
+        name,
+        recipe_sha256: recipe_hash(&raw),
+        recipe,
+        expected,
+    })
+}
+
+/// Relative tolerance the corpus lint holds `analytic` to the oracle at.
+/// Looser than the fixture's comparison tolerance on purpose: a closed form
+/// typed by hand is a cross-check of conventions, not a second oracle.
+pub const ANALYTIC_REL: f64 = 1e-6;
+
+/// The corpus lint for one directory: both files present and parseable,
+/// the recipe hash matches `expected.json`, every variant has a result,
+/// the Euler line is zero (`χ = 2(S − G)` with the oracle's counts and the
+/// fixture's `analytic.genus`), and every `analytic` value matches the
+/// oracle within [`ANALYTIC_REL`] (counts, degeneracy and probe
+/// expectations exactly). Returns every problem found, empty when clean.
+pub fn lint(dir: &Path) -> Vec<String> {
+    let mut problems = Vec::new();
+    let fixture = match load(dir) {
+        Ok(f) => f,
+        Err(e) => return vec![format!("{}: {e}", dir.display())],
+    };
+    let name = &fixture.name;
+    let mut problem = |text: String| problems.push(format!("{name}: {text}"));
+    let r = &fixture.recipe;
+    let x = &fixture.expected;
+    if x.recipe_sha256 != fixture.recipe_sha256 {
+        problem(format!(
+            "expected.json is stale: recipe hash {} but the recipe hashes to {} — rerun tools/oracle/expected.py",
+            x.recipe_sha256, fixture.recipe_sha256
+        ));
+    }
+    let names: std::collections::BTreeSet<&str> = r.steps.iter().map(Step::name).collect();
+    if names.len() != r.steps.len() {
+        problem("duplicate step names".into());
+    }
+    if !names.contains(r.result.as_str()) {
+        problem(format!("result {:?} is not a step", r.result));
+    }
+    let rel = |a: f64, b: f64| (a - b).abs() <= ANALYTIC_REL * a.abs().max(b.abs()).max(1e-300);
+    for variant in r.variant_names() {
+        let Some(m) = x.results.get(&variant) else {
+            problem(format!(
+                "variant {variant:?} has no result in expected.json"
+            ));
+            continue;
+        };
+        let Some(params) = r.params_of(&variant) else {
+            continue;
+        };
+        let a = &r.analytic;
+        if a.degenerate != m.degenerate {
+            problem(format!(
+                "[{variant}] analytic.degenerate {} but the oracle says {}",
+                a.degenerate, m.degenerate
+            ));
+            continue;
+        }
+        if m.degenerate {
+            continue;
+        }
+        let (Some(chi), Some(genus)) = (m.euler_characteristic, m.genus) else {
+            problem(format!(
+                "[{variant}] expected.json lacks euler_characteristic or genus"
+            ));
+            continue;
+        };
+        let c = m.counts;
+        let chi_from_counts =
+            c.vertices as i64 - c.edges as i64 + 2 * c.faces as i64 - c.loops as i64;
+        if chi != chi_from_counts {
+            problem(format!(
+                "[{variant}] euler_characteristic {chi} does not match the counts ({chi_from_counts})"
+            ));
+        }
+        if let Some(g) = a.genus {
+            // The Euler line: V − E + F − (L − F) − 2(S − G) = 0.
+            let line = chi - 2 * (c.shells as i64 - g);
+            if line != 0 {
+                problem(format!(
+                    "[{variant}] Euler line is {line}, not 0: counts {c:?} with analytic genus {g} (oracle genus {genus})"
+                ));
+            }
+        }
+        if let Some(v) = &a.volume {
+            match (v.eval(&params), m.volume) {
+                (Ok(av), Some(ov)) if !rel(av, ov) => {
+                    problem(format!("[{variant}] analytic volume {av} vs oracle {ov}"))
+                }
+                (Err(e), _) => problem(format!("[{variant}] analytic volume: {e}")),
+                _ => {}
+            }
+        }
+        if let Some(v) = &a.area {
+            match (v.eval(&params), m.area) {
+                (Ok(av), Some(ov)) if !rel(av, ov) => {
+                    problem(format!("[{variant}] analytic area {av} vs oracle {ov}"))
+                }
+                (Err(e), _) => problem(format!("[{variant}] analytic area: {e}")),
+                _ => {}
+            }
+        }
+        if let (Some(cent), Some(oc)) = (&a.centroid, m.centroid) {
+            for (i, n) in cent.iter().enumerate() {
+                match n.eval(&params) {
+                    Ok(av) if (av - oc[i]).abs() > r.tolerances.centroid_abs.max(ANALYTIC_REL) => {
+                        problem(format!(
+                            "[{variant}] analytic centroid[{i}] {av} vs oracle {}",
+                            oc[i]
+                        ));
+                    }
+                    Err(e) => problem(format!("[{variant}] analytic centroid: {e}")),
+                    _ => {}
+                }
+            }
+        }
+        if let Some(ac) = a.counts {
+            if ac != c {
+                problem(format!(
+                    "[{variant}] analytic counts {ac:?} vs oracle {c:?}"
+                ));
+            }
+        }
+        let by_label: BTreeMap<&str, Class> = m
+            .probes
+            .iter()
+            .map(|p| (p.label.as_str(), p.class))
+            .collect();
+        for p in &r.probes {
+            match (p.expect, by_label.get(p.label.as_str())) {
+                (_, None) => problem(format!(
+                    "[{variant}] probe {:?} has no oracle result",
+                    p.label
+                )),
+                (Some(e), Some(o)) if e != *o => {
+                    problem(format!(
+                        "[{variant}] probe {:?} expected {e:?}, oracle says {o:?}",
+                        p.label
+                    ));
+                }
+                _ => {}
+            }
+        }
+    }
+    problems
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recipe_types_round_trip_the_grammar() {
+        let text = r#"{
+            "params": {"r": 4},
+            "steps": [
+                {"name": "sk", "op": "profile", "plane": {"origin": [0,0,0], "x": [1,0,0], "y": [0,1,0]},
+                 "outer": {"start": [0,0], "segments": [{"line_to": [4,0]}, {"arc_to": [0,0], "via": [2,2]}]},
+                 "holes": [{"circle": {"center": [2,1], "radius": "r / 8"}}]},
+                {"name": "body", "op": "extrude", "profile": "sk", "direction": [0,0,1], "length": 3},
+                {"name": "moved", "op": "transform", "of": "body", "translate": [1,0,0]}
+            ],
+            "result": "moved",
+            "probes": [{"label": "p", "point": [1, 1, 1]}]
+        }"#;
+        let r: Recipe = serde_json::from_str(text).unwrap();
+        assert_eq!(r.steps.len(), 3);
+        assert_eq!(r.steps[0].name(), "sk");
+        assert!(matches!(&r.steps[0], Step::Profile { holes, .. } if holes.len() == 1));
+        assert!(matches!(&r.steps[2], Step::Transform { rotate: None, .. }));
+        assert_eq!(r.probes[0].expect, None);
+        assert_eq!(r.tolerances, Tolerances::default());
+        assert_eq!(r.variant_names(), ["default"]);
+        let params = r.params_of("default").unwrap();
+        if let Step::Profile { holes, .. } = &r.steps[0] {
+            if let Loop::Circle { circle } = &holes[0] {
+                assert_eq!(circle.radius.eval(&params), Ok(0.5));
+            }
+        }
+        assert!(r.params_of("nope").is_none());
+    }
+
+    #[test]
+    fn hash_ignores_analytic_and_description() {
+        let a: serde_json::Value = serde_json::from_str(
+            r#"{"steps": [], "result": "x", "analytic": {"volume": 1}, "description": "a"}"#,
+        )
+        .unwrap();
+        let b: serde_json::Value = serde_json::from_str(
+            r#"{"description": "b", "result": "x", "steps": [], "analytic": {"volume": 2}}"#,
+        )
+        .unwrap();
+        let c: serde_json::Value =
+            serde_json::from_str(r#"{"steps": [1], "result": "x"}"#).unwrap();
+        assert_eq!(recipe_hash(&a), recipe_hash(&b));
+        assert_ne!(recipe_hash(&a), recipe_hash(&c));
+        assert_eq!(recipe_hash(&a).len(), 64);
+    }
+
+    #[test]
+    fn hash_matches_the_oracle_on_a_known_input() {
+        // sha256 of {"params":null,"probes":null,"result":"x","steps":[],"variants":null},
+        // the canonical text the oracle's canonical_json produces.
+        let v: serde_json::Value = serde_json::from_str(r#"{"steps": [], "result": "x"}"#).unwrap();
+        let text = r#"{"params":null,"probes":null,"result":"x","steps":[],"variants":null}"#;
+        let expected = Sha256::digest(text.as_bytes())
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<String>();
+        assert_eq!(recipe_hash(&v), expected);
+    }
+}

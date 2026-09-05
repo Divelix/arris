@@ -10,6 +10,7 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod fixtures;
 pub mod render;
 
 pub use render::{Highlight, Raster, RenderError, View, render, render_png};

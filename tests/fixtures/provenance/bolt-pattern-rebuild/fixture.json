@@ -1,0 +1,41 @@
+{
+  "description": "bolt-pattern-8 at (t 10, r 3, R 35), (12, 3.5, 35) and (10, 3, 30): the same recipe rebuilt with changed parameters; the 8 hole walls must keep the same origins chain in all three",
+  "params": {"R": 35, "r": 3, "t": 10},
+  "variants": {
+    "thicker-wider": {"t": 12, "r": 3.5},
+    "tighter": {"R": 30}
+  },
+  "steps": [
+    {"name": "plate", "op": "box", "min": [0, 0, 0], "max": [100, 100, "t"]},
+    {"name": "h0", "op": "cylinder", "base": ["50 + R * cos(radians(0))", "50 + R * sin(radians(0))", -1], "axis": [0, 0, 1], "radius": "r", "height": "t + 2"},
+    {"name": "h1", "op": "cylinder", "base": ["50 + R * cos(radians(45))", "50 + R * sin(radians(45))", -1], "axis": [0, 0, 1], "radius": "r", "height": "t + 2"},
+    {"name": "h2", "op": "cylinder", "base": ["50 + R * cos(radians(90))", "50 + R * sin(radians(90))", -1], "axis": [0, 0, 1], "radius": "r", "height": "t + 2"},
+    {"name": "h3", "op": "cylinder", "base": ["50 + R * cos(radians(135))", "50 + R * sin(radians(135))", -1], "axis": [0, 0, 1], "radius": "r", "height": "t + 2"},
+    {"name": "h4", "op": "cylinder", "base": ["50 + R * cos(radians(180))", "50 + R * sin(radians(180))", -1], "axis": [0, 0, 1], "radius": "r", "height": "t + 2"},
+    {"name": "h5", "op": "cylinder", "base": ["50 + R * cos(radians(225))", "50 + R * sin(radians(225))", -1], "axis": [0, 0, 1], "radius": "r", "height": "t + 2"},
+    {"name": "h6", "op": "cylinder", "base": ["50 + R * cos(radians(270))", "50 + R * sin(radians(270))", -1], "axis": [0, 0, 1], "radius": "r", "height": "t + 2"},
+    {"name": "h7", "op": "cylinder", "base": ["50 + R * cos(radians(315))", "50 + R * sin(radians(315))", -1], "axis": [0, 0, 1], "radius": "r", "height": "t + 2"},
+    {"name": "c0", "op": "cut", "target": "plate", "tool": "h0"},
+    {"name": "c1", "op": "cut", "target": "c0", "tool": "h1"},
+    {"name": "c2", "op": "cut", "target": "c1", "tool": "h2"},
+    {"name": "c3", "op": "cut", "target": "c2", "tool": "h3"},
+    {"name": "c4", "op": "cut", "target": "c3", "tool": "h4"},
+    {"name": "c5", "op": "cut", "target": "c4", "tool": "h5"},
+    {"name": "c6", "op": "cut", "target": "c5", "tool": "h6"},
+    {"name": "result", "op": "cut", "target": "c6", "tool": "h7"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [50, 50, 5], "expect": "in"},
+    {"label": "outside", "point": [50, 50, 20], "expect": "out"},
+    {"label": "on_face", "point": [50, 50, 0], "expect": "on"},
+    {"label": "on_edge", "point": [0, 50, 0], "expect": "on"},
+    {"label": "in_hole_0_at_R35", "point": [85, 50, 5], "expect": null}
+  ],
+  "analytic": {
+    "volume": "100 * 100 * t - 8 * pi * r * r * t",
+    "area": "2 * 100 * 100 + 4 * 100 * t - 16 * pi * r * r + 8 * 2 * pi * r * t",
+    "counts": {"vertices": 24, "edges": 36, "faces": 14, "loops": 30, "shells": 1},
+    "genus": 8
+  }
+}

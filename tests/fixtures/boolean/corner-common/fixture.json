@@ -1,0 +1,23 @@
+{
+  "description": "cube [−1,1]³ ∩ cube [0,2]³: the unit cube [0,1]³",
+  "steps": [
+    {"name": "a", "op": "box", "min": [-1, -1, -1], "max": [1, 1, 1]},
+    {"name": "b", "op": "box", "min": [0, 0, 0], "max": [2, 2, 2]},
+    {"name": "result", "op": "common", "a": "a", "b": "b"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [0.5, 0.5, 0.5], "expect": "in"},
+    {"label": "outside", "point": [-0.5, 0.5, 0.5], "expect": "out"},
+    {"label": "on_face", "point": [0.5, 0.5, 1], "expect": "on"},
+    {"label": "on_edge", "point": [0, 0.5, 0], "expect": "on"},
+    {"label": "on_vertex", "point": [1, 1, 1], "expect": "on"}
+  ],
+  "analytic": {
+    "volume": 1,
+    "area": 6,
+    "centroid": [0.5, 0.5, 0.5],
+    "counts": {"vertices": 8, "edges": 12, "faces": 6, "loops": 6, "shells": 1},
+    "genus": 0
+  }
+}

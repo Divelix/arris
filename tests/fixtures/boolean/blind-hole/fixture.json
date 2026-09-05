@@ -1,0 +1,22 @@
+{
+  "description": "the same box minus a cylinder r 4 at (20,15) from z 4 to 16: a blind hole 6 deep, the floor kept, genus 0",
+  "steps": [
+    {"name": "plate", "op": "box", "min": [0, 0, 0], "max": [40, 30, 10]},
+    {"name": "hole", "op": "cylinder", "base": [20, 15, 4], "axis": [0, 0, 1], "radius": 4, "height": 12},
+    {"name": "result", "op": "cut", "target": "plate", "tool": "hole"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [5, 5, 5], "expect": "in"},
+    {"label": "outside", "point": [50, 15, 5], "expect": "out"},
+    {"label": "on_floor", "point": [20, 15, 4], "expect": "on"},
+    {"label": "on_edge", "point": [24, 15, 10], "expect": "on"},
+    {"label": "on_axis_below_floor", "point": [20, 15, 2], "expect": "in"}
+  ],
+  "analytic": {
+    "volume": "12000 - pi * 16 * 6",
+    "area": "3800 - pi * 16 + pi * 16 + 2 * pi * 4 * 6",
+    "counts": {"vertices": 10, "edges": 15, "faces": 8, "loops": 9, "shells": 1},
+    "genus": 0
+  }
+}

@@ -1,0 +1,207 @@
+{
+  "occt": "8.0.1.0.0",
+  "recipe_sha256": "64d4a89fb902c117b9f271260a975d9dcbcd9132e4174b09e4b99747e636929e",
+  "results": {
+    "default": {
+      "area": 25055.575131606194,
+      "centroid": [
+        49.99999999999998,
+        49.99999999999998,
+        5.000000000000001
+      ],
+      "counts": {
+        "edges": 36,
+        "faces": 14,
+        "loops": 30,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 24
+      },
+      "degenerate": false,
+      "euler_characteristic": -14,
+      "genus": 8,
+      "probes": [
+        {
+          "class": "in",
+          "label": "inside",
+          "point": [
+            50.0,
+            50.0,
+            5.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "outside",
+          "point": [
+            50.0,
+            50.0,
+            20.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_face",
+          "point": [
+            50.0,
+            50.0,
+            0.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_edge",
+          "point": [
+            0.0,
+            50.0,
+            0.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "in_hole_0_at_R35",
+          "point": [
+            85.0,
+            50.0,
+            5.0
+          ]
+        }
+      ],
+      "volume": 97738.05328941537
+    },
+    "thicker-wider": {
+      "area": 26295.39810310873,
+      "centroid": [
+        50.00000000000001,
+        50.00000000000003,
+        6.000000000000003
+      ],
+      "counts": {
+        "edges": 36,
+        "faces": 14,
+        "loops": 30,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 24
+      },
+      "degenerate": false,
+      "euler_characteristic": -14,
+      "genus": 8,
+      "probes": [
+        {
+          "class": "in",
+          "label": "inside",
+          "point": [
+            50.0,
+            50.0,
+            5.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "outside",
+          "point": [
+            50.0,
+            50.0,
+            20.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_face",
+          "point": [
+            50.0,
+            50.0,
+            0.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_edge",
+          "point": [
+            0.0,
+            50.0,
+            0.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "in_hole_0_at_R35",
+          "point": [
+            85.0,
+            50.0,
+            5.0
+          ]
+        }
+      ],
+      "volume": 116305.48703937835
+    },
+    "tighter": {
+      "area": 25055.575131606194,
+      "centroid": [
+        49.99999999999998,
+        49.99999999999997,
+        4.999999999999999
+      ],
+      "counts": {
+        "edges": 36,
+        "faces": 14,
+        "loops": 30,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 24
+      },
+      "degenerate": false,
+      "euler_characteristic": -14,
+      "genus": 8,
+      "probes": [
+        {
+          "class": "in",
+          "label": "inside",
+          "point": [
+            50.0,
+            50.0,
+            5.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "outside",
+          "point": [
+            50.0,
+            50.0,
+            20.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_face",
+          "point": [
+            50.0,
+            50.0,
+            0.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_edge",
+          "point": [
+            0.0,
+            50.0,
+            0.0
+          ]
+        },
+        {
+          "class": "in",
+          "label": "in_hole_0_at_R35",
+          "point": [
+            85.0,
+            50.0,
+            5.0
+          ]
+        }
+      ],
+      "volume": 97738.05328941537
+    }
+  }
+}

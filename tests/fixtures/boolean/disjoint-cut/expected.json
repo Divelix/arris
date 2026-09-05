@@ -1,0 +1,73 @@
+{
+  "occt": "8.0.1.0.0",
+  "recipe_sha256": "311e940f01de295c5e92b461070ebe1adb663af84930009f681b3836c60ae1cc",
+  "results": {
+    "default": {
+      "area": 3799.999999999999,
+      "centroid": [
+        20.0,
+        15.0,
+        5.0
+      ],
+      "counts": {
+        "edges": 12,
+        "faces": 6,
+        "loops": 6,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 8
+      },
+      "degenerate": false,
+      "euler_characteristic": 2,
+      "genus": 0,
+      "probes": [
+        {
+          "class": "in",
+          "label": "inside",
+          "point": [
+            20.0,
+            15.0,
+            5.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "outside",
+          "point": [
+            60.0,
+            15.0,
+            5.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_face",
+          "point": [
+            20.0,
+            15.0,
+            10.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_edge",
+          "point": [
+            40.0,
+            15.0,
+            10.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "on_tool_axis",
+          "point": [
+            60.0,
+            15.0,
+            20.0
+          ]
+        }
+      ],
+      "volume": 12000.0
+    }
+  }
+}

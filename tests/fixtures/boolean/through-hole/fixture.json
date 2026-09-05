@@ -1,0 +1,23 @@
+{
+  "description": "box [0,0,0]–[40,30,10] minus a cylinder r 4 at (20,15) from z −1 to 11: a through hole, genus 1",
+  "steps": [
+    {"name": "plate", "op": "box", "min": [0, 0, 0], "max": [40, 30, 10]},
+    {"name": "hole", "op": "cylinder", "base": [20, 15, -1], "axis": [0, 0, 1], "radius": 4, "height": 12},
+    {"name": "result", "op": "cut", "target": "plate", "tool": "hole"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [5, 5, 5], "expect": "in"},
+    {"label": "outside", "point": [50, 15, 5], "expect": "out"},
+    {"label": "on_face", "point": [5, 5, 10], "expect": "on"},
+    {"label": "on_edge", "point": [24, 15, 10], "expect": "on"},
+    {"label": "on_axis", "point": [20, 15, 5], "expect": "out"}
+  ],
+  "analytic": {
+    "volume": "12000 - pi * 16 * 10",
+    "area": "3800 - 2 * pi * 16 + 2 * pi * 4 * 10",
+    "centroid": [20, 15, 5],
+    "counts": {"vertices": 10, "edges": 15, "faces": 7, "loops": 9, "shells": 1},
+    "genus": 1
+  }
+}

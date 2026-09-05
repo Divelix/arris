@@ -154,8 +154,33 @@ def recipe_hash(fixture: dict) -> str:
     encoded, so an edit to `analytic` or `description` does not stale the
     expected.json and an edit to a step does."""
     evaluated = {k: fixture.get(k) for k in ("params", "variants", "steps", "result", "probes")}
-    text = json.dumps(evaluated, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(text.encode()).hexdigest()
+    return hashlib.sha256(canonical_json(evaluated).encode()).hexdigest()
+
+
+def canonical_json(value: Any) -> str:
+    """The encoding the Rust side (`arris_debug::fixtures`) hashes too:
+    sorted keys, no whitespace, non-ASCII kept, and floats in the shortest
+    round-trip form with a bare exponent (`1e-9`, `1e16`), which is what
+    serde_json prints; Python's repr writes `1e-09` and `1e+16`."""
+    if isinstance(value, bool) or value is None:
+        return json.dumps(value)
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        text = repr(value)
+        if "e" in text:
+            mantissa, exp = text.split("e")
+            sign = "-" if exp.startswith("-") else ""
+            exp = exp.lstrip("+-").lstrip("0") or "0"
+            text = f"{mantissa}e{sign}{exp}"
+        return text
+    if isinstance(value, str):
+        return json.dumps(value, ensure_ascii=False)
+    if isinstance(value, list):
+        return "[" + ",".join(canonical_json(v) for v in value) + "]"
+    if isinstance(value, dict):
+        return "{" + ",".join(f"{json.dumps(k, ensure_ascii=False)}:{canonical_json(v)}" for k, v in sorted(value.items())) + "}"
+    raise OracleError(f"cannot canonicalise {value!r}")
 
 
 # --- building ---------------------------------------------------------------

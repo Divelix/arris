@@ -1,0 +1,38 @@
+{
+  "description": "plate [0,0,0]–[100,100,10] minus 8 cylinders r 3 on a circle R 35 about (50,50), each a separate cut: genus 8",
+  "params": {"R": 35, "r": 3, "t": 10},
+  "steps": [
+    {"name": "plate", "op": "box", "min": [0, 0, 0], "max": [100, 100, "t"]},
+    {"name": "h0", "op": "cylinder", "base": ["50 + R * cos(radians(0))", "50 + R * sin(radians(0))", -1], "axis": [0, 0, 1], "radius": "r", "height": "t + 2"},
+    {"name": "h1", "op": "cylinder", "base": ["50 + R * cos(radians(45))", "50 + R * sin(radians(45))", -1], "axis": [0, 0, 1], "radius": "r", "height": "t + 2"},
+    {"name": "h2", "op": "cylinder", "base": ["50 + R * cos(radians(90))", "50 + R * sin(radians(90))", -1], "axis": [0, 0, 1], "radius": "r", "height": "t + 2"},
+    {"name": "h3", "op": "cylinder", "base": ["50 + R * cos(radians(135))", "50 + R * sin(radians(135))", -1], "axis": [0, 0, 1], "radius": "r", "height": "t + 2"},
+    {"name": "h4", "op": "cylinder", "base": ["50 + R * cos(radians(180))", "50 + R * sin(radians(180))", -1], "axis": [0, 0, 1], "radius": "r", "height": "t + 2"},
+    {"name": "h5", "op": "cylinder", "base": ["50 + R * cos(radians(225))", "50 + R * sin(radians(225))", -1], "axis": [0, 0, 1], "radius": "r", "height": "t + 2"},
+    {"name": "h6", "op": "cylinder", "base": ["50 + R * cos(radians(270))", "50 + R * sin(radians(270))", -1], "axis": [0, 0, 1], "radius": "r", "height": "t + 2"},
+    {"name": "h7", "op": "cylinder", "base": ["50 + R * cos(radians(315))", "50 + R * sin(radians(315))", -1], "axis": [0, 0, 1], "radius": "r", "height": "t + 2"},
+    {"name": "c0", "op": "cut", "target": "plate", "tool": "h0"},
+    {"name": "c1", "op": "cut", "target": "c0", "tool": "h1"},
+    {"name": "c2", "op": "cut", "target": "c1", "tool": "h2"},
+    {"name": "c3", "op": "cut", "target": "c2", "tool": "h3"},
+    {"name": "c4", "op": "cut", "target": "c3", "tool": "h4"},
+    {"name": "c5", "op": "cut", "target": "c4", "tool": "h5"},
+    {"name": "c6", "op": "cut", "target": "c5", "tool": "h6"},
+    {"name": "result", "op": "cut", "target": "c6", "tool": "h7"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [50, 50, 5], "expect": "in"},
+    {"label": "outside", "point": [50, 50, 12], "expect": "out"},
+    {"label": "on_face", "point": [50, 50, 10], "expect": "on"},
+    {"label": "on_edge", "point": [88, 50, 10], "expect": "on"},
+    {"label": "on_axis", "point": [85, 50, 5], "expect": "out"}
+  ],
+  "analytic": {
+    "volume": "100 * 100 * t - 8 * pi * r * r * t",
+    "area": "2 * 100 * 100 + 4 * 100 * t - 16 * pi * r * r + 8 * 2 * pi * r * t",
+    "centroid": [50, 50, 5],
+    "counts": {"vertices": 24, "edges": 36, "faces": 14, "loops": 30, "shells": 1},
+    "genus": 8
+  }
+}
