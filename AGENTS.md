@@ -28,7 +28,8 @@ and `Orientation`; the checker's `Violation` list drift-tested against
 the data model; `TriMesh` and the PNG rasteriser; the Open CASCADE oracle
 under `tools/oracle/`; the fifteen-fixture C1 corpus with oracle values
 and a lint. `cargo test --workspace` and the oracle self-test are green.
-**Next:** the human tags `m0`, then `/plan m1-geometry`.
+**Next:** `/work m1-geometry` (`docs/plans/m1-geometry.md`, ten steps,
+open questions decided).
 
 ## Rules that are not derivable from the code
 

@@ -13,5 +13,6 @@ re-brainstormed.
 - IGES read/write (SEED §6, later cycles)
 - Move `Aabb` from `arris-mesh` to `arris-math` once M1 geometry wants bounding boxes; `arris-mesh` re-exports it
 - Publish the workspace crates to crates.io over the 0.0.1 `arris` reservation once cycle 1's vertical slice passes its corpus
+- NURBS degree elevation as a primitive edit (02-data-model §NURBS names it; no C1 step needs it — knot insertion is enough for M1's fitting)
 
 ## Rejected
