@@ -132,6 +132,20 @@ pub enum GeomError {
         /// The point.
         point: Point2,
     },
+    /// The curve does not lie on the surface within the linear tolerance,
+    /// so it has no pcurve there; `t` is the first sampled parameter that
+    /// is off and `distance` how far.
+    #[error("the {curve} at t = {t} is {distance} from the {surface}, outside the tolerance")]
+    NotOnSurface {
+        /// The curve.
+        curve: GeomKind,
+        /// The surface.
+        surface: GeomKind,
+        /// Where it was measured.
+        t: f64,
+        /// The distance there.
+        distance: f64,
+    },
     /// A NURBS fit ([`crate::fit_curve2`]) did not produce a curve.
     #[error("fit: {0}")]
     Fit(#[from] FitError),

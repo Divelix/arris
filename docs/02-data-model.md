@@ -223,13 +223,36 @@ the closed forms of the 3D variants in the plane, `GeomError::AmbiguousUv`
 at a circle's centre and on an ellipse's ambiguous loci, and by sampling
 and bracketed Newton for a NURBS.
 
-On a plane every analytic 3D curve has an analytic pcurve. On a cylinder, a
-circle around the axis is a `Line` at constant v, a line along the axis is
-a `Line` at constant u, and an oblique plane section (a 3D ellipse) is a
-sinusoid in (u, v) — not a `Curve2` variant, so it is a `Nurbs` fitted to
-the edge's tolerance. The rule: exact where a variant exists, fitted
-otherwise, and in both cases the checker verifies the pcurve against the
-3D curve (§Invariants E4).
+`pcurve_on(curve, range, surface, tol)` builds the pcurve, exhaustively
+over (curve, surface), and its image under the surface is the curve *at
+the same parameter*. On a plane every 3D curve has an exact pcurve: a
+line is a `Line`, a circle a `Circle` and an ellipse an `Ellipse` whose
+`Frame2` is right-handed when the curve's `Z` is along the plane's normal
+and left-handed when it opposes it, a NURBS a `Nurbs` with its control
+points projected (an affine map, so knots and weights carry over). On a
+cylinder, a circle around the axis is a `Line` at constant v whose `u`
+starts at the offset of the circle's `X` from the cylinder's and runs in
+the sense of the circle's `Z` against the cylinder's, a line along the
+axis is a `Line` at constant u, and an oblique plane section (a 3D
+ellipse), or a NURBS, is a sinusoid in (u, v) — not a `Curve2` variant, so
+it is a `Nurbs` fitted by `fit_curve2` (below) over the cylinder's
+projection of the curve with `u` unwrapped along `t`, so a seam crossing
+stays continuous and `u` may leave `[0, 2π)`. The rule: exact where a
+variant exists, fitted otherwise, and in both cases the checker verifies
+the pcurve against the 3D curve (§Invariants E4). A curve farther than
+`tol.linear` from the surface at any of `PCURVE_SAMPLES` parameters over
+the range is `GeomError::NotOnSurface` naming the parameter and the
+distance; cone, sphere, torus and NURBS surfaces are `Unsupported` arms
+until revolve needs them (M5).
+
+`project_to_plane(curve, plane)` is the orthogonal projection onto a plane
+for a consumer's sketch (01-architecture §Facade): a point-set projection
+whose parameter is the variant's own — a line stays a `Line`, a circle
+becomes a `Circle` when parallel and an `Ellipse` otherwise (its
+semi-axes the singular values of the projected axes, its parameter the
+circle's shifted by a phase), an ellipse an `Ellipse`, a NURBS a `Nurbs`
+with its control points projected. A projection that collapses to a
+point or a segment is `Degenerate`.
 
 **Fitting** is `fit_curve2(f, range, degree, deviation, tol)`: a global
 least-squares B-spline approximation of `f: t ↦ (u, v)` at the *given*

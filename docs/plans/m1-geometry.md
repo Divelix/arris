@@ -258,7 +258,7 @@ debug sampler of step 2.
   count under the bound; a tolerance below the sampling noise returns
   `Diverged`; `Curve2` circles of both handedness evaluate and project
   correctly.
-- [ ] Step 10 — Pcurves and `project_to_plane`. `pcurve_on(curve, range,
+- [x] Step 10 — Pcurves and `project_to_plane`. `pcurve_on(curve, range,
   surface, tol) -> Result<Curve2, GeomError>`, exhaustive over (curve,
   surface): on a plane every variant is exact (line, circle with the
   handedness of `Z` against the plane's normal, ellipse, NURBS by
@@ -405,6 +405,22 @@ recommendation; kept here so `/work` does not re-ask.
   `Ambiguous` carries a `Point3`; `Curve2Projection` mirrors
   `CurveProjection`. Neither was in the design deltas; both are named in
   the commit.
+- **Step 10, what `project_to_plane` can promise.** The facade row
+  (01 §Facade) wants a projected line to stay a line and a circle to
+  become a circle or an ellipse, and a `Curve2::Line` carries a unit
+  direction while an oblique circle's projection has non-orthogonal
+  axes, so a same-parameter projection of either is not an analytic
+  `Curve2`. `project_to_plane` is therefore a point-set projection with
+  the variant's own parameter (documented in 02 §Pcurves), and the
+  same-parameter guarantee belongs to `pcurve_on` alone, whose plane arm
+  demands that the curve lie in the plane. The projected conic's axes
+  come from the closed-form SVD of the 2 × 2 matrix of projected axes,
+  with a negative second singular value recorded as a left-handed
+  `Frame2`. The fitted pcurve is a quintic (`PCURVE_FIT_DEGREE`): a
+  grazing section's (u, v) sinusoid has an amplitude of `R tan α`, and a
+  cubic would exceed `MAX_FIT_SPANS` before reaching a micrometre where a
+  quintic does not. `GeomError::NotOnSurface` carries the first sampled
+  parameter that is off and its distance.
 - **Step 5, the root method.** Neither closed forms nor a companion
   matrix: real-root isolation by the derivative. The real roots of `p'`
   (found recursively) split the line into monotone intervals, each

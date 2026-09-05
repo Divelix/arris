@@ -1,7 +1,8 @@
 //! Geometry of the Arris kernel: analytic and NURBS surfaces and curves with
 //! the parametrisations of `docs/02-data-model.md` §Geometry, their
-//! evaluation and derivatives, point projection, and the curve/surface and
-//! surface/surface intersections.
+//! evaluation and derivatives, point projection, the curve/surface and
+//! surface/surface intersections, and the pcurves of curves on planes and
+//! cylinders.
 //!
 //! Guarantees: `Surface`, `Curve` and `Curve2` are exhaustive enums, so a
 //! new variant fails every dispatch to compile until it is handled; a pair
@@ -20,6 +21,7 @@ mod error;
 mod intersect;
 mod intersect_curve;
 mod nurbs;
+mod pcurve;
 mod project;
 mod surface;
 
@@ -31,5 +33,6 @@ pub use intersect_curve::{CurveSurfaceHit, CurveSurfaceIntersection, intersect_c
 pub use nurbs::{
     FitError, MAX_DEGREE, MAX_FIT_SPANS, NurbsCurve, NurbsCurve2, NurbsSurface, fit_curve2,
 };
+pub use pcurve::{PCURVE_FIT_DEGREE, PCURVE_SAMPLES, pcurve_on, project_to_plane};
 pub use project::{CurveProjection, SurfaceProjection};
 pub use surface::{Surface, SurfaceEval, SurfaceKind};
