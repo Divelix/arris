@@ -49,6 +49,9 @@ the `inspect` harness, before any geometry.
   idea becomes a plan. Details: `.agents/rules/docs-lifecycle.md`.
 - Trunk-based git, `main` always green, commit per plan step, never push
   or publish unasked: `.agents/rules/git.md`.
-- Reference trees are read-only and never copied: truck, monstertruck,
-  fornjot and rerun under `~/Documents/code/rust/`; Open CASCADE and
-  FreeCAD under `~/Documents/code/pet/cad/`. Never `path =` deps.
+- Reference trees (truck, monstertruck, Fornjot, Open CASCADE, FreeCAD,
+  Rerun, and the application-side projects the requirements come from) are
+  read-only and never copied, never `path =` deps. Where they live on this
+  machine and what each is good for: `docs/notes/reference-trees.md` —
+  gitignored and machine-local, so a fresh clone has to ask the human for
+  it. Tracked docs say "the reference trees", never a path.
