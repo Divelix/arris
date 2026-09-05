@@ -94,6 +94,17 @@ gives the closed fundamental interval of a periodic direction, `[0, 2π]`,
 and `Interval::REAL` where the table says ℝ; `period()` the period per
 direction.
 
+`Surface::project(p)` returns the nearest point of the whole parametric
+surface (both nappes of a cone) as `SurfaceProjection { uv, point,
+distance }` by the variant's closed form, with a periodic `u` in `[0, 2π)`
+and the sphere's `v` in `[−π/2, π/2]`. Where the nearest point or its
+parameter is not unique — the axis of a cylinder, cone or torus, the plane
+through a cone's apex, a sphere's centre, a torus's centre circle — the
+result is `GeomError::Ambiguous` naming the locus, decided to rounding and
+never resolved by a silent choice of parameter. A point on a sphere's axis
+off its centre projects to the pole with `u = 0`: the point is unique,
+only the degenerate parameter is not.
+
 `SurfaceKind` is the fieldless twin of the enum, used in errors and
 dispatch tables.
 
@@ -118,7 +129,9 @@ pub enum Curve {
 The tangent is `dP/dt`, never normalised in the enum's own evaluation; a
 line's parameter is arc length because `D` is unit. `Curve::eval(t)` returns
 `CurveEval { point, d1, d2 }`; `domain()`, `period()` and `kind()`
-(`CurveKind`) follow the table as for surfaces.
+(`CurveKind`) follow the table as for surfaces. `Curve::project(p)` returns
+the nearest point as `CurveProjection { t, point, distance }`, a periodic
+`t` in `[0, 2π)`; a point on a circle's axis is `GeomError::Ambiguous`.
 
 `⚠ OPEN:` the intersection curve of two cylinders (and of the other quadric
 pairs whose curves are not conics) has an exact parametrisation that is not

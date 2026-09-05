@@ -150,7 +150,7 @@ debug sampler of step 2.
   1e-12·scale; the singular loci (apex, poles) return `None`; a PNG of a
   cylinder wireframe with a circle and an ellipse on it, rendered and read
   by the agent, recorded in the commit body.
-- [ ] Step 3 — Projection onto every analytic variant. `Surface::project
+- [x] Step 3 — Projection onto every analytic variant. `Surface::project
   (Point3) -> Result<SurfaceProjection, GeomError>` for the five analytic
   surfaces (closed forms; a point on the cylinder's or cone's axis, the
   sphere's centre, the torus's axis or its centre circle is `Ambiguous`,
@@ -327,3 +327,23 @@ recommendation; kept here so `/work` does not re-ask.
 - **Decided:** geometry property tests are integration tests under
   `crates/<crate>/tests/`; the `proptest`-feature fallback is taken only
   if step 2 finds the cycle unworkable, recorded under "Findings".
+
+## Findings
+
+- **Step 3, ambiguous loci.** The plan's list (axis, centre, centre
+  circle) was short by one for the cone: the parametric cone is both
+  nappes (`v ∈ ℝ`, as in Open CASCADE), and a point in the plane through
+  the apex is equally near to each, so that plane is `Ambiguous` too
+  (`AmbiguousLocus::ApexPlane`). Step 5's ellipse has the same shape of
+  finding: not only the centre but the whole open segment of the major
+  axis inside the evolute has two mirror-image nearest points
+  (`AmbiguousLocus::MajorAxis`), and a circle-like ellipse collapses it to
+  the centre. `AmbiguousLocus` names each locus so the message says which.
+- **Step 3, parameter tolerance.** "Projects back to `(u, v)` to 1e-12" is
+  not achievable on a bare parameter: a point at world magnitude 100 on a
+  cylinder of radius 0.1 has `u` conditioned at 1e-13 rad per ulp, and
+  `u` at a pole is meaningless. The tests measure the parameter error in
+  length units — each difference times the parametric speed at the
+  expected point — against 1e-12·scale, which is the statement the
+  checker's E4 will make too. Sphere `v` is compared plainly, being an
+  angle at radius `R`.

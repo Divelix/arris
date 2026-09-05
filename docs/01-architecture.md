@@ -18,7 +18,7 @@ re-exports the public API. Lower crates never name types from upper ones.
 | Crate | Owns | External deps | Layer |
 |---|---|---|---|
 | `arris-math` | `Point3`/`Vec3`/`UnitVec3` (over `nalgebra`, ADR-0001), `Frame`, `Frame2`, `Isometry`, `Interval`, exact orientation predicates (over `robust`), polynomial and interval-guarded Newton root finding, `Precision` and `Tolerance` | `nalgebra`, `robust`, `serde` (feature) | 0 — representation |
-| `arris-geom` | `Surface`, `Curve`, `Curve2` (analytic + NURBS): evaluation, derivatives, point projection, curve/surface and surface/surface intersection | `arris-math` | 0 — representation |
+| `arris-geom` | `Surface`, `Curve`, `Curve2` (analytic + NURBS): evaluation, derivatives, point projection, curve/surface and surface/surface intersection; `GeomError` | `arris-math`, `thiserror` | 0 — representation |
 | `arris-topo` | `Model` (the arena), typed ids, `Shape`/`Body`/`Face`/… handles, orientation, entities, pcurves, per-entity tolerances, Euler operators, adjacency and iteration, `Provenance` | `arris-geom`, `arris-math`, `serde` (feature) | 0 — representation |
 | `arris-check` | The invariant checker: `check(&Model, Body, Level) -> Report` and the `Violation` list of 02-data-model §Invariants | `arris-topo` | 1 |
 | `arris-ops` | Primitives, planar profiles, extrude, revolve, transform, booleans, later blends; `measure` (mass properties); each returns `Provenance` | `arris-check`, `rayon` (feature) | 2 — algorithms |

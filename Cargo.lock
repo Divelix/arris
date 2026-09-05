@@ -63,6 +63,7 @@ dependencies = [
  "arris-debug",
  "arris-math",
  "proptest",
+ "thiserror",
 ]
 
 [[package]]
