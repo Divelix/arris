@@ -1,0 +1,18 @@
+[package]
+name = "arris-mesh"
+description = "Arris kernel: triangle meshes, polylines and tessellation of bodies"
+publish = false
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[features]
+# Reserved: rayon over faces; never enabled on wasm32.
+parallel = []
+
+[dependencies]
+arris-check.workspace = true
+
+[lints]
+workspace = true

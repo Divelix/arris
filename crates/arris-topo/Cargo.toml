@@ -1,0 +1,19 @@
+[package]
+name = "arris-topo"
+description = "Arris kernel: the model arena, typed ids, handles, orientation, entities and provenance"
+publish = false
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[features]
+default = ["serde"]
+# Reserved: serde derives on the model (docs/02-data-model.md §Native format).
+serde = []
+
+[dependencies]
+arris-geom.workspace = true
+
+[lints]
+workspace = true

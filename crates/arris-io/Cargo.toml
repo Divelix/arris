@@ -1,0 +1,19 @@
+[package]
+name = "arris-io"
+description = "Arris kernel: STEP AP214 and the native format"
+publish = false
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[features]
+default = ["serde"]
+# Reserved: the native format is serde of the model.
+serde = []
+
+[dependencies]
+arris-check.workspace = true
+
+[lints]
+workspace = true

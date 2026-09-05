@@ -46,6 +46,16 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
+  # The layer rule of docs/01-architecture.md §Crates: no crate depends on
+  # one above it. The self-test proves the script still detects a violation.
+  layers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: tools/check-layers.sh
+      - run: tools/check-layers.sh --self-test
+
   # Pure Rust, wasm-capable (SEED.md §4): the kernel builds for wasm with
   # its default features. A crate that grows a native-only dependency
   # breaks here first.

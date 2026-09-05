@@ -55,7 +55,7 @@ STEP. No Rerun (M3). No publishing of the workspace crates (backlog).
 
 ## Steps
 
-- [ ] Step 1 — Workspace. Virtual root manifest, `crates/arris-{math,geom,
+- [x] Step 1 — Workspace. Virtual root manifest, `crates/arris-{math,geom,
   topo,check,ops,mesh,io,debug}` and `crates/arris` with the dependency
   edges of 01-architecture and nothing else; workspace lints; feature names
   reserved (`serde`, `parallel`, `rerun`) but empty. `tools/check-layers.sh`
@@ -146,6 +146,16 @@ tag `m0` (the human's).
   B-Rep ones, which say "M2/M3".
 - `AGENTS.md` current state — "M0 done <date>; next `/plan m1-geometry`".
 - `README.md` — workspace layout, one paragraph.
+
+## Findings while working
+
+- Step 1: `arris-debug` is a dev-dependency of the facade, not a
+  dependency — 01-architecture says it never reaches a consumer, and a
+  normal edge would ship `image` and `proptest` to every one. `proptest`
+  is a `cfg(not(target_arch = "wasm32"))` dependency of `arris-debug`
+  because its random source does not build for wasm; step 8's `prop`
+  module follows the same cfg. `ops` also reserves `paranoid`, which
+  01-architecture names beside the three the plan lists.
 
 ## Open questions
 

@@ -1,0 +1,14 @@
+[package]
+name = "arris-check"
+description = "Arris kernel: the invariant checker"
+publish = false
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+arris-topo.workspace = true
+
+[lints]
+workspace = true

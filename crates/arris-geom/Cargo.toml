@@ -1,0 +1,14 @@
+[package]
+name = "arris-geom"
+description = "Arris kernel: analytic and NURBS surfaces and curves, evaluation, projection, intersection"
+publish = false
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+arris-math.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,33 @@
+[package]
+name = "arris"
+description = "A CAD geometric kernel written from scratch in Rust. Placeholder release; work in progress."
+readme = "../../README.md"
+keywords = ["cad", "geometry", "brep", "kernel", "solid-modeling"]
+categories = ["graphics", "mathematics", "science"]
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[features]
+default = ["serde"]
+serde = ["arris-topo/serde", "arris-io/serde"]
+parallel = ["arris-ops/parallel", "arris-mesh/parallel"]
+paranoid = ["arris-ops/paranoid"]
+
+[dependencies]
+arris-math.workspace = true
+arris-geom.workspace = true
+arris-topo.workspace = true
+arris-check.workspace = true
+arris-ops.workspace = true
+arris-mesh.workspace = true
+arris-io.workspace = true
+
+# Dev-facing only: never reaches a consumer (docs/01-architecture.md §Formats
+# and tools), so it is a dev-dependency of the facade, not a dependency.
+[dev-dependencies]
+arris-debug.workspace = true
+
+[lints]
+workspace = true

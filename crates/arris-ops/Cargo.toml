@@ -1,0 +1,20 @@
+[package]
+name = "arris-ops"
+description = "Arris kernel: primitives, sweeps, transforms, booleans and mass properties"
+publish = false
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[features]
+# Reserved: rayon inside operations; never enabled on wasm32.
+parallel = []
+# Reserved: run the checker after every operation in release builds too.
+paranoid = []
+
+[dependencies]
+arris-check.workspace = true
+
+[lints]
+workspace = true

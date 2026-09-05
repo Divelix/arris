@@ -35,9 +35,13 @@ Mass properties live in `ops::measure` because they integrate over the
 B-Rep, not over a mesh; a consumer that wants mesh-based inertia integrates
 `arris-mesh`'s output itself.
 
-The rule is enforced, not remembered: CI runs `cargo tree -e normal -p
-<lower>` for every crate and fails if an upper crate's name appears. The
-same check is in the pre-commit hook.
+The rule is enforced, not remembered: `tools/check-layers.sh` walks the
+declared edges of `cargo metadata` with a layer number per crate and fails
+on any edge that does not go strictly downward; dev-dependencies are exempt
+so a lower crate's tests may use `arris-debug`, which is itself a
+dev-dependency of the facade and never reaches a consumer. CI runs the
+script and its self-test (a scratch copy with a forbidden edge must fail);
+the pre-commit hook runs the script.
 
 Every crate has `#![forbid(unsafe_code)]` and `#![warn(missing_docs)]`.
 Feature flags are few and named the same in every crate that has them:

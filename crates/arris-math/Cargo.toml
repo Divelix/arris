@@ -1,0 +1,15 @@
+[package]
+name = "arris-math"
+description = "Arris kernel: points, vectors, frames, intervals, exact predicates, root finding and Precision"
+publish = false
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+nalgebra.workspace = true
+robust.workspace = true
+
+[lints]
+workspace = true

@@ -1,11 +1,40 @@
-[package]
-name = "arris"
+# Virtual workspace manifest. The crates and their dependency edges are the
+# table in docs/01-architecture.md §Crates; tools/check-layers.sh enforces
+# that no crate depends on one above it.
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
 version = "0.0.1"
 edition = "2024"
-description = "A CAD geometric kernel written from scratch in Rust. Placeholder release; work in progress."
+rust-version = "1.85"
 license = "MIT OR Apache-2.0"
-readme = "README.md"
-keywords = ["cad", "geometry", "brep", "kernel", "solid-modeling"]
-categories = ["graphics", "mathematics", "science"]
 
-[dependencies]
+[workspace.dependencies]
+# Internal crates, referenced by path from the workspace so every edge is
+# declared in exactly one place.
+arris-math = { path = "crates/arris-math", version = "0.0.1" }
+arris-geom = { path = "crates/arris-geom", version = "0.0.1" }
+arris-topo = { path = "crates/arris-topo", version = "0.0.1" }
+arris-check = { path = "crates/arris-check", version = "0.0.1" }
+arris-ops = { path = "crates/arris-ops", version = "0.0.1" }
+arris-mesh = { path = "crates/arris-mesh", version = "0.0.1" }
+arris-io = { path = "crates/arris-io", version = "0.0.1" }
+arris-debug = { path = "crates/arris-debug", version = "0.0.1" }
+
+# External crates, pinned here and used with `workspace = true` (SEED.md §4).
+nalgebra = { version = "0.35", default-features = false, features = ["std"] }
+robust = "1.2"
+thiserror = "2.0"
+serde = { version = "1.0", features = ["derive"] }
+proptest = { version = "1.11", default-features = false, features = ["std"] }
+# PNG only: the rasteriser writes one format, and the default codec set
+# pulls in dependencies that do not build for wasm32.
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+# Every crate opts in with `[lints] workspace = true`
+# (.agents/rules/kernel.md §API).
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
