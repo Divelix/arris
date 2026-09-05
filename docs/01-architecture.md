@@ -17,15 +17,15 @@ re-exports the public API. Lower crates never name types from upper ones.
 
 | Crate | Owns | External deps | Layer |
 |---|---|---|---|
-| `arris-math` | `Point3`/`Vec3`/`UnitVec3` (over `nalgebra`), `Frame`, `Interval`, exact orientation predicates (over `robust`), polynomial and interval-guarded Newton root finding, `Precision` and the tolerance types | `nalgebra`, `robust` | 0 — representation |
+| `arris-math` | `Point3`/`Vec3`/`UnitVec3` (over `nalgebra`), `Frame`, `Interval`, exact orientation predicates (over `robust`), polynomial and interval-guarded Newton root finding, `Precision` and the tolerance types | `nalgebra`, `robust`, `serde` (feature) | 0 — representation |
 | `arris-geom` | `Surface`, `Curve`, `Curve2` (analytic + NURBS): evaluation, derivatives, point projection, curve/surface and surface/surface intersection | `arris-math` | 0 — representation |
-| `arris-topo` | `Model` (the arena), typed ids, `Shape`/`Body`/`Face`/… handles, orientation, entities, pcurves, per-entity tolerances, Euler operators, adjacency and iteration, `Provenance` | `arris-geom`, `serde` | 0 — representation |
+| `arris-topo` | `Model` (the arena), typed ids, `Shape`/`Body`/`Face`/… handles, orientation, entities, pcurves, per-entity tolerances, Euler operators, adjacency and iteration, `Provenance` | `arris-geom`, `arris-math`, `serde` (feature) | 0 — representation |
 | `arris-check` | The invariant checker: `check(&Model, Body, Level) -> Report` and the `Violation` list of 02-data-model §Invariants | `arris-topo` | 1 |
 | `arris-ops` | Primitives, planar profiles, extrude, revolve, transform, booleans, later blends; `measure` (mass properties); each returns `Provenance` | `arris-check`, `rayon` (feature) | 2 — algorithms |
-| `arris-mesh` | `TriMesh`, `Polyline`, tessellation of faces and edges with shared edge discretisation | `arris-check` | 2 — algorithms |
-| `arris-io` | STEP AP214 Part 21 writer (later reader), the native `.arris` format | `arris-check`, `serde` | 2 — algorithms |
-| `arris-debug` | Text dump, PNG render (own software rasteriser over `image`), Rerun stream (feature), fixture and oracle helpers | `arris-ops`, `arris-mesh`, `arris-io`, `image`, `rerun` (feature) | 3 — dev-facing |
-| `arris` | Facade: re-exports | everything above `debug` | 4 |
+| `arris-mesh` | `TriMesh`, `Polyline`, `Aabb`, tessellation of faces and edges with shared edge discretisation | `arris-check`, `arris-topo`, `thiserror` | 2 — algorithms |
+| `arris-io` | STEP AP214 Part 21 writer (later reader), the native `.arris` format | `arris-check`, `serde` (feature) | 2 — algorithms |
+| `arris-debug` | Text dump, PNG render (own software rasteriser over `image`), Rerun stream (feature), the fixture loader and corpus lint, the seeded property-test runner and strategies | `arris-ops`, `arris-mesh`, `arris-io`, `arris-topo`, `image`, `serde`, `serde_json`, `sha2`, `thiserror`, `proptest` (not on `wasm32`), `rerun` (feature) | 3 — dev-facing |
+| `arris` | Facade: re-exports | `math` through `io`; `debug` as a dev-dependency only | 4 |
 
 `math`, `geom` and `topo` are the representation: they change rarely and a
 change there is a design delta named in a plan. Everything from `check` up
@@ -45,10 +45,12 @@ the pre-commit hook runs the script.
 
 Every crate has `#![forbid(unsafe_code)]` and `#![warn(missing_docs)]`.
 Feature flags are few and named the same in every crate that has them:
-`serde` (on by default in `topo` and `io`), `parallel` (`rayon` inside
-`ops` and `mesh`; never enabled on `wasm32`), `paranoid` (`ops`: run the
-checker after every operation in release builds too, §The checker),
-`rerun` (`debug` only).
+`serde` (on by default in `topo` and `io`; off by default in `math`, where
+`topo`'s feature turns it on because `Precision` is part of the native
+format), `parallel` (`rayon` inside `ops` and `mesh`; never enabled on
+`wasm32`), `paranoid` (`ops`: run the checker after every operation in
+release builds too, §The checker), `rerun` (`debug` only). The facade
+forwards `serde`, `parallel` and `paranoid`.
 
 ## The model, the arena and handles
 
@@ -225,14 +227,17 @@ analytic pairs never route through it.
 - **Text dump** (`arris-debug::dump_text`): the deterministic, diffable
   rendering of a body that fixtures store and tests compare. Not a format:
   it has no reader.
-- **The oracle** (`tools/oracle/`, Python, Open CASCADE through the
-  `cadquery-ocp` wheels in a `uv` environment): builds each fixture's
-  operands and result in OCCT, writes `expected.json`, and compares an
-  Arris STEP file against it. It is run, never linked; no crate depends on
-  it. The fixture format is in 03-roadmap §Fixtures.
-- **`arris-debug`** is dev-facing: the rasteriser, the Rerun stream, the
-  fixture loader and the property-test strategies. It is a normal
-  dependency of the workspace's tests and never of a consumer.
+- **The oracle** (`tools/oracle/`, Python 3.12, Open CASCADE through the
+  `cadquery-ocp` wheels in a `uv` environment): `expected.py` builds each
+  fixture's recipe in OCCT and writes `expected.json`; `compare.py` reads
+  an Arris STEP file and compares it against that within the fixture's
+  tolerances; `selftest.py` proves the oracle against closed forms and its
+  own STEP. It is run, never linked; no crate depends on it. The fixture
+  format is `tests/fixtures/README.md`; its role is 03-roadmap §Fixtures.
+- **`arris-debug`** is dev-facing: the rasteriser (`render_png`), the
+  Rerun stream, the fixture loader and corpus lint (`fixtures`), and the
+  seeded property-test runner and strategies (`prop`). It is a
+  dev-dependency of the workspace's crates and never of a consumer.
 
 ## How a consumer's kernel facade maps on
 

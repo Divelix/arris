@@ -11,6 +11,7 @@ re-brainstormed.
 - `cargo-fuzz` targets for the STEP reader and the intersectors, seeded from the fixture corpus
 - A `no_std`-friendly `arris-math`, if an embedded or wasm consumer ever wants it
 - IGES read/write (SEED §6, later cycles)
+- Move `Aabb` from `arris-mesh` to `arris-math` once M1 geometry wants bounding boxes; `arris-mesh` re-exports it
 - Publish the workspace crates to crates.io over the 0.0.1 `arris` reservation once cycle 1's vertical slice passes its corpus
 
 ## Rejected

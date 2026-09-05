@@ -22,13 +22,13 @@ git config core.hooksPath .githooks   # fmt, clippy -D warnings, test, doc befor
 
 ## Current state
 
-**Pre-M0 (2026-09-05).** `SEED.md` is frozen; the docs system is
-scaffolded; the three design docs are written (`SEED.md` §10 directives
-2–4 done); the crate is a placeholder on crates.io. Plan `m0-harness` is
-open in `docs/plans/`: the workspace, the bookkeeping types, the checker's
-skeleton, the mesh type and PNG rasteriser, the Open CASCADE oracle and the
-fixture corpus — before any geometry. **Next:** the human reads the plan and
-its open questions, then `/work m0-harness`.
+**M0 done (2026-09-05).** The harness exists and no geometry does: the
+layered workspace with the layer rule checked; `Precision`, ids, handles
+and `Orientation`; the checker's `Violation` list drift-tested against
+the data model; `TriMesh` and the PNG rasteriser; the Open CASCADE oracle
+under `tools/oracle/`; the fifteen-fixture C1 corpus with oracle values
+and a lint. `cargo test --workspace` and the oracle self-test are green.
+**Next:** the human tags `m0`, then `/plan m1-geometry`.
 
 ## Rules that are not derivable from the code
 

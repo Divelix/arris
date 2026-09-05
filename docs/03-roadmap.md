@@ -23,11 +23,11 @@ The unit of acceptance. A fixture is a directory
   Open CASCADE, the test in Arris. A recipe, not a STEP file, so the corpus
   never depends on a reader that does not exist yet and so a change to an
   operand is a one-line diff.
-- `expected.json` — the **oracle's answer**: volume, area, centroid,
-  counts (vertices, edges, faces, loops, shells), genus and the Euler
-  line, the in/out/on result for each probe point, the OCCT version and
-  the recipe's hash. Written by `tools/oracle/expected.py`, never by hand,
-  and committed. A change to it is a `fixtures:` commit that says why
+- `expected.json` — the **oracle's answer**, one per recipe variant:
+  volume, area, centroid, counts (vertices, edges, faces, loops, shells),
+  the Euler characteristic and genus, the in/out/on result for each probe
+  point, the OCCT version and the recipe's hash. Written by
+  `tools/oracle/expected.py`, never by hand, and committed. A change to it is a `fixtures:` commit that says why
   (`.agents/rules/git.md`).
 - `dump.txt` — Arris's text dump of the result once the fixture passes,
   the regression guard for ids and provenance. Absent while the fixture is
@@ -59,6 +59,12 @@ without a human looking at a screen.
 
 *Goal: everything the agent needs to see and to judge exists before the
 first line of geometry.*
+
+**Status: done 2026-09-05.** Retired the oracle round trip (OCCT's own
+STEP of every fixture reads back clean) and the corpus lint (all fifteen
+C1 recipes' oracle values match their closed forms, counts and genus).
+No ADRs; the recipes-not-STEP and `cadquery-ocp==8.0.1.*` questions
+closed as assumed.
 
 - The workspace of 01-architecture, with the layer rule checked by CI and
   the hook.
