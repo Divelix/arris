@@ -175,9 +175,12 @@ impl Curve {
     /// §Curves).
     ///
     /// Errors: [`GeomError::Ambiguous`] where the nearest point is not
-    /// unique, decided to rounding — a point on a circle's axis.
-    /// [`GeomError::Unsupported`] for an ellipse until the quartic that
-    /// projects onto one lands (`docs/plans/m1-geometry.md` step 5).
+    /// unique, decided to rounding — a point on a circle's axis, an
+    /// ellipse's centre, or the open segment of an ellipse's major axis
+    /// inside its evolute, where two mirror-image points are equally
+    /// near. An ellipse projects through the quartic of
+    /// [`arris_math::roots`]; the residual `(p − C(t)) · C′(t)` is zero
+    /// to rounding.
     ///
     /// ```
     /// use arris_geom::Curve;
@@ -218,13 +221,137 @@ impl Curve {
                     distance: (rho - radius).hypot(q.z),
                 })
             }
-            Curve::Ellipse { .. } => Err(GeomError::Unsupported {
-                a: GeomKind::Point,
-                b: GeomKind::Curve(CurveKind::Ellipse),
-            }),
+            Curve::Ellipse {
+                frame,
+                major_radius,
+                minor_radius,
+            } => {
+                let q = frame.to_local(p);
+                let noise = local_noise_scale(&frame, p);
+                let (t, in_plane) = ellipse_nearest(major_radius, minor_radius, q.x, q.y, noise)
+                    .map_err(|locus| GeomError::Ambiguous {
+                        kind: GeomKind::Curve(CurveKind::Ellipse),
+                        locus,
+                        point: p,
+                    })?;
+                Ok(CurveProjection {
+                    t,
+                    point: self.point(t),
+                    distance: in_plane.hypot(q.z),
+                })
+            }
         }
     }
 }
+
+/// The parameter of the point of the ellipse `(a cos t, b sin t)` nearest
+/// to `(px, py)` in its plane, and the in-plane distance, or the locus
+/// that makes the answer ambiguous.
+///
+/// The squared distance is stationary where
+/// `g(t) = e sin t cos t + a·px sin t − b·py cos t` vanishes, with
+/// `e = b² − a²`. With `s = tan(t/2)` that is the quartic
+/// `b·py s⁴ + 2(a·px − e) s³ + 2(e + a·px) s − b·py = 0`, whose real
+/// roots are the candidates, plus `t = π` (`s = ∞`) when the point is on
+/// the major axis to rounding and the leading coefficient vanishes. Each
+/// candidate is polished by Newton on `g`, the nearest wins, and two
+/// nearest at the same distance to rounding (mirror images across the
+/// major axis) are the ambiguity.
+fn ellipse_nearest(
+    a: f64,
+    b: f64,
+    px: f64,
+    py: f64,
+    noise: f64,
+) -> Result<(f64, f64), AmbiguousLocus> {
+    let e = b * b - a * a;
+    let lead = b * py;
+    let c3 = 2.0 * (a * px - e);
+    let c1 = 2.0 * (e + a * px);
+    let on_major_axis = is_negligible(lead, c3.abs().max(c1.abs()));
+    let roots = if on_major_axis {
+        arris_math::roots::cubic(c3, 0.0, c1, -lead)
+    } else {
+        arris_math::roots::quartic(lead, c3, 0.0, c1, -lead)
+    };
+    let roots = match roots {
+        Ok(r) => r,
+        // Every coefficient zero: `a == b` and the point is the centre.
+        Err(arris_math::roots::RootError::Zero) => return Err(AmbiguousLocus::Centre),
+        // Non-finite input reaches here only from a non-finite ellipse.
+        Err(_) => return Err(AmbiguousLocus::Centre),
+    };
+    let g = |t: f64| {
+        let (st, ct) = t.sin_cos();
+        e * st * ct + a * px * st - b * py * ct
+    };
+    let dg = |t: f64| {
+        let (st, ct) = t.sin_cos();
+        e * (2.0 * t).cos() + a * px * ct + b * py * st
+    };
+    let distance = |t: f64| {
+        let (st, ct) = t.sin_cos();
+        (a * ct - px).hypot(b * st - py)
+    };
+    // Up to four roots and the seam candidate.
+    let mut best: Option<(f64, f64)> = None;
+    let mut runner_up: Option<(f64, f64)> = None;
+    let candidates = roots
+        .iter()
+        .map(|r| 2.0 * r.value.atan())
+        .chain(on_major_axis.then_some(core::f64::consts::PI));
+    for t0 in candidates {
+        let mut t = t0;
+        for _ in 0..NEWTON_POLISH_STEPS {
+            let (gt, dgt) = (g(t), dg(t));
+            if gt == 0.0 || dgt == 0.0 {
+                break;
+            }
+            let next = t - gt / dgt;
+            if g(next).abs() < gt.abs() {
+                t = next;
+            } else {
+                break;
+            }
+        }
+        let d = distance(t);
+        match best {
+            Some((_, bd)) if d >= bd => {
+                if runner_up.is_none_or(|(_, rd)| d < rd) {
+                    runner_up = Some((t, d));
+                }
+            }
+            _ => {
+                runner_up = best;
+                best = Some((t, d));
+            }
+        }
+    }
+    let Some((t, d)) = best else {
+        // Unreachable: the quartic has at least two real roots because
+        // the distance has a minimum and a maximum, and the cubic form
+        // carries `t = π`.
+        return Err(AmbiguousLocus::Centre);
+    };
+    if let Some((t2, d2)) = runner_up {
+        let (s1, c1) = t.sin_cos();
+        let (s2, c2) = t2.sin_cos();
+        let apart = (a * (c1 - c2)).hypot(b * (s1 - s2));
+        if is_negligible(d2 - d, noise + a) && !is_negligible(apart, a) {
+            return Err(if is_negligible(px, noise) && is_negligible(py, noise) {
+                AmbiguousLocus::Centre
+            } else {
+                AmbiguousLocus::MajorAxis
+            });
+        }
+    }
+    Ok((wrap_turn(t), d))
+}
+
+/// Newton steps that polish a candidate parameter from the half-angle
+/// quartic: two suffice from a root accurate to rounding, and each is
+/// taken only while it reduces `|g|`.
+const NEWTON_POLISH_STEPS: usize = 3;
 
 #[cfg(test)]
 mod tests {

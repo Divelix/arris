@@ -21,6 +21,7 @@ mod interval;
 mod isometry;
 mod precision;
 pub mod predicates;
+pub mod roots;
 mod tolerance;
 
 pub use nalgebra;

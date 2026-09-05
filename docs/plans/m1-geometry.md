@@ -182,7 +182,7 @@ debug sampler of step 2.
   gives the same curves. Hand-picked cases beside the property: the
   box-minus-cylinder faces of `boolean/through-hole` (four parallel
   planes clear of the hole, two perpendicular ones giving the circles).
-- [ ] Step 5 — Roots, guarded Newton, ellipse projection. `roots::
+- [x] Step 5 — Roots, guarded Newton, ellipse projection. `roots::
   quadratic`, `cubic`, `quartic` returning the real roots sorted with
   multiplicity, and `newton_in_interval(f, df, Interval, tol)` that never
   leaves its bracket (bisection when a Newton step would); the method for
@@ -355,3 +355,18 @@ recommendation; kept here so `/work` does not re-ask.
   kind, reason }` and `InvalidTolerance(Tolerance)`: a tolerance that is
   not finite and positive is refused up front, since every comparison
   against it would be false.
+- **Step 5, the root method.** Neither closed forms nor a companion
+  matrix: real-root isolation by the derivative. The real roots of `p'`
+  (found recursively) split the line into monotone intervals, each
+  searched by bracketed Newton when its end signs differ, and a critical
+  point where `p` vanishes to rounding (`POLYNOMIAL_ROUNDING`) is a
+  multiple root of multiplicity one more than in `p'`. No discriminant
+  is compared with zero, nothing is complex, and a double root is found
+  as the simple root of `p'` it is, to full precision, where Ferrari or
+  Cardano would lose half the digits and a rounded companion-matrix
+  Schur step could not be made panic-free. The tests measure a
+  recovered root against the coefficient representation's own
+  conditioning (the rounding of `p(r)` over `|p'(r)|`) plus the plan's
+  1e-12·scale floor, because roots separated by 1e-3·scale at scale 100
+  are not determined by their quartic's coefficients to 1e-10 absolute
+  when three of them cluster.

@@ -31,6 +31,12 @@ operation contract are in [01-architecture](01-architecture.md).
   own tolerance by the operation that owns it (§Tolerances). Exact
   predicates (`arris_math::predicates::{orient2d, incircle}`) return a
   `Sign` and take no tolerance.
+- **Root finding** is `arris_math::roots`: `quadratic`, `cubic` and
+  `quartic` return the real roots ascending with multiplicity, a multiple
+  root reported once and decided to rounding (`POLYNOMIAL_ROUNDING`, a
+  statement about `f64`, never a tolerance); `newton_in_interval` is the
+  Newton that never leaves its bracket, for every iteration in the kernel
+  that has one.
 - **Orientation** is the two-valued `Orientation::{Forward, Reversed}` and
   composes by XOR: `Forward ∘ o = o`, `Reversed ∘ o = !o`.
 - **Parametrisations match Open CASCADE's `Geom` classes** for the analytic
@@ -131,7 +137,12 @@ line's parameter is arc length because `D` is unit. `Curve::eval(t)` returns
 `CurveEval { point, d1, d2 }`; `domain()`, `period()` and `kind()`
 (`CurveKind`) follow the table as for surfaces. `Curve::project(p)` returns
 the nearest point as `CurveProjection { t, point, distance }`, a periodic
-`t` in `[0, 2π)`; a point on a circle's axis is `GeomError::Ambiguous`.
+`t` in `[0, 2π)`. A line and a circle project by closed form; an ellipse
+through the quartic in `tan(t/2)` of `arris_math::roots`, every candidate
+polished so the residual `(p − C(t)) · C′(t)` is zero to rounding. A point
+on a circle's axis, at an ellipse's centre, or on the open segment of an
+ellipse's major axis inside its evolute (two mirror-image nearest points)
+is `GeomError::Ambiguous` naming the locus.
 
 `intersect_surfaces(a, b, tol)` returns `SurfaceIntersection::{Empty,
 Coincident, Transversal(Vec<Curve>), Tangent(Vec<Curve>)}` for the pairs

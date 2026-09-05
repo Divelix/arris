@@ -416,19 +416,128 @@ fn the_circle_axis_is_ambiguous() {
     );
 }
 
+/// The residual `(p − C(t)) · C′(t)`, a length squared.
+const RESIDUAL: f64 = 1e-12 * DEFAULT_SCALE * DEFAULT_SCALE;
+/// Parameters sampled around an ellipse to bound its true minimum
+/// distance from above.
+const ELLIPSE_SAMPLES: usize = 720;
+
 #[test]
-fn ellipse_projection_waits_for_the_quartic() {
+fn ellipse_projection_properties() {
     check((ellipse(), point_in_box(DEFAULT_SCALE)), |(c, p)| {
-        let unsupported = matches!(
-            c.project(p),
-            Err(GeomError::Unsupported {
-                a: GeomKind::Point,
-                ..
-            })
+        let proj = unwrap_projection(c.project(p))?;
+        prop_assert!((0.0..TAU).contains(&proj.t));
+        let e = c.eval(proj.t);
+        prop_assert!((e.point - proj.point).norm() <= EXACT);
+        prop_assert!((proj.distance - (p - proj.point).norm()).abs() <= EXACT);
+        let residual = (p - proj.point).dot(&e.d1).abs();
+        prop_assert!(residual <= RESIDUAL, "{c:?} at {p}: residual {residual}");
+        // A global minimum: no sample around the ellipse is nearer.
+        let sampled = (0..ELLIPSE_SAMPLES)
+            .map(|i| (p - c.point(TAU * i as f64 / ELLIPSE_SAMPLES as f64)).norm())
+            .fold(f64::INFINITY, f64::min);
+        prop_assert!(
+            proj.distance <= sampled + EXACT,
+            "{c:?} at {p}: {} but a sample is at {sampled}",
+            proj.distance
         );
-        prop_assert!(unsupported);
+        let again = unwrap_projection(c.project(proj.point))?;
+        prop_assert!(param_diff(Some(TAU), again.t, proj.t) * e.d1.norm() <= EXACT);
+        prop_assert!(again.distance <= EXACT);
         Ok(())
     });
+}
+
+#[test]
+fn ellipse_recovers_a_displaced_point() {
+    check(
+        (
+            ellipse(),
+            finite_f64(-1.0..=TAU + 1.0),
+            finite_f64(0.0..=DEFAULT_SCALE),
+            finite_f64(-DEFAULT_SCALE..=DEFAULT_SCALE),
+        ),
+        |(c, t, outward, axial)| {
+            let Curve::Ellipse {
+                frame,
+                major_radius: a,
+                minor_radius: b,
+            } = c
+            else {
+                unreachable!()
+            };
+            // The in-plane normal is the gradient of (x/a)² + (y/b)²;
+            // outward it never crosses the evolute, so the nearest point
+            // stays at t.
+            let (st, ct) = t.sin_cos();
+            let n = (b * ct * frame.x().into_inner() + a * st * frame.y().into_inner()).normalize();
+            let base = c.point(t);
+            let p = base + outward * n + axial * frame.z().into_inner();
+            let proj = unwrap_projection(c.project(p))?;
+            let speed = c.eval(t).d1.norm();
+            prop_assert!(
+                param_diff(Some(TAU), proj.t, t) * speed <= EXACT,
+                "{c:?}: t = {t} came back as {}",
+                proj.t
+            );
+            prop_assert!((proj.point - base).norm() <= EXACT);
+            prop_assert!((proj.distance - outward.hypot(axial)).abs() <= EXACT);
+            Ok(())
+        },
+    );
+}
+
+#[test]
+fn the_ellipse_centre_and_major_axis_inside_the_evolute_are_ambiguous() {
+    check(
+        (
+            ellipse(),
+            finite_f64(0.1..=0.9),
+            finite_f64(1.1..=2.0),
+            any::<bool>(),
+        ),
+        |(c, inside, beyond, flip)| {
+            let Curve::Ellipse {
+                frame,
+                major_radius: a,
+                minor_radius: b,
+            } = c
+            else {
+                unreachable!()
+            };
+            // The centre, of a circle-like ellipse too.
+            match c.project(frame.origin()) {
+                Err(GeomError::Ambiguous {
+                    locus: AmbiguousLocus::Centre,
+                    ..
+                }) => {}
+                other => return Err(TestCaseError::fail(format!("centre gave {other:?}"))),
+            }
+            // The evolute meets the major axis at ±(a² − b²)/a.
+            let cusp = (a * a - b * b) / a;
+            if cusp < 0.1 {
+                return Ok(());
+            }
+            let sign = if flip { -1.0 } else { 1.0 };
+            let x = frame.x().into_inner();
+            match c.project(frame.origin() + sign * inside * cusp * x) {
+                Err(GeomError::Ambiguous {
+                    locus: AmbiguousLocus::MajorAxis,
+                    ..
+                }) => {}
+                other => {
+                    return Err(TestCaseError::fail(format!(
+                        "inside the evolute gave {other:?}"
+                    )));
+                }
+            }
+            // Beyond the cusp the vertex is the unique nearest point.
+            let vertex_t = if flip { core::f64::consts::PI } else { 0.0 };
+            let proj = unwrap_projection(c.project(frame.origin() + sign * beyond * cusp * x))?;
+            prop_assert!(param_diff(Some(TAU), proj.t, vertex_t) * b <= EXACT);
+            Ok(())
+        },
+    );
 }
 
 #[test]
