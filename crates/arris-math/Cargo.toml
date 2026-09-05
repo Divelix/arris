@@ -7,9 +7,17 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[features]
+# `Precision` is part of the native format; `arris-topo/serde` turns this on.
+serde = ["dep:serde"]
+
 [dependencies]
 nalgebra.workspace = true
 robust.workspace = true
+serde = { workspace = true, optional = true }
+
+[dev-dependencies]
+serde_json.workspace = true
 
 [lints]
 workspace = true

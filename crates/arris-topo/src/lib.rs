@@ -9,3 +9,14 @@
 //! encoding. Depends on `arris-geom` and below.
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
+
+mod handle;
+mod id;
+mod orientation;
+
+pub use handle::{Body, Edge, Face, Shape, Shell, Vertex, WrongKind};
+pub use id::{
+    BodyId, Curve2Id, CurveId, EdgeId, EntityId, EntityKind, FaceId, GeometryId, ShellId,
+    SurfaceId, VertexId,
+};
+pub use orientation::Orientation;

@@ -9,11 +9,18 @@ license.workspace = true
 
 [features]
 default = ["serde"]
-# Reserved: serde derives on the model (docs/02-data-model.md §Native format).
-serde = []
+# Derives on ids, handles and the model: the native format is serde of the
+# model (docs/02-data-model.md §Native format).
+serde = ["dep:serde", "arris-math/serde"]
 
 [dependencies]
+arris-math.workspace = true
 arris-geom.workspace = true
+serde = { workspace = true, optional = true }
+
+[dev-dependencies]
+proptest.workspace = true
+serde_json.workspace = true
 
 [lints]
 workspace = true

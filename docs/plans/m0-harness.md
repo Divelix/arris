@@ -63,7 +63,7 @@ STEP. No Rerun (M3). No publishing of the workspace crates (backlog).
   and `.githooks/pre-commit`. Test: the script passes, then fails when a
   forbidden edge is added in a scratch copy; `cargo build --workspace
   --target wasm32-unknown-unknown` passes; README says "workspace".
-- [ ] Step 2 — Bookkeeping types. `Precision` with the six fields and
+- [x] Step 2 — Bookkeeping types. `Precision` with the six fields and
   documented defaults in `arris-math`; generational ids, `EntityId`,
   `Orientation` with XOR composition, `Shape` and the typed handles with
   `From` conversions in `arris-topo`; `serde` derives behind the feature.
@@ -156,6 +156,14 @@ tag `m0` (the human's).
   because its random source does not build for wasm; step 8's `prop`
   module follows the same cfg. `ops` also reserves `paranoid`, which
   01-architecture names beside the three the plan lists.
+
+- Step 2: `arris-math` has a `serde` feature too (off by default; `arris-
+  topo/serde` enables it) because `Precision` is part of the native format.
+  The handles `Body`/`Shell`/`Face`/`Edge`/`Vertex` (01) and the entity
+  structs of the same names (02) collided; the entities go in
+  `arris_topo::entity` at M2 and 02 §Entities now says so. Extra public
+  types beside the plan's list: `EntityKind`, `GeometryId`, `WrongKind`
+  (the error of a typed `TryFrom<Shape>`).
 
 ## Open questions
 

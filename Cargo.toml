@@ -28,6 +28,7 @@ nalgebra = { version = "0.35", default-features = false, features = ["std"] }
 robust = "1.2"
 thiserror = "2.0"
 serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 proptest = { version = "1.11", default-features = false, features = ["std"] }
 # PNG only: the rasteriser writes one format, and the default codec set
 # pulls in dependencies that do not build for wasm32.

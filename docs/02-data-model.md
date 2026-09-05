@@ -22,8 +22,12 @@ operation contract are in [01-architecture](01-architecture.md).
   without re-parametrising and the oracle's pcurves agree with ours.
 - **Ids are typed and generational**: `VertexId`, `EdgeId`, `FaceId`,
   `ShellId`, `BodyId` for topology; `CurveId`, `SurfaceId`, `Curve2Id` for
-  geometry; each `{ index: u32, generation: u32 }`. Loops and coedges are
-  not entities (§Topology).
+  geometry; each `{ index: u32, generation: u32 }`, ordered by `(index,
+  generation)`. `EntityId` is the enum over the five topological ids (what
+  a `Shape` wraps) and `GeometryId` over the three geometric ones (what an
+  entity references); each orders by kind, then id. In text dumps an id is
+  its kind letter and index, `f3`, with `g<n>` appended for a generation
+  above zero. Loops and coedges are not entities (§Topology).
 
 ## Geometry
 
@@ -133,6 +137,10 @@ they imply; the checker confirms the wrap.
 Five arena entity kinds. Loops and coedges live inside the face that owns
 them, because nothing outside a face refers to them: provenance, iteration
 and a consumer's topological references name vertices, edges and faces.
+The entity structs below live in `arris_topo::entity`; the crate root
+holds the *handles* of the same five names (`Body`, `Shell`, `Face`,
+`Edge`, `Vertex`: id plus orientation, 01-architecture §The model), since
+a consumer holds handles far more often than it reads an entity.
 
 ```rust
 pub struct Vertex { point: Point3, tolerance: f64 }

@@ -9,3 +9,7 @@
 //! comment (`.agents/rules/kernel.md`). Depends on nothing in the workspace.
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
+
+mod precision;
+
+pub use precision::Precision;
