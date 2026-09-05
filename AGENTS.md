@@ -22,14 +22,16 @@ git config core.hooksPath .githooks   # fmt, clippy -D warnings, test, doc befor
 
 ## Current state
 
-**M0 done (2026-09-05).** The harness exists and no geometry does: the
-layered workspace with the layer rule checked; `Precision`, ids, handles
-and `Orientation`; the checker's `Violation` list drift-tested against
-the data model; `TriMesh` and the PNG rasteriser; the Open CASCADE oracle
-under `tools/oracle/`; the fifteen-fixture C1 corpus with oracle values
-and a lint. `cargo test --workspace` and the oracle self-test are green.
-**Next:** `/work m1-geometry` (`docs/plans/m1-geometry.md`, ten steps,
-open questions decided).
+**M1 done (2026-09-06).** Every curve and surface C1 needs exists and is
+proven, with no entity and no operation yet: `arris-math` (frames,
+isometries, intervals, tolerances, exact predicates, roots to quartic,
+bracketed Newton; ADR-0001); `arris-geom` (`Surface`, `Curve`, `Curve2`
+with the Open CASCADE parametrisations, NURBS evaluation, knot insertion
+and fitting, projection onto every variant, the C1 intersection table with
+every other pair `Unsupported`, pcurves on planes and cylinders); the
+geometry oracle kind under `tests/fixtures/geom/`. Property tests pass at
+1000 cases; the two geometry fixtures match Open CASCADE. M0's harness
+stands underneath. **Next:** `/plan m2-topology` (roadmap §M2).
 
 ## Rules that are not derivable from the code
 

@@ -96,6 +96,16 @@ the agent.
 *Goal: every curve and surface of C1 evaluates, projects and intersects,
 proven by property tests against closed forms.*
 
+**Status: done 2026-09-06.** Retired the plane–cylinder case table (circle,
+ellipse, two rulings, one tangent ruling, empty — agreeing with the closed
+forms in random poses) and the parametrisation agreement with Open CASCADE
+(the geometry oracle matched every evaluation, seam, pole and projected
+parameter at the first run). ADR-0001: `nalgebra`'s types by alias. The
+`Curve2` delta: a pcurve's circle or ellipse is placed by a `Frame2` whose
+handedness is its direction of traversal. Accepted at 1000 property cases
+per test, the two `geom/*` fixtures matching the oracle, the layer check
+and the wasm build green.
+
 - `arris-math`: points, vectors, unit vectors and frames over `nalgebra`;
   `Interval`; exact 2D orientation and in-circle predicates over `robust`;
   polynomial roots to quartic and interval-guarded Newton; tolerance types.

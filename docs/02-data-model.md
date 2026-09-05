@@ -94,8 +94,9 @@ the seam is written with a seam edge (§Seams), not by unwrapping.
 `Surface::eval(u, v)` returns `SurfaceEval { point, du, dv, duu, duv, dvv }`
 for every finite parameter, inside the domain or not (a periodic parameter
 wraps); `normal(u, v)` is `None` where the parametrisation is singular —
-the apex, the poles, a zero radius — decided to rounding
-(`arris_math::is_negligible`), never a direction made of noise. `domain()`
+the apex, the poles, a zero radius, a NURBS point whose two derivatives
+are parallel or vanish — decided to rounding (`arris_math::is_negligible`),
+never a direction made of noise. `domain()`
 gives the closed fundamental interval of a periodic direction, `[0, 2π]`,
 and `Interval::REAL` where the table says ℝ; `period()` the period per
 direction.
