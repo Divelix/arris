@@ -160,6 +160,23 @@ plane's origin (plane–plane), and a ruling's direction is the cylinder's
 `Z`. Swapping the operands gives the same point sets, up to a line's
 orientation.
 
+`intersect_curve_surface(c, s, tol)` returns `CurveSurfaceIntersection::{
+Points(Vec<CurveSurfaceHit>), Coincident}` for the pairs with a closed form
+— in cycle 1, line–plane, line–cylinder, circle–plane and circle–cylinder
+— and `GeomError::Unsupported` naming the pair for every other. A hit is
+`CurveSurfaceHit { t, uv, point, tangent }`: `point` is the curve's point
+at `t`, `uv` the surface's own projection of it, hits ascending by `t`
+with a periodic `t` in `[0, 2π)`. A line is parallel to a plane or to a
+cylinder's axis within `tol.angular`, and then coincident or clear within
+`tol.linear`; a circle is `Coincident` when it lies within `tol.linear`
+of the surface everywhere, which the extrema of its distance decide. A
+hit is `tangent` where the distance along the curve has an extremum
+within `tol.linear` of zero — the two crossings such an extremum would
+split into are one touch — so a transversal hit is on both operands to
+rounding and a tangent one within `tol.linear`. Circle–cylinder finds the
+extrema of the radial distance through the quartic in `tan(t/2)` and the
+crossings between them by bracketed Newton; the others are closed forms.
+
 `⚠ OPEN:` the intersection curve of two cylinders (and of the other quadric
 pairs whose curves are not conics) has an exact parametrisation that is not
 a `Curve` variant. Either it becomes one (`Curve::QuadricSection`, exact,

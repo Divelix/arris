@@ -195,7 +195,7 @@ debug sampler of step 2.
   multiplicity two; Newton on a random cubic with a sign-changing bracket
   converges inside it; ellipse projection is idempotent and the residual
   `(p − C(t)) · C′(t)` is zero to 1e-12·scale².
-- [ ] Step 6 — Curve–surface intersections. `intersect_curve_surface(c, s,
+- [x] Step 6 — Curve–surface intersections. `intersect_curve_surface(c, s,
   tol)`: line–plane (one hit, `Coincident`, or none), line–cylinder
   (quadratic: two hits, one `tangent` hit within `tol.linear`, none, or
   `Coincident` for a ruling), circle–plane (0, 1 tangent, 2, or

@@ -16,11 +16,13 @@
 mod curve;
 mod error;
 mod intersect;
+mod intersect_curve;
 mod project;
 mod surface;
 
 pub use curve::{Curve, CurveEval, CurveKind};
 pub use error::{AmbiguousLocus, GeomError, GeomKind};
 pub use intersect::{SurfaceIntersection, intersect_surfaces};
+pub use intersect_curve::{CurveSurfaceHit, CurveSurfaceIntersection, intersect_curve_surface};
 pub use project::{CurveProjection, SurfaceProjection};
 pub use surface::{Surface, SurfaceEval, SurfaceKind};

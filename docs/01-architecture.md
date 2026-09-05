@@ -196,8 +196,9 @@ compile until it is handled, and a pair without an exact formula is a
 once an operation wraps it with the entities) — never a wildcard falling
 back to a generic marcher where a closed form exists. The results are
 enums too: `SurfaceIntersection::{Empty, Coincident, Transversal,
-Tangent}` for a surface pair, so a caller matches the case rather than
-counting curves. The NURBS variant is one arm like the
+Tangent}` for a surface pair and `CurveSurfaceIntersection::{Points,
+Coincident}` for a curve against a surface, so a caller matches the case
+rather than counting curves or points. The NURBS variant is one arm like the
 others; a NURBS–NURBS marcher, when it comes, is what that arm calls, and
 analytic pairs never route through it.
 
