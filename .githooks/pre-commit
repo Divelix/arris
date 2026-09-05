@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# main is always green: fmt, clippy -D warnings, tests, rustdoc — before every
+# commit. Shared by every agent and the human via
+# `git config core.hooksPath .githooks` (AGENTS.md, "Setup").
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+[ -f Cargo.toml ] || exit 0
+echo "pre-commit: cargo fmt --check" && cargo fmt --all -- --check
+echo "pre-commit: cargo clippy" && cargo clippy --workspace --all-targets -- -D warnings
+echo "pre-commit: cargo test" && cargo test --workspace --quiet
+echo "pre-commit: cargo doc" && RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --quiet

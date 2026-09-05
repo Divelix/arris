@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "command(cargo check*)",
+      "command(cargo build*)",
+      "command(cargo test*)",
+      "command(cargo run*)",
+      "command(cargo fmt*)",
+      "command(cargo clippy*)",
+      "command(cargo doc*)",
+      "command(cargo tree*)",
+      "command(cargo metadata*)",
+      "command(cargo add*)",
+      "command(cargo remove*)",
+      "command(cargo update*)",
+      "command(git status*)",
+      "command(git diff*)",
+      "command(git log*)",
+      "command(git show*)",
+      "command(git branch*)",
+      "command(cargo bench*)",
+      "command(uv run*)",
+      "command(uv sync*)"
+    ]
+  }
+}

@@ -1,1 +1,10 @@
 /target
+# `inspect` skill output: PNG renders and text dumps of shapes under work.
+/target/inspect
+# The Open CASCADE oracle's Python environment (tools/oracle/README.md).
+/tools/oracle/.venv
+__pycache__/
+# Personal notes beside the design docs: never a design doc, never tracked.
+/docs/notes
+# Personal scratch crates and notebooks.
+/scratch
