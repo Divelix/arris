@@ -12,7 +12,9 @@ license.workspace = true
 parallel = []
 
 [dependencies]
+arris-topo.workspace = true
 arris-check.workspace = true
+thiserror.workspace = true
 
 [lints]
 workspace = true

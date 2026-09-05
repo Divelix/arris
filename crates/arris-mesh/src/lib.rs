@@ -9,3 +9,11 @@
 //! never on `arris-ops` or `arris-io`.
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
+
+mod aabb;
+mod polyline;
+mod trimesh;
+
+pub use aabb::Aabb;
+pub use polyline::Polyline;
+pub use trimesh::{EdgeRange, FaceRange, MeshError, TriMesh};

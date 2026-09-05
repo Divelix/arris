@@ -76,7 +76,7 @@ STEP. No Rerun (M3). No publishing of the workspace crates (backlog).
   numbers `{M1…, V1…, E1…, L1…, F1…, S1…, B1…}` equals the set the
   `Violation` variants declare in their doc comments — the doc and the enum
   cannot diverge silently.
-- [ ] Step 4 — Mesh types. `TriMesh` (f64 positions, indices, per-face
+- [x] Step 4 — Mesh types. `TriMesh` (f64 positions, indices, per-face
   and per-edge ranges keyed by `FaceId`/`EdgeId`), `Polyline`,
   `signed_volume` (divergence theorem), `area`, `is_closed` (every
   directed edge has its opposite exactly once), `aabb`. Tests: a hand-built
@@ -172,6 +172,15 @@ tag `m0` (the human's).
   Extra public types: `Reference`, `Quantity`, `EdgeEnd`, `ToleranceBound`
   and the fault enums. The Euler line is not on `Report` yet — it needs a
   `Model` (M2).
+
+- Step 4: `TriMesh` positions are `[f64; 3]`, not a math point type — a
+  mesh is a buffer a consumer uploads, and `arris-math` has no `Point3`
+  until M1. Indices are validated on entry (`MeshError`) so the
+  measurements never panic; `signed_volume` is `Option`, `None` for a mesh
+  that is not closed. `Aabb` lives in `arris-mesh` for now; if M1 wants a
+  bounding box in `arris-math`, mesh re-exports it (design delta then).
+  `arris-mesh` depends on `arris-topo` directly for the ids, as well as
+  on `arris-check`.
 
 ## Open questions
 
