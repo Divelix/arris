@@ -42,6 +42,7 @@ dependencies = [
 name = "arris-debug"
 version = "0.0.1"
 dependencies = [
+ "arris-geom",
  "arris-io",
  "arris-math",
  "arris-mesh",
@@ -59,7 +60,9 @@ dependencies = [
 name = "arris-geom"
 version = "0.0.1"
 dependencies = [
+ "arris-debug",
  "arris-math",
+ "proptest",
 ]
 
 [[package]]

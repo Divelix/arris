@@ -24,7 +24,7 @@ re-exports the public API. Lower crates never name types from upper ones.
 | `arris-ops` | Primitives, planar profiles, extrude, revolve, transform, booleans, later blends; `measure` (mass properties); each returns `Provenance` | `arris-check`, `rayon` (feature) | 2 — algorithms |
 | `arris-mesh` | `TriMesh`, `Polyline`, `Aabb`, tessellation of faces and edges with shared edge discretisation | `arris-check`, `arris-topo`, `thiserror` | 2 — algorithms |
 | `arris-io` | STEP AP214 Part 21 writer (later reader), the native `.arris` format | `arris-check`, `serde` (feature) | 2 — algorithms |
-| `arris-debug` | Text dump, PNG render (own software rasteriser over `image`), Rerun stream (feature), the fixture loader and corpus lint, the seeded property-test runner and strategies | `arris-ops`, `arris-mesh`, `arris-io`, `arris-topo`, `arris-math`, `image`, `serde`, `serde_json`, `sha2`, `thiserror`, `proptest` (not on `wasm32`), `rerun` (feature) | 3 — dev-facing |
+| `arris-debug` | Text dump, PNG render (own software rasteriser over `image`), Rerun stream (feature), the fixture loader and corpus lint, the seeded property-test runner and strategies | `arris-ops`, `arris-mesh`, `arris-io`, `arris-topo`, `arris-geom`, `arris-math`, `image`, `serde`, `serde_json`, `sha2`, `thiserror`, `proptest` (not on `wasm32`), `rerun` (feature) | 3 — dev-facing |
 | `arris` | Facade: re-exports | `math` through `io`; `debug` as a dev-dependency only | 4 |
 
 `math`, `geom` and `topo` are the representation: they change rarely and a
@@ -234,9 +234,12 @@ analytic pairs never route through it.
   tolerances; `selftest.py` proves the oracle against closed forms and its
   own STEP. It is run, never linked; no crate depends on it. The fixture
   format is `tests/fixtures/README.md`; its role is 03-roadmap §Fixtures.
-- **`arris-debug`** is dev-facing: the rasteriser (`render_png`), the
-  Rerun stream, the fixture loader and corpus lint (`fixtures`), and the
-  seeded property-test runner and strategies (`prop`). It is a
+- **`arris-debug`** is dev-facing: the rasteriser (`render_png`) and the
+  samplers that feed it a curve or a surface without a body (`polyline_of`,
+  `wireframe_of`), the Rerun stream, the fixture loader and corpus lint
+  (`fixtures`), and the seeded property-test runner and strategies (`prop`,
+  with every analytic surface and curve in a random pose under
+  `prop::geom`). It is a
   dev-dependency of the workspace's crates and never of a consumer. For
   the crates below it (`math`, `geom`, `topo`) that dev-dependency is a
   cycle, so their property tests are integration tests under

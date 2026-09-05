@@ -31,6 +31,30 @@ pub use isometry::Isometry;
 pub use precision::Precision;
 pub use tolerance::Tolerance;
 
+/// Relative rounding slack: a magnitude at or below this fraction of its
+/// natural scale is rounding noise, not a value. Eight ulps — what a
+/// handful of multiplications and one trigonometric evaluation leave
+/// behind, and orders of magnitude below any model tolerance. It is not a
+/// geometric tolerance and never decides whether two things are *the
+/// same*; it decides whether a computed quantity is zero *in floating
+/// point*: the radius of a sphere's parallel at the pole, `cos(π/2)`
+/// evaluated in `f64`, is `6e-17`, not `0`.
+pub const RELATIVE_ROUNDING: f64 = 8.0 * f64::EPSILON;
+
+/// `|x| ≤ RELATIVE_ROUNDING · |scale|`: `x` is zero to rounding at
+/// `scale`. A zero `scale` makes only an exact zero negligible.
+///
+/// ```
+/// use arris_math::is_negligible;
+/// use core::f64::consts::FRAC_PI_2;
+///
+/// assert!(is_negligible(3.0 * FRAC_PI_2.cos(), 3.0));
+/// assert!(!is_negligible(3.0 * (FRAC_PI_2 - 1e-9).cos(), 3.0));
+/// ```
+pub fn is_negligible(x: f64, scale: f64) -> bool {
+    x.abs() <= RELATIVE_ROUNDING * scale.abs()
+}
+
 /// A position in 3D. `nalgebra::Point3<f64>` (ADR-0001).
 pub type Point3 = nalgebra::Point3<f64>;
 /// A displacement or direction in 3D, of any length.

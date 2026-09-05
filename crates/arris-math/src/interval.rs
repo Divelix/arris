@@ -57,6 +57,12 @@ impl Interval {
     };
     /// `[0, 1]`.
     pub const UNIT: Interval = Interval { lo: 0.0, hi: 1.0 };
+    /// `[0, 2π]`: one turn of an angular parameter, both ends included —
+    /// the closed fundamental interval of every periodic direction.
+    pub const TURN: Interval = Interval {
+        lo: 0.0,
+        hi: core::f64::consts::TAU,
+    };
 
     /// `[lo, hi]`; an error when `lo > hi` or either is NaN.
     pub fn new(lo: f64, hi: f64) -> Result<Self, IntervalError> {
@@ -198,5 +204,6 @@ mod tests {
         assert_eq!(a.hull(&c), iv(0.0, 3.0));
         assert_eq!(Interval::REAL.intersection(&c), Some(c));
         assert_eq!(Interval::UNIT, a);
+        assert_eq!(Interval::TURN.hi(), core::f64::consts::TAU);
     }
 }

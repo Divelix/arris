@@ -26,6 +26,8 @@
 //! });
 //! ```
 
+pub mod geom;
+
 use core::fmt::Debug;
 use core::ops::RangeInclusive;
 

@@ -1,5 +1,6 @@
 //! Dev-facing tools of the Arris kernel: the deterministic text dump, the
 //! software rasteriser that renders a mesh to a PNG the agent can read, the
+//! samplers that turn a curve or a surface into polylines for it, the
 //! fixture loader and oracle helpers, and the property-test configuration
 //! and strategies.
 //!
@@ -11,8 +12,10 @@
 #![warn(missing_docs)]
 
 pub mod fixtures;
+pub mod geom;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod prop;
 pub mod render;
 
+pub use geom::{polyline_of, wireframe_of};
 pub use render::{Highlight, Raster, RenderError, View, render, render_png};

@@ -13,6 +13,7 @@ rerun = []
 
 [dependencies]
 arris-math.workspace = true
+arris-geom.workspace = true
 arris-topo.workspace = true
 arris-ops.workspace = true
 arris-mesh.workspace = true

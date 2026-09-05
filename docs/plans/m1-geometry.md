@@ -133,7 +133,7 @@ debug sampler of step 2.
   application; `orient2d` and `incircle` on integer-grid points agree
   with the exact `i128` determinant at every case, including collinear
   and cocircular ones; `Interval` clamps and overlaps. ADR-0001 written.
-- [ ] Step 2 — Analytic surfaces and curves evaluate. `Surface::{Plane,
+- [x] Step 2 — Analytic surfaces and curves evaluate. `Surface::{Plane,
   Cylinder, Cone, Sphere, Torus}` and `Curve::{Line, Circle, Ellipse}`
   with the parametrisations of 02 §Geometry (read `Geom_CylindricalSurface`,
   `Geom_ConicalSurface`, `Geom_SphericalSurface`, `Geom_ToroidalSurface`,

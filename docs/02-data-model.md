@@ -85,6 +85,15 @@ trims it with loops. Periodic directions are stored as a period, and a
 pcurve on a periodic surface may run outside `[0, 2π)` — a loop that crosses
 the seam is written with a seam edge (§Seams), not by unwrapping.
 
+`Surface::eval(u, v)` returns `SurfaceEval { point, du, dv, duu, duv, dvv }`
+for every finite parameter, inside the domain or not (a periodic parameter
+wraps); `normal(u, v)` is `None` where the parametrisation is singular —
+the apex, the poles, a zero radius — decided to rounding
+(`arris_math::is_negligible`), never a direction made of noise. `domain()`
+gives the closed fundamental interval of a periodic direction, `[0, 2π]`,
+and `Interval::REAL` where the table says ℝ; `period()` the period per
+direction.
+
 `SurfaceKind` is the fieldless twin of the enum, used in errors and
 dispatch tables.
 
@@ -107,7 +116,9 @@ pub enum Curve {
 | Nurbs | clamped, rational | knot range | if the knots say so |
 
 The tangent is `dP/dt`, never normalised in the enum's own evaluation; a
-line's parameter is arc length because `D` is unit.
+line's parameter is arc length because `D` is unit. `Curve::eval(t)` returns
+`CurveEval { point, d1, d2 }`; `domain()`, `period()` and `kind()`
+(`CurveKind`) follow the table as for surfaces.
 
 `⚠ OPEN:` the intersection curve of two cylinders (and of the other quadric
 pairs whose curves are not conics) has an exact parametrisation that is not

@@ -6,6 +6,13 @@
 //! Guarantees: `Surface`, `Curve` and `Curve2` are exhaustive enums, so a
 //! new variant fails every dispatch to compile until it is handled; a pair
 //! without a closed form is an explicit unsupported arm, never a wildcard.
-//! Depends only on `arris-math`.
+//! Evaluation never panics and never allocates. Depends only on
+//! `arris-math`.
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
+
+mod curve;
+mod surface;
+
+pub use curve::{Curve, CurveEval, CurveKind};
+pub use surface::{Surface, SurfaceEval, SurfaceKind};
