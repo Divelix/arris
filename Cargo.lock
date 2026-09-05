@@ -29,6 +29,7 @@ dependencies = [
  "arris-mesh",
  "arris-ops",
  "arris-topo",
+ "serde_json",
 ]
 
 [[package]]

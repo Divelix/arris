@@ -237,8 +237,13 @@ analytic pairs never route through it.
   fixture's recipe in OCCT and writes `expected.json`; `compare.py` reads
   an Arris STEP file and compares it against that within the fixture's
   tolerances; `selftest.py` proves the oracle against closed forms and its
-  own STEP. It is run, never linked; no crate depends on it. The fixture
-  format is `tests/fixtures/README.md`; its role is 03-roadmap §Fixtures.
+  own STEP. A second fixture kind, `geometry` (`tests/fixtures/geom/`),
+  has no solid: named analytic surfaces and curves that the oracle
+  evaluates, projects onto and intersects, and that
+  `crates/arris-geom/tests/oracle.rs` compares Arris against — the
+  parametrisation's ground truth. It is run, never linked; no crate
+  depends on it. The fixture format is `tests/fixtures/README.md`; its
+  role is 03-roadmap §Fixtures.
 - **`arris-debug`** is dev-facing: the rasteriser (`render_png`) and the
   samplers that feed it a curve or a surface without a body (`polyline_of`,
   `wireframe_of`), the Rerun stream, the fixture loader and corpus lint

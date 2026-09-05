@@ -149,11 +149,25 @@ def variant_names(fixture: dict) -> list[str]:
     return ["default"] + sorted(fixture.get("variants", {}).keys())
 
 
+SOLID_KEYS = ("params", "variants", "steps", "result", "probes")
+GEOMETRY_KEYS = ("kind", "params", "surfaces", "curves", "samples", "pairs")
+
+
+def fixture_kind(fixture: dict) -> str:
+    """`solid` (the default) or `geometry`; anything else is an error."""
+    kind = fixture.get("kind", "solid")
+    if kind not in ("solid", "geometry"):
+        raise OracleError(f"unknown fixture kind {kind!r}")
+    return kind
+
+
 def recipe_hash(fixture: dict) -> str:
     """SHA-256 of the parts of the recipe the oracle evaluates, canonically
     encoded, so an edit to `analytic` or `description` does not stale the
-    expected.json and an edit to a step does."""
-    evaluated = {k: fixture.get(k) for k in ("params", "variants", "steps", "result", "probes")}
+    expected.json and an edit to a step does. The keys depend on the kind
+    (`fixture_kind`); the Rust side hashes the same ones."""
+    keys = GEOMETRY_KEYS if fixture_kind(fixture) == "geometry" else SOLID_KEYS
+    evaluated = {k: fixture.get(k) for k in keys}
     return hashlib.sha256(canonical_json(evaluated).encode()).hexdigest()
 
 

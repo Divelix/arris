@@ -1,0 +1,578 @@
+//! The `geometry` fixture kind: named analytic surfaces and curves with
+//! parameters to evaluate, points to project and pairs to intersect, and
+//! the oracle's answer for each (`tests/fixtures/README.md`, "kind":
+//! "geometry"). [`build_surface`] and [`build_curve`] turn a spec into
+//! the `arris-geom` value the fixture describes.
+
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+
+use arris_geom::{Curve, Surface};
+use arris_math::{Frame, FrameError, Point3, UnitVec3, Vec3};
+use serde::{Deserialize, Serialize};
+
+use super::{ExprError, FixtureError, Num, read_json, recipe_hash};
+
+/// A placed surface, as written in `fixture.json`. `origin`, `z` and `x`
+/// are the frame as `Frame::new` builds it (`x` made perpendicular to
+/// `z`), the oracle's `gp_Ax3(origin, z, x)`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum SurfaceSpec {
+    /// [`Surface::Plane`].
+    Plane {
+        /// Frame origin.
+        origin: [Num; 3],
+        /// Frame `z`.
+        z: [Num; 3],
+        /// Frame `x` hint.
+        x: [Num; 3],
+    },
+    /// [`Surface::Cylinder`].
+    Cylinder {
+        /// Frame origin.
+        origin: [Num; 3],
+        /// Frame `z`.
+        z: [Num; 3],
+        /// Frame `x` hint.
+        x: [Num; 3],
+        /// `R`.
+        radius: Num,
+    },
+    /// [`Surface::Cone`], with the half-angle in degrees as every angle
+    /// in a recipe.
+    Cone {
+        /// Frame origin.
+        origin: [Num; 3],
+        /// Frame `z`.
+        z: [Num; 3],
+        /// Frame `x` hint.
+        x: [Num; 3],
+        /// `R` at `v = 0`.
+        radius: Num,
+        /// `α` in degrees.
+        half_angle_deg: Num,
+    },
+    /// [`Surface::Sphere`].
+    Sphere {
+        /// Frame origin.
+        origin: [Num; 3],
+        /// Frame `z`.
+        z: [Num; 3],
+        /// Frame `x` hint.
+        x: [Num; 3],
+        /// `R`.
+        radius: Num,
+    },
+    /// [`Surface::Torus`].
+    Torus {
+        /// Frame origin.
+        origin: [Num; 3],
+        /// Frame `z`.
+        z: [Num; 3],
+        /// Frame `x` hint.
+        x: [Num; 3],
+        /// `R`.
+        major_radius: Num,
+        /// `r`.
+        minor_radius: Num,
+    },
+}
+
+/// A placed curve, as written in `fixture.json`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum CurveSpec {
+    /// [`Curve::Line`].
+    Line {
+        /// A point on the line.
+        origin: [Num; 3],
+        /// Its direction, normalised by the interpreter.
+        direction: [Num; 3],
+    },
+    /// [`Curve::Circle`].
+    Circle {
+        /// Frame origin.
+        origin: [Num; 3],
+        /// Frame `z`.
+        z: [Num; 3],
+        /// Frame `x` hint.
+        x: [Num; 3],
+        /// `R`.
+        radius: Num,
+    },
+    /// [`Curve::Ellipse`].
+    Ellipse {
+        /// Frame origin.
+        origin: [Num; 3],
+        /// Frame `z`.
+        z: [Num; 3],
+        /// Frame `x` hint: the major axis.
+        x: [Num; 3],
+        /// `a`.
+        major_radius: Num,
+        /// `b`.
+        minor_radius: Num,
+    },
+}
+
+/// A parameter to evaluate at: `[u, v]` for a surface, `t` for a curve.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum ParamSpec {
+    /// A surface's `(u, v)`.
+    Surface([Num; 2]),
+    /// A curve's `t`.
+    Curve(Num),
+}
+
+/// What to ask of one named surface or curve.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Sample {
+    /// The surface or curve.
+    pub of: String,
+    /// Parameters to evaluate at.
+    #[serde(default)]
+    pub params: Vec<ParamSpec>,
+    /// Points to project.
+    #[serde(default)]
+    pub points: Vec<[Num; 3]>,
+}
+
+/// Two names to intersect: two surfaces, or a curve `a` against a surface
+/// `b`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Pair {
+    /// A surface or a curve.
+    pub a: String,
+    /// A surface.
+    pub b: String,
+}
+
+/// A `fixture.json` of the geometry kind.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GeomRecipe {
+    /// `"geometry"`.
+    pub kind: String,
+    /// What the fixture is for.
+    #[serde(default)]
+    pub description: String,
+    /// Named numbers the specs may use in expressions.
+    #[serde(default)]
+    pub params: BTreeMap<String, f64>,
+    /// The surfaces by name.
+    #[serde(default)]
+    pub surfaces: BTreeMap<String, SurfaceSpec>,
+    /// The curves by name.
+    #[serde(default)]
+    pub curves: BTreeMap<String, CurveSpec>,
+    /// Evaluations and projections.
+    #[serde(default)]
+    pub samples: Vec<Sample>,
+    /// Intersections.
+    #[serde(default)]
+    pub pairs: Vec<Pair>,
+}
+
+/// Why a spec did not build.
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+pub enum BuildError {
+    /// A number did not evaluate.
+    #[error("{name}: {source}")]
+    Expr {
+        /// The spec.
+        name: String,
+        /// The cause.
+        source: ExprError,
+    },
+    /// The frame is degenerate.
+    #[error("{name}: frame: {source}")]
+    Frame {
+        /// The spec.
+        name: String,
+        /// The cause.
+        source: FrameError,
+    },
+    /// A direction is zero.
+    #[error("{name}: zero direction")]
+    ZeroDirection {
+        /// The spec.
+        name: String,
+    },
+}
+
+fn num(name: &str, n: &Num, params: &BTreeMap<String, f64>) -> Result<f64, BuildError> {
+    n.eval(params).map_err(|source| BuildError::Expr {
+        name: name.to_string(),
+        source,
+    })
+}
+
+fn vec3(name: &str, v: &[Num; 3], params: &BTreeMap<String, f64>) -> Result<Vec3, BuildError> {
+    Ok(Vec3::new(
+        num(name, &v[0], params)?,
+        num(name, &v[1], params)?,
+        num(name, &v[2], params)?,
+    ))
+}
+
+fn frame(
+    name: &str,
+    origin: &[Num; 3],
+    z: &[Num; 3],
+    x: &[Num; 3],
+    params: &BTreeMap<String, f64>,
+) -> Result<Frame, BuildError> {
+    Frame::new(
+        Point3::from(vec3(name, origin, params)?),
+        vec3(name, z, params)?,
+        vec3(name, x, params)?,
+    )
+    .map_err(|source| BuildError::Frame {
+        name: name.to_string(),
+        source,
+    })
+}
+
+/// The [`Surface`] a spec describes, under `params`.
+pub fn build_surface(
+    name: &str,
+    spec: &SurfaceSpec,
+    params: &BTreeMap<String, f64>,
+) -> Result<Surface, BuildError> {
+    Ok(match spec {
+        SurfaceSpec::Plane { origin, z, x } => Surface::Plane {
+            frame: frame(name, origin, z, x, params)?,
+        },
+        SurfaceSpec::Cylinder {
+            origin,
+            z,
+            x,
+            radius,
+        } => Surface::Cylinder {
+            frame: frame(name, origin, z, x, params)?,
+            radius: num(name, radius, params)?,
+        },
+        SurfaceSpec::Cone {
+            origin,
+            z,
+            x,
+            radius,
+            half_angle_deg,
+        } => Surface::Cone {
+            frame: frame(name, origin, z, x, params)?,
+            radius: num(name, radius, params)?,
+            half_angle: num(name, half_angle_deg, params)?.to_radians(),
+        },
+        SurfaceSpec::Sphere {
+            origin,
+            z,
+            x,
+            radius,
+        } => Surface::Sphere {
+            frame: frame(name, origin, z, x, params)?,
+            radius: num(name, radius, params)?,
+        },
+        SurfaceSpec::Torus {
+            origin,
+            z,
+            x,
+            major_radius,
+            minor_radius,
+        } => Surface::Torus {
+            frame: frame(name, origin, z, x, params)?,
+            major_radius: num(name, major_radius, params)?,
+            minor_radius: num(name, minor_radius, params)?,
+        },
+    })
+}
+
+/// The [`Curve`] a spec describes, under `params`.
+pub fn build_curve(
+    name: &str,
+    spec: &CurveSpec,
+    params: &BTreeMap<String, f64>,
+) -> Result<Curve, BuildError> {
+    Ok(match spec {
+        CurveSpec::Line { origin, direction } => Curve::Line {
+            origin: Point3::from(vec3(name, origin, params)?),
+            direction: UnitVec3::try_new(vec3(name, direction, params)?, 0.0).ok_or_else(|| {
+                BuildError::ZeroDirection {
+                    name: name.to_string(),
+                }
+            })?,
+        },
+        CurveSpec::Circle {
+            origin,
+            z,
+            x,
+            radius,
+        } => Curve::Circle {
+            frame: frame(name, origin, z, x, params)?,
+            radius: num(name, radius, params)?,
+        },
+        CurveSpec::Ellipse {
+            origin,
+            z,
+            x,
+            major_radius,
+            minor_radius,
+        } => Curve::Ellipse {
+            frame: frame(name, origin, z, x, params)?,
+            major_radius: num(name, major_radius, params)?,
+            minor_radius: num(name, minor_radius, params)?,
+        },
+    })
+}
+
+/// One evaluation by the oracle: `Geom_Surface::D2` or `Geom_Curve::D2`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Evaluation {
+    /// A surface at `(u, v)`.
+    Surface {
+        /// `[u, v]`.
+        at: [f64; 2],
+        /// `P`.
+        point: [f64; 3],
+        /// `∂P/∂u`.
+        du: [f64; 3],
+        /// `∂P/∂v`.
+        dv: [f64; 3],
+        /// `∂²P/∂u²`.
+        duu: [f64; 3],
+        /// `∂²P/∂u∂v`.
+        duv: [f64; 3],
+        /// `∂²P/∂v²`.
+        dvv: [f64; 3],
+    },
+    /// A curve at `t`.
+    Curve {
+        /// `t`.
+        at: f64,
+        /// `P`.
+        point: [f64; 3],
+        /// `dP/dt`.
+        d1: [f64; 3],
+        /// `d²P/dt²`.
+        d2: [f64; 3],
+    },
+}
+
+/// One projection by the oracle: `GeomAPI_ProjectPointOnSurf` or
+/// `OnCurve`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Projection {
+    /// The point projected.
+    pub point: [f64; 3],
+    /// `(u, v)` of the nearest surface point.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uv: Option<[f64; 2]>,
+    /// `t` of the nearest curve point.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub t: Option<f64>,
+    /// The nearest point.
+    pub nearest: [f64; 3],
+    /// Its distance from the query.
+    pub distance: f64,
+}
+
+/// The oracle's answers for one sample.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SampleResult {
+    /// The surface or curve.
+    pub of: String,
+    /// One per `params` entry, in order.
+    pub evaluations: Vec<Evaluation>,
+    /// One per `points` entry, in order.
+    pub projections: Vec<Projection>,
+}
+
+/// A result curve of a surface pair, sampled.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CurveSample {
+    /// `line`, `circle` or `ellipse`.
+    #[serde(rename = "type")]
+    pub kind: String,
+    /// Points on it.
+    pub points: Vec<[f64; 3]>,
+}
+
+/// A hit of a curve against a surface.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Hit {
+    /// The point.
+    pub point: [f64; 3],
+    /// The curve parameter.
+    pub t: f64,
+}
+
+/// The oracle's answer for one pair: `IntAna_QuadQuadGeo` for two
+/// surfaces (`empty`, `coincident`, or the result curves' kind with the
+/// curves sampled), `IntAna_IntConicQuad` for a curve against a surface
+/// (`coincident`, or `points` with the hits, duplicates within
+/// `Precision::Confusion` reported once and hits off either operand
+/// dropped and counted).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PairResult {
+    /// The first name.
+    pub a: String,
+    /// The second name.
+    pub b: String,
+    /// `empty`, `coincident`, `line`, `circle`, `ellipse` or `points`.
+    #[serde(rename = "type")]
+    pub kind: String,
+    /// The result curves of a surface pair.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub curves: Vec<CurveSample>,
+    /// The hits of a curve against a surface.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hits: Vec<Hit>,
+    /// Hits the oracle reported and then found off an operand.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dropped: Option<usize>,
+}
+
+/// An `expected.json` of the geometry kind.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GeomExpected {
+    /// The `cadquery-ocp` version that wrote it.
+    pub occt: String,
+    /// The recipe hash it was computed from.
+    pub recipe_sha256: String,
+    /// `"geometry"`.
+    pub kind: String,
+    /// One per recipe sample, in order.
+    pub samples: Vec<SampleResult>,
+    /// One per recipe pair, in order.
+    pub pairs: Vec<PairResult>,
+}
+
+/// A loaded geometry fixture directory.
+#[derive(Debug, Clone, PartialEq)]
+pub struct GeomFixture {
+    /// The directory.
+    pub dir: PathBuf,
+    /// `<area>/<slug>`.
+    pub name: String,
+    /// The recipe.
+    pub recipe: GeomRecipe,
+    /// The hash of the recipe as loaded.
+    pub recipe_sha256: String,
+    /// The oracle's answer.
+    pub expected: GeomExpected,
+}
+
+/// Loads a geometry fixture directory: both files and the recipe's hash.
+pub fn load(dir: &Path) -> Result<GeomFixture, FixtureError> {
+    let raw: serde_json::Value = read_json(&dir.join("fixture.json"))?;
+    let recipe: GeomRecipe =
+        serde_json::from_value(raw.clone()).map_err(|source| FixtureError::Json {
+            path: dir.join("fixture.json"),
+            source,
+        })?;
+    let expected: GeomExpected = read_json(&dir.join("expected.json"))?;
+    Ok(GeomFixture {
+        dir: dir.to_path_buf(),
+        name: super::name_of(dir),
+        recipe_sha256: recipe_hash(&raw),
+        recipe,
+        expected,
+    })
+}
+
+/// The corpus lint for a geometry directory: both files present and
+/// parseable, the hash matches, every sample and pair names a surface or
+/// curve of the recipe, every spec builds, and the oracle's answer has
+/// one result per sample and pair with the counts the recipe asked for.
+/// The values themselves are `crates/arris-geom/tests/oracle.rs`'s to
+/// compare.
+pub fn lint(dir: &Path) -> Vec<String> {
+    let mut problems = Vec::new();
+    let fixture = match load(dir) {
+        Ok(f) => f,
+        Err(e) => return vec![format!("{}: {e}", dir.display())],
+    };
+    let name = &fixture.name;
+    let mut problem = |text: String| problems.push(format!("{name}: {text}"));
+    let r = &fixture.recipe;
+    let x = &fixture.expected;
+    if x.recipe_sha256 != fixture.recipe_sha256 {
+        problem(format!(
+            "expected.json is stale: recipe hash {} but the recipe hashes to {} — rerun tools/oracle/expected.py",
+            x.recipe_sha256, fixture.recipe_sha256
+        ));
+    }
+    if x.kind != "geometry" {
+        problem(format!(
+            "expected.json kind is {:?}, not \"geometry\"",
+            x.kind
+        ));
+    }
+    for (n, spec) in &r.surfaces {
+        if let Err(e) = build_surface(n, spec, &r.params) {
+            problem(format!("surface {e}"));
+        }
+        if r.curves.contains_key(n) {
+            problem(format!("{n:?} is both a surface and a curve"));
+        }
+    }
+    for (n, spec) in &r.curves {
+        if let Err(e) = build_curve(n, spec, &r.params) {
+            problem(format!("curve {e}"));
+        }
+    }
+    let known = |n: &str| r.surfaces.contains_key(n) || r.curves.contains_key(n);
+    if x.samples.len() != r.samples.len() {
+        problem(format!(
+            "{} samples in the recipe, {} results",
+            r.samples.len(),
+            x.samples.len()
+        ));
+    }
+    for (i, s) in r.samples.iter().enumerate() {
+        if !known(&s.of) {
+            problem(format!("sample {i} names unknown {:?}", s.of));
+        }
+        if let Some(res) = x.samples.get(i) {
+            if res.of != s.of
+                || res.evaluations.len() != s.params.len()
+                || res.projections.len() != s.points.len()
+            {
+                problem(format!(
+                    "sample {i} ({:?}) asks {} evaluations and {} projections; the result has {} and {} for {:?}",
+                    s.of,
+                    s.params.len(),
+                    s.points.len(),
+                    res.evaluations.len(),
+                    res.projections.len(),
+                    res.of
+                ));
+            }
+        }
+    }
+    if x.pairs.len() != r.pairs.len() {
+        problem(format!(
+            "{} pairs in the recipe, {} results",
+            r.pairs.len(),
+            x.pairs.len()
+        ));
+    }
+    for (i, p) in r.pairs.iter().enumerate() {
+        if !known(&p.a) || !r.surfaces.contains_key(&p.b) {
+            problem(format!(
+                "pair {i} ({:?}, {:?}) is not a surface or curve against a surface",
+                p.a, p.b
+            ));
+        }
+        if let Some(res) = x.pairs.get(i) {
+            if res.a != p.a || res.b != p.b {
+                problem(format!(
+                    "pair {i} is ({:?}, {:?}) but the result is ({:?}, {:?})",
+                    p.a, p.b, res.a, res.b
+                ));
+            }
+        }
+    }
+    problems
+}

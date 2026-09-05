@@ -11,8 +11,49 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 pub mod expr;
+pub mod geom;
 
 pub use expr::{ExprError, eval};
+
+/// The two fixture kinds: a solid built by a recipe and measured, or
+/// analytic geometry evaluated, projected onto and intersected
+/// (`tests/fixtures/README.md`). `fixture.json` names it in `"kind"`;
+/// absent means solid.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Kind {
+    /// A recipe of steps ending in a solid, with volume, area, counts and
+    /// probes to compare.
+    Solid,
+    /// Named surfaces and curves with samples and pairs; [`geom`].
+    Geometry,
+}
+
+/// The kind of the fixture in `dir`, from its `fixture.json`.
+pub fn kind_of(dir: &Path) -> Result<Kind, FixtureError> {
+    let raw: serde_json::Value = read_json(&dir.join("fixture.json"))?;
+    Ok(kind_of_raw(&raw))
+}
+
+fn kind_of_raw(raw: &serde_json::Value) -> Kind {
+    match raw.get("kind").and_then(|k| k.as_str()) {
+        Some("geometry") => Kind::Geometry,
+        _ => Kind::Solid,
+    }
+}
+
+/// `<area>/<slug>`: the last two components of a fixture directory.
+pub fn name_of(dir: &Path) -> String {
+    dir.components()
+        .rev()
+        .take(2)
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect::<Vec<_>>()
+        .join("/")
+}
 
 /// A number in a recipe: a literal, or an expression over the recipe's
 /// params (`"50 + R * cos(radians(45))"`).
@@ -505,13 +546,23 @@ fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T, FixtureEr
     })
 }
 
-/// The SHA-256 the oracle records: over the recipe's `params`, `variants`,
-/// `steps`, `result` and `probes` as parsed, encoded with sorted keys and no
-/// whitespace (serde_json's float formatting; the oracle matches it).
-/// Editing `analytic` or `description` does not change it.
+/// The keys of a solid recipe the oracle evaluates and hashes.
+pub const SOLID_KEYS: [&str; 5] = ["params", "variants", "steps", "result", "probes"];
+/// The keys of a geometry recipe the oracle evaluates and hashes.
+pub const GEOMETRY_KEYS: [&str; 6] = ["kind", "params", "surfaces", "curves", "samples", "pairs"];
+
+/// The SHA-256 the oracle records: over the recipe's evaluated keys as
+/// parsed — [`SOLID_KEYS`] or [`GEOMETRY_KEYS`] by [`Kind`] — encoded
+/// with sorted keys and no whitespace (serde_json's float formatting; the
+/// oracle matches it). Editing `analytic` or `description` does not
+/// change it.
 pub fn recipe_hash(raw: &serde_json::Value) -> String {
+    let keys: &[&str] = match kind_of_raw(raw) {
+        Kind::Solid => &SOLID_KEYS,
+        Kind::Geometry => &GEOMETRY_KEYS,
+    };
     let mut evaluated = serde_json::Map::new();
-    for key in ["params", "variants", "steps", "result", "probes"] {
+    for key in keys {
         evaluated.insert(
             key.to_string(),
             raw.get(key).cloned().unwrap_or(serde_json::Value::Null),
@@ -531,19 +582,9 @@ pub fn load(dir: &Path) -> Result<Fixture, FixtureError> {
             source,
         })?;
     let expected: Expected = read_json(&dir.join("expected.json"))?;
-    let name = dir
-        .components()
-        .rev()
-        .take(2)
-        .map(|c| c.as_os_str().to_string_lossy().into_owned())
-        .collect::<Vec<_>>()
-        .into_iter()
-        .rev()
-        .collect::<Vec<_>>()
-        .join("/");
     Ok(Fixture {
         dir: dir.to_path_buf(),
-        name,
+        name: name_of(dir),
         recipe_sha256: recipe_hash(&raw),
         recipe,
         expected,
@@ -555,13 +596,21 @@ pub fn load(dir: &Path) -> Result<Fixture, FixtureError> {
 /// typed by hand is a cross-check of conventions, not a second oracle.
 pub const ANALYTIC_REL: f64 = 1e-6;
 
-/// The corpus lint for one directory: both files present and parseable,
-/// the recipe hash matches `expected.json`, every variant has a result,
-/// the Euler line is zero (`χ = 2(S − G)` with the oracle's counts and the
-/// fixture's `analytic.genus`), and every `analytic` value matches the
-/// oracle within [`ANALYTIC_REL`] (counts, degeneracy and probe
-/// expectations exactly). Returns every problem found, empty when clean.
+/// The corpus lint for one directory, by its [`Kind`]. A solid: both
+/// files present and parseable, the recipe hash matches `expected.json`,
+/// every variant has a result, the Euler line is zero (`χ = 2(S − G)`
+/// with the oracle's counts and the fixture's `analytic.genus`), and
+/// every `analytic` value matches the oracle within [`ANALYTIC_REL`]
+/// (counts, degeneracy and probe expectations exactly). A geometry
+/// fixture: [`geom::lint`] — presence, hash and shape, the values being
+/// the geometry oracle test's to compare. Returns every problem found,
+/// empty when clean.
 pub fn lint(dir: &Path) -> Vec<String> {
+    match kind_of(dir) {
+        Ok(Kind::Geometry) => return geom::lint(dir),
+        Ok(Kind::Solid) => {}
+        Err(e) => return vec![format!("{}: {e}", dir.display())],
+    }
     let mut problems = Vec::new();
     let fixture = match load(dir) {
         Ok(f) => f,

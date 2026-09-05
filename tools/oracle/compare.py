@@ -16,12 +16,14 @@ require_ocp()
 from oracle import step  # noqa: E402
 from oracle.fixture import load_expected, load_fixture  # noqa: E402
 from oracle.measure import DEFAULT_TOLERANCES, compare, format_table, measure  # noqa: E402
-from oracle.recipe import recipe_hash  # noqa: E402
+from oracle.recipe import fixture_kind, recipe_hash  # noqa: E402
 
 
 def compare_step(directory: Path, step_file: Path, variant: str = "default") -> tuple[bool, str]:
     """(all ok, the table) for one comparison."""
     fixture = load_fixture(directory)
+    if fixture_kind(fixture) == "geometry":
+        raise OracleError(f"{directory} is a geometry fixture: Arris compares it in crates/arris-geom/tests/oracle.rs, not from a STEP file")
     expected = load_expected(directory)
     if expected is None:
         raise OracleError(f"no expected.json in {directory}; run expected.py first")

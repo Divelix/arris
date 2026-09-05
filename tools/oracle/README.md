@@ -25,9 +25,9 @@ commit that says so (`.agents/rules/git.md`).
 
 | Script | Does |
 |---|---|
-| `expected.py <fixture-dir>...` | Builds each recipe (every variant), measures it, writes `expected.json`, prints one summary line per result |
-| `compare.py <fixture-dir> <file.step> [--variant NAME]` | Reads a STEP file (Arris's output), measures it, compares against `expected.json` within the fixture's tolerances, prints a table; exit 1 on mismatch, 2 on a stale `expected.json` or an environment error |
-| `selftest.py [fixture-dir...]` | Inline smoke recipes covering every op against closed forms, then for each fixture: a fresh `expected` must equal the committed one, and OCCT's own STEP of the result must compare clean |
+| `expected.py <fixture-dir>...` | Builds each recipe (every variant), measures it, writes `expected.json`, prints one summary line per result; for a geometry fixture, evaluates, projects and intersects instead |
+| `compare.py <fixture-dir> <file.step> [--variant NAME]` | Reads a STEP file (Arris's output), measures it, compares against `expected.json` within the fixture's tolerances, prints a table; exit 1 on mismatch, 2 on a stale `expected.json` or an environment error. Solid fixtures only: a geometry fixture is compared by `crates/arris-geom/tests/oracle.rs` |
+| `selftest.py [fixture-dir...]` | Inline smoke recipes covering every op and the geometry kind against closed forms, then for each fixture: a fresh `expected` must equal the committed one, and for a solid OCCT's own STEP of the result must compare clean |
 
 ## Package
 
@@ -41,6 +41,14 @@ commit that says so (`.agents/rules/git.md`).
   characteristic `V − E + 2F − L` and the genus it implies, in/out/on
   classification of probe points (`BRepClass3d`), and the comparison with
   its tolerances.
+- `oracle/geometry.py` — the geometry kind: `Geom_Plane`,
+  `Geom_CylindricalSurface`, `Geom_ConicalSurface`,
+  `Geom_SphericalSurface`, `Geom_ToroidalSurface`, `Geom_Line`,
+  `Geom_Circle` and `Geom_Ellipse` from named specs; `D2` at every
+  parameter; `GeomAPI_ProjectPointOnSurf` / `OnCurve` for every point;
+  `IntAna_QuadQuadGeo` for surface pairs and `IntAna_IntConicQuad` for a
+  curve against a surface, hits deduplicated within `Precision::Confusion`
+  and dropped (counted) when off either operand.
 - `oracle/step.py` — STEP AP214 write and read, with OCCT's transfer
   banner silenced.
 - `oracle/fixture.py` — fixture directories, `expected.json` layout,
@@ -68,6 +76,33 @@ The hash covers only what the oracle evaluates, so editing a fixture's
 `analytic` or description does not stale it; editing a step does, and
 `compare.py` refuses to run until `expected.py` is rerun. A degenerate
 result (no solid — the common of two flush boxes) has counts only.
+
+A geometry fixture's `expected.json` has `"kind": "geometry"` and, instead
+of `results`, one entry per recipe sample and pair:
+
+```json
+{
+  "occt": "8.0.1.0.0", "recipe_sha256": "…", "kind": "geometry",
+  "samples": [
+    {"of": "wall",
+     "evaluations": [{"at": [0.0, 0.0], "point": [2.0, 0.0, 0.0], "du": […], "dv": […], "duu": […], "duv": […], "dvv": […]}],
+     "projections": [{"point": [0.0, -5.0, 3.0], "uv": [4.71238898038469, 3.0], "nearest": [0.0, -2.0, 3.0], "distance": 3.0}]},
+    {"of": "ring",
+     "evaluations": [{"at": 3.141592653589793, "point": […], "d1": […], "d2": […]}],
+     "projections": [{"point": [-4.0, 0.0, 0.0], "t": 3.141592653589793, "nearest": […], "distance": 1.0}]}
+  ],
+  "pairs": [
+    {"a": "cap", "b": "wall", "type": "circle", "curves": [{"type": "circle", "points": [[…], …]}]},
+    {"a": "ring", "b": "wall", "type": "points", "hits": [{"point": […], "t": 0.8410686705679302}, …]}
+  ]
+}
+```
+
+A surface pair's `type` is `empty`, `coincident`, `line`, `circle` or
+`ellipse`, with every result curve sampled (five points along a line,
+eight around a closed curve); a curve–surface pair's is `coincident` or
+`points`, hits ascending by the conic parameter, plus `dropped` when the
+intersector reported a point that lies on neither operand.
 
 ## Conventions the interpreter mirrors
 

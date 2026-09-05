@@ -207,7 +207,7 @@ debug sampler of step 2.
   constructed case; every hit lies on both operands to 1e-12·scale;
   `tangent` when the case was built tangent; `Coincident` when the curve
   was built on the surface; two runs agree bit for bit.
-- [ ] Step 7 — The geometry oracle. `tools/oracle`: `expected.py` accepts
+- [x] Step 7 — The geometry oracle. `tools/oracle`: `expected.py` accepts
   `"kind": "geometry"` recipes — named surfaces and curves with frames and
   radii, `samples` of parameters and of points to project, and `pairs` to
   intersect — and writes OCCT's `Geom_*::D2` evaluations, `GeomAPI_
@@ -355,6 +355,23 @@ recommendation; kept here so `/work` does not re-ask.
   kind, reason }` and `InvalidTolerance(Tolerance)`: a tolerance that is
   not finite and positive is refused up front, since every comparison
   against it would be false.
+- **Step 7, what the oracle cannot decide.** Open CASCADE's
+  `IntAna_IntConicQuad` takes no tolerance for a conic against a quadric:
+  a line or circle built exactly tangent to a cylinder comes back as
+  none, one or two points by rounding (a circle tangent to a plane the
+  same, despite the `Tol` argument), and a line parallel to the axis
+  yields a hit at `t ≈ 1e16` from a quadratic whose leading coefficient
+  is rounding noise. The oracle drops a hit that lies on neither operand
+  (counted under `dropped`) and the comparison holds Arris's single
+  `tangent` hit to the oracle's points at a touch to 1e-6 — a touch is
+  conditioned as the square root of the rounding — while the
+  classification of every `c1-intersections` pair is pinned by name in
+  the test so a touch cannot pass vacuously. Nothing in Arris changed:
+  the parametrisations, seams, poles and projected parameters agreed
+  with OCCT at the first run, including `u = 0` for a point exactly on
+  the seam. `serde_json` gained `float_roundtrip`: its default parser
+  reads a 17-digit coordinate an ulp off, which moved the recipe hash
+  and would have moved every comparison.
 - **Step 5, the root method.** Neither closed forms nor a companion
   matrix: real-root isolation by the derivative. The real roots of `p'`
   (found recursively) split the line into monotone intervals, each

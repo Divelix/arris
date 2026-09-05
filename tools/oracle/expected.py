@@ -11,7 +11,7 @@ from oracle import OracleError, require_ocp
 
 require_ocp()
 
-from oracle.fixture import EXPECTED, compute_expected, dump_expected, load_fixture, summary_line  # noqa: E402
+from oracle.fixture import EXPECTED, compute_expected, dump_expected, load_fixture, summary_lines  # noqa: E402
 
 
 def main(argv: list[str]) -> int:
@@ -27,8 +27,8 @@ def main(argv: list[str]) -> int:
             print(f"{directory}: ERROR {e}", file=sys.stderr)
             return 1
         dump_expected(expected, directory / EXPECTED)
-        for variant, result in expected["results"].items():
-            print(summary_line(f"{directory}[{variant}]", result))
+        for line in summary_lines(str(directory), expected):
+            print(line)
     return 0
 
 

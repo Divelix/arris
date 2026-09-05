@@ -1,7 +1,10 @@
 # The fixture corpus
 
 The unit of acceptance (`docs/03-roadmap.md` §Fixtures). One directory per
-fixture, `<area>/<slug>/`, holding:
+fixture, `<area>/<slug>/`, of one of two kinds — a **solid** (the default:
+a recipe built and measured) or **geometry** (`"kind": "geometry"`, under
+`geom/`: analytic surfaces and curves evaluated, projected onto and
+intersected; §Geometry fixtures below) — holding:
 
 | File | Written by | Holds |
 |---|---|---|
@@ -76,6 +79,67 @@ committed `expected.json` and round-trips each result through STEP.
 - **Tolerances** are the fixture's; absent ones take the defaults shown.
   Counts and classifications are always exact.
 
+## Geometry fixtures (`"kind": "geometry"`)
+
+The M1 oracle: no solid, no STEP. `fixture.json` names analytic surfaces
+and curves by their frames and radii, the parameters to evaluate them at,
+the points to project onto them, and the pairs to intersect; the oracle
+writes what Open CASCADE's `Geom_*::D2`, `GeomAPI_ProjectPointOn*`,
+`IntAna_QuadQuadGeo` and `IntAna_IntConicQuad` say, and
+`crates/arris-geom/tests/oracle.rs` holds Arris to it: evaluations and
+projected parameters to 1e-9 relative, intersection types exactly, the
+oracle's sampled points on Arris's curves to 1e-9.
+
+```json
+{
+  "kind": "geometry",
+  "description": "...",
+  "params": {"R": 2},
+  "surfaces": {
+    "wall": {"type": "cylinder", "origin": [0, 0, 0], "z": [0, 0, 1], "x": [1, 0, 0], "radius": "R"},
+    "cap":  {"type": "plane", "origin": [0, 0, 5], "z": [0, 0, 1], "x": [1, 0, 0]}
+  },
+  "curves": {
+    "ring": {"type": "circle", "origin": [0, 0, 0], "z": [0, 1, 0], "x": [1, 0, 0], "radius": 3}
+  },
+  "samples": [
+    {"of": "wall", "params": [[0, 0], ["pi / 2", 3]], "points": [[0, -5, 3]]},
+    {"of": "ring", "params": ["pi"], "points": [[-4, 0, 0]]}
+  ],
+  "pairs": [{"a": "cap", "b": "wall"}, {"a": "ring", "b": "wall"}]
+}
+```
+
+| `type` | Fields |
+|---|---|
+| `plane` | `origin`, `z`, `x` |
+| `cylinder`, `sphere` | `origin`, `z`, `x`, `radius` |
+| `cone` | `origin`, `z`, `x`, `radius` (at `v = 0`), `half_angle_deg` |
+| `torus` | `origin`, `z`, `x`, `major_radius`, `minor_radius` |
+| `line` | `origin`, `direction` |
+| `circle` | `origin`, `z`, `x`, `radius` |
+| `ellipse` | `origin`, `z`, `x` (the major axis), `major_radius`, `minor_radius` |
+
+- A frame is `origin`, `z`, `x` as `Frame::new` and `gp_Ax3` build it: `x`
+  made perpendicular to `z`, both normalised, `y = z × x`. Numbers may be
+  expressions as in a solid recipe.
+- A sample's `params` are `[u, v]` pairs for a surface and `t` values for
+  a curve; `points` are projected. A pair is two surfaces, or a curve `a`
+  against a surface `b`.
+- The two fixtures here are written by `geom/generate.py` (closed forms at
+  full precision in committed poses) — edit and rerun it, then
+  `expected.py`, rather than the numbers.
+- The corpus lint checks presence, hash and shape for this kind (every
+  name resolves, every spec builds, one result per sample and pair with
+  the counts asked for); the values are the oracle test's to compare.
+- What the oracle cannot answer stably is recorded as it is: the
+  conic–quadric intersector has no tolerance, so a curve built exactly
+  tangent to a cylinder comes back as none, one or two points by rounding,
+  and Arris's single `tangent` hit is compared against whatever it
+  reported to 1e-6 (a touch is conditioned as the square root of the
+  rounding); a line parallel to the axis yields a hit at `t ≈ 1e16` that
+  the oracle drops as off both operands and counts under `dropped`.
+
 ## `expected.json`
 
 Layout in `tools/oracle/README.md`. Regenerate with
@@ -86,8 +150,11 @@ uv run --project tools/oracle tools/oracle/expected.py tests/fixtures/<area>/<sl
 
 and commit the change as `fixtures: …` saying why the numbers moved
 (`.agents/rules/git.md`). The hash covers `params`, `variants`, `steps`,
-`result` and `probes`; a change to any of them makes the old
-`expected.json` stale and the lint says so.
+`result` and `probes` of a solid, and `kind`, `params`, `surfaces`,
+`curves`, `samples` and `pairs` of a geometry fixture; a change to any of
+them makes the old `expected.json` stale and the lint says so. Both sides
+parse a coordinate to the same `f64` (serde_json's `float_roundtrip`), so
+a full-precision number hashes and evaluates identically.
 
 ## Property-test failures
 

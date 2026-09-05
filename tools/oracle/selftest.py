@@ -10,6 +10,7 @@ Exits 1 on the first disagreement. Run as
 """
 
 import json
+import math
 import sys
 import tempfile
 from pathlib import Path
@@ -21,7 +22,7 @@ require_ocp()
 from oracle import step  # noqa: E402
 from oracle.fixture import compute_expected, fixture_dirs, load_expected, load_fixture  # noqa: E402
 from oracle.measure import DEFAULT_TOLERANCES, compare, format_table, measure  # noqa: E402
-from oracle.recipe import build, variant_names  # noqa: E402
+from oracle.recipe import build, fixture_kind, variant_names  # noqa: E402
 
 PI = 3.141592653589793
 
@@ -140,6 +141,104 @@ SMOKES = [
 ]
 
 
+# A geometry recipe against closed forms: the world-frame cylinder of the
+# fixtures above evaluated, projected onto, and cut by a cap, an oblique
+# plane, a ruling and a ring — every kind of result the geometry oracle
+# writes (tests/fixtures/README.md, "kind": "geometry").
+S2 = math.sqrt(0.5)
+GEOMETRY_SMOKE = {
+    "name": "geometry: cylinder r 2 evaluated, projected onto and cut",
+    "recipe": {
+        "kind": "geometry",
+        "params": {"R": 2},
+        "surfaces": {
+            "wall": {"type": "cylinder", "origin": [0, 0, 0], "z": [0, 0, 1], "x": [1, 0, 0], "radius": "R"},
+            "cap": {"type": "plane", "origin": [0, 0, 5], "z": [0, 0, 1], "x": [1, 0, 0]},
+            "oblique": {"type": "plane", "origin": [0, 0, 0], "z": [1, 0, 1], "x": [0, 1, 0]},
+            "side": {"type": "plane", "origin": ["R", 0, 0], "z": [1, 0, 0], "x": [0, 0, 1]},
+        },
+        "curves": {
+            "ruling": {"type": "line", "origin": ["R", 0, 1], "direction": [0, 0, 1]},
+            "chord": {"type": "line", "origin": [0, 0, 1], "direction": [1, 0, 0]},
+            "ring": {"type": "circle", "origin": [0, 0, 0], "z": [0, 1, 0], "x": [1, 0, 0], "radius": 3},
+        },
+        "samples": [
+            {"of": "wall", "params": [[0, 0], ["pi / 2", 3]], "points": [[0, -5, 3], [1, 0, 2]]},
+            {"of": "ring", "params": ["pi"], "points": [[-4, 0, 0]]},
+        ],
+        "pairs": [
+            {"a": "cap", "b": "wall"},
+            {"a": "oblique", "b": "wall"},
+            {"a": "side", "b": "wall"},
+            {"a": "cap", "b": "side"},
+            {"a": "ruling", "b": "wall"},
+            {"a": "chord", "b": "wall"},
+            {"a": "ring", "b": "wall"},
+            {"a": "chord", "b": "cap"},
+        ],
+    },
+    "evaluations": {"wall": [[2, 0, 0], [0, 2, 3]], "ring": [[-3, 0, 0]]},
+    "derivatives": {"wall": [{"du": [0, 2, 0], "dv": [0, 0, 1], "duu": [-2, 0, 0]}]},
+    "projections": {"wall": [{"uv": [3 * PI / 2, 3], "distance": 3}, {"uv": [0, 2], "distance": 1}], "ring": [{"t": PI, "distance": 1}]},
+    "pairs": [
+        ("circle", 1),
+        ("ellipse", 1),
+        ("line", 1),
+        ("line", 1),
+        ("coincident", 0),
+        ("points", 2),
+        ("points", 4),
+        ("points", 0),
+    ],
+    "ellipse_axes": (2 / S2, 2),
+}
+
+
+def _close(a, b, tol=1e-9) -> bool:
+    return all(abs(x - y) <= tol * max(1.0, abs(x), abs(y)) for x, y in zip(a, b))
+
+
+def check_geometry_smoke() -> bool:
+    smoke = GEOMETRY_SMOKE
+    print(f"smoke: {smoke['name']}")
+    expected = compute_expected(smoke["recipe"])
+    ok = expected.get("kind") == "geometry"
+    by_name = {s["of"]: s for s in expected["samples"]}
+    for name, points in smoke["evaluations"].items():
+        for e, p in zip(by_name[name]["evaluations"], points):
+            if not _close(e["point"], p):
+                print(f"  {name} at {e['at']}: {e['point']} differs from {p}")
+                ok = False
+    for name, rows in smoke["derivatives"].items():
+        for e, row in zip(by_name[name]["evaluations"], rows):
+            for key, value in row.items():
+                if not _close(e[key], value):
+                    print(f"  {name} at {e['at']}: {key} {e[key]} differs from {value}")
+                    ok = False
+    for name, rows in smoke["projections"].items():
+        for e, row in zip(by_name[name]["projections"], rows):
+            got = e["uv"] if "uv" in row else [e["t"]]
+            want = row["uv"] if "uv" in row else [row["t"]]
+            if not _close(got, want) or abs(e["distance"] - row["distance"]) > 1e-9:
+                print(f"  {name} projection of {e['point']}: {got} at {e['distance']} differs from {want} at {row['distance']}")
+                ok = False
+    for pair, (kind, count) in zip(expected["pairs"], smoke["pairs"]):
+        got = len(pair.get("curves", pair.get("hits", [])))
+        if pair["type"] != kind or got != count:
+            print(f"  {pair['a']} vs {pair['b']}: {pair['type']} with {got} differs from {kind} with {count}")
+            ok = False
+    # The oblique section's sampled points lie on the ellipse of the
+    # closed form: minor radius R, major R / cos 45°, centred at the origin.
+    big, small = smoke["ellipse_axes"]
+    for p in expected["pairs"][1]["curves"][0]["points"]:
+        # Major axis along (−1, 0, 1)/√2 (or its opposite), minor along y.
+        along = (-p[0] + p[2]) * S2
+        if abs((along / big) ** 2 + (p[1] / small) ** 2 - 1.0) > 1e-9 or abs(p[0] + p[2]) > 1e-9:
+            print(f"  oblique section point {p} is off the closed-form ellipse")
+            ok = False
+    return ok
+
+
 def check_analytic(name: str, result: dict, analytic: dict) -> bool:
     ok = True
     for key in ("volume", "area"):
@@ -161,7 +260,7 @@ def check_analytic(name: str, result: dict, analytic: dict) -> bool:
 
 
 def run_smokes(tmp: Path) -> bool:
-    ok = True
+    ok = check_geometry_smoke()
     for smoke in SMOKES:
         recipe = smoke["recipe"]
         print(f"smoke: {smoke['name']}")
@@ -231,7 +330,10 @@ def main(argv: list[str]) -> int:
                 fixture = load_fixture(directory)
                 fresh = compute_expected(fixture)
                 ok &= check_committed(name, fresh, load_expected(directory))
-                ok &= round_trip(name, fixture, fresh, tmp)
+                if fixture_kind(fixture) == "geometry":
+                    print(f"  {name}: geometry, no STEP round trip")
+                else:
+                    ok &= round_trip(name, fixture, fresh, tmp)
             except OracleError as e:
                 print(f"  {name}: ERROR {e}")
                 ok = False

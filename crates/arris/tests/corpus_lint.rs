@@ -4,14 +4,14 @@
 
 use std::path::Path;
 
-use arris_debug::fixtures::{corpus, lint, load};
+use arris_debug::fixtures::{Kind, corpus, kind_of, lint, load};
 
 #[test]
 fn every_fixture_directory_is_clean() {
     let dirs = corpus();
     assert!(
-        dirs.len() >= 15,
-        "expected the C1 corpus, found {} directories",
+        dirs.len() >= 17,
+        "expected the C1 corpus and the two geometry fixtures, found {} directories",
         dirs.len()
     );
     let problems: Vec<String> = dirs.iter().flat_map(|d| lint(d)).collect();
@@ -20,7 +20,11 @@ fn every_fixture_directory_is_clean() {
 
 #[test]
 fn every_row_of_the_roadmap_table_has_a_fixture() {
-    let names: Vec<String> = corpus().iter().map(|d| load(d).unwrap().name).collect();
+    let names: Vec<String> = corpus()
+        .iter()
+        .filter(|d| kind_of(d).unwrap() == Kind::Solid)
+        .map(|d| load(d).unwrap().name)
+        .collect();
     for expected in [
         "primitive/box",
         "primitive/cylinder",
@@ -90,6 +94,46 @@ fn a_wrong_analytic_value_fails_the_lint() {
     );
 
     assert!(lint(Path::new("/nonexistent/fixture")).len() == 1);
+}
+
+/// The geometry kind is linted for presence, hash and shape: a stale
+/// recipe and a result count that does not match the recipe both fail.
+#[test]
+fn a_geometry_fixture_is_linted_for_presence_hash_and_shape() {
+    let geometry: Vec<String> = corpus()
+        .iter()
+        .filter(|d| kind_of(d).unwrap() == Kind::Geometry)
+        .map(|d| arris_debug::fixtures::name_of(d))
+        .collect();
+    for expected in ["geom/analytic-eval", "geom/c1-intersections"] {
+        assert!(geometry.iter().any(|n| n == expected), "missing {expected}");
+    }
+
+    let scratch = tempdir("geom-stale");
+    copy_fixture("geom/c1-intersections", &scratch);
+    let path = scratch.join("fixture.json");
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(text.contains("\"radius\": 2.0"));
+    std::fs::write(
+        &path,
+        text.replacen("\"radius\": 2.0", "\"radius\": 2.5", 1),
+    )
+    .unwrap();
+    let problems = lint(&scratch);
+    assert!(problems.iter().any(|p| p.contains("stale")), "{problems:?}");
+
+    let scratch = tempdir("geom-shape");
+    copy_fixture("geom/c1-intersections", &scratch);
+    let path = scratch.join("expected.json");
+    let mut expected: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    expected["pairs"].as_array_mut().unwrap().pop();
+    std::fs::write(&path, expected.to_string()).unwrap();
+    let problems = lint(&scratch);
+    assert!(
+        problems.iter().any(|p| p.contains("pairs in the recipe")),
+        "{problems:?}"
+    );
 }
 
 fn tempdir(tag: &str) -> std::path::PathBuf {
