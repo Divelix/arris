@@ -9,3 +9,12 @@
 //! checker).
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
+
+mod report;
+mod violation;
+
+pub use report::Report;
+pub use violation::{
+    DegenerateFault, EdgeEnd, EdgeUseFault, EndMismatch, FaceFault, Level, LoopBreak, NestingFault,
+    Quantity, Reference, SeamFault, ShellNestingFault, ToleranceBound, Violation, WireFault,
+};

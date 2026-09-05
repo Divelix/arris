@@ -69,7 +69,7 @@ STEP. No Rerun (M3). No publishing of the workspace crates (backlog).
   `From` conversions in `arris-topo`; `serde` derives behind the feature.
   Tests: composition is XOR and associative (proptest); ids order by
   `(index, generation)`; serde round trip of a `Shape`.
-- [ ] Step 3 — Checker skeleton. `Level`, `Violation` and `Report` in
+- [x] Step 3 — Checker skeleton. `Level`, `Violation` and `Report` in
   `arris-check`; `Report` displays violations sorted by entity then
   variant, deterministic; `is_ok`. Test: a doc-drift test parses the
   invariant tables of `docs/02-data-model.md` and asserts the set of
@@ -164,6 +164,14 @@ tag `m0` (the human's).
   `arris_topo::entity` at M2 and 02 §Entities now says so. Extra public
   types beside the plan's list: `EntityKind`, `GeometryId`, `WrongKind`
   (the error of a typed `TryFrom<Shape>`).
+
+- Step 3: `Violation` is `#[non_exhaustive]` with a fault sub-enum where a
+  row lists several conditions (E2, E6, E7, L1, L4, F1, S2, B1, B3), so a
+  row stays one variant. Payloads are the plan's best guess at what M2's
+  checker will have in hand; M2 may change them and names the change.
+  Extra public types: `Reference`, `Quantity`, `EdgeEnd`, `ToleranceBound`
+  and the fault enums. The Euler line is not on `Report` yet — it needs a
+  `Model` (M2).
 
 ## Open questions
 
