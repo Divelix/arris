@@ -1,0 +1,11 @@
+[package]
+name = "arris"
+version = "0.0.1"
+edition = "2024"
+description = "A CAD geometric kernel written from scratch in Rust. Placeholder release; work in progress."
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+keywords = ["cad", "geometry", "brep", "kernel", "solid-modeling"]
+categories = ["graphics", "mathematics", "science"]
+
+[dependencies]
