@@ -243,7 +243,7 @@ debug sampler of step 2.
   unchanged at 1000 parameters; derivatives match central differences;
   a bilinear patch evaluates as its plane; a periodic knot vector wraps;
   projection onto the NURBS circle agrees with the analytic circle's.
-- [ ] Step 9 — `Curve2` and NURBS fitting. `Curve2::{Line, Circle,
+- [x] Step 9 — `Curve2` and NURBS fitting. `Curve2::{Line, Circle,
   Ellipse, Nurbs}` with the `Frame2` delta (decided, §Open questions),
   `eval(t) -> Curve2Eval`, `project(Point2)`, `domain`, `period`, `kind`;
   `fit_curve2(f: impl Fn(f64) -> Point2, range, degree, deviation: impl
@@ -391,6 +391,20 @@ recommendation; kept here so `/work` does not re-ask.
   factor of four has a sixth derivative large enough that the
   second-order stencil's truncation error exceeds `1e-6·scale` at every
   usable step.
+- **Step 9, the fit's linear algebra and its margin.** The normal
+  equations of the least-squares fit have bandwidth `p`, so `fit_curve2`
+  factorises them with its own banded Cholesky (a few dozen lines, no
+  dense solver): a fit at the `MAX_FIT_SPANS` bound costs milliseconds
+  and the divergence test runs at the bound without a wait. The fit
+  accepts a span only where the caller's deviation is at or below half
+  the tolerance at the check parameters (`FIT_MARGIN`): the residual
+  oscillates about `p + 1` times per span and is checked `4p + 4` times,
+  so the checks see its extrema to within `cos(π/8)`, and the margin is
+  what makes "meets `tol` at 1000 parameters" hold between them. A 2D
+  ambiguity is `GeomError::AmbiguousUv` with a `Point2`, since
+  `Ambiguous` carries a `Point3`; `Curve2Projection` mirrors
+  `CurveProjection`. Neither was in the design deltas; both are named in
+  the commit.
 - **Step 5, the root method.** Neither closed forms nor a companion
   matrix: real-root isolation by the derivative. The real roots of `p'`
   (found recursively) split the line into monotone intervals, each

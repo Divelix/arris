@@ -202,19 +202,46 @@ plane–cylinder pairs produce only lines, circles and ellipses.
 ```rust
 pub enum Curve2 {
     Line    { origin: Point2, direction: UnitVec2 },
-    Circle  { center: Point2, radius: f64 },
-    Ellipse { center: Point2, x: UnitVec2, major_radius: f64, minor_radius: f64 },
+    Circle  { frame: Frame2, radius: f64 },
+    Ellipse { frame: Frame2, major_radius: f64, minor_radius: f64 },
     Nurbs   (NurbsCurve2),
 }
 ```
 
-A pcurve is a curve in a surface's (u, v) plane. On a plane every analytic
-3D curve has an analytic pcurve. On a cylinder, a circle around the axis is
-a `Line` at constant v, a line along the axis is a `Line` at constant u, and
-an oblique plane section (a 3D ellipse) is a sinusoid in (u, v) — not a
-`Curve2` variant, so it is a `Nurbs` fitted to the edge's tolerance. The
-rule: exact where a variant exists, fitted otherwise, and in both cases the
-checker verifies the pcurve against the 3D curve (§Invariants E4).
+A pcurve is a curve in a surface's (u, v) plane, with the parametrisations
+of the 3D table: `O + t·D`, `O + R(c t·X + s t·Y)`, `O + a c t·X + b s
+t·Y`. A circle or an ellipse is placed by a `Frame2`, whose handedness is
+the direction of traversal: right-handed is counter-clockwise in (u, v),
+left-handed clockwise. That is what a `center`-and-radius circle could not
+say, and a 3D circle shared by a cap and a wall *is* clockwise on the one
+of the two planes whose normal opposes the circle's `Z` — the pcurve keeps
+the edge's parameter and the frame records the turn, so the curve is never
+reversed (§Orientation). `Curve2::eval(t)` returns `Curve2Eval { point,
+d1, d2 }`; `domain()`, `period()` and `kind()` (`Curve2Kind`) follow the
+table; `project(p)` returns `Curve2Projection { t, point, distance }` by
+the closed forms of the 3D variants in the plane, `GeomError::AmbiguousUv`
+at a circle's centre and on an ellipse's ambiguous loci, and by sampling
+and bracketed Newton for a NURBS.
+
+On a plane every analytic 3D curve has an analytic pcurve. On a cylinder, a
+circle around the axis is a `Line` at constant v, a line along the axis is
+a `Line` at constant u, and an oblique plane section (a 3D ellipse) is a
+sinusoid in (u, v) — not a `Curve2` variant, so it is a `Nurbs` fitted to
+the edge's tolerance. The rule: exact where a variant exists, fitted
+otherwise, and in both cases the checker verifies the pcurve against the
+3D curve (§Invariants E4).
+
+**Fitting** is `fit_curve2(f, range, degree, deviation, tol)`: a global
+least-squares B-spline approximation of `f: t ↦ (u, v)` at the *given*
+parameter (*The NURBS Book* §9.4.1) — so the result is same-parameter by
+construction and interpolates both ends — with the knot vector refined
+where the caller's `deviation(t, fitted point)` exceeds `tol` (checked at
+`4p + 4` parameters per span, accepted at half the tolerance so the
+result meets it between the checks too). The deviation is the caller's
+measure in the caller's units: for a pcurve, the 3D distance between the
+surface at the fitted point and the true curve. Refinement is bounded by
+`MAX_FIT_SPANS` (1024): beyond it the result is `FitError::Diverged`
+(`GeomError::Fit`), never a loop.
 
 ### NURBS
 

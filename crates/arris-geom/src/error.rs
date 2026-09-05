@@ -2,9 +2,9 @@
 
 use core::fmt;
 
-use arris_math::{Point3, Tolerance};
+use arris_math::{Point2, Point3, Tolerance};
 
-use crate::{Curve2Kind, CurveKind, SurfaceKind};
+use crate::{Curve2Kind, CurveKind, FitError, SurfaceKind};
 
 /// The kind of a geometric operand, for errors that name a pair.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -122,4 +122,17 @@ pub enum GeomError {
         /// The point.
         point: Point3,
     },
+    /// The (u, v) point has no unique nearest point on the pcurve.
+    #[error("projection of {point} onto a {kind} is ambiguous: the point is on {locus}")]
+    AmbiguousUv {
+        /// What was projected onto.
+        kind: GeomKind,
+        /// The locus the point lies on.
+        locus: AmbiguousLocus,
+        /// The point.
+        point: Point2,
+    },
+    /// A NURBS fit ([`crate::fit_curve2`]) did not produce a curve.
+    #[error("fit: {0}")]
+    Fit(#[from] FitError),
 }

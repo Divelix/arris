@@ -277,7 +277,7 @@ impl Curve {
 /// candidate is polished by Newton on `g`, the nearest wins, and two
 /// nearest at the same distance to rounding (mirror images across the
 /// major axis) are the ambiguity.
-fn ellipse_nearest(
+pub(crate) fn ellipse_nearest(
     a: f64,
     b: f64,
     px: f64,
