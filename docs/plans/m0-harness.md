@@ -115,7 +115,7 @@ STEP. No Rerun (M3). No publishing of the workspace crates (backlog).
   1e-6 relative, and the recipe hash in `expected.json` matches the recipe.
   Test: the lint is green; a deliberately wrong `analytic` value in a
   scratch fixture fails it.
-- [ ] Step 8 — Property-test configuration. `arris_debug::prop`:
+- [x] Step 8 — Property-test configuration. `arris_debug::prop`:
   `config()` reading `ARRIS_PROPTEST_CASES` (default 256) with a fixed
   seed source so a failure prints a reproducible seed; strategies
   `finite_f64(range)`, `unit_vec3()`, `rotation()` (uniform unit
@@ -211,6 +211,14 @@ tag `m0` (the human's).
   compact sorted encoding and the oracle's `canonical_json` reproduces it
   (bare exponents, non-ASCII kept). Every one of the fifteen fixtures'
   oracle values matched the roadmap table's closed forms on the first run.
+
+- Step 8: the seeded path is `prop::check(strategy, test)` over a
+  `TestRunner` built from `ARRIS_PROPTEST_SEED` (default fixed), because
+  the `proptest!` macro seeds itself from entropy and offers no hook; a
+  `proptest!` block may still take `prop::config()` for the case count.
+  Strategies return `[f64; 3]` / `[f64; 4]` until M1's math types exist.
+  proptest's own `proptest-regressions/` files are gitignored; the seed
+  in a fixture's commit body is the regression record.
 
 ## Open questions
 

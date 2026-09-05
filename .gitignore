@@ -1,4 +1,7 @@
 /target
+# proptest's own regression files: a property failure becomes a fixture
+# with its seed instead (tests/fixtures/README.md).
+proptest-regressions/
 # `inspect` skill output: PNG renders and text dumps of shapes under work.
 /target/inspect
 # The Open CASCADE oracle's Python environment (tools/oracle/README.md).

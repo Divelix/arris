@@ -89,6 +89,19 @@ and commit the change as `fixtures: …` saying why the numbers moved
 `result` and `probes`; a change to any of them makes the old
 `expected.json` stale and the lint says so.
 
+## Property-test failures
+
+Property tests run through `arris_debug::prop::check`: a seeded
+`proptest` runner, `ARRIS_PROPTEST_CASES` cases (default 256) from
+`ARRIS_PROPTEST_SEED` (default fixed, so CI is deterministic). A failure
+prints the shrunk input and the `ARRIS_PROPTEST_SEED=…` that reproduces
+it. proptest's own `proptest-regressions/` files are gitignored and never
+committed: the regression is a fixture under this directory (or a
+hand-picked test beside the property) with the *desired* assertion,
+`#[ignore]`d until it passes, and the seed and case count in the commit
+body — so the original case stays reproducible after the shrinker or the
+strategy changes (`.agents/rules/kernel.md` §Testing, `inspect` skill).
+
 ## Conventions the numbers assume
 
 Open CASCADE's, which Arris matches (`docs/02-data-model.md`
