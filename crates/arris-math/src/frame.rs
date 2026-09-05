@@ -141,6 +141,18 @@ impl Frame {
         Frame { origin, x, y, z }
     }
 
+    /// The same axes at another origin, bit for bit: a translation that
+    /// leaves the orientation untouched, where `transformed` by a pure
+    /// translation would re-round the axes through the identity rotation.
+    pub const fn with_origin(&self, origin: Point3) -> Frame {
+        Frame {
+            origin,
+            x: self.x,
+            y: self.y,
+            z: self.z,
+        }
+    }
+
     /// The origin.
     pub const fn origin(&self) -> Point3 {
         self.origin

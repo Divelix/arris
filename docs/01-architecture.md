@@ -191,9 +191,13 @@ returns provenance like any other.
 `Surface` and `Curve` are open enums, not trait objects (`SEED.md` §9).
 Every intersection, projection and classification is an exhaustive `match`
 over the pair of variants, so adding a variant makes every dispatch fail to
-compile until it is handled, and a pair without an exact formula is an
-`OpError::Unsupported` arm — never a wildcard falling back to a generic
-marcher where a closed form exists. The NURBS variant is one arm like the
+compile until it is handled, and a pair without an exact formula is a
+`GeomError::Unsupported` arm naming both kinds (`OpError::Unsupported`
+once an operation wraps it with the entities) — never a wildcard falling
+back to a generic marcher where a closed form exists. The results are
+enums too: `SurfaceIntersection::{Empty, Coincident, Transversal,
+Tangent}` for a surface pair, so a caller matches the case rather than
+counting curves. The NURBS variant is one arm like the
 others; a NURBS–NURBS marcher, when it comes, is what that arm calls, and
 analytic pairs never route through it.
 

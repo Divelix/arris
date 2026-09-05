@@ -2,7 +2,7 @@
 
 use core::fmt;
 
-use arris_math::Point3;
+use arris_math::{Point3, Tolerance};
 
 use crate::{CurveKind, SurfaceKind};
 
@@ -87,6 +87,19 @@ pub enum GeomError {
         /// The second operand's kind.
         b: GeomKind,
     },
+    /// An operand has no valid representation for the query: a frame
+    /// with a non-finite axis, later a knot vector that is not one.
+    #[error("degenerate {kind}: {reason}")]
+    Degenerate {
+        /// The operand.
+        kind: GeomKind,
+        /// What is wrong with it.
+        reason: String,
+    },
+    /// The tolerance handed to the query is not finite and positive in
+    /// both parts, so no decision it makes would mean anything.
+    #[error("tolerance {0:?} is not finite and positive")]
+    InvalidTolerance(Tolerance),
     /// The point has no unique nearest point on the target, or its
     /// nearest point has no unique parameter that the query could return
     /// without guessing.

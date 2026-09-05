@@ -162,7 +162,7 @@ debug sampler of step 2.
   projects back to `(u, v)` modulo the period to 1e-12; `distance` equals
   the closed-form distance; the `Ambiguous` loci are reported, not
   guessed — all at 1000 random poses per variant.
-- [ ] Step 4 — Plane–cylinder and plane–plane. `intersect_surfaces(a, b,
+- [x] Step 4 — Plane–cylinder and plane–plane. `intersect_surfaces(a, b,
   tol)`: plane–plane → `Empty` (parallel, distinct beyond `tol.linear`),
   `Coincident`, or one `Transversal` line; plane–cylinder by the case
   table — normal parallel to the axis within `tol.angular` → circle;
@@ -347,3 +347,11 @@ recommendation; kept here so `/work` does not re-ask.
   expected point — against 1e-12·scale, which is the statement the
   checker's E4 will make too. Sphere `v` is compared plainly, being an
   angle at radius `R`.
+- **Step 4, exact axes.** A circle cut from a cylinder must carry the
+  cylinder's axes bit for bit (the seam is shared), and translating the
+  frame through an `Isometry` re-rounds them by an ulp through the
+  identity rotation. `Frame::with_origin` (arris-math, public) moves a
+  frame's origin and nothing else. `GeomError` gained `Degenerate {
+  kind, reason }` and `InvalidTolerance(Tolerance)`: a tolerance that is
+  not finite and positive is refused up front, since every comparison
+  against it would be false.

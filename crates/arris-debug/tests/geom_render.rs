@@ -56,3 +56,63 @@ fn cylinder_wireframe_with_a_circle_and_an_ellipse_renders() {
     let path = render_png(&mesh, &lines, View::Iso, None, "cylinder-wireframe").unwrap();
     assert!(path.exists());
 }
+
+/// The curves `intersect_surfaces` returns for a cylinder cut by a
+/// parallel plane (circle), an oblique plane (ellipse) and a perpendicular
+/// plane through the axis (two rulings) render on the cylinder's
+/// wireframe: `target/inspect/plane-cylinder-sections.png`
+/// (`docs/plans/m1-geometry.md` step 4).
+#[test]
+fn plane_cylinder_sections_render() {
+    use arris_geom::{SurfaceIntersection, intersect_surfaces};
+    use arris_math::Precision;
+
+    let tol = Precision::DEFAULT.tolerance();
+    let cyl = Surface::Cylinder {
+        frame: Frame::world(),
+        radius: 1.0,
+    };
+    let height = Interval::new(-1.5, 1.5).unwrap();
+    let mut lines = wireframe_of(&cyl, [Interval::TURN, height], 12);
+    let tilt = 30f64.to_radians();
+    let planes = [
+        Frame::from_z(Point3::new(0.0, 0.0, -1.1), Vec3::z()).unwrap(),
+        Frame::from_z(
+            Point3::new(0.0, 0.0, 0.5),
+            Vec3::new(0.0, -tilt.sin(), tilt.cos()),
+        )
+        .unwrap(),
+        Frame::from_z(Point3::new(0.0, 0.0, 0.0), Vec3::x()).unwrap(),
+    ];
+    let mut kinds = Vec::new();
+    for frame in planes {
+        let plane = Surface::Plane { frame };
+        let SurfaceIntersection::Transversal(curves) =
+            intersect_surfaces(&plane, &cyl, tol).unwrap()
+        else {
+            panic!("every section here is transversal")
+        };
+        for c in curves {
+            kinds.push(c.kind());
+            let range = match c {
+                Curve::Line { .. } => height,
+                _ => Interval::TURN,
+            };
+            lines.push(polyline_of(&c, range, 96));
+        }
+    }
+    use arris_geom::CurveKind::{Circle, Ellipse, Line};
+    assert_eq!(kinds, [Circle, Ellipse, Line, Line]);
+    let mesh = TriMesh::new();
+    let path = render_png(&mesh, &lines, View::Iso, None, "plane-cylinder-sections").unwrap();
+    assert!(path.exists());
+    let front = render_png(
+        &mesh,
+        &lines,
+        View::Front,
+        None,
+        "plane-cylinder-sections-front",
+    )
+    .unwrap();
+    assert!(front.exists());
+}

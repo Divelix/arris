@@ -133,6 +133,22 @@ line's parameter is arc length because `D` is unit. `Curve::eval(t)` returns
 the nearest point as `CurveProjection { t, point, distance }`, a periodic
 `t` in `[0, 2π)`; a point on a circle's axis is `GeomError::Ambiguous`.
 
+`intersect_surfaces(a, b, tol)` returns `SurfaceIntersection::{Empty,
+Coincident, Transversal(Vec<Curve>), Tangent(Vec<Curve>)}` for the pairs
+with a closed form and `GeomError::Unsupported` naming the pair for every
+other — in cycle 1, plane–plane (a line) and plane–cylinder (a circle, an
+ellipse, two rulings, one tangent ruling, or nothing). `tol.angular`
+decides parallel and perpendicular, `tol.linear` decides coincident,
+tangent and empty. An intersection curve's frame is Arris's own
+deterministic choice, matching Open CASCADE only where the *surface's*
+parametrisation is concerned: a circle on a cylinder takes the cylinder's
+`X` so the seam is shared; an ellipse's `Z` is the plane's normal and its
+`X` the major axis in the direction of increasing `v`; a line's origin is
+its point nearest the cylinder's origin (plane–cylinder) or the first
+plane's origin (plane–plane), and a ruling's direction is the cylinder's
+`Z`. Swapping the operands gives the same point sets, up to a line's
+orientation.
+
 `⚠ OPEN:` the intersection curve of two cylinders (and of the other quadric
 pairs whose curves are not conics) has an exact parametrisation that is not
 a `Curve` variant. Either it becomes one (`Curve::QuadricSection`, exact,
