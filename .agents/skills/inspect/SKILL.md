@@ -21,7 +21,7 @@ that lands them updates the commands here in the same step.
 | Is it valid? | `arris-check` — `Model::check(shape)` | Every violated invariant with the entity that violates it. Read this first; most "wrong picture" bugs are a checker line. |
 | What is it, exactly? | text dump — `arris_debug::dump_text(&model, shape)` | Entities, ids, orientations, geometry parameters, tolerances, pcurves; deterministic, diffable, what a fixture stores. |
 | What does it look like? | PNG — `arris_debug::render_png(&mesh, &polylines, View::Iso, highlight, "name")` over a `TriMesh` and `Polyline`s (M3 adds the body → mesh step) | Orthographic 800×600 render to `target/inspect/<name>.png`, one flat colour per face id, edges black with hidden parts hidden, dots at edge ends, `Some(Highlight::Face(id) / Edge(id) / Point(p))` in red. `View::{Iso, Top, Front, Right}`; `Iso` looks from (+1, −1, +1) so +x, −y and +z faces are visible. **Read the PNG with the Read tool** — it renders as an image. `arris_debug::render` returns the pixel buffer for a test that counts colours. |
-| Is it right? | oracle — `tools/oracle/compare.py <fixture>` | Arris's volume, area, centroid, counts and point classifications against Open CASCADE's, with the fixture's tolerance. |
+| Is it right? | oracle — `uv run --project tools/oracle tools/oracle/compare.py <fixture-dir> <file.step> [--variant NAME]` | Arris's volume, area, centroid, counts, genus and probe classifications (read from the STEP it wrote) against Open CASCADE's `expected.json`, within the fixture's tolerances; a table, exit 1 on mismatch. `expected.py <dir>` regenerates the oracle's answer, `selftest.py` proves the oracle against itself. |
 
 For the human: `arris_debug::rerun(&model, shape)` streams the same scene to
 a Rerun viewer, with intersection curves and per-entity colours as separate
@@ -67,5 +67,6 @@ case is reproducible even after the shrinker changes.
 - The PNG renderer is a software rasteriser of the *tessellation*. A shape
   the tessellator cannot mesh renders as its edges only — that is itself a
   finding, not a rendering bug.
-- The oracle needs `tools/oracle/.venv`; `tools/oracle/README.md` says how
-  it is created. A missing venv makes `compare.py` fail loudly, never skip.
+- The oracle needs `tools/oracle/.venv` (`uv sync --project tools/oracle`;
+  `tools/oracle/README.md`). Run outside it, every script fails on its
+  first line with that command, never skips.

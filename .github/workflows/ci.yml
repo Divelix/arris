@@ -56,6 +56,19 @@ jobs:
       - run: tools/check-layers.sh
       - run: tools/check-layers.sh --self-test
 
+  # The Open CASCADE oracle agrees with itself: every op against closed
+  # forms, committed expected.json values reproduced, OCCT's own STEP read
+  # back clean (tools/oracle/README.md).
+  oracle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --project tools/oracle
+      - run: uv run --project tools/oracle tools/oracle/selftest.py
+
   # Pure Rust, wasm-capable (SEED.md §4): the kernel builds for wasm with
   # its default features. A crate that grows a native-only dependency
   # breaks here first.

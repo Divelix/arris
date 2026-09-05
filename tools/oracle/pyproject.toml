@@ -1,0 +1,13 @@
+# The Open CASCADE test oracle (SEED.md §7, docs/01-architecture.md §Formats
+# and tools). Run, never linked: no crate depends on this. Python 3.12 and the
+# cadquery-ocp wheels are pinned so every expected.json is reproducible; the
+# OCCT version is recorded in each one.
+[project]
+name = "arris-oracle"
+version = "0.0.1"
+description = "Open CASCADE oracle for the Arris fixture corpus"
+requires-python = ">=3.12,<3.13"
+dependencies = ["cadquery-ocp==8.0.1.*"]
+
+[tool.uv]
+package = false

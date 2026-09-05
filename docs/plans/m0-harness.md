@@ -92,7 +92,7 @@ STEP. No Rerun (M3). No publishing of the workspace crates (backlog).
   counted from the pixel buffer; the agent reads the PNG once and records
   in the commit body that it shows a cube. `inspect` skill's PNG row
   updated to the real signature.
-- [ ] Step 6 — Oracle environment and interpreter. `tools/oracle/` as a
+- [x] Step 6 — Oracle environment and interpreter. `tools/oracle/` as a
   `uv` project pinned to Python 3.12 and `cadquery-ocp==8.0.1.*` (resolves
   on this machine, checked 2026-09-05); `oracle/recipe.py` builds a body
   from a `fixture.json` recipe — box, cylinder, planar profile of lines
@@ -188,6 +188,19 @@ tag `m0` (the human's).
   pointing at). Lines get a small depth bias toward the viewer so an edge
   on a face wins the z-test; shading is quantised to 32 levels so the two
   triangles of one planar face never differ by a rounding bit.
+
+- Step 6: recipes carry `params` (numbers) usable as string expressions
+  in any numeric field, and `variants` overriding them, so
+  `provenance/bolt-pattern-rebuild` is one recipe with three variants and
+  the eight bolt holes are `50 + R * cos(radians(45 * k))`, not eight
+  hand-computed floats. `expected.json` therefore holds `results` keyed by
+  variant (`default` always). The "Euler line" check is: the genus the
+  oracle derives from its counts (`S − (V − E + 2F − L) / 2`) equals the
+  fixture's `analytic.genus` — with the genus taken from the counts alone
+  the line would be zero by construction. Arcs in profiles are three-point
+  (`arc_to` + `via`), which has no orientation convention to mismatch.
+  Recipes-not-STEP and the `cadquery-ocp==8.0.1.*` pin (resolved
+  2026-09-05 as 8.0.1.0.0) stand as the plan assumed; no ADR.
 
 ## Open questions
 
