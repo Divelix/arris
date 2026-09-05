@@ -22,11 +22,13 @@ git config core.hooksPath .githooks   # fmt, clippy -D warnings, test, doc befor
 
 ## Current state
 
-**Pre-M0 (2026-09-05).** `SEED.md` is written and frozen; the docs system
-is scaffolded; the crate is a placeholder on crates.io. **Next:** the three
-design docs (`SEED.md` §10 directives 2–4), then `/plan M0` — the
-workspace, the invariant checker's skeleton, the Open CASCADE oracle and
-the `inspect` harness, before any geometry.
+**Pre-M0 (2026-09-05).** `SEED.md` is frozen; the docs system is
+scaffolded; the three design docs are written (`SEED.md` §10 directives
+2–4 done); the crate is a placeholder on crates.io. Plan `m0-harness` is
+open in `docs/plans/`: the workspace, the bookkeeping types, the checker's
+skeleton, the mesh type and PNG rasteriser, the Open CASCADE oracle and the
+fixture corpus — before any geometry. **Next:** the human reads the plan and
+its open questions, then `/work m0-harness`.
 
 ## Rules that are not derivable from the code
 
