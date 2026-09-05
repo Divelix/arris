@@ -12,9 +12,25 @@ operation contract are in [01-architecture](01-architecture.md).
   is what makes a model's numbers meaningful.
 - **`f64`** everywhere. Angles in radians. Parameters are `f64`; parameter
   ranges are `Interval` from `arris-math`.
+- **Points and vectors** are `nalgebra`'s by alias — `Point3`, `Vec3`,
+  `UnitVec3`, `Point2`, `Vec2`, `UnitVec2` — with `nalgebra` re-exported
+  from `arris-math` (ADR-0001). A `UnitVec3` is unit by construction and
+  that is the only invariant it carries.
 - **Frames** are right-handed: `Frame { origin, x, y, z }` with `x`, `y`, `z`
-  orthonormal `UnitVec3` and `z = x × y`. Every analytic surface and curve is
-  placed by a frame, so a transform is a frame change and nothing else.
+  orthonormal `UnitVec3` and `z = x × y`, built only through validating
+  constructors (`Frame::new(origin, z, x_hint)`, `Frame::from_z`, which
+  picks `x` by the rule of Open CASCADE's `gp_Ax3(P, N)` so an axis-built
+  cylinder seams where the oracle's does, `Frame::from_rotation`). Every
+  analytic surface and curve is placed by a frame, so a transform is a
+  frame change and nothing else: an **`Isometry`** (a rotation then a
+  translation) moves geometry through `Frame::transformed`. A **`Frame2`**
+  is the (u, v)-plane analogue and may be of either handedness, which is
+  how a pcurve records its direction of traversal.
+- **Tolerances** reach an algorithm as `Tolerance { linear, angular }`,
+  derived from the model by `Precision::tolerance()` or from an entity's
+  own tolerance by the operation that owns it (§Tolerances). Exact
+  predicates (`arris_math::predicates::{orient2d, incircle}`) return a
+  `Sign` and take no tolerance.
 - **Orientation** is the two-valued `Orientation::{Forward, Reversed}` and
   composes by XOR: `Forward ∘ o = o`, `Reversed ∘ o = !o`.
 - **Parametrisations match Open CASCADE's `Geom` classes** for the analytic

@@ -43,6 +43,7 @@ name = "arris-debug"
 version = "0.0.1"
 dependencies = [
  "arris-io",
+ "arris-math",
  "arris-mesh",
  "arris-ops",
  "arris-topo",
@@ -72,7 +73,9 @@ dependencies = [
 name = "arris-math"
 version = "0.0.1"
 dependencies = [
+ "arris-debug",
  "nalgebra",
+ "proptest",
  "robust",
  "serde",
  "serde_json",

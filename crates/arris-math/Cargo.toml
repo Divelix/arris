@@ -16,7 +16,12 @@ nalgebra.workspace = true
 robust.workspace = true
 serde = { workspace = true, optional = true }
 
+# `arris-debug` supplies the seeded property-test runner and strategies; the
+# dev-dependency cycle it makes is why the property tests are integration
+# tests under `tests/` (docs/01-architecture.md §Formats and tools).
 [dev-dependencies]
+arris-debug.workspace = true
+proptest.workspace = true
 serde_json.workspace = true
 
 [lints]

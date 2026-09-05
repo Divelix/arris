@@ -113,7 +113,7 @@ debug sampler of step 2.
 
 ## Steps
 
-- [ ] Step 1 — Math foundation and ADR-0001. `arris-math`: the point,
+- [x] Step 1 — Math foundation and ADR-0001. `arris-math`: the point,
   vector and unit aliases with `nalgebra` re-exported; `Frame::new(origin,
   z, x_hint) -> Result<Frame, FrameError>` (Gram–Schmidt, degenerate hint
   is the error), `Frame::from_z` picking `x` by the same rule as

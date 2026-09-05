@@ -11,13 +11,17 @@
 //! under `tests/fixtures/` with the seed in its commit body
 //! (`tests/fixtures/README.md` §Property-test failures).
 //!
+//! The geometric strategies produce `arris-math` types in random poses;
+//! every one is uniform over its space so a property that holds "at 1000
+//! cases" has seen the seams, the poles and the octants.
+//!
 //! ```
-//! use arris_debug::prop::{check, unit_vec3};
+//! use arris_debug::prop::{check, frame, point_in_box, DEFAULT_SCALE};
 //! use proptest::prelude::*;
 //!
-//! check(unit_vec3(), |v| {
-//!     let len = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
-//!     prop_assert!((len - 1.0).abs() <= 1e-15);
+//! check((frame(), point_in_box(DEFAULT_SCALE)), |(f, p)| {
+//!     let back = f.to_world(f.to_local(p));
+//!     prop_assert!((back - p).norm() <= 1e-12 * DEFAULT_SCALE);
 //!     Ok(())
 //! });
 //! ```
@@ -25,6 +29,8 @@
 use core::fmt::Debug;
 use core::ops::RangeInclusive;
 
+use arris_math::nalgebra::{Quaternion, UnitQuaternion};
+use arris_math::{Frame, Isometry, Point3, UnitVec3, Vec3};
 use proptest::prelude::*;
 use proptest::test_runner::{Config, RngAlgorithm, TestCaseError, TestError, TestRng, TestRunner};
 
@@ -37,6 +43,10 @@ pub const SEED_VAR: &str = "ARRIS_PROPTEST_SEED";
 pub const DEFAULT_CASES: u32 = 256;
 /// The seed when [`SEED_VAR`] is unset. Arbitrary and fixed.
 pub const DEFAULT_SEED: [u8; 32] = *b"arris-property-tests-seed-v1\0\0\0\0";
+/// The half-width of the box [`frame`], [`pose`] and the geometry
+/// strategies place their origins in. A test's tolerance is stated
+/// relative to it: `1e-12 * DEFAULT_SCALE` is "1e-12·scale".
+pub const DEFAULT_SCALE: f64 = 100.0;
 
 /// The number of cases: [`CASES_VAR`], or [`DEFAULT_CASES`].
 pub fn cases() -> u32 {
@@ -140,24 +150,24 @@ pub fn finite_f64(range: RangeInclusive<f64>) -> impl Strategy<Value = f64> {
     (lo..=hi).prop_filter("finite", |v| v.is_finite())
 }
 
-/// Unit vectors uniformly distributed on the sphere, as `[x, y, z]`, with
-/// length within 1e-15 of one. Uses the area-preserving map from
-/// `(z, θ)` uniform in `[−1, 1] × [0, 2π)`, then normalises.
-pub fn unit_vec3() -> impl Strategy<Value = [f64; 3]> {
+/// Unit vectors uniformly distributed on the sphere, with length within
+/// 1e-15 of one. Uses the area-preserving map from `(z, θ)` uniform in
+/// `[−1, 1] × [0, 2π)`, then normalises.
+pub fn unit_vec3() -> impl Strategy<Value = UnitVec3> {
     (
         finite_f64(-1.0..=1.0),
         finite_f64(0.0..=core::f64::consts::TAU),
     )
         .prop_map(|(z, theta)| {
             let r = (1.0 - z * z).max(0.0).sqrt();
-            normalize([r * theta.cos(), r * theta.sin(), z])
+            UnitVec3::new_normalize(Vec3::new(r * theta.cos(), r * theta.sin(), z))
         })
 }
 
-/// Rotations as unit quaternions `[w, x, y, z]`, uniformly distributed over
-/// SO(3) (Shoemake's subgroup algorithm over three uniforms), with norm
-/// within 1e-15 of one.
-pub fn rotation() -> impl Strategy<Value = [f64; 4]> {
+/// Rotations uniformly distributed over SO(3) (Shoemake's subgroup
+/// algorithm over three uniforms), as unit quaternions with norm within
+/// 1e-15 of one.
+pub fn rotation() -> impl Strategy<Value = UnitQuaternion<f64>> {
     (
         finite_f64(0.0..=1.0),
         finite_f64(0.0..=1.0),
@@ -166,23 +176,57 @@ pub fn rotation() -> impl Strategy<Value = [f64; 4]> {
         .prop_map(|(u1, u2, u3)| {
             let (a, b) = ((1.0 - u1).sqrt(), u1.sqrt());
             let (t2, t3) = (core::f64::consts::TAU * u2, core::f64::consts::TAU * u3);
-            let q = [b * t3.cos(), a * t2.sin(), a * t2.cos(), b * t3.sin()];
-            let n = (q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3]).sqrt();
-            if n > 0.0 {
-                [q[0] / n, q[1] / n, q[2] / n, q[3] / n]
-            } else {
-                [1.0, 0.0, 0.0, 0.0]
-            }
+            UnitQuaternion::new_normalize(Quaternion::new(
+                b * t3.cos(),
+                a * t2.sin(),
+                a * t2.cos(),
+                b * t3.sin(),
+            ))
         })
 }
 
-fn normalize(v: [f64; 3]) -> [f64; 3] {
-    let n = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
-    if n > 0.0 {
-        [v[0] / n, v[1] / n, v[2] / n]
-    } else {
-        [0.0, 0.0, 1.0]
-    }
+/// Points with every coordinate in `[−scale, scale]`, uniform in the box.
+/// `scale` must be finite and positive.
+pub fn point_in_box(scale: f64) -> impl Strategy<Value = Point3> {
+    assert!(
+        scale.is_finite() && scale > 0.0,
+        "point_in_box needs a finite, positive scale"
+    );
+    (
+        finite_f64(-scale..=scale),
+        finite_f64(-scale..=scale),
+        finite_f64(-scale..=scale),
+    )
+        .prop_map(|(x, y, z)| Point3::new(x, y, z))
+}
+
+/// Positive radii in `range`, both ends included; `range` must start
+/// above zero.
+pub fn radius(range: RangeInclusive<f64>) -> impl Strategy<Value = f64> {
+    assert!(*range.start() > 0.0, "radius needs a positive range");
+    finite_f64(range)
+}
+
+/// Frames with a uniformly random orientation and an origin uniform in
+/// the box of half-width `scale`.
+pub fn frame_in(scale: f64) -> impl Strategy<Value = Frame> {
+    (point_in_box(scale), rotation()).prop_map(|(origin, q)| Frame::from_rotation(origin, &q))
+}
+
+/// [`frame_in`] at [`DEFAULT_SCALE`].
+pub fn frame() -> impl Strategy<Value = Frame> {
+    frame_in(DEFAULT_SCALE)
+}
+
+/// Rigid motions with a uniformly random rotation and a translation
+/// uniform in the box of half-width `scale`.
+pub fn pose_in(scale: f64) -> impl Strategy<Value = Isometry> {
+    (rotation(), point_in_box(scale)).prop_map(|(q, t)| Isometry::new(q, t.coords))
+}
+
+/// [`pose_in`] at [`DEFAULT_SCALE`].
+pub fn pose() -> impl Strategy<Value = Isometry> {
+    pose_in(DEFAULT_SCALE)
 }
 
 #[cfg(test)]
@@ -193,7 +237,7 @@ mod tests {
     #[test]
     fn unit_vec3_has_unit_length() {
         check(unit_vec3(), |v| {
-            let len = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+            let len = v.norm();
             prop_assert!((len - 1.0).abs() <= 1e-15, "length {len}");
             Ok(())
         });
@@ -202,7 +246,7 @@ mod tests {
     #[test]
     fn rotation_is_a_unit_quaternion() {
         check(rotation(), |q| {
-            let n = (q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3]).sqrt();
+            let n = q.norm();
             prop_assert!((n - 1.0).abs() <= 1e-15, "norm {n}");
             Ok(())
         });
@@ -217,6 +261,25 @@ mod tests {
     }
 
     #[test]
+    fn boxes_radii_and_poses_stay_in_their_ranges() {
+        check(
+            (
+                point_in_box(3.0),
+                radius(0.5..=2.0),
+                pose_in(3.0),
+                frame_in(3.0),
+            ),
+            |(p, r, m, f)| {
+                prop_assert!(p.coords.iter().all(|c| c.abs() <= 3.0));
+                prop_assert!((0.5..=2.0).contains(&r));
+                prop_assert!(m.translation().iter().all(|c| c.abs() <= 3.0));
+                prop_assert!(f.origin().coords.iter().all(|c| c.abs() <= 3.0));
+                Ok(())
+            },
+        );
+    }
+
+    #[test]
     fn unit_vec3_covers_every_octant() {
         // Uniform on the sphere: over the configured cases every octant is
         // hit. A strategy that always returned the same vector would pass
@@ -225,7 +288,7 @@ mod tests {
         let mut octants = std::collections::BTreeSet::new();
         for _ in 0..cases().max(64) {
             let v = unit_vec3().new_tree(&mut runner).unwrap().current();
-            octants.insert((v[0] > 0.0, v[1] > 0.0, v[2] > 0.0));
+            octants.insert((v.x > 0.0, v.y > 0.0, v.z > 0.0));
         }
         assert_eq!(octants.len(), 8);
     }

@@ -28,8 +28,12 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --workspace --all-targets -- -D warnings
 
+  # The roadmap's acceptance count for property tests is 1000 cases each
+  # (docs/03-roadmap.md §M1); the pre-commit hook keeps the 256 default.
   test:
     runs-on: ubuntu-latest
+    env:
+      ARRIS_PROPTEST_CASES: "1000"
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
