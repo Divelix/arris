@@ -11,11 +11,14 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod dump;
 pub mod fixtures;
 pub mod geom;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod prop;
 pub mod render;
+pub mod sample;
 
+pub use dump::{dump_text, euler_line};
 pub use geom::{polyline_of, wireframe_of};
 pub use render::{Highlight, Raster, RenderError, View, render, render_png};

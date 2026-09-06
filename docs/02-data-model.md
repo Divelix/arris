@@ -606,11 +606,23 @@ every fixture asserts so. The wire encoding is a `serde` choice per call
 (`postcard` for size, JSON for diffs); the schema is the model. A version
 bump is a design delta and comes with a migration or an explicit refusal.
 
-The text dump (`arris-debug::dump_text`) is a different thing: a
-human-readable, deterministic listing — entities in iteration order, ids,
-effective orientations, surface and curve parameters at fixed precision,
-tolerances, pcurves, the Euler line — that fixtures store and tests diff.
-It has no reader and is never a format.
+The text dump (`arris_debug::dump_text(&model, body)`) is a different
+thing: a human-readable, deterministic listing that fixtures store as
+`dump.txt` and tests diff. It has no reader and is never a format. Its
+lines are: the model's `Precision`; the body with its kind; its shells,
+faces, loops and coedges depth-first in iteration order (§Adjacency and
+iteration), each handle with its effective orientation (`+f0`, `-e1` —
+a seam edge appears twice in its loop, once with each sign), each face
+with its surface written out and each coedge with its pcurve; the free
+edges and vertices; then `edges` (each once, with its vertices, curve,
+range, tolerance and the curve written out) and `vertices` (point,
+tolerance) in iteration order; then the Euler line `euler V/E/F/L/S
+g<G> = <r>` where `G` is the genus the counts imply and `r` the residual
+of §Euler–Poincaré's identity once `G` is rounded down, `0` for a line
+that closes. Every number is rounded to `DUMP_DECIMALS` (12) places with
+trailing zeros trimmed, so an ulp never shows and a real change does; a
+reference that does not resolve is written as its id and `?`, never
+skipped, so the dump of an invalid body says where.
 
 ## Open questions
 

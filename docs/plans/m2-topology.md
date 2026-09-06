@@ -193,7 +193,7 @@ per-kind counts) accept them; only the raw API and tests build them.
   after appending three entities leaves lengths, indices and the next id
   exactly as before; `closure` of a body that shares faces with another
   contains only its own reach.
-- [ ] Step 3 — The text dump and the sample bodies. `arris_debug::
+- [x] Step 3 — The text dump and the sample bodies. `arris_debug::
   dump_text` and `sample::{unit_box, cylinder}` built through the raw API
   with the pcurves of 02 §Pcurves (the cylinder: one wall face whose one
   loop is bottom circle, seam up, top circle, seam down, the two seam
@@ -418,3 +418,12 @@ step, as for M1.
   a per-chunk index would have to edit earlier chunks on every append. A
   vertex handle yielded by iteration carries the orientation of the edge
   use that reached it — meaningless geometrically, stated in the docs.
+- Step 3: `sample::cuboid(m, min, max)` joins `unit_box` (which is the
+  unit cube through it), so step 4 can compare the sample box against
+  `primitive/box`'s 40×30×10 extents; `sample::cylinder(m, radius,
+  height)` takes its sizes for the same reason. The samples return
+  `SampleError` for an extent that is not finite and positive and leave
+  the model untouched. `arris_debug::euler_line` is public beside
+  `dump_text` (step 7's `Report::euler()` is the checker's own; the dump
+  keeps computing its line from the closure). The dump writes a dangling
+  reference as `<id> ?` rather than skipping it.
