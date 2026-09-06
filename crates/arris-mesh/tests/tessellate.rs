@@ -1,9 +1,13 @@
-//! Tessellation (`docs/plans/m3-tessellation.md` step 2, ADR-0003): the
+//! Tessellation (`docs/plans/m3-tessellation.md` steps 2 and 3,
+//! ADR-0003): the
 //! sample bodies and both primitives mesh closed, with one range per
 //! entity in iteration order, the seam used twice, every position on its
 //! geometry, and a volume the closed form of an inscribed prism bounds;
 //! a thousand random cylinders in random poses do the same; bad chords
-//! and bodies are typed errors; two runs are identical.
+//! and bodies are typed errors; two runs are identical. Step 3: a patch
+//! of every surface kind in a random pose stays within its chord, the
+//! sphere and the torus mesh closed through their interior grids, and a
+//! ruled surface takes no grid at all.
 
 use core::f64::consts::{PI, TAU};
 use std::collections::{BTreeMap, BTreeSet};
@@ -13,7 +17,8 @@ use arris_debug::sample;
 use arris_mesh::{MeshError, TriMesh, tessellate};
 use arris_ops::{primitive_box, primitive_cylinder};
 use arris_topo::arris_geom::region2::MIN_SEGMENTS_PER_TURN;
-use arris_topo::arris_math::{Axis, Point2, Point3};
+use arris_topo::arris_geom::{CurveKind, NurbsSurface, Surface, SurfaceKind};
+use arris_topo::arris_math::{Axis, Interval, Point2, Point3};
 use arris_topo::entity::{Body as BodyEntity, EdgeGeometry};
 use arris_topo::{Body, Model, Shell as ShellHandle, ShellId};
 use proptest::prelude::*;
@@ -61,15 +66,20 @@ fn assert_structure(m: &Model, body: Body, mesh: &TriMesh) {
         );
         assert_eq!(p3(positions[polyline[0] as usize]), start);
         assert_eq!(p3(positions[*polyline.last().unwrap() as usize]), end);
-        // Every sample on the curve.
+        // Every sample on the curve. Cycle 1 has no closed form for the
+        // nearest point of a NURBS *surface*, and none is asked of one
+        // here either: the NURBS arms are checked against their own
+        // closed form in `a_nurbs_patch_meshes_through_its_grid`.
         if let EdgeGeometry::Curve { curve, range } = edge.geometry() {
             let curve = m.curve(curve).unwrap();
             assert!(polyline.len() >= 2);
             for &i in polyline {
                 let p = p3(positions[i as usize]);
-                let projection = curve.project(p).unwrap();
-                assert!(projection.distance <= tol, "{p} is off its curve");
-                assert!(range.contains(projection.t) || curve.period().is_some());
+                if curve.kind() != CurveKind::Nurbs {
+                    let projection = curve.project(p).unwrap();
+                    assert!(projection.distance <= tol, "{p} is off its curve");
+                    assert!(range.contains(projection.t) || curve.period().is_some());
+                }
             }
         }
     }
@@ -80,12 +90,15 @@ fn assert_structure(m: &Model, body: Body, mesh: &TriMesh) {
         let surface = m.surface(face.surface()).unwrap();
         let triangles = mesh.face_triangles(f.id).unwrap();
         assert!(!triangles.is_empty(), "{} has no triangles", f.id);
+        let projectable = surface.kind() != SurfaceKind::Nurbs;
         for t in triangles {
             assert!(t[0] != t[1] && t[1] != t[2] && t[2] != t[0]);
             for &i in t {
                 let p = p3(positions[i as usize]);
-                let projection = surface.project(p).unwrap();
-                assert!(projection.distance <= tol, "{p} is off {}", f.id);
+                if projectable {
+                    let projection = surface.project(p).unwrap();
+                    assert!(projection.distance <= tol, "{p} is off {}", f.id);
+                }
             }
             for (a, b) in [(t[0], t[1]), (t[1], t[2]), (t[2], t[0])] {
                 directed.entry((a, b)).or_default().push(k);
@@ -327,4 +340,275 @@ fn a_broken_body_is_invalid_input_in_a_debug_build() {
     let err = tessellate(&m, Body::forward(body), 1e-3).unwrap_err();
     assert!(matches!(err, MeshError::InvalidInput { .. }), "{err}");
     assert!(err.to_string().contains("fails the checker"));
+}
+
+// ---------------------------------------------------------------------
+// Step 3: the doubly curved kinds and their interior grids.
+
+/// The (u, v) box a patch of `surface` is cut from: the whole domain of a
+/// NURBS surface, and for the analytic kinds a box clear of every
+/// singularity — a cone's apex, a sphere's poles — and short of a whole
+/// period, so the four sides are four distinct edges.
+fn patch_box(surface: &Surface) -> [Interval; 2] {
+    let i = |lo: f64, hi: f64| Interval::new(lo, hi).unwrap();
+    match surface {
+        Surface::Plane { .. } => [i(-5.0, 5.0), i(-5.0, 5.0)],
+        Surface::Cylinder { .. } => [i(0.0, 0.9 * TAU), i(-5.0, 5.0)],
+        Surface::Cone { .. } => [i(0.0, 0.9 * TAU), i(0.5, 5.0)],
+        Surface::Sphere { .. } => [i(0.0, 0.9 * TAU), i(-1.4, 1.4)],
+        Surface::Torus { .. } => [i(0.0, 0.9 * TAU), i(0.0, 0.9 * TAU)],
+        Surface::Nurbs(s) => s.domain(),
+    }
+}
+
+/// A sub-interval of `box` at the two fractions, between a fifth and two
+/// fifths of it long, so a patch is never a sliver and never the whole
+/// period.
+fn sub_interval(bounds: Interval, lo: f64, span: f64) -> Interval {
+    let lo_fraction = 0.6 * lo;
+    Interval::new(
+        bounds.lerp(lo_fraction),
+        bounds.lerp(lo_fraction + 0.2 + 0.2 * span),
+    )
+    .unwrap()
+}
+
+/// A chord that puts about six steps in each curved direction of the
+/// region, so a random surface's grid stays small however sharply it
+/// curves. The step scales as `√chord`, so `chord = (L / 6 h₁)²` for the
+/// step `h₁` at chord 1; never below 1e-2, an order below the smallest
+/// radius the strategies draw.
+fn chord_for(surface: &Surface, region: [Interval; 2]) -> f64 {
+    let unit = surface.chord_steps(1.0, region);
+    let mut chord: f64 = 1e-2;
+    for dir in 0..2 {
+        if unit[dir].is_finite() && unit[dir] > 0.0 {
+            chord = chord.max((region[dir].length() / (6.0 * unit[dir])).powi(2));
+        }
+    }
+    chord
+}
+
+/// The mesh indices that lie on some edge's polyline: everything but the
+/// interior grid.
+fn boundary_indices(mesh: &TriMesh) -> BTreeSet<u32> {
+    mesh.edges()
+        .iter()
+        .flat_map(|e| &mesh.edge_indices()[e.indices.clone()])
+        .copied()
+        .collect()
+}
+
+/// Every triangle of the mesh deviates from `surface` by at most `chord`,
+/// measured where a flat triangle is farthest from a curved surface: its
+/// centroid and the midpoints of its three edges.
+fn assert_within_chord(mesh: &TriMesh, surface: &Surface, chord: f64) -> Result<(), TestCaseError> {
+    for i in 0..mesh.triangles().len() {
+        let t = mesh.triangle_positions(i).expect("a triangle of the mesh");
+        let [a, b, c] = [p3(t[0]), p3(t[1]), p3(t[2])];
+        let centroid = Point3::from((a.coords + b.coords + c.coords) / 3.0);
+        let probes = [
+            centroid,
+            Point3::from((a.coords + b.coords) / 2.0),
+            Point3::from((b.coords + c.coords) / 2.0),
+            Point3::from((c.coords + a.coords) / 2.0),
+        ];
+        for p in probes {
+            let projection = surface
+                .project(p)
+                .map_err(|e| TestCaseError::fail(e.to_string()))?;
+            prop_assert!(
+                projection.distance <= chord,
+                "{p} is {} off the surface, above the chord {chord}",
+                projection.distance
+            );
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn a_patch_of_every_surface_kind_meshes_onto_its_surface() {
+    check(
+        (
+            arris_debug::prop::geom::surface(),
+            finite_f64(0.0..=1.0),
+            finite_f64(0.0..=1.0),
+            finite_f64(0.0..=1.0),
+            finite_f64(0.0..=1.0),
+        ),
+        |(surface, lo_u, span_u, lo_v, span_v)| {
+            let full = patch_box(&surface);
+            let region = [
+                sub_interval(full[0], lo_u, span_u),
+                sub_interval(full[1], lo_v, span_v),
+            ];
+            let chord = chord_for(&surface, region);
+            let mut m = Model::default();
+            let body = sample::patch(&mut m, surface.clone(), region[0], region[1])
+                .map_err(|e| TestCaseError::fail(e.to_string()))?;
+            let mesh =
+                tessellate(&m, body, chord).map_err(|e| TestCaseError::fail(e.to_string()))?;
+            prop_assert!(!mesh.triangles().is_empty());
+            assert_within_chord(&mesh, &surface, chord)?;
+            // A ruled direction needs no interior point; a plane and a
+            // cylinder are ruled in one, so their grids are empty.
+            let interior = mesh.positions().len() - boundary_indices(&mesh).len();
+            match surface {
+                Surface::Plane { .. } | Surface::Cylinder { .. } | Surface::Cone { .. } => {
+                    prop_assert_eq!(interior, 0, "a ruled surface takes no interior point");
+                }
+                Surface::Sphere { .. } | Surface::Torus { .. } => {
+                    // A region narrower than one step in a direction has
+                    // no line to put a point on; anything wider does.
+                    let steps = surface.chord_steps(chord, region);
+                    if (0..2).all(|d| region[d].length() > steps[d]) {
+                        prop_assert!(interior > 0, "a doubly curved patch needs interior points");
+                    }
+                }
+                // `prop::geom::surface` draws the analytic kinds only;
+                // the NURBS arm is `a_nurbs_patch_meshes_through_its_grid`.
+                Surface::Nurbs(_) => prop_assert!(false, "no NURBS in this strategy"),
+            }
+            prop_assert_eq!(
+                &mesh,
+                &tessellate(&m, body, chord).map_err(|e| TestCaseError::fail(e.to_string()))?
+            );
+            Ok(())
+        },
+    );
+}
+
+#[test]
+fn the_sample_sphere_meshes_within_the_inscribed_bound() {
+    let mut m = Model::default();
+    let radius = 3.0;
+    let body = sample::sphere(&mut m, Point3::new(1.0, -2.0, 0.5), radius).unwrap();
+    let report = arris_check::check(&m, body, arris_check::Level::Full);
+    assert!(report.is_ok(), "{report}");
+    assert!(
+        report.unchecked().is_empty(),
+        "one face has no pair to skip"
+    );
+    for chord in [1e-1, 1e-2, 1e-3] {
+        let mesh = tessellate(&m, body, chord).unwrap();
+        assert_structure(&m, body, &mesh);
+        // The two poles are one index each and no triangle survives that
+        // collapses onto one.
+        for e in m.edges(body).unwrap() {
+            if m.edge(e.id).unwrap().is_degenerate() {
+                assert_eq!(mesh.edge_polyline(e.id).unwrap().len(), 1, "{}", e.id);
+            }
+        }
+        // Inscribed: every triangle plane is at least `radius − chord`
+        // from the centre, so the mesh holds that ball and is held by the
+        // sphere.
+        let exact = 4.0 / 3.0 * PI * radius.powi(3);
+        let volume = mesh.signed_volume().unwrap();
+        let inner = 4.0 / 3.0 * PI * (radius - chord).powi(3);
+        assert!(
+            volume <= exact * (1.0 + EXACT) && volume >= inner,
+            "{volume} outside [{inner}, {exact}] at chord {chord}"
+        );
+        assert_eq!(mesh, tessellate(&m, body, chord).unwrap(), "two runs");
+    }
+}
+
+#[test]
+fn the_sample_torus_meshes_closed() {
+    let mut m = Model::default();
+    let (major, minor) = (5.0, 2.0);
+    let body = sample::torus(&mut m, Point3::origin(), major, minor).unwrap();
+    let report = arris_check::check(&m, body, arris_check::Level::Full);
+    assert!(report.is_ok(), "{report}");
+    for chord in [1e-1, 1e-2] {
+        let mesh = tessellate(&m, body, chord).unwrap();
+        assert_structure(&m, body, &mesh);
+        // Both seams are used by the one face twice, in opposite
+        // directions; the surface's area bounds the volume a boundary
+        // that is everywhere within `chord` of it can be wrong by.
+        let exact = 2.0 * PI * PI * major * minor * minor;
+        let area = 4.0 * PI * PI * major * minor;
+        let volume = mesh.signed_volume().unwrap();
+        assert!(
+            (volume - exact).abs() <= area * chord,
+            "{volume} against {exact} at chord {chord}"
+        );
+        assert!(
+            mesh.positions().len() > boundary_indices(&mesh).len(),
+            "grid"
+        );
+        assert_eq!(mesh, tessellate(&m, body, chord).unwrap(), "two runs");
+    }
+}
+
+/// A saddle as a bilinear NURBS: `P(u, v) = (u, v, u v)` over `[0, 1]²`,
+/// whose closed form stands in for the projection cycle 1 has no NURBS
+/// arm for — the surface is the graph of `z = x y`, so the vertical
+/// distance from any point to it bounds the true one.
+fn saddle() -> NurbsSurface {
+    NurbsSurface::new(
+        [1, 1],
+        [vec![0.0, 0.0, 1.0, 1.0], vec![0.0, 0.0, 1.0, 1.0]],
+        vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(1.0, 1.0, 1.0),
+        ],
+        vec![1.0; 4],
+    )
+    .unwrap()
+}
+
+#[test]
+fn a_nurbs_patch_meshes_through_its_grid() {
+    let mut m = Model::default();
+    let surface = Surface::Nurbs(saddle());
+    let unit = Interval::new(0.0, 1.0).unwrap();
+    let body = sample::patch(&mut m, surface, unit, unit).unwrap();
+    let chord = 1e-3;
+    let mesh = tessellate(&m, body, chord).unwrap();
+    // A sheet is not closed, so `assert_structure` does not apply: what a
+    // patch owes is one range per entity and triangles on the surface.
+    assert_eq!(mesh.faces().len(), 1);
+    assert_eq!(mesh.edges().len(), 4);
+    for t in mesh.triangles() {
+        assert!(t[0] != t[1] && t[1] != t[2] && t[2] != t[0]);
+    }
+    // A saddle curves in the mixed direction, so its face takes a grid.
+    assert!(
+        mesh.positions().len() > boundary_indices(&mesh).len(),
+        "a curved NURBS patch needs interior points"
+    );
+    let tol = m.precision().default_tolerance;
+    for p in mesh.positions() {
+        assert!((p[2] - p[0] * p[1]).abs() <= tol, "{p:?} is off the saddle");
+    }
+    for i in 0..mesh.triangles().len() {
+        let t = mesh.triangle_positions(i).unwrap();
+        let [a, b, c] = [p3(t[0]), p3(t[1]), p3(t[2])];
+        let centroid = Point3::from((a.coords + b.coords + c.coords) / 3.0);
+        assert!(
+            (centroid.z - centroid.x * centroid.y).abs() <= chord,
+            "{centroid} is above the chord from the saddle"
+        );
+    }
+    assert_eq!(mesh, tessellate(&m, body, chord).unwrap(), "two runs");
+}
+
+#[test]
+fn the_nurbs_box_meshes_with_its_bilinear_face() {
+    let mut m = Model::default();
+    let body =
+        sample::cuboid_nurbs(&mut m, Point3::origin(), Point3::new(40.0, 30.0, 10.0)).unwrap();
+    let mesh = tessellate(&m, body, 1e-3).unwrap();
+    assert_structure(&m, body, &mesh);
+    // A bilinear patch is flat: its face takes no interior point, and
+    // the ninth position is the middle of the one NURBS *edge*, which a
+    // B-spline piece is sampled at `MIN_SEGMENTS_PER_SPAN` of.
+    assert_eq!(mesh.positions().len(), 9);
+    assert_eq!(mesh.positions().len(), boundary_indices(&mesh).len());
+    let volume = 40.0 * 30.0 * 10.0;
+    assert!((mesh.signed_volume().unwrap() - volume).abs() <= EXACT * volume);
 }

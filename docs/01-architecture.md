@@ -280,10 +280,16 @@ depends on `check`. The mesh guarantees (ADR-0003):
   effective orientation against the surface normal.
 - Same body, same chord, same mesh on every platform, with the
   `parallel` feature on or off.
-- A face on a sphere, torus or NURBS surface is `MeshError::Unsupported`
-  naming it until its interior grid lands; a face whose loops are not
-  the simple nested polygons the checker promises is `MeshError::Face`
-  with the `CdtError` naming the segments.
+- A face whose surface curves in both directions — a sphere, a torus, a
+  NURBS surface — carries interior points on a uniform (u, v) lattice at
+  its `chord_steps` spacing, those its loops wind around; a ruled
+  direction has an infinite step, so a plane, a cylinder and a cone take
+  none and their loops' own samples bound the chord. The rings and the
+  lattice are scaled by the surface's mean speeds before the
+  triangulation, so Delaunay's criterion measures distance on the
+  surface and not in the parameters (ADR-0003).
+- A face whose loops are not the simple nested polygons the checker
+  promises is `MeshError::Face` with the `CdtError` naming the segments.
 
 No adaptive refinement: interior points, where a face needs them, lie on
 a uniform (u, v) grid sized by the chord bound. No `f32` output (the
@@ -355,10 +361,13 @@ mesh-based mass properties (`ops::measure` integrates the B-Rep).
   role is 03-roadmap §Fixtures.
 - **`arris-debug`** is dev-facing: the text dump (`dump_text`), the
   sample bodies built by hand through the raw insert with explicit
-  pcurves (`sample::{cuboid, cuboid_nurbs, unit_box, cylinder}` — what
-  the checker's tests start from, since they cannot use `arris-ops`) and
-  through the Euler operators (`sample::frame`, the genus-1 twin of
-  `boolean/frame-cut`), the rasteriser (`render_png`) and the samplers
+  pcurves (`sample::{cuboid, cuboid_nurbs, unit_box, cylinder, sphere,
+  torus, patch}` — what the checker's tests start from, since they
+  cannot use `arris-ops`; `sphere` is the body with a seam and two
+  degenerate pole edges, `torus` the genus-1 one with two seams and no
+  pole, and `patch` a rectangular sheet of any surface kind, the
+  tessellation's property tests' operand) and through the Euler
+  operators (`sample::frame`, the genus-1 twin of `boolean/frame-cut`), the rasteriser (`render_png`) and the samplers
   that feed it a curve or a surface without a body (`polyline_of`,
   `wireframe_of`), the Rerun stream, the fixture loader and corpus lint
   (`fixtures`), the corpus runner (`corpus::run`, the fixture test of

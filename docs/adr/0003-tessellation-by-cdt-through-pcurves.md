@@ -84,6 +84,19 @@ uniform (u, v) grid at the surface's `chord_steps` spacing are inserted;
 the grid is sized by a closed-form bound on the second derivative, never
 by measuring a triangle's error and splitting it.
 
+**The triangulation is taken in a domain scaled to the surface.** The
+empty-circle criterion measures distance, and the parameters are not
+distances: a torus runs `R + r cos v` units along `u` per radian and `r`
+along `v`, so a Delaunay in the raw (u, v) stretches triangles across
+whichever direction is short — several steps wide in one parameter to
+gain a little in the other — and the chord bound, which holds for a
+triangle one step wide, does not hold for them. Each face's rings and
+interior points are therefore scaled by the mean `|∂P/∂u|` and
+`|∂P/∂v|` over its region before `triangulate` sees them, which makes
+the domain roughly isometric to the surface; the triangles come back as
+indices into the same points, so nothing else in the pipeline knows.
+Open CASCADE's `BRepMesh` scales its domain the same way.
+
 **The acceptance bound is the closed form of the inscribed polygon.** A
 cylinder of radius `r` meshed at sagitta `δ` is an inscribed prism whose
 relative volume error is `θ²/6 ≈ 4δ / (3r)`; the unit tests assert that
@@ -98,6 +111,9 @@ The roadmap's `1e-3` at `0.01` is corrected at the plan's retirement.
   same index lists on every platform; the `parallel` feature can
   triangulate faces concurrently and collect them in face order with no
   change to the output.
+- A face's picture in (u, v) is drawn in the *unscaled* parameters, the
+  ones its pcurves are written in; the scaling lives inside
+  `tessellate` and is invisible to every caller and every stored value.
 - The (u, v) picture of a face — its loops and its triangulation — is
   the debugger for a face that meshes wrong (`render_domain`, step 4),
   because the CDT never sees 3D.

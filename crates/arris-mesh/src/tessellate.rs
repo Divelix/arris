@@ -39,9 +39,15 @@ struct EdgeSamples {
 /// mesh of a solid is closed by construction; a seam's run is used twice
 /// with opposite directions, triangles that collapse onto one index are
 /// dropped, and the triangles of a face used `Reversed` are turned so
-/// every triangle is counter-clockwise seen from outside. Ranges are in
-/// the body's iteration order (`Model::faces`, `Model::edges`). The
-/// output is the same on every platform for the same body and chord.
+/// every triangle is counter-clockwise seen from outside. A face whose
+/// surface curves in both directions — a sphere, a torus, a NURBS
+/// surface — also carries interior points on a uniform (u, v) lattice at
+/// its `chord_steps`, those the loops wind around, so a triangle in the
+/// middle of the face is within `chord` of the surface as one standing
+/// on an edge is; a plane, a cylinder and a cone are ruled and take
+/// none. Ranges are in the body's iteration order (`Model::faces`,
+/// `Model::edges`). The output is the same on every platform for the
+/// same body and chord.
 ///
 /// The chord is the consumer's request, a number like the render's
 /// resolution, not a model tolerance; it must be finite and positive.
@@ -49,11 +55,9 @@ struct EdgeSamples {
 ///
 /// Errors: [`MeshError::Chord`]; [`MeshError::InvalidInput`] (debug
 /// builds); [`MeshError::NotFound`] for the body or anything it refers
-/// to; [`MeshError::Unsupported`] naming a face on a sphere, torus or
-/// NURBS surface until their interior grids land; [`MeshError::Face`]
-/// when a face's loops are not the simple nested polygons a valid face
-/// has; [`MeshError::NonFinitePosition`] when the geometry evaluates to
-/// a non-finite point.
+/// to; [`MeshError::Face`] when a face's loops are not the simple nested
+/// polygons a valid face has; [`MeshError::NonFinitePosition`] when the
+/// geometry evaluates to a non-finite point.
 ///
 /// ```
 /// use arris_debug::sample;
@@ -94,21 +98,16 @@ pub fn tessellate(m: &Model, body: Body, chord: f64) -> Result<TriMesh, MeshErro
     let vertices = m.vertices(body)?;
 
     // Pass one: what each face asks of the edges it uses, so a step along
-    // an edge never travels farther in (u, v) than the surface allows.
+    // an edge never travels farther in (u, v) than the surface allows,
+    // and the (u, v) box and step each face's interior grid stands on.
     let mut required: BTreeMap<EdgeId, usize> = BTreeMap::new();
+    let mut domains: Vec<([Interval; 2], [f64; 2])> = Vec::with_capacity(faces.len());
     for f in &faces {
         let face = m.face(f.id)?;
         let surface = m.surface(face.surface())?;
-        match surface {
-            Surface::Plane { .. } | Surface::Cylinder { .. } | Surface::Cone { .. } => {}
-            Surface::Sphere { .. } | Surface::Torus { .. } | Surface::Nurbs(_) => {
-                return Err(MeshError::Unsupported {
-                    face: f.id,
-                    kind: surface.kind(),
-                });
-            }
-        }
-        let steps = surface.chord_steps(chord, region_bounds(m, face)?);
+        let bounds = region_bounds(m, face)?;
+        let steps = surface.chord_steps(chord, bounds);
+        domains.push((bounds, steps));
         for coedge in face.loops().iter().flat_map(|l| l.coedges()) {
             let range = m.edge(coedge.edge())?.range();
             let speed = m.curve2(coedge.pcurve())?.speed_bounds(range);
@@ -180,7 +179,7 @@ pub fn tessellate(m: &Model, body: Body, chord: f64) -> Result<TriMesh, MeshErro
 
     // Pass three: every face's loops through its pcurves at the edges'
     // parameters, triangulated, mapped back to the shared indices.
-    for f in &faces {
+    for (k, f) in faces.iter().enumerate() {
         let face = m.face(f.id)?;
         let mut polygons: Vec<Polygon2> = Vec::with_capacity(face.loops().len());
         let mut rings: Vec<Vec<u32>> = Vec::with_capacity(face.loops().len());
@@ -222,7 +221,28 @@ pub fn tessellate(m: &Model, body: Body, chord: f64) -> Result<TriMesh, MeshErro
             polygons.push(polygon);
             rings.push(indices);
         }
-        let triangulation = cdt::triangulate(&polygons, &[])
+        // The interior points the surface's curvature asks for, each a
+        // position of its own on the surface.
+        let (bounds, steps) = domains.get(k).copied().ok_or(NotFound::new(f.id))?;
+        let surface = m.surface(face.surface())?;
+        let interior = interior_grid(&polygons, bounds, steps);
+        let mut interior_indices: Vec<u32> = Vec::with_capacity(interior.len());
+        for uv in &interior {
+            let p = surface.point(uv.x, uv.y);
+            interior_indices.push(mesh.push_position([p.x, p.y, p.z])?);
+        }
+        // The triangulation is taken in a (u, v) scaled to the
+        // surface's own lengths, so Delaunay's criterion means distance
+        // on the surface and not in the parameters: the indices it
+        // returns are the same either way.
+        let scale = uv_scale(surface, bounds);
+        let scaled: Vec<Polygon2> = polygons
+            .iter()
+            .map(|p| Polygon2::from_points(p.points().iter().map(|q| scaled_point(*q, scale))))
+            .collect();
+        let scaled_interior: Vec<Point2> =
+            interior.iter().map(|p| scaled_point(*p, scale)).collect();
+        let triangulation = cdt::triangulate(&scaled, &scaled_interior)
             .map_err(|source| MeshError::Face { face: f.id, source })?;
         let index_of = |v: usize| -> Result<u32, MeshError> {
             match triangulation.vertex_ref(v) {
@@ -234,9 +254,15 @@ pub fn tessellate(m: &Model, body: Body, chord: f64) -> Result<TriMesh, MeshErro
                         face: f.id,
                         source: CdtError::Internal("a triangle corner names no loop point"),
                     }),
-                _ => Err(MeshError::Face {
+                Some(VertexRef::Interior(i)) => {
+                    interior_indices.get(i).copied().ok_or(MeshError::Face {
+                        face: f.id,
+                        source: CdtError::Internal("a triangle corner names no interior point"),
+                    })
+                }
+                None => Err(MeshError::Face {
                     face: f.id,
-                    source: CdtError::Internal("a triangle corner is not a loop point"),
+                    source: CdtError::Internal("a triangle corner is not an input point"),
                 }),
             }
         };
@@ -252,6 +278,95 @@ pub fn tessellate(m: &Model, body: Body, chord: f64) -> Result<TriMesh, MeshErro
         mesh.push_face(f.id, triangles)?;
     }
     Ok(mesh)
+}
+
+/// How much longer the surface is along `u` than along `v` over the
+/// region, as the two mean speeds `|∂P/∂u|` and `|∂P/∂v|` sampled over
+/// its box.
+///
+/// A Delaunay triangulation in the raw parameters would call a torus's
+/// `u`, along which the surface runs `R + r cos v` units per radian, and
+/// its `v`, along which it runs `r`, the same length, and stretch
+/// triangles across whichever is short — past the deviation the chord
+/// steps promise, since the bound holds for a triangle a step wide, not
+/// for one that spans the region. Scaling the domain by these speeds
+/// makes it roughly isometric to the surface, which is the shape
+/// Delaunay's empty-circle criterion is good at (ADR-0003; Open
+/// CASCADE's `BRepMesh` scales its domain the same way).
+fn uv_scale(surface: &Surface, bounds: [Interval; 2]) -> [f64; 2] {
+    let mut sums = [0.0f64; 2];
+    let mut count = 0.0;
+    for i in 0..=SPEED_SAMPLES {
+        let u = bounds[0].lerp(i as f64 / SPEED_SAMPLES as f64);
+        for j in 0..=SPEED_SAMPLES {
+            let e = surface.eval(u, bounds[1].lerp(j as f64 / SPEED_SAMPLES as f64));
+            sums[0] += e.du.norm();
+            sums[1] += e.dv.norm();
+            count += 1.0;
+        }
+    }
+    let mut scale = [sums[0] / count, sums[1] / count];
+    let largest = scale[0].max(scale[1]);
+    if !(largest.is_finite() && largest > 0.0) {
+        return [1.0; 2];
+    }
+    for s in &mut scale {
+        // A direction the surface does not move along at all — no face
+        // has one over its whole region — would collapse the domain.
+        *s = if s.is_finite() && *s > 0.0 {
+            *s / largest
+        } else {
+            1.0
+        };
+    }
+    scale
+}
+
+/// How many samples per direction [`uv_scale`] takes of the speeds: a
+/// mean over the region, not a bound, so a coarse grid is enough.
+const SPEED_SAMPLES: usize = 4;
+
+/// A (u, v) point in the scaled domain [`uv_scale`] defines.
+fn scaled_point(p: Point2, scale: [f64; 2]) -> Point2 {
+    Point2::new(p.x * scale[0], p.y * scale[1])
+}
+
+/// The interior points of a face's domain: a uniform (u, v) lattice at
+/// most `steps` apart, strictly inside `bounds`, keeping the points the
+/// loops wind around that lie on no loop segment.
+///
+/// A direction the surface is flat or ruled along has an infinite step
+/// and so no interior line, which leaves the grid empty on a plane, a
+/// cylinder and a cone: there the loops' own samples already bound the
+/// chord (ADR-0003). A sphere, a torus and a NURBS surface curve in both
+/// directions and get a lattice sized by
+/// [`arris_topo::arris_geom::Surface::chord_steps`], never by a
+/// per-triangle error estimate.
+fn interior_grid(polygons: &[Polygon2], bounds: [Interval; 2], steps: [f64; 2]) -> Vec<Point2> {
+    let mut counts = [1usize; 2];
+    for dir in 0..2 {
+        let length = bounds[dir].length();
+        if !(length.is_finite() && length > 0.0 && steps[dir] > 0.0) {
+            return Vec::new();
+        }
+        let wanted = (length / steps[dir]).ceil();
+        if !wanted.is_finite() {
+            return Vec::new();
+        }
+        counts[dir] = (wanted as usize).clamp(1, MAX_SEGMENTS_PER_PIECE);
+    }
+    let mut points = Vec::new();
+    for i in 1..counts[0] {
+        let u = bounds[0].lerp(i as f64 / counts[0] as f64);
+        for j in 1..counts[1] {
+            let p = Point2::new(u, bounds[1].lerp(j as f64 / counts[1] as f64));
+            let winding: i32 = polygons.iter().map(|q| q.winding_number(p)).sum();
+            if winding != 0 && !polygons.iter().any(|q| q.contains(p)) {
+                points.push(p);
+            }
+        }
+    }
+    points
 }
 
 /// The (u, v) box a face's loops span, padded by the chord deviation of

@@ -446,6 +446,13 @@ impl<'m> Checker<'m> {
         };
         let mut found = Vec::new();
         for (edge, orientations) in self.shell_edge_uses(shell_id) {
+            // A degenerate edge is a singular point of the surface, not a
+            // boundary between two faces: a sphere's pole is used once by
+            // the one face that closes on it, and counting it would call
+            // every sphere open (E6, `docs/02-data-model.md` §Invariants).
+            if self.model.edge(edge).is_ok_and(|e| e.is_degenerate()) {
+                continue;
+            }
             let n = orientations.len();
             let forward = orientations
                 .iter()

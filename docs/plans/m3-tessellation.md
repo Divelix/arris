@@ -81,6 +81,23 @@ remeshing). No window in `arris-debug`.
   use's effective orientation against the surface normal; same body, same
   chord, same mesh on every platform, with the `parallel` feature on or
   off.
+- **Step 3 as built.** Four things the design did not have. (a) The
+  triangulation is taken in a (u, v) *scaled* by the surface's mean
+  `|∂P/∂u|` and `|∂P/∂v|` over the region: the property test found a
+  torus patch (`R = 7.6`, `r = 0.1`) whose triangles ran three steps
+  along `u` to gain a little in `v` and deviated `1.2 ×` the chord — the
+  empty-circle criterion measures distance, and the parameters are not
+  distances. ADR-0003 carries the paragraph. (b) `MeshError::Unsupported`
+  is **removed**: no surface kind is unsupported any more (a public
+  enum's variant gone). (c) S2 and S4 skip **degenerate** edges: a
+  sphere's pole is used once by the one face that closes on it, and
+  counting it called every sphere an open shell. `docs/02-data-model.md`
+  §Invariants rows S2 and S4 say so. (d) `sample::torus` (genus 1, two
+  seams, no pole) and `sample::patch` (a rectangular `Sheet` of any
+  surface kind over exact iso-curves, `SampleError::Region` for a region
+  no iso-curve bounds) join `sample::sphere`; `patch` is what the
+  property test meshes, since a body of every kind is the only way to
+  reach `tessellate`.
 - **`arris-ops` — `measure`** (01 §Operations gains the query shape,
   §Facade row): `measure::mass_properties(&Model, Body) ->
   Result<MassProperties, OpError>` with `MassProperties { volume, area,
@@ -211,7 +228,7 @@ robustness or bound has to be established here (Fable).
   `NaN` is `MeshError::Chord`; a raw-broken body is `InvalidInput` in a
   debug build; two runs of every case are byte-identical; the two live
   fixtures pass the new corpus stage.
-- [ ] Step 3 **[2]** — The doubly curved kinds and the sphere. Interior
+- [x] Step 3 **[2]** — The doubly curved kinds and the sphere. Interior
   grid points at `chord_steps` spacing over the region's (u, v) bounds
   for `Sphere`, `Torus` and `Nurbs` (and any face whose boundary alone
   leaves a step larger than the bound), those inside the loops by
@@ -310,6 +327,25 @@ layer check and the wasm build pass; CI green on `main`. Then tag `m3`
 - `docs/BACKLOG.md` — per-vertex normals and (u, v) in `TriMesh` (with
   the `f32` decision, C2); adaptive refinement; anything a step defers,
   under "Findings".
+
+## Findings
+
+- **A degenerate edge still counts as an edge in the Euler line**, so
+  `sample::sphere` prints `2/3/1/1/1 g1 = 0` where a sphere is genus 0:
+  the two pole edges each take one off `V − E + F`. The residual is
+  even, so the line does not fail and no row is broken — the genus it
+  derives is simply not the surface's. Excluding degenerate edges from
+  the count would change the printed counts of every fixture and the
+  oracle's own derivation, so it is a backlog line, not this plan's.
+- **`TriMesh` indices are `u32` and nothing guards the boundary**:
+  `push_position` casts `positions.len()` down. A chord fine enough to
+  ask for more than four billion vertices wraps silently instead of
+  returning a typed error. Backlog.
+- **A NURBS surface has no `project`** (cycle 1, by design), so the
+  deviation of a NURBS face cannot be measured the way the analytic
+  kinds' is. `a_nurbs_patch_meshes_through_its_grid` measures it against
+  a closed form instead — a bilinear saddle `z = x y`, whose vertical
+  distance bounds the true one.
 
 ## Open questions
 

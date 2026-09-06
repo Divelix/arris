@@ -18,5 +18,8 @@ re-brainstormed.
 - S5's coincident-surface arm tests face overlap on a grid of interior points carried through 3D, so an overlap thinner than the grid spacing passes; an exact (u, v) region intersection replaces it once a boolean can produce such faces (M4 finding candidate)
 - `Builder::finish` makes `Solid` only; `Sheet` needs an operator that leaves an edge with one use (a `mev` strut not closed by a `mef`), which no C1 operation asks for — with sheet bodies in C7
 - STEP cannot carry a left-handed pcurve conic (`AXIS2_PLACEMENT_2D` is direct) or a degenerate edge's coedge; both are dropped on write (01-architecture §Formats and tools). A reader (C7) must rebuild them from the 3D curve and the surface's singularity
+- The Euler line counts degenerate edges, so a sphere derives genus 1 (`sample::sphere` prints `2/3/1/1/1 g1 = 0`); excluding them would change every fixture's printed counts and the oracle's own derivation, so it waits for a cycle that can regenerate both (M3 finding)
+- `TriMesh::push_position` casts the position count to `u32` with no bound, so a mesh past four billion vertices wraps silently instead of returning a typed error (M3 finding)
+- A NURBS surface has no `project` (cycle 1, by design), so a NURBS face's mesh deviation can only be measured against a closed form; the tessellation property test covers the analytic kinds and one hand-built saddle (M3 finding)
 
 ## Rejected

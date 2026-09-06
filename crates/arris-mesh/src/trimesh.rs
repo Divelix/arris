@@ -4,7 +4,6 @@ use core::ops::Range;
 use std::collections::BTreeMap;
 
 use arris_check::Report;
-use arris_topo::arris_geom::SurfaceKind;
 use arris_topo::{Body, EdgeId, FaceId, NotFound};
 
 use crate::aabb::Aabb;
@@ -85,15 +84,6 @@ pub enum MeshError {
         face: FaceId,
         /// What the triangulation found.
         source: CdtError,
-    },
-    /// A face lies on a surface kind tessellation has no interior-point
-    /// grid for yet. Never a wildcard: every kind is an explicit arm.
-    #[error("{face} lies on a {kind} surface, which tessellation does not mesh yet")]
-    Unsupported {
-        /// The face.
-        face: FaceId,
-        /// Its surface's kind.
-        kind: SurfaceKind,
     },
 }
 
