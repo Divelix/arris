@@ -57,7 +57,11 @@ pub enum EdgeGeometry {
     },
     /// No 3D curve: both vertices are one vertex at a surface singularity,
     /// and the edge exists only to give a loop a pcurve across it.
-    Degenerate,
+    Degenerate {
+        /// The parameter range of its pcurves, which are same-parameter
+        /// with each other and have no 3D curve to take a range from.
+        range: Interval,
+    },
 }
 
 /// A bounded piece of a 3D curve between two vertices, or a degenerate
@@ -96,7 +100,15 @@ impl Edge {
     pub const fn curve(&self) -> Option<(CurveId, Interval)> {
         match self.geometry {
             EdgeGeometry::Curve { curve, range } => Some((curve, range)),
-            EdgeGeometry::Degenerate => None,
+            EdgeGeometry::Degenerate { .. } => None,
+        }
+    }
+
+    /// The parameter range of the edge's pcurves: the curve range of a
+    /// non-degenerate edge, the stored range of a degenerate one.
+    pub const fn range(&self) -> Interval {
+        match self.geometry {
+            EdgeGeometry::Curve { range, .. } | EdgeGeometry::Degenerate { range } => range,
         }
     }
 
@@ -123,7 +135,7 @@ impl Edge {
 
     /// `true` for [`EdgeGeometry::Degenerate`].
     pub const fn is_degenerate(&self) -> bool {
-        matches!(self.geometry, EdgeGeometry::Degenerate)
+        matches!(self.geometry, EdgeGeometry::Degenerate { .. })
     }
 }
 

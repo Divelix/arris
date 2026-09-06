@@ -134,12 +134,14 @@ pub fn dump_text(model: &Model, body: Body) -> Result<String, NotFound> {
                     }
                 }
             }
-            EdgeGeometry::Degenerate => {
+            EdgeGeometry::Degenerate { range } => {
                 let _ = writeln!(
                     out,
-                    "  {edge} {} -> {} degenerate tol {}",
+                    "  {edge} {} -> {} degenerate [{}, {}] tol {}",
                     e.start(),
                     e.end(),
+                    num(range.lo()),
+                    num(range.hi()),
                     num(e.tolerance())
                 );
             }

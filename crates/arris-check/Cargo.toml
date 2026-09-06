@@ -10,5 +10,10 @@ license.workspace = true
 [dependencies]
 arris-topo.workspace = true
 
+# The sample bodies the violation tests break live in `arris-debug`; a
+# dev-dependency is exempt from the layer rule.
+[dev-dependencies]
+arris-debug.workspace = true
+
 [lints]
 workspace = true

@@ -306,7 +306,7 @@ a consumer holds handles far more often than it reads an entity.
 pub struct Vertex { point: Point3, tolerance: f64 }
 
 pub struct Edge {
-    geometry: EdgeGeometry,                 // Curve { curve: CurveId, range: Interval } | Degenerate
+    geometry: EdgeGeometry,                 // Curve { curve: CurveId, range: Interval } | Degenerate { range: Interval }
     start: VertexId, end: VertexId,         // equal on a closed or degenerate edge
     tolerance: f64,
 }
@@ -344,7 +344,9 @@ test scaffolding that stores a dangling reference as given), the builder
   curve's domain; on a periodic curve it may cross the period (`[3π/2,
   5π/2]`). A **degenerate edge** has no 3D curve: both vertices are the same
   vertex at a surface singularity (a sphere's pole, a cone's apex) and it
-  exists only to give the face's loop a pcurve across the singularity.
+  exists only to give the face's loop a pcurve across the singularity; it
+  carries the parameter range of its pcurves itself, since there is no
+  curve to take one from (`Edge::range()` is the range of either kind).
 - A **face** is a surface trimmed by one or more loops. The face's natural
   normal is its surface's normal.
 - A **loop** is a closed ring of coedges. A **coedge** is one use of an edge
@@ -482,7 +484,7 @@ reference tree) mapped onto this representation.
 | # | Invariant | Level |
 |---|---|---|
 | M1 | Every id referenced by an entity of the body resolves in this model, with the stored generation | Fast |
-| M2 | Every entity reachable from the body is reachable through a parent that lists it (no coedge names an edge whose face is not in the body's closure) | Fast |
+| M2 | Every reference a parent in the body makes is in the adjacency index of the entity it names — a coedge in `edge_uses` of its edge, an edge in `vertex_edges` of its vertices, a shell in `face_shells` of its faces. A reference that did not resolve when its parent was appended (a raw insert naming a later id) is never indexed; every other row reads adjacency off the closure itself, so this is the only row about the indices | Fast |
 | M3 | Every coordinate, parameter and tolerance is finite | Fast |
 
 **Vertex**
@@ -498,11 +500,11 @@ reference tree) mapped onto this representation.
 | # | Invariant | Level |
 |---|---|---|
 | E1 | A non-degenerate edge has a curve and a non-empty range inside the curve's domain (crossing the period at most once) | Fast |
-| E2 | `start`/`end` are the curve at the range's ends within the vertices' tolerances (V2 from the edge's side); a closed edge has `start == end` | Fast |
+| E2 | `start == end` exactly when the curve returns to its start over the range within the edge's tolerance: a closed curve names one vertex, an open one two. The geometric match of each end to its vertex is V2's | Fast |
 | E3 | Every edge in a body is used by at least one coedge, or is a free edge of a wire/general body | Fast |
 | E4 | For every coedge, the surface evaluated along the pcurve is within the edge's tolerance of the 3D curve at the same parameter, at `Precision::check_samples` parameters including both ends — the pcurve and the curve share the edge's parameter (same-parameter, same-range, always) | Fast |
 | E5 | `edge.tolerance ≥ face.tolerance` for every face it bounds; `≤ vertex.tolerance` of both vertices | Fast |
-| E6 | A degenerate edge has `start == end`, no curve, and lies on a face whose surface is singular along its pcurve (its 3D image is one point within the vertex's tolerance) | Fast |
+| E6 | A degenerate edge has `start == end` and lies on faces whose surface is singular along its pcurve over its range (the image at `check_samples` parameters spans at most the vertex's tolerance) | Fast |
 | E7 | A seam edge (used twice by one loop) has its two coedges in opposite orientation and pcurves that differ by exactly the surface's period in the periodic parameter | Fast |
 | E8 | The edge does not self-intersect within its range | Full |
 

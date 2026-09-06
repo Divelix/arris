@@ -124,9 +124,14 @@ fn an_inconsistent_precision_is_refused() {
 fn the_raw_insert_accepts_a_dangling_reference() {
     let mut m = Model::default();
     let ghost = VertexId::new(99, 0);
-    let e = m
-        .raw()
-        .add_edge(Edge::new(EdgeGeometry::Degenerate, ghost, ghost, 1e-7));
+    let e = m.raw().add_edge(Edge::new(
+        EdgeGeometry::Degenerate {
+            range: Interval::UNIT,
+        },
+        ghost,
+        ghost,
+        1e-7,
+    ));
     let edge = m.edge(e).unwrap();
     assert_eq!(edge.start(), ghost);
     assert!(edge.is_degenerate() && edge.is_closed());

@@ -36,6 +36,7 @@ dependencies = [
 name = "arris-check"
 version = "0.0.1"
 dependencies = [
+ "arris-debug",
  "arris-topo",
 ]
 

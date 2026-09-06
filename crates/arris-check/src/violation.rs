@@ -57,27 +57,17 @@ pub enum Quantity {
     Tolerance,
 }
 
-/// One end of an edge.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum EdgeEnd {
-    /// The end at the lower parameter of the range.
-    Start,
-    /// The end at the upper parameter of the range.
-    End,
-}
-
-/// Why an edge's ends do not match its vertices (E2).
+/// Why an edge's vertices do not match the shape of its curve over its
+/// range (E2). The geometric match of each end is V2's.
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 pub enum EndMismatch {
-    /// The curve at one end of the range is farther from that end's vertex
-    /// than the vertex's tolerance.
-    OffVertex {
-        /// Which end.
-        end: EdgeEnd,
-        /// The vertex at that end.
+    /// The curve does not return to its start over the range but the edge
+    /// names one vertex for both ends.
+    OpenWithOneVertex {
+        /// The vertex.
         vertex: VertexId,
-        /// Distance from the curve point to the vertex's point.
-        distance: f64,
+        /// Distance between the curve at the two ends of the range.
+        gap: f64,
     },
     /// The curve returns to its start over the range but the edge names two
     /// different vertices.
@@ -89,13 +79,13 @@ pub enum EndMismatch {
     },
 }
 
-/// Why a degenerate edge is not a valid one (E6).
+/// Why a degenerate edge is not a valid one (E6). A degenerate edge has
+/// no curve by construction (`EdgeGeometry::Degenerate`), so that is not a
+/// fault it can have.
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 pub enum DegenerateFault {
     /// `start != end`.
     TwoVertices,
-    /// It carries a 3D curve.
-    HasCurve,
     /// The surface is not singular along its pcurve: the pcurve's image
     /// spans more than the vertex's tolerance.
     NotSingular {
@@ -258,12 +248,13 @@ pub enum Violation {
         /// What it referenced.
         to: Reference,
     },
-    /// **M2** — an entity reachable from the body is not reachable through
-    /// a parent that lists it.
-    NotInClosure {
-        /// The entity outside the closure.
+    /// **M2** — a reference a parent in the body makes is missing from the
+    /// adjacency index of the entity it names: the reference did not
+    /// resolve when the parent was appended, so the index never saw it.
+    NotIndexed {
+        /// The entity named.
         entity: EntityId,
-        /// The entity that referenced it.
+        /// The parent that names it.
         referenced_by: EntityId,
     },
     /// **M3** — a coordinate, parameter or tolerance is not finite.
@@ -312,8 +303,9 @@ pub enum Violation {
         /// The edge.
         edge: EdgeId,
     },
-    /// **E2** — `start`/`end` are not the curve at the range's ends within
-    /// the vertices' tolerances, or a closed edge names two vertices.
+    /// **E2** — the edge's vertices do not match the shape of its curve
+    /// over its range: a closed curve with two vertices, or an open one
+    /// with a single vertex.
     EdgeEnds {
         /// The edge.
         edge: EdgeId,
@@ -348,8 +340,8 @@ pub enum Violation {
         /// Which bound it broke.
         bound: ToleranceBound,
     },
-    /// **E6** — a degenerate edge has two vertices, a curve, or a pcurve
-    /// along which the surface is not singular.
+    /// **E6** — a degenerate edge has two vertices, or a pcurve along which
+    /// the surface is not singular.
     DegenerateEdge {
         /// The edge.
         edge: EdgeId,
@@ -515,7 +507,7 @@ impl Violation {
     pub const fn code(&self) -> &'static str {
         match self {
             Violation::Unresolved { .. } => "M1",
-            Violation::NotInClosure { .. } => "M2",
+            Violation::NotIndexed { .. } => "M2",
             Violation::NonFinite { .. } => "M3",
             Violation::VertexTolerance { .. } => "V1",
             Violation::VertexOffEdge { .. } => "V2",
@@ -563,7 +555,7 @@ impl Violation {
     pub fn entity(&self) -> EntityId {
         match *self {
             Violation::Unresolved { from, .. } => from,
-            Violation::NotInClosure { entity, .. } => entity,
+            Violation::NotIndexed { entity, .. } => entity,
             Violation::NonFinite { entity, .. } => entity,
             Violation::VertexTolerance { vertex, .. }
             | Violation::VertexOffEdge { vertex, .. }
@@ -616,10 +608,10 @@ impl fmt::Display for Violation {
             Violation::Unresolved { to, .. } => {
                 write!(f, "references {to}, which does not resolve")
             }
-            Violation::NotInClosure { referenced_by, .. } => {
+            Violation::NotIndexed { referenced_by, .. } => {
                 write!(
                     f,
-                    "referenced by {referenced_by} but not listed by any parent in the body"
+                    "referenced by {referenced_by} but absent from the adjacency index"
                 )
             }
             Violation::NonFinite { quantity, .. } => {
@@ -649,12 +641,11 @@ impl fmt::Display for Violation {
             }
             Violation::EdgeRange { .. } => f.write_str("no curve or an invalid range"),
             Violation::EdgeEnds { fault, .. } => match fault {
-                EndMismatch::OffVertex {
-                    end,
-                    vertex,
-                    distance,
-                } => {
-                    write!(f, "{end:?} of the range is {distance:e} from {vertex}")
+                EndMismatch::OpenWithOneVertex { vertex, gap } => {
+                    write!(
+                        f,
+                        "open curve (ends {gap:e} apart) but one vertex, {vertex}"
+                    )
                 }
                 EndMismatch::ClosedWithTwoVertices { start, end } => {
                     write!(f, "closed curve but two vertices, {start} and {end}")
@@ -674,7 +665,6 @@ impl fmt::Display for Violation {
             }
             Violation::DegenerateEdge { fault, .. } => match fault {
                 DegenerateFault::TwoVertices => f.write_str("degenerate edge with two vertices"),
-                DegenerateFault::HasCurve => f.write_str("degenerate edge with a 3D curve"),
                 DegenerateFault::NotSingular { face, extent } => {
                     write!(
                         f,

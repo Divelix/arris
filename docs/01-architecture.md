@@ -164,11 +164,18 @@ body: the kernel does not decide what fail-soft means.
 
 `arris-check` is its own crate so that no algorithm crate can skip it by
 accident and so that its dependency list stays at exactly `arris-topo`.
-`check(&model, body, Level) -> Report` returns every violation with the
-entity that violates it; `Report::is_ok()` is what every test asserts and
-what every operation asserts on its own output. The invariants are listed
-in 02-data-model §Invariants; each has a `Violation` variant, a test that
-constructs it and sees it reported, and a level:
+`arris_check::check(&model, body, Level) -> Report` (`topo` sits below the
+checker, so it is a free function over the model, not a method) returns
+every violation with the entity that violates it; `Report::is_ok()` is
+what every test asserts and what every operation asserts on its own
+output. A body handle that does not resolve is one M1 line; a reference
+that does not resolve is reported under M1 and skipped by every other
+row; adjacency is read off the body's own entities, so every row stands
+without the arena's indices and M2 alone speaks for them. The invariants
+are listed in 02-data-model §Invariants; each has a `Violation` variant,
+a test that constructs it and sees it reported, and a level (as of M2
+step 5 the rows M1–M3, V1–V3 and E1–E7 run; the loop, face, shell and
+body rows land in steps 7 and 8):
 
 - `Level::Fast` — combinatorial and local geometric checks (ids resolve,
   loops close, orientations compose, tolerances are ordered, pcurves match

@@ -12,13 +12,15 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+mod check;
 mod report;
 mod violation;
 
 pub use arris_topo;
 
+pub use check::check;
 pub use report::Report;
 pub use violation::{
-    DegenerateFault, EdgeEnd, EdgeUseFault, EndMismatch, FaceFault, Level, LoopBreak, NestingFault,
+    DegenerateFault, EdgeUseFault, EndMismatch, FaceFault, Level, LoopBreak, NestingFault,
     Quantity, Reference, SeamFault, ShellNestingFault, ToleranceBound, Violation, WireFault,
 };

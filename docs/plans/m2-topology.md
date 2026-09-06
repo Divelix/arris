@@ -215,7 +215,7 @@ per-kind counts) accept them; only the raw API and tests build them.
   `primitive/box`, proving the B-spline arms; the file is byte-identical
   across two writes; a `Wire` body is `StepError::Unsupported`. A
   convention mismatch here is fixed in Arris in this step.
-- [ ] Step 5 — Checker `Fast`, part 1: references, vertices, edges. `check`
+- [x] Step 5 — Checker `Fast`, part 1: references, vertices, edges. `check`
   and the closure walk; rows M1–M3, V1–V3, E1–E7 (E4 at
   `Precision::check_samples` parameters along each coedge's pcurve
   against the 3D curve; E7 the seam's two pcurves differ by exactly the
@@ -444,3 +444,28 @@ step, as for M1.
   outer bound's winding is a private sampled signed area in `arris-io`
   until step 6's `region2::signed_area` replaces it. CI's `test` job syncs
   the oracle now, since the STEP tests run `compare.py`.
+- Step 5: three rows of 02 §Invariants could not be implemented as
+  written and were reworded (the drift test holds the two lists
+  together). **M2** "reachable through a parent that lists it" names
+  nothing in this arena — the walk *is* reachability — so it is now the
+  one row about the adjacency indices: a reference that did not resolve
+  when its parent was appended is never indexed (the only way to make
+  one is a raw insert naming a later id); `Violation::NotInClosure` is
+  `NotIndexed`. Every other row reads adjacency off the closure's own
+  entities, so the rows do not depend on the indices being right. **E2**
+  duplicated V2 (the same distance, reported on the edge instead of the
+  vertex); it is now the structural half only — `start == end` exactly
+  when the curve returns over the range — with
+  `EndMismatch::OffVertex` replaced by `OpenWithOneVertex { vertex, gap }`
+  and the unused `EdgeEnd` removed. **E6**'s "no curve" is unrepresentable
+  (`EdgeGeometry::Degenerate` has none), so `DegenerateFault::HasCurve`
+  is gone; and "singular along its pcurve" needs a range, which a
+  degenerate edge had nowhere to keep: `EdgeGeometry::Degenerate` now
+  carries `range: Interval` (02 §Entities; `Edge::range()` covers both
+  kinds; the dump prints it). V2, V3 and E4 measure one triangle from
+  three corners (vertex, curve end, surface at the pcurve end), so a
+  moved range end reports under V2 and V3 and a shifted pcurve under V3
+  and E4 — each violation test names its full set rather than pretending
+  to one line. E7 compares seam pcurves in (u, v) with
+  `parametric_tolerance` divided by the surface's speed in each
+  direction, unscaled where a direction is singular to rounding.

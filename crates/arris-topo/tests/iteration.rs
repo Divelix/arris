@@ -211,13 +211,23 @@ fn an_edge_shared_by_two_faces_has_two_uses_naming_face_loop_and_index() {
 fn a_closed_edge_is_listed_once_at_its_vertex_and_a_dangling_one_not_at_all() {
     let mut m = Model::default();
     let v = m.raw().add_vertex(Vertex::new(Point3::origin(), 1e-7));
-    let closed = m
-        .raw()
-        .add_edge(EdgeEntity::new(EdgeGeometry::Degenerate, v, v, 1e-7));
+    let closed = m.raw().add_edge(EdgeEntity::new(
+        EdgeGeometry::Degenerate {
+            range: Interval::UNIT,
+        },
+        v,
+        v,
+        1e-7,
+    ));
     let ghost = VertexId::new(40, 0);
-    let dangling = m
-        .raw()
-        .add_edge(EdgeEntity::new(EdgeGeometry::Degenerate, v, ghost, 1e-7));
+    let dangling = m.raw().add_edge(EdgeEntity::new(
+        EdgeGeometry::Degenerate {
+            range: Interval::UNIT,
+        },
+        v,
+        ghost,
+        1e-7,
+    ));
     assert_eq!(m.vertex_edges(v).unwrap(), [closed, dangling]);
     let f = m.raw().add_face(Face::new(
         SurfaceId::new(3, 0),
