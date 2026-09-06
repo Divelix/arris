@@ -9,7 +9,7 @@ intersected; §Geometry fixtures below) — holding:
 | File | Written by | Holds |
 |---|---|---|
 | `fixture.json` | a person or the agent | the **recipe**: operands and operations both sides evaluate, probe points, tolerances, and the closed-form `analytic` values |
-| `expected.json` | `tools/oracle/expected.py`, never by hand | the **oracle's answer** per variant: volume, area, centroid, counts, Euler characteristic and genus, probe classifications, plus the OCCT version and the recipe hash |
+| `expected.json` | `tools/oracle/expected.py`, never by hand | the **oracle's answer** per variant: volume, area, centroid, the inertia tensor about the centroid, counts, Euler characteristic and genus, probe classifications, plus the OCCT version and the recipe hash |
 | `dump.txt` | Arris, through the corpus runner under `ARRIS_BLESS=1`, once the fixture passes | the text dump of the result, the regression guard for ids and provenance (absent while the fixture is `#[ignore]`d); `dump.<variant>.txt` for a variant other than `default` |
 
 The Rust reading of both files is `arris_debug::fixtures`; the Python one

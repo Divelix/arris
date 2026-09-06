@@ -20,6 +20,23 @@
       "degenerate": false,
       "euler_characteristic": 2,
       "genus": 0,
+      "inertia": [
+        [
+          1000000.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          1700000.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          2500000.0
+        ]
+      ],
       "probes": [
         {
           "class": "in",

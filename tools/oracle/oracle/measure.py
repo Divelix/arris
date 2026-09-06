@@ -1,6 +1,9 @@
 """Measure a shape: the numbers expected.json holds and compare.py checks.
 
     volume, area, centroid       GProp mass properties
+    inertia                      the 3x3 inertia tensor about the centroid,
+                                 unit density, physical convention (the
+                                 products of inertia carried negated)
     counts                       unique vertices, edges (a seam once),
                                  faces, loops (wires), shells, solids
     euler_characteristic         V − E + 2F − L: 2(S − G) for closed shells
@@ -39,6 +42,7 @@ DEFAULT_TOLERANCES = {
     "area_rel": 1e-9,
     "centroid_abs": 1e-7,
     "probe": 1e-7,
+    "inertia_rel": 1e-9,
 }
 
 
@@ -74,6 +78,16 @@ def classify(shape: TopoDS_Shape, point: list[float], tolerance: float) -> str:
     raise OracleError(f"probe {point}: classifier returned UNKNOWN")
 
 
+def inertia(props: GProp_GProps) -> list[list[float]]:
+    """The 3x3 inertia tensor of `props` about the centre of mass, unit
+    density, as rows. OCCT's `MatrixOfInertia` is already about the centre
+    of mass and already in the physical convention -- the diagonal holds
+    the moments and the off-diagonal the negated products -- which is the
+    convention `arris_ops::measure::MassProperties` states."""
+    m = props.MatrixOfInertia()
+    return [[m.Value(i, j) for j in range(1, 4)] for i in range(1, 4)]
+
+
 def measure(shape: TopoDS_Shape, probes: list[dict], probe_tolerance: float) -> dict:
     """Everything expected.json records for one result."""
     counts = {
@@ -102,6 +116,7 @@ def measure(shape: TopoDS_Shape, probes: list[dict], probe_tolerance: float) -> 
             "volume": vp.Mass(),
             "area": sp.Mass(),
             "centroid": [c.X(), c.Y(), c.Z()],
+            "inertia": inertia(vp),
             "euler_characteristic": chi,
             "genus": counts["shells"] - chi // 2,
             "probes": [
@@ -122,7 +137,7 @@ def measure(shape: TopoDS_Shape, probes: list[dict], probe_tolerance: float) -> 
 
 def compare(expected: dict, actual: dict, tolerances: dict) -> list[tuple[str, str, str, bool]]:
     """Rows of (quantity, expected, actual, ok). Counts and classes exact,
-    volume and area relative, centroid absolute."""
+    volume, area and each inertia component relative, centroid absolute."""
     tol = {**DEFAULT_TOLERANCES, **tolerances}
     rows: list[tuple[str, str, str, bool]] = []
 
@@ -141,6 +156,19 @@ def compare(expected: dict, actual: dict, tolerances: dict) -> list[tuple[str, s
     e, a = expected["centroid"], actual["centroid"]
     dist = math.dist(e, a)
     row("centroid", [f"{x:.9g}" for x in e], [f"{x:.9g}" for x in a], dist <= tol["centroid_abs"])
+    ei, ai = expected.get("inertia"), actual.get("inertia")
+    if ei is not None and ai is not None:
+        # Relative to the largest component of the tensor: a product of
+        # inertia that cancels to zero is not compared against itself.
+        scale = max(abs(x) for row_ in ei for x in row_) or 1.0
+        for i in range(3):
+            for j in range(3):
+                row(
+                    f"inertia[{i}][{j}]",
+                    repr(ei[i][j]),
+                    repr(ai[i][j]),
+                    abs(ai[i][j] - ei[i][j]) <= tol["inertia_rel"] * scale,
+                )
     row("genus", expected["genus"], actual["genus"], expected["genus"] == actual["genus"])
     ea = {p["label"]: p["class"] for p in expected.get("probes", [])}
     aa = {p["label"]: p["class"] for p in actual.get("probes", [])}

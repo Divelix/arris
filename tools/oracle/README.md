@@ -36,7 +36,8 @@ commit that says so (`.agents/rules/git.md`).
   `transform`, `fuse`, `common`, `cut`, chained by step name; `params`
   with string expressions and `variants` overriding them. The grammar is
   the module docstring and `tests/fixtures/README.md`.
-- `oracle/measure.py` — volume, area, centroid (`GProp`), counts by unique
+- `oracle/measure.py` — volume, area, centroid and the inertia tensor
+  (`GProp`), counts by unique
   sub-shape (a seam edge once), loops, shells, solids, the Euler
   characteristic `V − E + 2F − L` and the genus it implies, in/out/on
   classification of probe points (`BRepClass3d`), and the comparison with
@@ -65,12 +66,22 @@ commit that says so (`.agents/rules/git.md`).
       "degenerate": false,
       "counts": {"vertices": 10, "edges": 15, "faces": 7, "loops": 9, "shells": 1, "solids": 1},
       "volume": 11497.345175425633, "area": 3950.796447372311, "centroid": [20.0, 15.0, 5.0],
+      "inertia": [[993800.5904969159, -1.3969838619232178e-09, -4.656612873077393e-10],
+                  [-1.3969838619232178e-09, 1693800.5904969191, -2.3283064365386963e-10],
+                  [-4.656612873077393e-10, -2.3283064365386963e-10, 2495978.761403409]],
       "euler_characteristic": 0, "genus": 1,
       "probes": [{"label": "inside", "point": [5, 5, 5], "class": "in"}]
     }
   }
 }
 ```
+
+`inertia` is OCCT's `GProp_GProps::MatrixOfInertia` of the volume
+properties: the 3×3 tensor about the centre of mass at unit density, in
+the physical convention — the diagonal holds the moments of inertia and
+the off-diagonal the *negated* products — which is what
+`arris_ops::measure::MassProperties` states and the runner's `measure`
+stage compares within the fixture's `inertia_rel`.
 
 The hash covers only what the oracle evaluates, so editing a fixture's
 `analytic` or description does not stale it; editing a step does, and
