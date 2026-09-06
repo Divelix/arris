@@ -10,7 +10,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use arris_topo::arris_geom::region2::{Piece, Polygon2, discretise};
+use arris_topo::arris_geom::region2::{Polygon2, discretise};
 use arris_topo::arris_geom::{Curve2, Surface};
 use arris_topo::arris_math::{Point2, Vec2};
 use arris_topo::entity::{BodyKind, Face, Loop};
@@ -216,21 +216,8 @@ impl<'m> Checker<'m> {
     /// all a sign, a winding number and a containment question need.
     /// `None` when the loop is empty or a reference does not resolve.
     fn loop_polygon(&self, l: &'m Loop) -> Option<Polygon2> {
-        let model = self.model;
-        let mut pieces: Vec<Piece<'m>> = Vec::with_capacity(l.coedges().len());
-        for c in l.coedges() {
-            let range = model.edge(c.edge()).ok()?.range();
-            if !(range.lo().is_finite() && range.hi().is_finite() && range.lo() < range.hi()) {
-                return None;
-            }
-            let pcurve = model.curve2(c.pcurve()).ok()?;
-            pieces.push(if c.orientation() == Orientation::Forward {
-                Piece::along(pcurve, range)
-            } else {
-                Piece::against(pcurve, range)
-            });
-        }
-        (!pieces.is_empty()).then(|| discretise(&pieces, f64::INFINITY))
+        let pieces = self.loop_pieces(l)?;
+        Some(discretise(&pieces, f64::INFINITY))
     }
 
     /// L4: every loop turns, and the loops nest — one positively wound

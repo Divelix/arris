@@ -316,16 +316,31 @@ pub struct Tolerances {
     pub centroid_abs: f64,
     /// The distance within which a probe is "on" the boundary.
     pub probe: f64,
+    /// The chord tolerance the corpus runner tessellates the result at
+    /// (Arris only; the oracle does not mesh).
+    pub mesh_chord: f64,
+    /// Relative, on the mesh's signed volume against the oracle's volume
+    /// (Arris only). The default is sized by the closed form of an
+    /// inscribed prism, `4δ / (3r)` at `mesh_chord` on the corpus's
+    /// smallest radius (ADR-0003).
+    pub mesh_volume_rel: f64,
+    /// Relative, on each component of the inertia tensor, once `measure`
+    /// records one.
+    pub inertia_rel: f64,
 }
 
 impl Default for Tolerances {
-    /// The oracle's `DEFAULT_TOLERANCES`.
+    /// The oracle's `DEFAULT_TOLERANCES`, and the runner's own for the
+    /// mesh and `measure` stages.
     fn default() -> Self {
         Tolerances {
             volume_rel: 1e-9,
             area_rel: 1e-9,
             centroid_abs: 1e-7,
             probe: 1e-7,
+            mesh_chord: 1e-3,
+            mesh_volume_rel: 2e-3,
+            inertia_rel: 1e-9,
         }
     }
 }

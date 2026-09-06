@@ -53,7 +53,15 @@ remeshing). No window in `arris-debug`.
   tessellation and `measure` all ask it. The checker calls it.
 - **`arris-mesh` public API** (01 §Crates, §Facade; new section 01
   §Tessellation): `tessellate(&Model, Body, chord: f64) -> Result<TriMesh,
-  MeshError>`. The chord tolerance is the consumer's request — a number
+  MeshError>`. Step 2 as built: `MeshError::NotFound` wraps
+  `arris_topo::NotFound` (a curve or pcurve is not a `Shape`), and
+  `MeshError` drops `Eq` (it carries an `f64` and a `Report`);
+  `Curve2::speed_bounds(range)` is the per-direction `|d/dt|` bound the
+  edge sample count needs; on a sphere and a torus `chord_steps` shares
+  the chord between the two directions so a triangle spanning both stays
+  within it; the CDT inserts points in bit-reversed index order (a
+  deterministic hierarchy, not a shuffle) because a loop's samples in
+  walking order made insertion quadratic. The chord tolerance is the consumer's request — a number
   like the `f32` boundary, not a model tolerance — validated finite and
   positive. In debug builds the input passes `Level::Fast` first (that is
   why `mesh` depends on `check`), as every operation's does. `MeshError`
@@ -172,7 +180,7 @@ robustness or bound has to be established here (Fable).
   points differing by 1 ulp; two runs give identical index lists; a
   crossing pair is the named error. ADR-0003 written and listed in
   `docs/adr/README.md`.
-- [ ] Step 2 **[3]** — Edges once, faces through their pcurves: the box,
+- [x] Step 2 **[3]** — Edges once, faces through their pcurves: the box,
   the cylinder and the frame mesh closed. `Model::loop_pieces` moved down
   and the checker on it; `Curve::chord_segments`, `Surface::chord_steps`;
   `tessellate` for bodies whose faces are planes, cylinders and cones (the

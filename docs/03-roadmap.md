@@ -38,7 +38,9 @@ fixture in `crates/arris/tests/corpus.rs`) builds the recipe in Arris,
 runs the checker at `Level::Full` — nothing violated, nothing left
 `unchecked` — compares counts and genus against `expected.json`, writes
 STEP and runs `tools/oracle/compare.py` on it (volume, area, centroid
-and every probe, read back by Open CASCADE), asserts the provenance
+and every probe, read back by Open CASCADE), tessellates the result at
+the fixture's `mesh_chord` and holds the mesh closed with its signed
+volume within `mesh_volume_rel` of the oracle's, asserts the provenance
 accounting (02-data-model §Provenance), and diffs the dump — written
 instead under `ARRIS_BLESS=1`. `measure` joins the comparison in M3.
 Tolerances are the fixture's: relative 1e-9 on volume and area for

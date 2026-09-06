@@ -3,9 +3,12 @@
 use core::ops::Range;
 use std::collections::BTreeMap;
 
-use arris_topo::{EdgeId, FaceId};
+use arris_check::Report;
+use arris_topo::arris_geom::SurfaceKind;
+use arris_topo::{Body, EdgeId, FaceId, NotFound};
 
 use crate::aabb::Aabb;
+use crate::cdt::CdtError;
 
 /// The triangles of one B-Rep face: a contiguous run of a
 /// [`TriMesh`]'s triangle list, in the body's face iteration order.
@@ -28,8 +31,9 @@ pub struct EdgeRange {
     pub indices: Range<usize>,
 }
 
-/// Why a mesh could not be built or extended.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+/// Why a mesh could not be built or extended: by hand through the
+/// `push_*` methods, or from a body by [`crate::tessellate`].
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum MeshError {
     /// A triangle or edge index does not name a position.
     #[error("index {index} is out of range for {positions} positions")]
@@ -54,6 +58,42 @@ pub enum MeshError {
     NonFinitePosition {
         /// The position's index.
         index: usize,
+    },
+    /// The body, or an entity or geometry value it refers to, does not
+    /// resolve in the model.
+    #[error(transparent)]
+    NotFound(#[from] NotFound),
+    /// The body fails the checker at `Level::Fast` (checked in debug
+    /// builds before tessellation starts, as every operation checks its
+    /// input).
+    #[error("{body} fails the checker:\n{report}")]
+    InvalidInput {
+        /// The body.
+        body: Body,
+        /// What it fails.
+        report: Box<Report>,
+    },
+    /// The chord tolerance asked for is not finite and positive.
+    #[error("chord tolerance {0} is not finite and positive")]
+    Chord(f64),
+    /// A face's domain could not be triangulated: its loops, discretised,
+    /// are not the simple nested polygons the checker's L4 and L5 rows
+    /// promise.
+    #[error("{face}: {source}")]
+    Face {
+        /// The face.
+        face: FaceId,
+        /// What the triangulation found.
+        source: CdtError,
+    },
+    /// A face lies on a surface kind tessellation has no interior-point
+    /// grid for yet. Never a wildcard: every kind is an explicit arm.
+    #[error("{face} lies on a {kind} surface, which tessellation does not mesh yet")]
+    Unsupported {
+        /// The face.
+        face: FaceId,
+        /// Its surface's kind.
+        kind: SurfaceKind,
     },
 }
 

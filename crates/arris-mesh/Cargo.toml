@@ -20,6 +20,8 @@ thiserror.workspace = true
 # `arris-debug`; a dev-dependency is exempt from the layer rule.
 [dev-dependencies]
 arris-debug.workspace = true
+# The primitives are what the random-pose tessellation tests mesh.
+arris-ops.workspace = true
 proptest.workspace = true
 
 [lints]

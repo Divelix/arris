@@ -247,6 +247,49 @@ rather than counting curves or points. The NURBS variant is one arm like the
 others; a NURBS–NURBS marcher, when it comes, is what that arm calls, and
 analytic pairs never route through it.
 
+## Tessellation
+
+`arris_mesh::tessellate(&Model, Body, chord) -> Result<TriMesh,
+MeshError>` turns a body into a triangle mesh with a `FaceRange` per
+face and an `EdgeRange` per edge, both in the body's iteration order
+(02-data-model §Adjacency and iteration). The chord tolerance is the
+consumer's request — a number like a render's resolution, not a model
+tolerance — validated finite and positive (`MeshError::Chord`); in debug
+builds the body passes the checker at `Level::Fast` first, as every
+operation's input does (`MeshError::InvalidInput`), which is why `mesh`
+depends on `check`. The mesh guarantees (ADR-0003):
+
+- Positions are `f64` and exact evaluations of the geometry: a topo
+  vertex's point, an edge's curve at a sampled parameter, a surface at
+  an interior grid point. Nothing is welded or snapped.
+- A topo vertex is one mesh vertex and an edge's samples are one index
+  run, so a mesh of a `Solid` is closed by construction. Every edge is
+  discretised once, at `n` uniform parameters — the largest of its
+  curve's `chord_segments` at the chord and, per coedge, the count that
+  keeps each step's (u, v) travel under the face's surface's
+  `chord_steps` — and its `EdgeRange` is the polyline from its start
+  vertex to its end vertex along its curve's parameter.
+- A face's loops are the *same* parameters through each coedge's
+  pcurve, triangulated in (u, v) by the constrained Delaunay
+  triangulation of `arris_mesh::cdt` and mapped back to the shared
+  indices. A seam edge is discretised once and its indices appear in the
+  wall's triangles twice, once from each copy of the pcurve; a
+  degenerate edge's (u, v) segment maps to one index and the triangles
+  that collapse are dropped.
+- Triangles are counter-clockwise seen from outside, by the face use's
+  effective orientation against the surface normal.
+- Same body, same chord, same mesh on every platform, with the
+  `parallel` feature on or off.
+- A face on a sphere, torus or NURBS surface is `MeshError::Unsupported`
+  naming it until its interior grid lands; a face whose loops are not
+  the simple nested polygons the checker promises is `MeshError::Face`
+  with the `CdtError` naming the segments.
+
+No adaptive refinement: interior points, where a face needs them, lie on
+a uniform (u, v) grid sized by the chord bound. No `f32` output (the
+`⚠ OPEN` under §Threading), no per-vertex normals or (u, v), no
+mesh-based mass properties (`ops::measure` integrates the B-Rep).
+
 ## Threading and wasm
 
 - Every public type is `Send + Sync`. There is no global mutable state, no

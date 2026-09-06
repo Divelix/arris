@@ -26,8 +26,10 @@ The corpus **runner** (`arris_debug::corpus::run(dir, variant)`, one
 test itself: it builds the recipe in Arris, runs the checker at `Full`
 (nothing violated, nothing undecided), compares counts and genus against
 `expected.json`, writes STEP under `target/inspect/` and has the oracle
-read it back (`compare.py`), asserts every step's provenance accounting,
-and diffs the dump against `dump.txt`. A fixture whose recipe needs an
+read it back (`compare.py`), tessellates the result at `mesh_chord` and
+holds the mesh closed with a positive signed volume within
+`mesh_volume_rel` of the oracle's, asserts every step's provenance
+accounting, and diffs the dump against `dump.txt`. A fixture whose recipe needs an
 operation of a later milestone is `#[ignore = "M4: needs ops::cut"]` and
 fails naming the op under `--include-ignored`, so the day the operation
 lands the test says so. `ARRIS_BLESS=1 cargo test -p arris --test corpus
@@ -91,7 +93,14 @@ of the step that made the fixture pass, and a later change to it is a
   else is compared. `genus` is what the Euler line is checked with:
   `V − E + F − (L − F) − 2(S − G) = 0` with the oracle's counts.
 - **Tolerances** are the fixture's; absent ones take the defaults shown.
-  Counts and classifications are always exact.
+  Counts and classifications are always exact. Three keys are Arris's
+  alone and never reach the oracle: `mesh_chord` (default `1e-3`), the
+  chord tolerance the runner tessellates the result at, and
+  `mesh_volume_rel` (default `2e-3`), how far the mesh's signed volume may
+  be from the oracle's volume — sized by the closed form of an inscribed
+  prism, `4δ / (3r)` at that chord on the corpus's smallest radius
+  (ADR-0003); and `inertia_rel` (default `1e-9`), read by the runner for
+  the `measure` stage's inertia tensor.
 
 ## Geometry fixtures (`"kind": "geometry"`)
 

@@ -190,6 +190,46 @@ impl Curve2 {
         }
     }
 
+    /// Upper bounds on `|du/dt|` and `|dv/dt|` over `range`: how far the
+    /// pcurve travels in each (u, v) direction per unit of parameter, at
+    /// most. Exact for a line (its direction's components) and a bound
+    /// for a conic (the radius, or the major radius); sampled for a NURBS
+    /// at the parameters per knot span its chord deviation is sampled at
+    /// (`region2`'s `CURVATURE_SAMPLES_PER_SPAN`), a sampling density like
+    /// [`crate::PCURVE_SAMPLES`], not a tolerance. What tessellation sizes an edge's sample count
+    /// by, against [`crate::Surface::chord_steps`].
+    ///
+    /// ```
+    /// use arris_geom::Curve2;
+    /// use arris_math::{Frame2, Interval};
+    ///
+    /// let c = Curve2::Circle { frame: Frame2::identity(), radius: 3.0 };
+    /// assert_eq!(c.speed_bounds(Interval::TURN), [3.0, 3.0]);
+    /// ```
+    pub fn speed_bounds(&self, range: Interval) -> [f64; 2] {
+        match self {
+            Curve2::Line { direction, .. } => [direction.x.abs(), direction.y.abs()],
+            Curve2::Circle { radius, .. } => [radius.abs(); 2],
+            Curve2::Ellipse { major_radius, .. } => [major_radius.abs(); 2],
+            Curve2::Nurbs(n) => {
+                if !(range.is_bounded() && range.length() > 0.0) {
+                    return [0.0; 2];
+                }
+                let mut knots: Vec<f64> = n
+                    .knots()
+                    .iter()
+                    .copied()
+                    .filter(|&k| range.lo() < k && k < range.hi())
+                    .collect();
+                knots.dedup();
+                let samples = (knots.len() + 1) * crate::region2::CURVATURE_SAMPLES_PER_SPAN;
+                (0..=samples)
+                    .map(|i| n.eval(range.lerp(i as f64 / samples as f64)).d1)
+                    .fold([0.0; 2], |m, d| [m[0].max(d.x.abs()), m[1].max(d.y.abs())])
+            }
+        }
+    }
+
     /// The nearest point of the curve to `p` with its parameter, by the
     /// closed form of each analytic variant and by sampling and bracketed
     /// Newton for a NURBS ([`NurbsCurve2::project_parameter`]).

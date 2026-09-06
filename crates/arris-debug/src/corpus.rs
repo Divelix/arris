@@ -2,9 +2,11 @@
 //! one call per fixture and variant. [`run`] builds the recipe in Arris,
 //! runs the checker at `Full`, compares counts and genus against the
 //! oracle's `expected.json`, writes STEP and has the oracle read it back
-//! (`compare.py`), asserts the provenance accounting of every step, and
-//! diffs the text dump against the committed `dump.txt` — written only
-//! under `ARRIS_BLESS=1`. Every stage that fails is a typed
+//! (`compare.py`), tessellates the result and holds the mesh closed with
+//! its signed volume within the fixture's `mesh_volume_rel` of the
+//! oracle's at `mesh_chord`, asserts the provenance accounting of every
+//! step, and diffs the text dump against the committed `dump.txt` —
+//! written only under `ARRIS_BLESS=1`. Every stage that fails is a typed
 //! [`CorpusError`] saying which fixture, which stage and what differed;
 //! a recipe step the kernel has no operation for yet is
 //! [`CorpusError::Unsupported`] naming the op, which is what an
@@ -17,6 +19,7 @@ use arris_io::arris_check::arris_topo::arris_math::{Axis, FrameError, Point3, Ve
 use arris_io::arris_check::arris_topo::{Body, Model, Orientation, Origin, Provenance, Shape};
 use arris_io::arris_check::{Level, Report, check};
 use arris_io::step::{self, StepError};
+use arris_mesh::tessellate;
 use arris_ops::{OpError, primitive_box, primitive_cylinder};
 
 use crate::dump::dump_text;
@@ -131,6 +134,17 @@ pub enum CorpusError {
     /// The oracle did not match Arris's STEP, or could not run.
     #[error(transparent)]
     Oracle(#[from] OracleError),
+    /// The mesh could not be built, is not closed, or its volume is not
+    /// the oracle's within `mesh_volume_rel`.
+    #[error("{fixture}: mesh at chord {chord}: {what}")]
+    Mesh {
+        /// The fixture.
+        fixture: String,
+        /// The chord tolerance the result was meshed at.
+        chord: f64,
+        /// What went wrong.
+        what: String,
+    },
     /// A step's provenance does not account for every entity.
     #[error("{fixture}: step {step:?}: provenance: {what}")]
     Provenance {
@@ -270,6 +284,34 @@ pub fn run(dir: &Path, variant: &str) -> Result<(), CorpusError> {
     })?;
     let tag = format!("{}-{variant}", name.replace('/', "-"));
     oracle::compare_dir(dir, &text, Some(variant), &tag)?;
+
+    // The mesh: closed, positive, and the oracle's volume within the
+    // fixture's mesh tolerance at its chord.
+    let tolerances = fixture.recipe.tolerances;
+    let mesh_failure = |what: String| CorpusError::Mesh {
+        fixture: name.clone(),
+        chord: tolerances.mesh_chord,
+        what,
+    };
+    let mesh =
+        tessellate(&m, body, tolerances.mesh_chord).map_err(|e| mesh_failure(e.to_string()))?;
+    let Some(mesh_volume) = mesh.signed_volume() else {
+        return Err(mesh_failure("the mesh is not closed".into()));
+    };
+    if !mesh_volume.is_finite() || mesh_volume <= 0.0 {
+        return Err(mesh_failure(format!(
+            "the mesh's signed volume is {mesh_volume}, not positive"
+        )));
+    }
+    if let Some(oracle_volume) = expected.volume {
+        let relative = (mesh_volume - oracle_volume).abs() / oracle_volume.abs();
+        if relative.is_nan() || relative > tolerances.mesh_volume_rel {
+            return Err(mesh_failure(format!(
+                "mesh volume {mesh_volume} vs the oracle's {oracle_volume}: {relative:e} relative, above mesh_volume_rel {:e}",
+                tolerances.mesh_volume_rel
+            )));
+        }
+    }
 
     // Provenance accounting, every step.
     for step in &fixture.recipe.steps {

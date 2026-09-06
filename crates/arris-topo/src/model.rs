@@ -4,6 +4,7 @@
 use core::fmt;
 use std::sync::Arc;
 
+use arris_geom::region2::Piece;
 use arris_geom::{Curve, Curve2, Surface};
 use arris_math::Precision;
 
@@ -228,6 +229,41 @@ impl Model {
             .face_shells
             .get(face.index() as usize)
             .map_or(&[], Vec::as_slice))
+    }
+
+    /// The pieces of a loop in (u, v), in walking order: each coedge's
+    /// pcurve over its edge's range, walked along the parameter for a
+    /// `Forward` use and against it for a `Reversed` one — what the
+    /// (u, v) toolkit of `arris_geom::region2` and `integrate` takes, so
+    /// the checker's loop rows, tessellation and `measure` all ask this
+    /// once (`docs/02-data-model.md` §Pcurves). Ranges are taken as
+    /// stored; whether they are bounded and positive is the checker's E1
+    /// to say. Errors: [`NotFound`] for the first edge or pcurve that
+    /// does not resolve.
+    ///
+    /// ```
+    /// use arris_debug::sample;
+    /// use arris_topo::Model;
+    ///
+    /// let mut m = Model::default();
+    /// let cylinder = sample::cylinder(&mut m, 4.0, 12.0).unwrap();
+    /// let wall = m.face(m.faces(cylinder).unwrap()[0].id).unwrap();
+    /// let pieces = m.loop_pieces(&wall.loops()[0]).unwrap();
+    /// assert_eq!(pieces.len(), 4, "bottom, seam up, top, seam down");
+    /// assert!(pieces[3].reversed);
+    /// ```
+    pub fn loop_pieces(&self, l: &Loop) -> Result<Vec<Piece<'_>>, NotFound> {
+        let mut pieces = Vec::with_capacity(l.coedges().len());
+        for c in l.coedges() {
+            let range = self.edge(c.edge())?.range();
+            let pcurve = self.curve2(c.pcurve())?;
+            pieces.push(if c.orientation() == crate::Orientation::Forward {
+                Piece::along(pcurve, range)
+            } else {
+                Piece::against(pcurve, range)
+            });
+        }
+        Ok(pieces)
     }
 
     /// Runs `f` on the model and, if it returns `Err`, drops every entity

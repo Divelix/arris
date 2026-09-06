@@ -309,6 +309,94 @@ impl Surface {
         }
     }
 
+    /// The largest parameter steps `[hu, hv]` for which a triangle whose
+    /// corners lie on the surface, at parameters at most `hu` apart in
+    /// `u` and `hv` apart in `v` within `bounds`, deviates from the
+    /// surface by at most `chord`. The bound is the second fundamental
+    /// form: a chord over a parameter step `h` in a direction of normal
+    /// curvature `k` leaves the surface by at most `k h² / 8`, and a
+    /// triangle by the sum over its two directions, so where both
+    /// directions curve each gets half the chord. `f64::INFINITY` along a
+    /// direction the surface is flat or ruled in — both on a plane, `v`
+    /// on a cylinder and a cone, whose triangles are then bounded by the
+    /// `u` step alone whatever their height; the cone's `u` curvature is
+    /// taken at the radius of the region's far `v` bound. A torus takes
+    /// `R + r` in `u` and `r` in `v`, a sphere its radius in both; a
+    /// NURBS samples the form's three coefficients on a grid over
+    /// `bounds` clipped to its domain and gives one step to both
+    /// directions. A `chord` of zero gives zero steps; a cone whose `v`
+    /// bound is unbounded gives a zero `u` step, since no step fits.
+    ///
+    /// ```
+    /// use arris_geom::Surface;
+    /// use arris_math::{Frame, Interval};
+    ///
+    /// let cyl = Surface::Cylinder { frame: Frame::world(), radius: 2.0 };
+    /// let [hu, hv] = cyl.chord_steps(1e-3, cyl.domain());
+    /// assert!((hu - (8.0 * 1e-3 / 2.0f64).sqrt()).abs() < 1e-15);
+    /// assert_eq!(hv, f64::INFINITY);
+    /// ```
+    pub fn chord_steps(&self, chord: f64, bounds: [Interval; 2]) -> [f64; 2] {
+        // The step for a normal curvature bound `k` and a chord share.
+        let step = |k: f64, share: f64| {
+            if k == 0.0 {
+                f64::INFINITY
+            } else if k.is_finite() {
+                (8.0 * share / k).sqrt()
+            } else {
+                0.0
+            }
+        };
+        match *self {
+            Surface::Plane { .. } => [f64::INFINITY; 2],
+            Surface::Cylinder { radius, .. } => [step(radius.abs(), chord), f64::INFINITY],
+            Surface::Cone {
+                radius, half_angle, ..
+            } => {
+                let (sa, ca) = half_angle.sin_cos();
+                let v = bounds[1];
+                let rho = if v.is_bounded() {
+                    (radius + v.lo() * sa)
+                        .abs()
+                        .max((radius + v.hi() * sa).abs())
+                } else {
+                    f64::INFINITY
+                };
+                [step(rho * ca, chord), f64::INFINITY]
+            }
+            Surface::Sphere { radius, .. } => [step(radius.abs(), chord / 2.0); 2],
+            Surface::Torus {
+                major_radius,
+                minor_radius,
+                ..
+            } => [
+                step((major_radius + minor_radius).abs(), chord / 2.0),
+                step(minor_radius.abs(), chord / 2.0),
+            ],
+            Surface::Nurbs(ref s) => {
+                let domain = s.domain();
+                let clip = |b: Interval, d: Interval| b.intersection(&d).unwrap_or(d);
+                let (bu, bv) = (clip(bounds[0], domain[0]), clip(bounds[1], domain[1]));
+                let n = NURBS_FORM_SAMPLES;
+                let mut k = [0.0f64; 3];
+                for i in 0..=n {
+                    for j in 0..=n {
+                        let (u, v) = (bu.lerp(i as f64 / n as f64), bv.lerp(j as f64 / n as f64));
+                        let Some(normal) = s.normal(u, v) else {
+                            continue;
+                        };
+                        let e = s.eval(u, v);
+                        k[0] = k[0].max(e.duu.dot(&normal).abs());
+                        k[1] = k[1].max(e.duv.dot(&normal).abs());
+                        k[2] = k[2].max(e.dvv.dot(&normal).abs());
+                    }
+                }
+                let h = step(k[0] + 2.0 * k[1] + k[2], chord);
+                [h, h]
+            }
+        }
+    }
+
     /// The same surface with its frame moved by `motion`: the
     /// parametrisation is carried along, so `moved.eval(u, v).point ==
     /// motion.apply(self.eval(u, v).point)` to rounding.
@@ -347,6 +435,12 @@ impl Surface {
         }
     }
 }
+
+/// Grid points per direction at which a NURBS surface's second
+/// fundamental form is sampled for [`Surface::chord_steps`]: a sampling
+/// density, not a tolerance, chosen so a bicubic patch's curvature cannot
+/// hide between samples over one knot span.
+const NURBS_FORM_SAMPLES: usize = 32;
 
 /// A frame's origin and axes as plain vectors.
 fn axes(f: &Frame) -> (Point3, Vec3, Vec3, Vec3) {

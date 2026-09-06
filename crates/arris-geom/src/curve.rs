@@ -164,6 +164,71 @@ impl Curve {
         }
     }
 
+    /// How many straight segments approximate the curve over `range`
+    /// within `chord` in 3D: the twin of
+    /// [`crate::region2::Piece::segment_count`] for a 3D curve, with the
+    /// same bound — a chord over a parameter step `h` deviates at most
+    /// `|d2| h² / 8` from a curve whose second derivative is bounded by
+    /// `|d2|` — and the same floors and ceiling: one segment for a line,
+    /// never fewer than [`crate::region2::MIN_SEGMENTS_PER_TURN`] per
+    /// turn of a conic or [`crate::region2::MIN_SEGMENTS_PER_SPAN`] per
+    /// knot span of a NURBS (whose second derivative is sampled), never
+    /// more than [`crate::region2::MAX_SEGMENTS_PER_PIECE`]. An unbounded
+    /// or empty range is one segment; `f64::INFINITY` asks for the
+    /// minimum counts alone.
+    ///
+    /// ```
+    /// use arris_geom::Curve;
+    /// use arris_math::{Frame, Interval};
+    ///
+    /// let c = Curve::Circle { frame: Frame::world(), radius: 4.0 };
+    /// // sqrt(8 · 1e-3 / 4) ≈ 0.0447 radians per segment: 141 of them.
+    /// assert_eq!(c.chord_segments(Interval::TURN, 1e-3), 141);
+    /// assert_eq!(c.chord_segments(Interval::TURN, f64::INFINITY), 8);
+    /// ```
+    pub fn chord_segments(&self, range: Interval, chord: f64) -> usize {
+        use crate::region2::{
+            CURVATURE_SAMPLES_PER_SPAN, MAX_SEGMENTS_PER_PIECE, MIN_SEGMENTS_PER_SPAN, per_turn,
+        };
+        let length = range.length();
+        if !(length.is_finite() && length > 0.0) {
+            return 1;
+        }
+        let (minimum, d2) = match self {
+            Curve::Line { .. } => return 1,
+            Curve::Circle { radius, .. } => (per_turn(length), radius.abs()),
+            Curve::Ellipse { major_radius, .. } => (per_turn(length), major_radius.abs()),
+            Curve::Nurbs(n) => {
+                let mut knots: Vec<f64> = n
+                    .knots()
+                    .iter()
+                    .copied()
+                    .filter(|&k| range.lo() < k && k < range.hi())
+                    .collect();
+                knots.dedup();
+                let spans = knots.len() + 1;
+                let samples = spans * CURVATURE_SAMPLES_PER_SPAN;
+                let d2 = (0..=samples)
+                    .map(|i| n.eval(range.lerp(i as f64 / samples as f64)).d2.norm())
+                    .fold(0.0, f64::max);
+                (spans * MIN_SEGMENTS_PER_SPAN, d2)
+            }
+        };
+        let from_chord = if chord.is_finite() && chord > 0.0 && d2 > 0.0 {
+            (length / (8.0 * chord / d2).sqrt()).ceil()
+        } else if chord == f64::INFINITY || d2 == 0.0 {
+            0.0
+        } else {
+            f64::INFINITY
+        };
+        let wanted = if from_chord.is_finite() {
+            from_chord as usize
+        } else {
+            MAX_SEGMENTS_PER_PIECE
+        };
+        wanted.max(minimum).min(MAX_SEGMENTS_PER_PIECE)
+    }
+
     /// The same curve moved by `motion`, parametrisation carried along:
     /// `moved.eval(t).point == motion.apply(self.eval(t).point)` to
     /// rounding.

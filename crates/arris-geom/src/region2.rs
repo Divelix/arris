@@ -31,7 +31,7 @@ pub const MAX_SEGMENTS_PER_PIECE: usize = 1 << 16;
 /// span to bound its chord deviation; `4p + 4` per span is where the fit
 /// checks itself too, and a quintic's second derivative cannot hide
 /// between twenty-four samples.
-const CURVATURE_SAMPLES_PER_SPAN: usize = 24;
+pub(crate) const CURVATURE_SAMPLES_PER_SPAN: usize = 24;
 
 /// One piece of a region's boundary: a pcurve over a parameter range,
 /// walked along its parameter or against it. A loop is a sequence of
@@ -172,7 +172,7 @@ impl<'a> Piece<'a> {
 }
 
 /// The minimum segments for `length` radians of a conic.
-fn per_turn(length: f64) -> usize {
+pub(crate) fn per_turn(length: f64) -> usize {
     let quarter_turns = (length / FRAC_PI_2).ceil().max(1.0);
     // Never below the per-turn minimum's share of the arc, and never
     // fewer than the quarter turns it spans.

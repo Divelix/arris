@@ -226,23 +226,17 @@ impl<'m> Checker<'m> {
         }
     }
 
-    /// The pieces of a loop in (u, v), in walking order.
+    /// The pieces of a loop in (u, v), in walking order
+    /// (`Model::loop_pieces`), or `None` when the loop is empty, a
+    /// reference does not resolve (M1's) or a range is not bounded and
+    /// positive (E1's): the rows here then have nothing to say.
     pub(crate) fn loop_pieces(&self, l: &'m arris_topo::entity::Loop) -> Option<Vec<Piece<'m>>> {
-        let model = self.model;
-        let mut pieces: Vec<Piece<'m>> = Vec::with_capacity(l.coedges().len());
-        for c in l.coedges() {
-            let range = model.edge(c.edge()).ok()?.range();
-            if !(range.lo().is_finite() && range.hi().is_finite() && range.lo() < range.hi()) {
-                return None;
-            }
-            let pcurve = model.curve2(c.pcurve()).ok()?;
-            pieces.push(if c.orientation() == Orientation::Forward {
-                Piece::along(pcurve, range)
-            } else {
-                Piece::against(pcurve, range)
-            });
-        }
-        (!pieces.is_empty()).then_some(pieces)
+        let pieces = self.model.loop_pieces(l).ok()?;
+        let bounded = pieces.iter().all(|p| {
+            let r = p.range;
+            r.lo().is_finite() && r.hi().is_finite() && r.lo() < r.hi()
+        });
+        (bounded && !pieces.is_empty()).then_some(pieces)
     }
 
     /// S5: two faces of a shell meet only along the edges and vertices

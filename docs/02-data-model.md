@@ -112,6 +112,17 @@ never resolved by a silent choice of parameter. A point on a sphere's axis
 off its centre projects to the pole with `u = 0`: the point is unique,
 only the degenerate parameter is not.
 
+`Surface::chord_steps(chord, bounds)` gives the largest parameter steps
+`[hu, hv]` for which a triangle whose corners lie on the surface within
+`bounds` deviates from it by at most `chord`, by the second fundamental
+form: `INFINITY` along a flat or ruled direction (both on a plane, `v` on
+a cylinder and a cone), the cone's `u` curvature read at the radius of
+the region's far `v` bound, a sphere its radius in both directions and a
+torus `R + r` in `u` and `r` in `v` with the chord shared between the
+two directions, a NURBS the form's three coefficients sampled over
+`bounds` and one step for both. What tessellation sizes an edge's samples
+and a face's interior grid by.
+
 `SurfaceKind` is the fieldless twin of the enum, used in errors and
 dispatch tables. `Surface::frame()` is the placing frame of an analytic
 variant and `None` for `Nurbs`, which is placed by its control points;
@@ -154,6 +165,11 @@ the derivative of the squared distance around the best sample, across
 the seam of a closed or periodic curve: the nearest *local* minimum from
 that sample, never `Ambiguous` and never a guarantee against a nearer
 point the sampling missed.
+
+`Curve::chord_segments(range, chord)` is the 3D twin of
+`Piece::segment_count` (§Pcurves): how many straight segments approximate
+the curve over the range within the chord, by the same `|d2| h² / 8`
+bound with the same floors and ceiling.
 
 `intersect_surfaces(a, b, tol)` returns `SurfaceIntersection::{Empty,
 Coincident, Transversal(Vec<Curve>), Tangent(Vec<Curve>)}` for the pairs
@@ -250,7 +266,9 @@ until revolve needs them (M5).
 face's domain shares — the checker's loop, face and body rows,
 tessellation, mass properties and classification — and it lives in
 `arris-geom` below all of them (decided in M2). `region2`: a loop is a
-sequence of `Piece { curve: &Curve2, range, reversed }` walked in order,
+sequence of `Piece { curve: &Curve2, range, reversed }` walked in order
+— `Model::loop_pieces(&Loop)` is the loop's, so the checker's rows,
+tessellation and `measure` all ask once —
 and `discretise(pieces, chord_tolerance)` is its `Polygon2` — each piece
 sampled at the segment count its second derivative bounds the chord
 deviation by (`|d2| h² / 8`; a line is one segment, a conic never fewer
@@ -267,7 +285,8 @@ does at the parameters its 3D edges were discretised at. Over the polygon:
 segment, `gaps()` between consecutive pieces (L2), and
 `self_intersections()` / `intersections(&other)` over
 `segments_intersect`, exact through `orient2d` with touching counted
-(L5, S5). `integrate::region_integral(pieces, f)` is `∬ f du dv` over
+(L5, S5). `Curve2::speed_bounds(range)` bounds `|du/dt|` and `|dv/dt|`
+over a range, exact for a line and a conic and sampled for a NURBS. `integrate::region_integral(pieces, f)` is `∬ f du dv` over
 the region by Green's theorem — `∮ G dv` with `G = ∫_{u₀}^{u} f ds` —
 with Gauss–Legendre quadrature of `GAUSS_ORDER` points per interval, a
 conic piece split at quarter turns and a NURBS at its knots, signed by
@@ -427,7 +446,10 @@ with two pcurves that differ by the period in the periodic parameter (`u =
 four coedges: bottom circle, seam up, top circle, seam down. The seam edge is
 an ordinary edge with an ordinary 3D curve; only its two pcurves know it is
 a seam. This is the representation truck lacks and every seam-crossing
-algorithm quietly needs.
+algorithm quietly needs: tessellation samples the seam once and the wall's
+loop polygon carries the two copies a period apart, so the wall's
+triangles use the one run of indices twice and the mesh closes across the
+seam by construction (01-architecture §Tessellation).
 
 ### Euler operators
 

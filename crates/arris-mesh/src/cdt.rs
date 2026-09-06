@@ -282,11 +282,12 @@ pub fn triangulate(polygons: &[Polygon2], interior: &[Point2]) -> Result<Triangu
     };
 
     let mut mesh = Mesh::new(points).map_err(|()| CdtError::NonFinite(name(0)))?;
-    // Every polygon point, then every segment, then the interior points.
-    for k in 0..polygons.len() {
-        for index in starts[k]..starts[k + 1] {
-            mesh.insert(index).map_err(|e| e.named(&name, None))?;
-        }
+    // Every polygon point in hierarchical order, then every segment, then
+    // the interior points the same way.
+    let interior_start = starts[starts.len() - 1];
+    for index in bit_reversal(interior_start) {
+        mesh.insert(index, parent(index))
+            .map_err(|e| e.named(&name, None))?;
     }
     for k in 0..polygons.len() {
         let (start, end) = (starts[k], starts[k + 1]);
@@ -301,8 +302,10 @@ pub fn triangulate(polygons: &[Polygon2], interior: &[Point2]) -> Result<Triangu
                 .map_err(|e| e.named(&name, Some(segment)))?;
         }
     }
-    for index in starts[starts.len() - 1]..real {
-        mesh.insert(index).map_err(|e| e.named(&name, None))?;
+    for offset in bit_reversal(real - interior_start) {
+        let index = interior_start + offset;
+        mesh.insert(index, parent(offset).map(|p| interior_start + p))
+            .map_err(|e| e.named(&name, None))?;
     }
     let winding = mesh.windings()?;
     let triangles: Vec<[usize; 3]> = mesh
@@ -332,6 +335,36 @@ pub fn triangulate(polygons: &[Polygon2], interior: &[Point2]) -> Result<Triangu
 /// `-0.0` as `0.0`, so two points equal as `f64` have equal bits.
 fn canonical(x: f64) -> f64 {
     x + 0.0
+}
+
+/// The indices `0..n` in bit-reversed order: index `0`, then the middle,
+/// then the quarters, and so on, every level doubling the density along
+/// the input. Consecutive input points — a loop's samples — are
+/// neighbours, so inserting them in input order leaves one vertex at
+/// the front with a fan every next point has to flip, quadratic in all;
+/// this order keeps every fan local without a random shuffle, so the
+/// result is still a function of the input alone.
+fn bit_reversal(n: usize) -> Vec<usize> {
+    let width = n.next_power_of_two();
+    let bits = width.trailing_zeros();
+    (0..width)
+        .map(|r| {
+            if bits == 0 {
+                0
+            } else {
+                r.reverse_bits() >> (usize::BITS - bits)
+            }
+        })
+        .filter(|&i| i < n)
+        .collect()
+}
+
+/// The index inserted one level before `index` in [`bit_reversal`]
+/// order and nearest to it along the input — `index` with its lowest
+/// set bit cleared — whose triangle is where the walk to `index`'s point
+/// starts. `None` for the first index.
+fn parent(index: usize) -> Option<usize> {
+    (index > 0).then(|| index & (index - 1))
 }
 
 /// The unordered key of an edge.
@@ -519,13 +552,17 @@ impl Mesh {
         self.tris[t].v[(i + 2) % 3]
     }
 
-    /// Where `p` lies: a walk from the last triangle made, crossing an
-    /// edge the point is on the far side of, with a scan of every
-    /// triangle when the walk has taken more steps than there are
-    /// triangles (a walk cycles only in a non-Delaunay triangulation,
-    /// which the constraints make possible).
-    fn locate(&self, p: Point2) -> Result<Location, Fail> {
-        let mut t = self.last;
+    /// Where `p` lies: a walk from `from` (the last triangle made when
+    /// it is dead), crossing an edge the point is on the far side of,
+    /// with a scan of every triangle when the walk has taken more steps
+    /// than there are triangles (a walk cycles only in a non-Delaunay
+    /// triangulation, which the constraints make possible).
+    fn locate(&self, p: Point2, from: usize) -> Result<Location, Fail> {
+        let mut t = if self.tris.get(from).is_some_and(|t| t.alive) {
+            from
+        } else {
+            self.last
+        };
         let bound = 2 * self.tris.len() + 8;
         for _ in 0..bound {
             if !self.tris[t].alive {
@@ -587,11 +624,14 @@ impl Mesh {
     }
 
     /// Inserts the point at index `p`: splits the triangle or edge it is
-    /// in and restores the (constrained) Delaunay property by flips.
-    fn insert(&mut self, p: usize) -> Result<(), Fail> {
+    /// in and restores the (constrained) Delaunay property by flips. The
+    /// walk to it starts at the triangle recorded for `near`, an already
+    /// inserted point next to it along the input.
+    fn insert(&mut self, p: usize, near: Option<usize>) -> Result<(), Fail> {
         let point = self.point(p);
+        let from = near.map_or(self.last, |v| self.vertex_tri[v]);
         let mut stack = Vec::new();
-        match self.locate(point)? {
+        match self.locate(point, from)? {
             Location::OnVertex(existing) => {
                 return Err(Fail::Duplicate { existing, new: p });
             }
