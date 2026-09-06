@@ -25,6 +25,7 @@ use crate::NurbsCurve;
 /// assert!((e.d1.y + 2.0).abs() < 1e-15); // tangent at π points along −Y
 /// ```
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Curve {
     /// `P(t) = O + t·D`; `t` is arc length because `D` is unit.
     Line {

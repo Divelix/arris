@@ -18,12 +18,12 @@ re-exports the public API. Lower crates never name types from upper ones.
 | Crate | Owns | External deps | Layer |
 |---|---|---|---|
 | `arris-math` | `Point3`/`Vec3`/`UnitVec3` (over `nalgebra`, ADR-0001), `Frame`, `Frame2`, `Isometry`, `Interval`, exact orientation predicates (over `robust`), polynomial and interval-guarded Newton root finding, `Precision` and `Tolerance` | `nalgebra`, `robust`, `serde` (feature) | 0 — representation |
-| `arris-geom` | `Surface`, `Curve`, `Curve2` (analytic + NURBS): evaluation, derivatives, point projection, curve/surface and surface/surface intersection, pcurves and the NURBS fit behind them; the (u, v) toolkit `region2` and `integrate` shared by the checker, tessellation, mass properties and classification; `GeomError` | `arris-math`, `thiserror` | 0 — representation |
+| `arris-geom` | `Surface`, `Curve`, `Curve2` (analytic + NURBS): evaluation, derivatives, point projection, curve/surface and surface/surface intersection, pcurves and the NURBS fit behind them; the (u, v) toolkit `region2` and `integrate` shared by the checker, tessellation, mass properties and classification; `GeomError` | `arris-math`, `thiserror`, `serde` (feature) | 0 — representation |
 | `arris-topo` | `Model` (the arena), typed ids, `Shape`/`Body`/`Face`/… handles, orientation, entities, pcurves, per-entity tolerances, Euler operators, adjacency and iteration, `Provenance`; re-exports `arris-geom` and `arris-math` | `arris-geom`, `arris-math`, `thiserror`, `serde` (feature) | 0 — representation |
 | `arris-check` | The invariant checker: `check(&Model, Body, Level) -> Report` and the `Violation` list of 02-data-model §Invariants; re-exports `arris-topo` | `arris-topo` | 1 |
 | `arris-ops` | Primitives, planar profiles, extrude, revolve, transform, booleans, later blends; `measure` (mass properties); each returns `Provenance` | `arris-check`, `rayon` (feature) | 2 — algorithms |
 | `arris-mesh` | `TriMesh`, `Polyline`, `Aabb`, tessellation of faces and edges with shared edge discretisation | `arris-check`, `arris-topo`, `thiserror` | 2 — algorithms |
-| `arris-io` | STEP AP214 Part 21 writer (later reader), the native `.arris` format; re-exports `arris-check` | `arris-check`, `thiserror`, `serde` (feature) | 2 — algorithms |
+| `arris-io` | STEP AP214 Part 21 writer (later reader), the native format (`native`); re-exports `arris-check` | `arris-check`, `thiserror`, `serde`, `serde_json`, `postcard` (the last three behind the `serde` feature) | 2 — algorithms |
 | `arris-debug` | Text dump, the hand-built sample bodies (`sample`), PNG render (own software rasteriser over `image`), Rerun stream (feature), the fixture loader and corpus lint, the seeded property-test runner and strategies | `arris-ops`, `arris-mesh`, `arris-io`, `arris-topo`, `arris-geom`, `arris-math`, `image`, `serde`, `serde_json`, `sha2`, `thiserror`, `proptest` (not on `wasm32`), `rerun` (feature) | 3 — dev-facing |
 | `arris` | Facade: re-exports | `math` through `io`; `debug` as a dev-dependency only | 4 |
 
@@ -45,9 +45,9 @@ the pre-commit hook runs the script.
 
 Every crate has `#![forbid(unsafe_code)]` and `#![warn(missing_docs)]`.
 Feature flags are few and named the same in every crate that has them:
-`serde` (on by default in `topo` and `io`; off by default in `math`, where
-`topo`'s feature turns it on because `Precision` is part of the native
-format), `parallel` (`rayon` inside `ops` and `mesh`; never enabled on
+`serde` (on by default in `topo` and `io`; off by default in `math` and
+`geom`, where `topo`'s feature turns both on because `Precision` and the
+geometry are part of the native format), `parallel` (`rayon` inside `ops` and `mesh`; never enabled on
 `wasm32`), `paranoid` (`ops`: run the checker after every operation in
 release builds too, §The checker), `rerun` (`debug` only). The facade
 forwards `serde`, `parallel` and `paranoid`.
@@ -278,8 +278,9 @@ analytic pairs never route through it.
   reprojects, and ignores plane pcurves anyway). Sheet, wire and general
   bodies and solids with voids are `Unsupported` until an operation
   produces them.
-- **Native format** (`arris-io::native`): `serde` of the model, 02-data-model
-  §Native format.
+- **Native format** (`arris_io::native::{to_json, from_json, to_bytes,
+  from_bytes}`): `serde` of the model under a version header, JSON for
+  diffs and `postcard` bytes for storage; 02-data-model §Native format.
 - **Text dump** (`arris-debug::dump_text`): the deterministic, diffable
   rendering of a body that fixtures store and tests compare. Not a format:
   it has no reader.

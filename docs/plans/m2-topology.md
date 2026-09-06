@@ -303,7 +303,7 @@ per-kind counts) accept them; only the raw API and tests build them.
   unchanged; a cylinder whose axis is not unit-length is normalised by
   `Axis::new`; `compare.py` matches both `primitive/*` fixtures on the
   primitives' STEP.
-- [ ] Step 11 — The native format. `native::{to_json, from_json,
+- [x] Step 11 — The native format. `native::{to_json, from_json,
   to_bytes, from_bytes}` with the version header. Tests: the box, the
   cylinder and the frame round-trip through both encodings to a
   byte-identical dump, with the same ids; two writes are byte-identical;
@@ -534,6 +534,25 @@ step, as for M1.
   `target/inspect/`, a typed `Mismatch` with the table, `Environment`
   for a missing `uv`) that the step-4 test duplicated inline and step
   13's runner will use; `sample::frame` is the `boolean/frame-cut` twin.
+- Step 11: `Model` implements `Serialize`/`Deserialize` itself (behind
+  `arris-topo/serde`) through a slot-list representation — every arena's
+  slots in index order with their generations, freed ones included, so
+  the next id is preserved — and `arris_io::native` is only the version
+  envelope over two encoders. The geometry needed a `serde` feature in
+  `arris-geom` (turned on by `arris-topo/serde`), and every type with an
+  invariant reads back through a validating constructor rather than a
+  field-wise derive: `Frame::from_orthonormal` and
+  `Frame2::from_orthonormal` are new (`FrameError::NotOrthonormal`), so a
+  stored frame is checked to rounding and stored bit for bit — a
+  re-orthonormalising `Frame::new` would have moved axes by an ulp on
+  every round trip; the NURBS types go through `new`. The adjacency
+  indices are rebuilt from the entities in slot order on the way in
+  (`Model::rebuild_indices`, which step 12's `retain` reuses); after a
+  `retain` that has freed and refilled slots, a reloaded model's index
+  lists are in slot order rather than creation order — the lists'
+  contents are the same and nothing reads their order for a decision.
+  `arris-io`'s `serde` feature relies on `arris-topo`'s default feature
+  rather than naming it, since `arris-io` declares `arris-check` only.
 - Step 10: the associativity property found the composition rule the
   doc's accounting sentence hid. "An entity cannot be `Deleted` and
   anything else" cannot be kept: a tool face that generated the hole's

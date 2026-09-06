@@ -718,14 +718,23 @@ provenance ids — 01-architecture §Facade.
 
 ## Native format
 
-`arris-io::native` is `serde` of the `Model`: format version, `Precision`,
-then every arena chunk in slot order with each entity's id as its integer
-pair and its geometry ids as integers. Deterministic byte-for-byte for the
-same model (`BTreeMap`s, fixed float formatting in the text encodings); a
-model that round-trips through it dumps identically before and after, and
-every fixture asserts so. The wire encoding is a `serde` choice per call
-(`postcard` for size, JSON for diffs); the schema is the model. A version
-bump is a design delta and comes with a migration or an explicit refusal.
+`arris-io::native` is `serde` of the `Model` under a version header
+(`NATIVE_VERSION`): the `Precision`, then every arena's slots in index
+order — each slot its generation and, when live, its entity with its ids
+as integer pairs — freed slots included, so the model read back has the
+same ids and mints the same next one; the adjacency indices are derived
+and rebuilt on the way in. Every value with an invariant is validated as
+it is read (`Frame::from_orthonormal`, `NurbsCurve::new`, `Interval::new`,
+`Precision::is_consistent`), so a stored model is never less of a model
+than a built one; a dangling reference is stored as it is and is the
+checker's M1 to report. Deterministic byte-for-byte for the same model
+(`BTreeMap`s, the shortest round-trip decimal in JSON); a model that
+round-trips through it dumps identically before and after, and every
+fixture asserts so. Two encodings, a `serde` choice per call:
+`to_bytes`/`from_bytes` over `postcard` for storage, `to_json`/`from_json`
+for diffs. The schema is the model; a file of another version is
+`NativeError::Version`, a refusal, since a version bump is a design delta
+that comes with a migration or with exactly this refusal.
 
 The text dump (`arris_debug::dump_text(&model, body)`) is a different
 thing: a human-readable, deterministic listing that fixtures store as

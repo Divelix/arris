@@ -30,6 +30,7 @@ use crate::{AmbiguousLocus, GeomError, GeomKind, NurbsCurve2};
 /// assert!((p - Point2::new(0.0, -2.0)).norm() < 1e-15); // a quarter turn goes to −v
 /// ```
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Curve2 {
     /// `P(t) = O + t·D`; `t` is (u, v) arc length because `D` is unit.
     Line {

@@ -408,6 +408,157 @@ impl Model {
     }
 }
 
+/// One slot of an arena as the native format stores it: the generation,
+/// and the value when the slot is live.
+#[cfg(feature = "serde")]
+#[derive(serde::Serialize, serde::Deserialize)]
+struct SlotRepr<T> {
+    generation: u32,
+    value: Option<T>,
+}
+
+/// The wire form of a [`Model`] (`docs/02-data-model.md` §Native format):
+/// the precision, then every arena's slots in index order, freed ones
+/// included, so the model read back has the same ids and mints the same
+/// next one. The adjacency indices are derived and rebuilt on the way in.
+#[cfg(feature = "serde")]
+#[derive(serde::Serialize, serde::Deserialize)]
+struct ModelRepr {
+    precision: Precision,
+    vertices: Vec<SlotRepr<Vertex>>,
+    edges: Vec<SlotRepr<Edge>>,
+    faces: Vec<SlotRepr<Face>>,
+    shells: Vec<SlotRepr<Shell>>,
+    bodies: Vec<SlotRepr<Body>>,
+    curves: Vec<SlotRepr<Curve>>,
+    surfaces: Vec<SlotRepr<Surface>>,
+    curve2s: Vec<SlotRepr<Curve2>>,
+}
+
+#[cfg(feature = "serde")]
+fn slots_of<T: Clone>(arena: &Arena<T>) -> Vec<SlotRepr<T>> {
+    arena
+        .slots()
+        .map(|(generation, value)| SlotRepr {
+            generation,
+            value: value.cloned(),
+        })
+        .collect()
+}
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for Model {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        ModelRepr {
+            precision: self.precision,
+            vertices: slots_of(&self.vertices),
+            edges: slots_of(&self.edges),
+            faces: slots_of(&self.faces),
+            shells: slots_of(&self.shells),
+            bodies: slots_of(&self.bodies),
+            curves: slots_of(&self.curves),
+            surfaces: slots_of(&self.surfaces),
+            curve2s: slots_of(&self.curve2s),
+        }
+        .serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for Model {
+    /// Rejects an inconsistent precision as [`TopoError::Precision`]
+    /// would; every entity is stored as read (a dangling reference is the
+    /// checker's M1 to report), and the indices are rebuilt from the
+    /// entities in slot order.
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let r = ModelRepr::deserialize(deserializer)?;
+        let mut m = Model::new(r.precision).map_err(serde::de::Error::custom)?;
+        for s in r.vertices {
+            m.vertices.push_slot(s.generation, s.value);
+        }
+        for s in r.edges {
+            m.edges.push_slot(s.generation, s.value);
+        }
+        for s in r.faces {
+            m.faces.push_slot(s.generation, s.value);
+        }
+        for s in r.shells {
+            m.shells.push_slot(s.generation, s.value);
+        }
+        for s in r.bodies {
+            m.bodies.push_slot(s.generation, s.value);
+        }
+        for s in r.curves {
+            m.curves.push_slot(s.generation, s.value);
+        }
+        for s in r.surfaces {
+            m.surfaces.push_slot(s.generation, s.value);
+        }
+        for s in r.curve2s {
+            m.curve2s.push_slot(s.generation, s.value);
+        }
+        m.rebuild_indices();
+        Ok(m)
+    }
+}
+
+impl Model {
+    /// Recomputes the adjacency indices from the entities in slot order:
+    /// what a model read from the native format does, and what `retain`
+    /// does once it has freed slots. Lists come out in slot order, which
+    /// is creation order for a model that never freed a slot.
+    pub(crate) fn rebuild_indices(&mut self) {
+        let mut indices = Indices {
+            vertex_edges: vec![Vec::new(); self.vertices.len()],
+            edge_uses: vec![Vec::new(); self.edges.len()],
+            face_shells: vec![Vec::new(); self.faces.len()],
+        };
+        for (i, edge) in self.edges.slots().enumerate() {
+            let (generation, Some(edge)) = edge else {
+                continue;
+            };
+            let id = EdgeId::new(i as u32, generation);
+            for v in [edge.start(), edge.end()] {
+                if self.vertex(v).is_ok() {
+                    let list = &mut indices.vertex_edges[v.index() as usize];
+                    if list.last() != Some(&id) {
+                        list.push(id);
+                    }
+                }
+            }
+        }
+        for (i, face) in self.faces.slots().enumerate() {
+            let (generation, Some(face)) = face else {
+                continue;
+            };
+            let id = FaceId::new(i as u32, generation);
+            for (loop_index, l) in face.loops().iter().enumerate() {
+                for (coedge_index, c) in l.coedges().iter().enumerate() {
+                    if self.edge(c.edge()).is_ok() {
+                        indices.edge_uses[c.edge().index() as usize].push(CoedgeRef {
+                            face: id,
+                            loop_index,
+                            coedge_index,
+                        });
+                    }
+                }
+            }
+        }
+        for (i, shell) in self.shells.slots().enumerate() {
+            let (generation, Some(shell)) = shell else {
+                continue;
+            };
+            let id = ShellId::new(i as u32, generation);
+            for f in shell.faces() {
+                if self.face(f.id).is_ok() {
+                    indices.face_shells[f.id.index() as usize].push(id);
+                }
+            }
+        }
+        self.indices = Arc::new(indices);
+    }
+}
+
 impl Default for Model {
     /// A model over [`Precision::DEFAULT`].
     fn default() -> Self {

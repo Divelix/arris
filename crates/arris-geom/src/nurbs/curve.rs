@@ -34,8 +34,45 @@ use crate::{Curve2Eval, Curve2Kind, CurveEval, CurveKind, GeomError, GeomKind};
 /// assert!(arc.period().is_none());
 /// ```
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(
+    feature = "serde",
+    serde(try_from = "NurbsCurveRepr", into = "NurbsCurveRepr")
+)]
 pub struct NurbsCurve {
     spline: Spline<3>,
+}
+
+/// The wire form of a [`NurbsCurve`]: what [`NurbsCurve::new`] takes,
+/// validated by it on the way in.
+#[cfg(feature = "serde")]
+#[derive(serde::Serialize, serde::Deserialize)]
+struct NurbsCurveRepr {
+    degree: usize,
+    knots: Vec<f64>,
+    control_points: Vec<Point3>,
+    weights: Vec<f64>,
+}
+
+#[cfg(feature = "serde")]
+impl From<NurbsCurve> for NurbsCurveRepr {
+    fn from(c: NurbsCurve) -> Self {
+        NurbsCurveRepr {
+            degree: c.degree(),
+            knots: c.knots().to_vec(),
+            control_points: c.control_points().to_vec(),
+            weights: c.weights().to_vec(),
+        }
+    }
+}
+
+#[cfg(feature = "serde")]
+impl TryFrom<NurbsCurveRepr> for NurbsCurve {
+    type Error = GeomError;
+
+    fn try_from(r: NurbsCurveRepr) -> Result<Self, GeomError> {
+        NurbsCurve::new(r.degree, r.knots, r.control_points, r.weights)
+    }
 }
 
 /// A rational B-spline curve in a surface's (u, v) plane: the same
@@ -55,8 +92,45 @@ pub struct NurbsCurve {
 /// assert_eq!(seg.eval(1.0).d1, arris_math::Vec2::new(2.0, 1.0));
 /// ```
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(
+    feature = "serde",
+    serde(try_from = "NurbsCurve2Repr", into = "NurbsCurve2Repr")
+)]
 pub struct NurbsCurve2 {
     spline: Spline<2>,
+}
+
+/// The wire form of a [`NurbsCurve2`], validated by [`NurbsCurve2::new`]
+/// on the way in.
+#[cfg(feature = "serde")]
+#[derive(serde::Serialize, serde::Deserialize)]
+struct NurbsCurve2Repr {
+    degree: usize,
+    knots: Vec<f64>,
+    control_points: Vec<Point2>,
+    weights: Vec<f64>,
+}
+
+#[cfg(feature = "serde")]
+impl From<NurbsCurve2> for NurbsCurve2Repr {
+    fn from(c: NurbsCurve2) -> Self {
+        NurbsCurve2Repr {
+            degree: c.degree(),
+            knots: c.knots().to_vec(),
+            control_points: c.control_points().to_vec(),
+            weights: c.weights().to_vec(),
+        }
+    }
+}
+
+#[cfg(feature = "serde")]
+impl TryFrom<NurbsCurve2Repr> for NurbsCurve2 {
+    type Error = GeomError;
+
+    fn try_from(r: NurbsCurve2Repr) -> Result<Self, GeomError> {
+        NurbsCurve2::new(r.degree, r.knots, r.control_points, r.weights)
+    }
 }
 
 fn degenerate(kind: GeomKind) -> impl Fn(String) -> GeomError {

@@ -16,6 +16,9 @@ pub enum FrameError {
     /// The `x` hint has no component perpendicular to the axis: it is zero
     /// or exactly parallel to `z`.
     DegenerateHint,
+    /// Axes given as a frame are not unit and mutually perpendicular to
+    /// rounding, or `z ≠ x × y` for a 3D frame.
+    NotOrthonormal,
 }
 
 impl fmt::Display for FrameError {
@@ -24,6 +27,7 @@ impl fmt::Display for FrameError {
             FrameError::NonFinite => "frame has a non-finite coordinate",
             FrameError::ZeroAxis => "frame axis has zero length",
             FrameError::DegenerateHint => "frame x hint is zero or parallel to the axis",
+            FrameError::NotOrthonormal => "frame axes are not orthonormal",
         })
     }
 }
@@ -49,11 +53,46 @@ impl std::error::Error for FrameError {}
 /// assert!((f.x().dot(&f.y())).abs() < 1e-15);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(try_from = "FrameRepr", into = "FrameRepr"))]
 pub struct Frame {
     origin: Point3,
     x: UnitVec3,
     y: UnitVec3,
     z: UnitVec3,
+}
+
+/// The wire form of a [`Frame`]: its four fields as given, validated by
+/// [`Frame::from_orthonormal`] on the way in so a stored frame is never
+/// less of a frame than a built one.
+#[cfg(feature = "serde")]
+#[derive(serde::Serialize, serde::Deserialize)]
+struct FrameRepr {
+    origin: Point3,
+    x: Vec3,
+    y: Vec3,
+    z: Vec3,
+}
+
+#[cfg(feature = "serde")]
+impl From<Frame> for FrameRepr {
+    fn from(f: Frame) -> Self {
+        FrameRepr {
+            origin: f.origin,
+            x: f.x.into_inner(),
+            y: f.y.into_inner(),
+            z: f.z.into_inner(),
+        }
+    }
+}
+
+#[cfg(feature = "serde")]
+impl TryFrom<FrameRepr> for Frame {
+    type Error = FrameError;
+
+    fn try_from(r: FrameRepr) -> Result<Self, FrameError> {
+        Frame::from_orthonormal(r.origin, r.x, r.y, r.z)
+    }
 }
 
 impl Frame {
@@ -122,6 +161,41 @@ impl Frame {
         // the two larger coordinates, so it is never zero for a unit `z`.
         let x = UnitVec3::try_new(hint, 0.0).ok_or(FrameError::ZeroAxis)?;
         Ok(Self::orthonormalised(origin, x, z))
+    }
+
+    /// A frame from axes that already are one: each unit, mutually
+    /// perpendicular and `z = x × y`, all to rounding
+    /// ([`crate::RELATIVE_ROUNDING`]), stored bit for bit — what the
+    /// native format reads a frame back through, so a round trip changes
+    /// nothing. Errors: a non-finite input, or
+    /// [`FrameError::NotOrthonormal`].
+    ///
+    /// ```
+    /// use arris_math::{Frame, FrameError, Point3, Vec3};
+    ///
+    /// let f = Frame::from_orthonormal(Point3::origin(), Vec3::y(), Vec3::z(), Vec3::x()).unwrap();
+    /// assert_eq!(f.x().into_inner(), Vec3::y());
+    /// let bad = Frame::from_orthonormal(Point3::origin(), Vec3::x(), Vec3::x(), Vec3::z());
+    /// assert_eq!(bad, Err(FrameError::NotOrthonormal));
+    /// ```
+    pub fn from_orthonormal(origin: Point3, x: Vec3, y: Vec3, z: Vec3) -> Result<Self, FrameError> {
+        if !(is_finite3(&origin.coords) && is_finite3(&x) && is_finite3(&y) && is_finite3(&z)) {
+            return Err(FrameError::NonFinite);
+        }
+        let unit = |v: &Vec3| crate::is_negligible(v.norm() - 1.0, 1.0);
+        let perpendicular = |a: &Vec3, b: &Vec3| crate::is_negligible(a.dot(b), 1.0);
+        if !(unit(&x) && unit(&y) && unit(&z))
+            || !(perpendicular(&x, &y) && perpendicular(&y, &z) && perpendicular(&z, &x))
+            || !crate::is_negligible((x.cross(&y) - z).norm(), 1.0)
+        {
+            return Err(FrameError::NotOrthonormal);
+        }
+        Ok(Frame {
+            origin,
+            x: UnitVec3::new_unchecked(x),
+            y: UnitVec3::new_unchecked(y),
+            z: UnitVec3::new_unchecked(z),
+        })
     }
 
     /// The frame whose axes are the images of the coordinate axes under
@@ -246,10 +320,42 @@ pub enum Handedness {
 /// assert_eq!(f.to_world(Point2::new(1.0, 1.0)), Point2::new(2.0, 2.0));
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(try_from = "Frame2Repr", into = "Frame2Repr"))]
 pub struct Frame2 {
     origin: Point2,
     x: UnitVec2,
     y: UnitVec2,
+}
+
+/// The wire form of a [`Frame2`], validated by [`Frame2::from_orthonormal`]
+/// on the way in.
+#[cfg(feature = "serde")]
+#[derive(serde::Serialize, serde::Deserialize)]
+struct Frame2Repr {
+    origin: Point2,
+    x: Vec2,
+    y: Vec2,
+}
+
+#[cfg(feature = "serde")]
+impl From<Frame2> for Frame2Repr {
+    fn from(f: Frame2) -> Self {
+        Frame2Repr {
+            origin: f.origin,
+            x: f.x.into_inner(),
+            y: f.y.into_inner(),
+        }
+    }
+}
+
+#[cfg(feature = "serde")]
+impl TryFrom<Frame2Repr> for Frame2 {
+    type Error = FrameError;
+
+    fn try_from(r: Frame2Repr) -> Result<Self, FrameError> {
+        Frame2::from_orthonormal(r.origin, r.x, r.y)
+    }
 }
 
 impl Frame2 {
@@ -277,6 +383,27 @@ impl Frame2 {
         Ok(Frame2 {
             origin,
             x,
+            y: UnitVec2::new_unchecked(y),
+        })
+    }
+
+    /// A frame from axes that already are one — each unit and
+    /// perpendicular to rounding ([`crate::RELATIVE_ROUNDING`]), of either
+    /// handedness — stored bit for bit; what the native format reads a
+    /// `Frame2` back through. Errors: a non-finite input, or
+    /// [`FrameError::NotOrthonormal`].
+    pub fn from_orthonormal(origin: Point2, x: Vec2, y: Vec2) -> Result<Self, FrameError> {
+        let finite = |v: &Vec2| v.iter().all(|c| c.is_finite());
+        if !(finite(&origin.coords) && finite(&x) && finite(&y)) {
+            return Err(FrameError::NonFinite);
+        }
+        let unit = |v: &Vec2| crate::is_negligible(v.norm() - 1.0, 1.0);
+        if !(unit(&x) && unit(&y)) || !crate::is_negligible(x.dot(&y), 1.0) {
+            return Err(FrameError::NotOrthonormal);
+        }
+        Ok(Frame2 {
+            origin,
+            x: UnitVec2::new_unchecked(x),
             y: UnitVec2::new_unchecked(y),
         })
     }

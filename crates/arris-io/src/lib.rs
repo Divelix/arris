@@ -11,6 +11,8 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+#[cfg(feature = "serde")]
+pub mod native;
 pub mod step;
 
 pub use arris_check;

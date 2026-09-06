@@ -7,9 +7,16 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[features]
+# Derives on the geometry enums and the NURBS types, each validated on the
+# way in: the native format is serde of the model
+# (docs/02-data-model.md §Native format). `arris-topo/serde` turns this on.
+serde = ["dep:serde", "arris-math/serde"]
+
 [dependencies]
 arris-math.workspace = true
 thiserror.workspace = true
+serde = { workspace = true, optional = true }
 
 # The dev-dependency cycle through `arris-debug` is why the property tests
 # are integration tests under `tests/` (docs/01-architecture.md §Formats and

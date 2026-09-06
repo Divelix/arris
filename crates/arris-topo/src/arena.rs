@@ -123,6 +123,31 @@ impl<T: Clone> Arena<T> {
         self.len = len;
     }
 
+    /// Appends a slot as it was stored — its generation and, for a live
+    /// slot, its value — so a model read back from the native format has
+    /// the same slots, freed ones included, and mints the same next id.
+    pub(crate) fn push_slot(&mut self, generation: u32, value: Option<T>) -> u32 {
+        let index = u32::try_from(self.len).expect("the arena holds at most u32::MAX slots");
+        if self.len % CHUNK_SIZE == 0 {
+            self.chunks.push(Arc::new(Chunk::empty()));
+        }
+        let tail = self
+            .chunks
+            .last_mut()
+            .expect("a chunk was just pushed or already exists");
+        Arc::make_mut(tail).slots.push(Slot { generation, value });
+        self.len += 1;
+        index
+    }
+
+    /// Every slot in index order as `(generation, value)`, freed slots
+    /// with `None`.
+    pub(crate) fn slots(&self) -> impl Iterator<Item = (u32, Option<&T>)> {
+        self.chunks
+            .iter()
+            .flat_map(|c| c.slots.iter().map(|s| (s.generation, s.value.as_ref())))
+    }
+
     /// `true` when chunk `i` of both arenas is the same allocation.
     #[cfg(test)]
     pub(crate) fn shares_chunk(&self, other: &Self, i: usize) -> bool {

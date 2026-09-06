@@ -35,6 +35,11 @@ use crate::{GeomError, GeomKind, SurfaceEval, SurfaceKind};
 /// assert_eq!(patch.normal(0.5, 0.5).unwrap().into_inner(), arris_math::Vec3::z());
 /// ```
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(
+    feature = "serde",
+    serde(try_from = "NurbsSurfaceRepr", into = "NurbsSurfaceRepr")
+)]
 pub struct NurbsSurface {
     degree: [usize; 2],
     knots: [Vec<f64>; 2],
@@ -43,6 +48,38 @@ pub struct NurbsSurface {
     points: Vec<Point3>,
     weights: Vec<f64>,
     period: [Option<f64>; 2],
+}
+
+/// The wire form of a [`NurbsSurface`]: what [`NurbsSurface::new`] takes,
+/// validated by it on the way in.
+#[cfg(feature = "serde")]
+#[derive(serde::Serialize, serde::Deserialize)]
+struct NurbsSurfaceRepr {
+    degree: [usize; 2],
+    knots: [Vec<f64>; 2],
+    control_points: Vec<Point3>,
+    weights: Vec<f64>,
+}
+
+#[cfg(feature = "serde")]
+impl From<NurbsSurface> for NurbsSurfaceRepr {
+    fn from(s: NurbsSurface) -> Self {
+        NurbsSurfaceRepr {
+            degree: s.degree,
+            knots: s.knots,
+            control_points: s.points,
+            weights: s.weights,
+        }
+    }
+}
+
+#[cfg(feature = "serde")]
+impl TryFrom<NurbsSurfaceRepr> for NurbsSurface {
+    type Error = GeomError;
+
+    fn try_from(r: NurbsSurfaceRepr) -> Result<Self, GeomError> {
+        NurbsSurface::new(r.degree, r.knots, r.control_points, r.weights)
+    }
 }
 
 impl NurbsSurface {
