@@ -20,10 +20,10 @@ re-exports the public API. Lower crates never name types from upper ones.
 | `arris-math` | `Point3`/`Vec3`/`UnitVec3` (over `nalgebra`, ADR-0001), `Frame`, `Frame2`, `Isometry`, `Interval`, exact orientation predicates (over `robust`), polynomial and interval-guarded Newton root finding, `Precision` and `Tolerance` | `nalgebra`, `robust`, `serde` (feature) | 0 — representation |
 | `arris-geom` | `Surface`, `Curve`, `Curve2` (analytic + NURBS): evaluation, derivatives, point projection, curve/surface and surface/surface intersection, pcurves and the NURBS fit behind them; `GeomError` | `arris-math`, `thiserror` | 0 — representation |
 | `arris-topo` | `Model` (the arena), typed ids, `Shape`/`Body`/`Face`/… handles, orientation, entities, pcurves, per-entity tolerances, Euler operators, adjacency and iteration, `Provenance`; re-exports `arris-geom` and `arris-math` | `arris-geom`, `arris-math`, `thiserror`, `serde` (feature) | 0 — representation |
-| `arris-check` | The invariant checker: `check(&Model, Body, Level) -> Report` and the `Violation` list of 02-data-model §Invariants | `arris-topo` | 1 |
+| `arris-check` | The invariant checker: `check(&Model, Body, Level) -> Report` and the `Violation` list of 02-data-model §Invariants; re-exports `arris-topo` | `arris-topo` | 1 |
 | `arris-ops` | Primitives, planar profiles, extrude, revolve, transform, booleans, later blends; `measure` (mass properties); each returns `Provenance` | `arris-check`, `rayon` (feature) | 2 — algorithms |
 | `arris-mesh` | `TriMesh`, `Polyline`, `Aabb`, tessellation of faces and edges with shared edge discretisation | `arris-check`, `arris-topo`, `thiserror` | 2 — algorithms |
-| `arris-io` | STEP AP214 Part 21 writer (later reader), the native `.arris` format | `arris-check`, `serde` (feature) | 2 — algorithms |
+| `arris-io` | STEP AP214 Part 21 writer (later reader), the native `.arris` format; re-exports `arris-check` | `arris-check`, `thiserror`, `serde` (feature) | 2 — algorithms |
 | `arris-debug` | Text dump, the hand-built sample bodies (`sample`), PNG render (own software rasteriser over `image`), Rerun stream (feature), the fixture loader and corpus lint, the seeded property-test runner and strategies | `arris-ops`, `arris-mesh`, `arris-io`, `arris-topo`, `arris-geom`, `arris-math`, `image`, `serde`, `serde_json`, `sha2`, `thiserror`, `proptest` (not on `wasm32`), `rerun` (feature) | 3 — dev-facing |
 | `arris` | Facade: re-exports | `math` through `io`; `debug` as a dev-dependency only | 4 |
 
@@ -230,11 +230,31 @@ analytic pairs never route through it.
 
 ## Formats and tools
 
-- **STEP AP214** (`arris-io::step`): the writer is a cycle-1 deliverable
-  because the oracle reads Arris's output through it. The entity subset is
-  the B-Rep one — `MANIFOLD_SOLID_BREP`, `ADVANCED_FACE`, the analytic
-  surfaces and curves, `B_SPLINE_*` for NURBS, with pcurves written as
-  `PCURVE` so a reader does not have to recompute them.
+- **STEP AP214** (`arris_io::step::write(&model, &[bodies]) -> Result<
+  String, StepError>`): the writer is a cycle-1 deliverable because the
+  oracle reads Arris's output through it. One product whose shape
+  representation lists a `MANIFOLD_SOLID_BREP` per solid body of one
+  shell; per face an `ADVANCED_FACE` whose `same_sense` is the shell's use
+  of it, a `FACE_OUTER_BOUND` for the loop of positive winding and
+  `FACE_BOUND`s for the rest, each with the same flag as `same_sense`
+  (the stored loop is counter-clockwise about the surface normal, STEP's
+  bound about the face's effective one); per edge an `EDGE_CURVE` over a
+  `SURFACE_CURVE` — a `SEAM_CURVE` when both uses are in one loop — holding
+  the 3D curve and one `PCURVE` per use, so a reader takes the model's own
+  trimming; the analytic surfaces and curves on `AXIS2_PLACEMENT_3D`
+  (origin, `Z`, `X`, as `gp_Ax3` reads them) and the `B_SPLINE_*` entities,
+  rational ones as complex entities, so the writer is exhaustive over the
+  geometry enums. Millimetres and radians, since the reader scales to
+  millimetres by default and Arris carries no unit; the uncertainty is
+  `default_tolerance`; the time stamp is empty and every real is the
+  shortest round-trip decimal, so two writes are byte-identical. What
+  STEP cannot hold: a degenerate edge's coedge is left out of its loop (as
+  Open CASCADE's writer does; a loop of nothing else is
+  `StepError::Unsupported`), and a left-handed pcurve conic is written on
+  the direct placement STEP has, losing the traversal sense (the reader
+  reprojects, and ignores plane pcurves anyway). Sheet, wire and general
+  bodies and solids with voids are `Unsupported` until an operation
+  produces them.
 - **Native format** (`arris-io::native`): `serde` of the model, 02-data-model
   §Native format.
 - **Text dump** (`arris-debug::dump_text`): the deterministic, diffable

@@ -14,6 +14,12 @@ serde = []
 
 [dependencies]
 arris-check.workspace = true
+thiserror.workspace = true
+
+# The sample bodies the writer is tried on and the oracle comparison live in
+# `arris-debug`; a dev-dependency is exempt from the layer rule.
+[dev-dependencies]
+arris-debug.workspace = true
 
 [lints]
 workspace = true

@@ -203,7 +203,7 @@ per-kind counts) accept them; only the raw API and tests build them.
   signs and the Euler line `2/3/3/3 … = 0`; the box's line is `8/12/6/6`;
   two dumps of two fresh builds are byte-identical; every id in the dump
   resolves.
-- [ ] Step 4 — The STEP writer, and the seam through Open CASCADE (the
+- [x] Step 4 — The STEP writer, and the seam through Open CASCADE (the
   risk step). `io::step::write` as in the design deltas; read
   `STEPControl` and `StepToTopoDS` in the reference tree and
   `truck-stepio` for the entity structure a reader accepts (nothing
@@ -427,3 +427,20 @@ step, as for M1.
   `dump_text` (step 7's `Report::euler()` is the checker's own; the dump
   keeps computing its line from the closure). The dump writes a dangling
   reference as `<id> ?` rather than skipping it.
+- Step 4: no convention mismatch — Open CASCADE reads the sample cylinder
+  back valid with the seam's two pcurves exactly as written, and its own
+  STEP of the same cylinder has the same structure (`SEAM_CURVE` with the
+  forward use's pcurve first, `ADVANCED_FACE` and bound flags both from
+  the face use). Two things STEP cannot hold are documented in
+  `arris_io::step` and 01 §Formats and tools: a degenerate edge (its
+  coedge is left out of the loop, as the reference writer does) and a
+  left-handed pcurve conic (`AXIS2_PLACEMENT_2D` is always direct, so the
+  traversal sense is lost; the reader ignores plane pcurves, where every
+  such conic of cycle 1 lives). Solids with voids, sheets, wires and
+  general bodies are `StepError::Unsupported` until an operation makes
+  them. `arris-check` re-exports `arris-topo` and `arris-io` re-exports
+  `arris-check`, so each crate above declares one dependency; `arris-io`
+  gained `thiserror`. `sample::cuboid_nurbs` is the NURBS-probe box. The
+  outer bound's winding is a private sampled signed area in `arris-io`
+  until step 6's `region2::signed_area` replaces it. CI's `test` job syncs
+  the oracle now, since the STEP tests run `compare.py`.

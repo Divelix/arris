@@ -5,6 +5,12 @@
 //! dump; STEP carries the B-Rep entity subset with pcurves written out, so a
 //! reader does not recompute them (`docs/01-architecture.md` §Formats and
 //! tools). The `serde` feature (on by default) enables the native format.
-//! Depends on `arris-check` and below; never on `arris-ops` or `arris-mesh`.
+//! Depends on `arris-check` and below, re-exported here so a crate above
+//! reaches the checker and the representation through this one; never on
+//! `arris-ops` or `arris-mesh`.
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
+
+pub mod step;
+
+pub use arris_check;

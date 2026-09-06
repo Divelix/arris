@@ -72,6 +72,8 @@ name = "arris-io"
 version = "0.0.1"
 dependencies = [
  "arris-check",
+ "arris-debug",
+ "thiserror",
 ]
 
 [[package]]

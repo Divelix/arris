@@ -7,7 +7,7 @@
 
 use core::f64::consts::TAU;
 
-use arris_geom::{Curve, Curve2, Surface};
+use arris_geom::{Curve, Curve2, GeomError, NurbsCurve, NurbsSurface, Surface};
 use arris_math::{Frame, Frame2, FrameError, Interval, Point3, UnitVec2, UnitVec3, Vec3};
 use arris_topo::entity::{
     Body as BodyEntity, Coedge, Edge, EdgeGeometry, Face, Loop, Shell, Vertex,
@@ -28,6 +28,18 @@ pub enum SampleError {
     /// A placing frame could not be built.
     #[error("sample frame: {0}")]
     Frame(#[from] FrameError),
+    /// A NURBS value could not be built.
+    #[error("sample geometry: {0}")]
+    Geometry(#[from] GeomError),
+}
+
+/// Which geometry [`cuboid`] and [`cuboid_nurbs`] give their entities.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Flavour {
+    /// Lines and planes.
+    Analytic,
+    /// The first edge a degree-1 NURBS, the bottom face a bilinear NURBS.
+    NurbsProbe,
 }
 
 fn positive(name: &'static str, value: f64) -> Result<f64, SampleError> {
@@ -62,6 +74,37 @@ pub fn unit_box(m: &mut Model) -> Result<Body, SampleError> {
 /// assert_eq!(m.edges(b).unwrap().len(), 12);
 /// ```
 pub fn cuboid(m: &mut Model, min: Point3, max: Point3) -> Result<Body, SampleError> {
+    cuboid_with(m, min, max, Flavour::Analytic)
+}
+
+/// [`cuboid`] with the same topology, pcurves and tolerances, but its
+/// first edge's line stored as a degree-1 `Curve::Nurbs` over `[0, dx]`
+/// and its bottom face's plane as a bilinear `Surface::Nurbs` over the
+/// face's (u, v) rectangle — both exactly the analytic geometry at the
+/// same parameter, so every check and comparison that passes on
+/// [`cuboid`] must pass here through the B-spline arms. Errors as
+/// [`cuboid`].
+///
+/// ```
+/// use arris_debug::sample;
+/// use arris_topo::Model;
+/// use arris_topo::arris_math::Point3;
+///
+/// let mut m = Model::default();
+/// let b = sample::cuboid_nurbs(&mut m, Point3::origin(), Point3::new(40.0, 30.0, 10.0)).unwrap();
+/// let text = arris_debug::dump_text(&m, b).unwrap();
+/// assert_eq!(text.matches("nurbs degree").count(), 2, "one curve, one surface");
+/// ```
+pub fn cuboid_nurbs(m: &mut Model, min: Point3, max: Point3) -> Result<Body, SampleError> {
+    cuboid_with(m, min, max, Flavour::NurbsProbe)
+}
+
+fn cuboid_with(
+    m: &mut Model,
+    min: Point3,
+    max: Point3,
+    flavour: Flavour,
+) -> Result<Body, SampleError> {
     let dx = positive("x extent", max.x - min.x)?;
     let dy = positive("y extent", max.y - min.y)?;
     let dz = positive("z extent", max.z - min.z)?;
@@ -114,18 +157,63 @@ pub fn cuboid(m: &mut Model, min: Point3, max: Point3) -> Result<Body, SampleErr
         frames.push(Frame::new(o, *normal, x_hint)?);
     }
 
+    // Every geometry value that can fail is built before the first append,
+    // so an error leaves the model untouched.
+    let mut curves = Vec::with_capacity(12);
+    for (i, &(a, b)) in ends.iter().enumerate() {
+        let (pa, pb) = (corner(a), corner(b));
+        let d = pb - pa;
+        let length = d.norm();
+        curves.push(if flavour == Flavour::NurbsProbe && i == 0 {
+            Curve::Nurbs(NurbsCurve::new(
+                1,
+                vec![0.0, 0.0, length, length],
+                vec![pa, pb],
+                vec![1.0, 1.0],
+            )?)
+        } else {
+            Curve::Line {
+                origin: pa,
+                direction: UnitVec3::new_normalize(d),
+            }
+        });
+    }
+    let mut surfaces = Vec::with_capacity(6);
+    for (i, ((cycle, _), frame)) in cycles.iter().zip(&frames).enumerate() {
+        surfaces.push(if flavour == Flavour::NurbsProbe && i == 0 {
+            // The face's rectangle in its own (u, v): u along the first
+            // edge of the cycle, v along the last, both from the origin.
+            let o = corner(cycle[0]);
+            let extent_u = (corner(cycle[1]) - o).norm();
+            let extent_v = (corner(cycle[3]) - o).norm();
+            let at = |u: f64, v: f64| frame.to_world(Point3::new(u, v, 0.0));
+            Surface::Nurbs(NurbsSurface::new(
+                [1, 1],
+                [
+                    vec![0.0, 0.0, extent_u, extent_u],
+                    vec![0.0, 0.0, extent_v, extent_v],
+                ],
+                vec![
+                    at(0.0, 0.0),
+                    at(0.0, extent_v),
+                    at(extent_u, 0.0),
+                    at(extent_u, extent_v),
+                ],
+                vec![1.0; 4],
+            )?)
+        } else {
+            Surface::Plane { frame: *frame }
+        });
+    }
+
     let vertices: Vec<_> = (0..8)
         .map(|i| m.raw().add_vertex(Vertex::new(corner(i), tol)))
         .collect();
     let mut edges = Vec::with_capacity(12);
-    for &(a, b) in &ends {
+    for (&(a, b), curve) in ends.iter().zip(curves) {
         let (pa, pb) = (corner(a), corner(b));
-        let d = pb - pa;
-        let length = d.norm();
-        let curve = m.add_curve(Curve::Line {
-            origin: pa,
-            direction: UnitVec3::new_normalize(d),
-        });
+        let length = (pb - pa).norm();
+        let curve = m.add_curve(curve);
         let range = Interval::new(0.0, length).map_err(|_| SampleError::Extent {
             name: "edge length",
             value: length,
@@ -138,8 +226,8 @@ pub fn cuboid(m: &mut Model, min: Point3, max: Point3) -> Result<Body, SampleErr
         )));
     }
     let mut faces = Vec::with_capacity(6);
-    for ((cycle, _), frame) in cycles.iter().zip(&frames) {
-        let surface = m.add_surface(Surface::Plane { frame: *frame });
+    for (((cycle, _), frame), surface) in cycles.iter().zip(&frames).zip(surfaces) {
+        let surface = m.add_surface(surface);
         let mut coedges = Vec::with_capacity(4);
         for k in 0..4 {
             let (a, b) = (cycle[k], cycle[(k + 1) % 4]);
