@@ -19,7 +19,7 @@ re-exports the public API. Lower crates never name types from upper ones.
 |---|---|---|---|
 | `arris-math` | `Point3`/`Vec3`/`UnitVec3` (over `nalgebra`, ADR-0001), `Frame`, `Frame2`, `Isometry`, `Interval`, exact orientation predicates (over `robust`), polynomial and interval-guarded Newton root finding, `Precision` and `Tolerance` | `nalgebra`, `robust`, `serde` (feature) | 0 — representation |
 | `arris-geom` | `Surface`, `Curve`, `Curve2` (analytic + NURBS): evaluation, derivatives, point projection, curve/surface and surface/surface intersection, pcurves and the NURBS fit behind them; `GeomError` | `arris-math`, `thiserror` | 0 — representation |
-| `arris-topo` | `Model` (the arena), typed ids, `Shape`/`Body`/`Face`/… handles, orientation, entities, pcurves, per-entity tolerances, Euler operators, adjacency and iteration, `Provenance` | `arris-geom`, `arris-math`, `serde` (feature) | 0 — representation |
+| `arris-topo` | `Model` (the arena), typed ids, `Shape`/`Body`/`Face`/… handles, orientation, entities, pcurves, per-entity tolerances, Euler operators, adjacency and iteration, `Provenance`; re-exports `arris-geom` and `arris-math` | `arris-geom`, `arris-math`, `thiserror`, `serde` (feature) | 0 — representation |
 | `arris-check` | The invariant checker: `check(&Model, Body, Level) -> Report` and the `Violation` list of 02-data-model §Invariants | `arris-topo` | 1 |
 | `arris-ops` | Primitives, planar profiles, extrude, revolve, transform, booleans, later blends; `measure` (mass properties); each returns `Provenance` | `arris-check`, `rayon` (feature) | 2 — algorithms |
 | `arris-mesh` | `TriMesh`, `Polyline`, `Aabb`, tessellation of faces and edges with shared edge discretisation | `arris-check`, `arris-topo`, `thiserror` | 2 — algorithms |
@@ -61,7 +61,12 @@ generational id (`VertexId`, `EdgeId`, `FaceId`, `ShellId`, `BodyId`,
 generation. Ids are allocated sequentially in creation order and never
 reused until a compaction (below), so in the common case an id is also a
 creation timestamp, and iteration in id order is deterministic on every
-platform.
+platform. An accessor (`model.face(id)`) returns `NotFound` for an index
+past the arena, a freed slot or a stale generation — never the slot's
+current occupant. Geometry is inserted by value (`add_curve`,
+`add_surface`, `add_curve2`) and never deduplicated: two faces share a
+`SurfaceId` because the operation that split them handed both the same
+id, not because the arena matched two equal surfaces.
 
 **Entities are immutable.** An operation never edits an entity in place; it
 appends new ones and returns a handle to a new body that references the
@@ -73,7 +78,8 @@ handle is still valid), and background evaluation safe (a clone of the model
 sees the same entities).
 
 **The arena is chunked and the chunks are shared.** Storage is a list of
-fixed-size chunks behind `Arc`; `Model::clone` copies the list of `Arc`s,
+fixed-size chunks (`arris_topo::CHUNK_SIZE` slots) behind `Arc`, one list
+per entity and geometry kind; `Model::clone` copies the lists of `Arc`s,
 and the first append after a clone copies only the tail chunk. Cloning a
 model for a background evaluation is therefore O(number of chunks), not
 O(entities), and two clones that diverge share every chunk they both leave

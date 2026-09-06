@@ -9,7 +9,7 @@ license.workspace = true
 
 [features]
 # `Precision` is part of the native format; `arris-topo/serde` turns this on.
-serde = ["dep:serde"]
+serde = ["dep:serde", "nalgebra/serde-serialize"]
 
 [dependencies]
 nalgebra.workspace = true

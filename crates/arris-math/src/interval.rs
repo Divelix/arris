@@ -18,9 +18,30 @@ use core::fmt;
 /// assert!(Interval::new(3.0, 1.0).is_err());
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(try_from = "IntervalRepr"))]
 pub struct Interval {
     lo: f64,
     hi: f64,
+}
+
+/// The wire form of an [`Interval`]: the two ends, validated by
+/// [`Interval::new`] on the way in so a decoded interval is one that could
+/// have been built.
+#[cfg(feature = "serde")]
+#[derive(serde::Deserialize)]
+struct IntervalRepr {
+    lo: f64,
+    hi: f64,
+}
+
+#[cfg(feature = "serde")]
+impl TryFrom<IntervalRepr> for Interval {
+    type Error = IntervalError;
+
+    fn try_from(r: IntervalRepr) -> Result<Self, IntervalError> {
+        Interval::new(r.lo, r.hi)
+    }
 }
 
 /// Why two numbers are not an [`Interval`].
@@ -205,5 +226,16 @@ mod tests {
         assert_eq!(Interval::REAL.intersection(&c), Some(c));
         assert_eq!(Interval::UNIT, a);
         assert_eq!(Interval::TURN.hi(), core::f64::consts::TAU);
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn serde_round_trips_and_rejects_a_reversed_interval() {
+        let i = iv(-1.5, 2.25);
+        let text = serde_json::to_string(&i).unwrap();
+        assert_eq!(text, r#"{"lo":-1.5,"hi":2.25}"#);
+        let back: Interval = serde_json::from_str(&text).unwrap();
+        assert_eq!(back, i);
+        assert!(serde_json::from_str::<Interval>(r#"{"lo":2.0,"hi":1.0}"#).is_err());
     }
 }

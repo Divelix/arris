@@ -319,15 +319,24 @@ pub struct Face {
 pub struct Loop   { coedges: Vec<Coedge> }  // ordered, closed
 pub struct Coedge { edge: EdgeId, orientation: Orientation, pcurve: Curve2Id }
 
-pub struct Shell { faces: Vec<(FaceId, Orientation)> }
+pub struct Shell { faces: Vec<Face> }        // the handle: FaceId + Orientation
 
 pub struct Body {
     kind: BodyKind,                          // Solid | Sheet | Wire | General
-    shells: Vec<(ShellId, Orientation)>,
-    free_edges: Vec<(EdgeId, Orientation)>,  // wire and general bodies
+    shells: Vec<Shell>,                      // handles
+    free_edges: Vec<Edge>,                   // handles; wire and general bodies
     free_vertices: Vec<VertexId>,            // general bodies
 }
 ```
+
+A reference that carries an orientation — a shell's face use, a body's
+shell or free-edge use — is stored as the handle of that kind, since a
+handle *is* an id and an orientation. The fields are private: an entity is
+built by its constructor (`Vertex::new`, `Edge::new`, …, which check
+nothing) and read through getters, and once in the arena it is never
+written. The arena appends it through the raw insert (`Model::raw()`,
+test scaffolding that stores a dangling reference as given), the builder
+(§Euler operators) or `import`.
 
 - A **vertex** is a point and a tolerance.
 - An **edge** is a bounded piece of a 3D curve between two vertices, oriented
