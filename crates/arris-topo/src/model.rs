@@ -7,10 +7,12 @@ use std::sync::Arc;
 use arris_geom::{Curve, Curve2, Surface};
 use arris_math::Precision;
 
-use crate::arena::Arena;
-use crate::entity::{Body, Edge, Face, Shell, Vertex};
+use crate::arena::{Arena, Mark};
+use crate::entity::{Body, Coedge, Edge, EdgeGeometry, Face, Loop, Shell, Vertex};
 use crate::error::{NotFound, TopoError};
+use crate::handle;
 use crate::id::{BodyId, Curve2Id, CurveId, EdgeId, FaceId, ShellId, SurfaceId, VertexId};
+use crate::idmap::IdMap;
 
 /// One use of an edge: the face, the loop within it and the coedge within
 /// the loop. What the edge → coedge index answers with; loops and coedges
@@ -47,17 +49,17 @@ struct Indices {
     face_shells: Vec<Vec<ShellId>>,
 }
 
-/// The arena lengths at a transaction's entry: what a rollback restores.
-#[derive(Debug, Clone, Copy)]
+/// The arenas' marks at a transaction's entry: what a rollback restores.
+#[derive(Debug, Clone)]
 struct Lengths {
-    vertices: usize,
-    edges: usize,
-    faces: usize,
-    shells: usize,
-    bodies: usize,
-    curves: usize,
-    surfaces: usize,
-    curve2s: usize,
+    vertices: Mark,
+    edges: Mark,
+    faces: Mark,
+    shells: Mark,
+    bodies: Mark,
+    curves: Mark,
+    surfaces: Mark,
+    curve2s: Mark,
 }
 
 /// The arena: every vertex, edge, face, shell, body, curve, surface and
@@ -264,36 +266,61 @@ impl Model {
 
     fn lengths(&self) -> Lengths {
         Lengths {
-            vertices: self.vertices.len(),
-            edges: self.edges.len(),
-            faces: self.faces.len(),
-            shells: self.shells.len(),
-            bodies: self.bodies.len(),
-            curves: self.curves.len(),
-            surfaces: self.surfaces.len(),
-            curve2s: self.curve2s.len(),
+            vertices: self.vertices.mark(),
+            edges: self.edges.mark(),
+            faces: self.faces.mark(),
+            shells: self.shells.mark(),
+            bodies: self.bodies.mark(),
+            curves: self.curves.mark(),
+            surfaces: self.surfaces.mark(),
+            curve2s: self.curve2s.mark(),
         }
     }
 
-    /// Undoes every append since `at`. The index entries an appended
+    /// Undoes every append since `at`: the tail of every arena, and the
+    /// freed slots the transaction filled. The index entries an appended
     /// entity made are the tails of the lists they went into, because
     /// lists grow in creation order; so each appended entity's references
-    /// are popped back off, then everything is truncated.
+    /// are popped back off, then the arenas roll back.
     fn rollback(&mut self, at: Lengths) {
-        let removed_edges: Vec<Edge> = (at.edges..self.edges.len())
-            .filter_map(|i| self.edges.value_at(i).copied())
+        let appended = |len: usize, mark: &Mark, reused: Vec<u32>| -> Vec<usize> {
+            let mut all: Vec<usize> = reused.into_iter().map(|i| i as usize).collect();
+            all.extend(mark.len..len);
+            all
+        };
+        let edge_slots = appended(
+            self.edges.len(),
+            &at.edges,
+            self.edges.reused_since(&at.edges),
+        );
+        let face_slots = appended(
+            self.faces.len(),
+            &at.faces,
+            self.faces.reused_since(&at.faces),
+        );
+        let shell_slots = appended(
+            self.shells.len(),
+            &at.shells,
+            self.shells.reused_since(&at.shells),
+        );
+        let removed_edges: Vec<Edge> = edge_slots
+            .iter()
+            .filter_map(|&i| self.edges.value_at(i).copied())
             .collect();
-        let removed_faces: Vec<Face> = (at.faces..self.faces.len())
-            .filter_map(|i| self.faces.value_at(i).cloned())
+        let removed_faces: Vec<Face> = face_slots
+            .iter()
+            .filter_map(|&i| self.faces.value_at(i).cloned())
             .collect();
-        let removed_shells: Vec<Shell> = (at.shells..self.shells.len())
-            .filter_map(|i| self.shells.value_at(i).cloned())
+        let removed_shells: Vec<Shell> = shell_slots
+            .iter()
+            .filter_map(|&i| self.shells.value_at(i).cloned())
             .collect();
+        let gone = |slots: &[usize], index: u32| slots.contains(&(index as usize));
         let indices = Arc::make_mut(&mut self.indices);
         for edge in &removed_edges {
             for v in [edge.start(), edge.end()] {
                 if let Some(list) = indices.vertex_edges.get_mut(v.index() as usize) {
-                    while list.last().is_some_and(|e| e.index() as usize >= at.edges) {
+                    while list.last().is_some_and(|e| gone(&edge_slots, e.index())) {
                         list.pop();
                     }
                 }
@@ -304,7 +331,7 @@ impl Model {
                 if let Some(list) = indices.edge_uses.get_mut(coedge.edge().index() as usize) {
                     while list
                         .last()
-                        .is_some_and(|u| u.face.index() as usize >= at.faces)
+                        .is_some_and(|u| gone(&face_slots, u.face.index()))
                     {
                         list.pop();
                     }
@@ -314,23 +341,207 @@ impl Model {
         for shell in &removed_shells {
             for face in shell.faces() {
                 if let Some(list) = indices.face_shells.get_mut(face.id.index() as usize) {
-                    while list.last().is_some_and(|s| s.index() as usize >= at.shells) {
+                    while list.last().is_some_and(|s| gone(&shell_slots, s.index())) {
                         list.pop();
                     }
                 }
             }
         }
-        indices.vertex_edges.truncate(at.vertices);
-        indices.edge_uses.truncate(at.edges);
-        indices.face_shells.truncate(at.faces);
-        self.vertices.truncate(at.vertices);
-        self.edges.truncate(at.edges);
-        self.faces.truncate(at.faces);
-        self.shells.truncate(at.shells);
-        self.bodies.truncate(at.bodies);
-        self.curves.truncate(at.curves);
-        self.surfaces.truncate(at.surfaces);
-        self.curve2s.truncate(at.curve2s);
+        indices.vertex_edges.truncate(at.vertices.len);
+        indices.edge_uses.truncate(at.edges.len);
+        indices.face_shells.truncate(at.faces.len);
+        self.vertices.rollback(&at.vertices);
+        self.edges.rollback(&at.edges);
+        self.faces.rollback(&at.faces);
+        self.shells.rollback(&at.shells);
+        self.bodies.rollback(&at.bodies);
+        self.curves.rollback(&at.curves);
+        self.surfaces.rollback(&at.surfaces);
+        self.curve2s.rollback(&at.curve2s);
+    }
+
+    /// Deep-copies `body` from `other` into this model — its closure in
+    /// sorted id order per kind, geometry first — and returns the new
+    /// handle (same orientation) with the old → new [`IdMap`]. Inside a
+    /// transaction: a reference in `other` that does not resolve is
+    /// [`TopoError::NotFound`] and nothing is appended. Importing the
+    /// same body twice gives two copies with distinct ids; the ids are a
+    /// function of the closure and this model's state, the same on every
+    /// platform.
+    ///
+    /// ```
+    /// use arris_debug::sample;
+    /// use arris_topo::Model;
+    ///
+    /// let mut a = Model::default();
+    /// let cylinder = sample::cylinder(&mut a, 4.0, 12.0).unwrap();
+    /// let mut b = Model::default();
+    /// let (copy, map) = b.import(&a, cylinder).unwrap();
+    /// assert_eq!(map.map(cylinder.into()), Some(copy.into()));
+    /// assert_eq!(b.faces(copy).unwrap().len(), 3);
+    /// ```
+    pub fn import(
+        &mut self,
+        other: &Model,
+        body: handle::Body,
+    ) -> Result<(handle::Body, IdMap), TopoError> {
+        let closure = other.closure(body)?;
+        let entity = other.body(body.id)?.clone();
+        self.transaction(|m| {
+            let mut map = IdMap::default();
+            for &c in &closure.curves {
+                map.curves.insert(c, m.add_curve(other.curve(c)?.clone()));
+            }
+            for &s in &closure.surfaces {
+                map.surfaces
+                    .insert(s, m.add_surface(other.surface(s)?.clone()));
+            }
+            for &p in &closure.curve2s {
+                map.curve2s
+                    .insert(p, m.add_curve2(other.curve2(p)?.clone()));
+            }
+            for &v in &closure.vertices {
+                map.vertices.insert(v, m.push_vertex(*other.vertex(v)?));
+            }
+            for &e in &closure.edges {
+                let old = other.edge(e)?;
+                let geometry = match old.geometry() {
+                    EdgeGeometry::Curve { curve, range } => EdgeGeometry::Curve {
+                        curve: *map.curves.get(&curve).ok_or(NotFound::new(curve))?,
+                        range,
+                    },
+                    EdgeGeometry::Degenerate { range } => EdgeGeometry::Degenerate { range },
+                };
+                let start = *map
+                    .vertices
+                    .get(&old.start())
+                    .ok_or(NotFound::new(old.start()))?;
+                let end = *map
+                    .vertices
+                    .get(&old.end())
+                    .ok_or(NotFound::new(old.end()))?;
+                map.edges.insert(
+                    e,
+                    m.push_edge(Edge::new(geometry, start, end, old.tolerance())),
+                );
+            }
+            for &f in &closure.faces {
+                let old = other.face(f)?;
+                let surface = *map
+                    .surfaces
+                    .get(&old.surface())
+                    .ok_or(NotFound::new(old.surface()))?;
+                let mut loops = Vec::with_capacity(old.loops().len());
+                for l in old.loops() {
+                    let mut coedges = Vec::with_capacity(l.coedges().len());
+                    for c in l.coedges() {
+                        let edge = *map.edges.get(&c.edge()).ok_or(NotFound::new(c.edge()))?;
+                        let pcurve = *map
+                            .curve2s
+                            .get(&c.pcurve())
+                            .ok_or(NotFound::new(c.pcurve()))?;
+                        coedges.push(Coedge::new(edge, c.orientation(), pcurve));
+                    }
+                    loops.push(Loop::new(coedges));
+                }
+                map.faces
+                    .insert(f, m.push_face(Face::new(surface, loops, old.tolerance())));
+            }
+            for &s in &closure.shells {
+                let old = other.shell(s)?;
+                let mut faces = Vec::with_capacity(old.faces().len());
+                for f in old.faces() {
+                    let id = *map.faces.get(&f.id).ok_or(NotFound::new(f.id))?;
+                    faces.push(handle::Face::new(id, f.orientation));
+                }
+                map.shells.insert(s, m.push_shell(Shell::new(faces)));
+            }
+            let mut shells = Vec::with_capacity(entity.shells().len());
+            for s in entity.shells() {
+                let id = *map.shells.get(&s.id).ok_or(NotFound::new(s.id))?;
+                shells.push(handle::Shell::new(id, s.orientation));
+            }
+            let mut free_edges = Vec::with_capacity(entity.free_edges().len());
+            for e in entity.free_edges() {
+                let id = *map.edges.get(&e.id).ok_or(NotFound::new(e.id))?;
+                free_edges.push(handle::Edge::new(id, e.orientation));
+            }
+            let mut free_vertices = Vec::with_capacity(entity.free_vertices().len());
+            for &v in entity.free_vertices() {
+                free_vertices.push(*map.vertices.get(&v).ok_or(NotFound::new(v))?);
+            }
+            let new = m.push_body(Body::new(entity.kind(), shells, free_edges, free_vertices));
+            map.bodies.insert(body.id, new);
+            Ok((handle::Body::new(new, body.orientation), map))
+        })
+    }
+
+    /// Frees every entity and geometry value not reachable from `keep`
+    /// (the union of their closures, the bodies themselves included):
+    /// the slot's value is dropped and its generation bumped, so every
+    /// handle to it stops resolving instead of aliasing, and the slot is
+    /// filled by a later append, lowest index first, at the new
+    /// generation — ids stay deterministic and a long-lived model does
+    /// not grow without bound. Slots are never renumbered (the `⚠ OPEN`
+    /// of `docs/01-architecture.md` §The model). The adjacency indices
+    /// are rebuilt. Returns how many slots were freed. Not undone by an
+    /// enclosing transaction that fails. Errors: a body in `keep` does
+    /// not resolve, and then nothing is freed.
+    ///
+    /// ```
+    /// use arris_debug::sample;
+    /// use arris_topo::Model;
+    /// use arris_topo::arris_math::Point3;
+    ///
+    /// let mut m = Model::default();
+    /// let cube = sample::unit_box(&mut m).unwrap();
+    /// let cylinder = sample::cylinder(&mut m, 4.0, 12.0).unwrap();
+    /// let freed = m.retain(&[cube]).unwrap();
+    /// assert!(freed > 0);
+    /// assert!(m.body(cylinder.id).is_err() && m.body(cube.id).is_ok());
+    /// ```
+    pub fn retain(&mut self, keep: &[handle::Body]) -> Result<usize, NotFound> {
+        let mut live = crate::walk::Closure::default();
+        let mut bodies = Vec::new();
+        for &body in keep {
+            let c = self.closure(body)?;
+            live.vertices.extend(c.vertices);
+            live.edges.extend(c.edges);
+            live.faces.extend(c.faces);
+            live.shells.extend(c.shells);
+            live.curves.extend(c.curves);
+            live.surfaces.extend(c.surfaces);
+            live.curve2s.extend(c.curve2s);
+            bodies.push(body.id);
+        }
+        fn sweep<T: Clone, I: Copy + Ord>(
+            arena: &mut Arena<T>,
+            live: &mut Vec<I>,
+            index_of: impl Fn(&I) -> u32,
+        ) -> usize {
+            live.sort();
+            live.dedup();
+            let keep: std::collections::BTreeSet<u32> = live.iter().map(index_of).collect();
+            let mut freed = 0;
+            for i in 0..arena.len() {
+                let i = i as u32;
+                if !keep.contains(&i) && arena.free_slot(i) {
+                    freed += 1;
+                }
+            }
+            freed
+        }
+        let mut freed = 0;
+        freed += sweep(&mut self.vertices, &mut live.vertices, |v| v.index());
+        freed += sweep(&mut self.edges, &mut live.edges, |e| e.index());
+        freed += sweep(&mut self.faces, &mut live.faces, |f| f.index());
+        freed += sweep(&mut self.shells, &mut live.shells, |s| s.index());
+        freed += sweep(&mut self.bodies, &mut bodies, |b| b.index());
+        freed += sweep(&mut self.curves, &mut live.curves, |c| c.index());
+        freed += sweep(&mut self.surfaces, &mut live.surfaces, |s| s.index());
+        freed += sweep(&mut self.curve2s, &mut live.curve2s, |p| p.index());
+        self.rebuild_indices();
+        Ok(freed)
     }
 
     pub(crate) fn push_vertex(&mut self, vertex: Vertex) -> VertexId {

@@ -309,7 +309,7 @@ per-kind counts) accept them; only the raw API and tests build them.
   byte-identical dump, with the same ids; two writes are byte-identical;
   a bumped version and a truncated byte stream are typed errors; the
   wasm32 build passes with `postcard` in.
-- [ ] Step 12 — `import` and `retain`. `import` deep-copies the closure in
+- [x] Step 12 — `import` and `retain`. `import` deep-copies the closure in
   iteration order and returns the `IdMap`; `retain` frees every slot not
   reachable from the kept bodies, bumps its generation and reuses it
   lowest-index-first for the next appends (decided, §Open questions).
@@ -397,12 +397,11 @@ step, as for M1.
   while the checker's 3D containment test for voids stays private to
   `arris-check`. The checker must not depend on `ops`, so a shared
   integrator can only sit below both. 02 §Pcurves documents it.
-- `⚠ OPEN:` **`retain` reuses freed slots** lowest-index-first at the
-  bumped generation, so a long-lived model does not grow without bound
-  before C2 decides on renumbering. Recommendation: reuse — it is what
+- **Decided (agent, 2026-09-06, step 12): `retain` reuses freed slots**
+  lowest-index-first at the bumped generation, so a long-lived model does
+  not grow without bound before C2 decides on renumbering — it is what
   the generation exists for, and ids stay deterministic because the free
-  list is ordered. Agent, by step 12; the C2 `⚠ OPEN` in 01 §The model is
-  untouched.
+  set is ordered. The C2 `⚠ OPEN` in 01 §The model is untouched.
 
 ## Findings
 
@@ -534,6 +533,18 @@ step, as for M1.
   `target/inspect/`, a typed `Mismatch` with the table, `Environment`
   for a missing `uv`) that the step-4 test duplicated inline and step
   13's runner will use; `sample::frame` is the `boolean/frame-cut` twin.
+- Step 12: slot reuse reached the transaction: an append inside a
+  transaction may now fill a freed slot below the arena's length, so a
+  rollback can no longer be a truncation. Each arena records a mark (its
+  length and its free set) at entry, and a rollback empties the slots
+  filled since — at the generation they had, so the ids the failed
+  transaction minted are the ones the next appends get, as before — and
+  the index pops match any removed slot rather than the tail alone. A
+  `retain` inside a failed transaction stays, since the freed entities are
+  gone; 01 §The model says so. `import` returns `Result<(Body, IdMap),
+  TopoError>` rather than the bare pair, and `retain` `Result<usize,
+  NotFound>` (the count freed; a body in `keep` that does not resolve
+  frees nothing), both documented in 01. `IdMap` records the body id too.
 - Step 11: `Model` implements `Serialize`/`Deserialize` itself (behind
   `arris-topo/serde`) through a slot-list representation — every arena's
   slots in index order with their generations, freed ones included, so

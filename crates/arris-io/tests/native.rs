@@ -179,3 +179,28 @@ fn a_value_that_fails_its_validation_is_refused_on_the_way_in() {
         Err(NativeError::Decode(_))
     ));
 }
+
+#[test]
+fn a_retained_model_round_trips_with_its_freed_slots_and_next_ids() {
+    let (mut m, bodies) = three_bodies();
+    m.retain(&[bodies[0], bodies[2]]).unwrap();
+    let bytes = native::to_bytes(&m).unwrap();
+    let mut back = native::from_bytes(&bytes).unwrap();
+    assert_eq!(
+        dumps(&back, &[bodies[0], bodies[2]]),
+        dumps(&m, &[bodies[0], bodies[2]])
+    );
+    assert!(
+        back.body(bodies[1].id).is_err(),
+        "the freed body stays freed"
+    );
+    let a = sample::cylinder(&mut m, 4.0, 12.0).unwrap();
+    let b = sample::cylinder(&mut back, 4.0, 12.0).unwrap();
+    assert_eq!(a, b, "the freed slots are reused alike");
+    assert_eq!(a.id.generation(), 1);
+    assert_eq!(dump_text(&m, a).unwrap(), dump_text(&back, b).unwrap());
+    assert_eq!(
+        native::to_bytes(&m).unwrap(),
+        native::to_bytes(&back).unwrap()
+    );
+}

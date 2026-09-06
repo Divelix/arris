@@ -4,8 +4,13 @@
 //! pointers and the first append after a clone copies only the tail chunk
 //! (`docs/01-architecture.md` §The model). Every slot carries a generation;
 //! a lookup resolves only when the id's generation is the slot's, so a
-//! stale id never aliases a later occupant.
+//! stale id never aliases a later occupant. A slot `retain` frees keeps
+//! its place with its generation bumped and joins an ordered free set;
+//! the next append fills the lowest free slot at that generation, so a
+//! long-lived model does not grow without bound and ids stay
+//! deterministic.
 
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 /// Slots per chunk. Small enough that the tail-chunk copy after a clone is
@@ -37,6 +42,8 @@ impl<T> Chunk<T> {
 pub(crate) struct Arena<T> {
     chunks: Vec<Arc<Chunk<T>>>,
     len: usize,
+    /// Freed slots, lowest first: what the next append fills.
+    free: BTreeSet<u32>,
 }
 
 impl<T> Default for Arena<T> {
@@ -44,8 +51,18 @@ impl<T> Default for Arena<T> {
         Arena {
             chunks: Vec::new(),
             len: 0,
+            free: BTreeSet::new(),
         }
     }
+}
+
+/// What a transaction records of an arena at entry: the length and the
+/// free set, so a rollback can drop the tail and re-free the slots the
+/// transaction filled.
+#[derive(Debug, Clone)]
+pub(crate) struct Mark {
+    pub(crate) len: usize,
+    free: BTreeSet<u32>,
 }
 
 impl<T: Clone> Arena<T> {
@@ -55,10 +72,17 @@ impl<T: Clone> Arena<T> {
         self.len
     }
 
-    /// Appends `value` in a fresh slot and returns `(index, generation)`.
-    /// Only the tail chunk is touched, and it is copied first if a clone
-    /// shares it.
+    /// Stores `value` in the lowest freed slot at its bumped generation,
+    /// or in a fresh slot at the end at generation zero, and returns
+    /// `(index, generation)`. Only the chunk written is touched, and it
+    /// is copied first if a clone shares it.
     pub(crate) fn push(&mut self, value: T) -> (u32, u32) {
+        if let Some(&index) = self.free.first() {
+            self.free.remove(&index);
+            let slot = self.slot_mut(index as usize);
+            slot.value = Some(value);
+            return (index, slot.generation);
+        }
         // The arena addresses slots by `u32`; running out of them is
         // resource exhaustion, the same class of failure as an allocation
         // that cannot be satisfied, and not a geometric condition.
@@ -92,6 +116,63 @@ impl<T: Clone> Arena<T> {
             .flatten()
     }
 
+    /// The slot at `index`, which must exist; the chunk is copied first if
+    /// a clone shares it.
+    fn slot_mut(&mut self, index: usize) -> &mut Slot<T> {
+        let chunk = self
+            .chunks
+            .get_mut(index / CHUNK_SIZE)
+            .expect("a freed slot is inside the arena");
+        &mut Arc::make_mut(chunk).slots[index % CHUNK_SIZE]
+    }
+
+    /// Frees the slot at `index` if it is live: the value is dropped, the
+    /// generation bumped so every id minted for it stops resolving, and
+    /// the slot joins the free set. Returns whether it was live.
+    pub(crate) fn free_slot(&mut self, index: u32) -> bool {
+        if self.value_at(index as usize).is_none() {
+            return false;
+        }
+        let slot = self.slot_mut(index as usize);
+        slot.value = None;
+        slot.generation = slot.generation.wrapping_add(1);
+        self.free.insert(index);
+        true
+    }
+
+    /// The transaction mark: what [`Arena::rollback`] restores.
+    pub(crate) fn mark(&self) -> Mark {
+        Mark {
+            len: self.len,
+            free: self.free.clone(),
+        }
+    }
+
+    /// The slots that were free at `mark` and are filled now: what a
+    /// rollback has to empty again besides the tail.
+    pub(crate) fn reused_since(&self, mark: &Mark) -> Vec<u32> {
+        mark.free
+            .iter()
+            .copied()
+            .filter(|i| !self.free.contains(i))
+            .collect()
+    }
+
+    /// Undoes every append since `mark`: the tail is dropped and the
+    /// slots filled from the free set are emptied and freed again at the
+    /// generation they had, so the ids the transaction minted are the
+    /// ones the next appends get, as if the transaction had never run.
+    /// Slots freed *during* the transaction stay freed: `retain` is not
+    /// undone.
+    pub(crate) fn rollback(&mut self, mark: &Mark) {
+        for index in self.reused_since(mark) {
+            let slot = self.slot_mut(index as usize);
+            slot.value = None;
+            self.free.insert(index);
+        }
+        self.truncate(mark.len);
+    }
+
     /// The value at `index` whatever its generation, `None` for an empty
     /// or missing slot. For the arena's own bookkeeping (a rollback reads
     /// the slots it is about to drop); every id-based lookup goes through
@@ -121,6 +202,7 @@ impl<T: Clone> Arena<T> {
             }
         }
         self.len = len;
+        self.free.retain(|&i| (i as usize) < len);
     }
 
     /// Appends a slot as it was stored — its generation and, for a live
@@ -135,9 +217,19 @@ impl<T: Clone> Arena<T> {
             .chunks
             .last_mut()
             .expect("a chunk was just pushed or already exists");
+        let free = value.is_none();
         Arc::make_mut(tail).slots.push(Slot { generation, value });
         self.len += 1;
+        if free {
+            self.free.insert(index);
+        }
         index
+    }
+
+    /// The number of live slots.
+    #[cfg(test)]
+    pub(crate) fn live(&self) -> usize {
+        self.len - self.free.len()
     }
 
     /// Every slot in index order as `(generation, value)`, freed slots
@@ -198,6 +290,52 @@ mod tests {
         );
         assert_eq!(a.get(CHUNK_SIZE as u32 + 10, 0), None);
         assert_eq!(b.get(CHUNK_SIZE as u32 + 10, 0), Some(&usize::MAX));
+    }
+
+    #[test]
+    fn a_freed_slot_is_refilled_lowest_first_at_the_bumped_generation() {
+        let mut a = Arena::default();
+        for i in 0..5 {
+            a.push(i);
+        }
+        assert!(a.free_slot(3) && a.free_slot(1));
+        assert!(!a.free_slot(1), "already free");
+        assert_eq!(a.get(1, 0), None, "the old id no longer resolves");
+        assert_eq!(a.live(), 3);
+        assert_eq!(a.push(10), (1, 1), "the lowest free slot, generation one");
+        assert_eq!(a.get(1, 1), Some(&10));
+        assert_eq!(a.get(1, 0), None, "and the stale id still does not");
+        assert_eq!(a.push(11), (3, 1));
+        assert_eq!(a.push(12), (5, 0), "then the tail");
+        a.free_slot(1);
+        assert_eq!(a.push(13), (1, 2), "every free bumps the generation");
+    }
+
+    #[test]
+    fn rollback_empties_the_reused_slots_and_drops_the_tail() {
+        let mut a = Arena::default();
+        for i in 0..4 {
+            a.push(i);
+        }
+        a.free_slot(2);
+        let mark = a.mark();
+        assert_eq!(a.push(20), (2, 1));
+        assert_eq!(a.push(21), (4, 0));
+        assert_eq!(a.reused_since(&mark), [2]);
+        a.rollback(&mark);
+        assert_eq!(a.len(), 4);
+        assert_eq!(a.get(2, 1), None);
+        assert_eq!(
+            a.push(22),
+            (2, 1),
+            "the same id as the rolled-back append got"
+        );
+        // A slot freed inside the transaction stays freed.
+        let mark = a.mark();
+        a.free_slot(0);
+        a.rollback(&mark);
+        assert_eq!(a.get(0, 0), None);
+        assert_eq!(a.push(23), (0, 1));
     }
 
     #[test]

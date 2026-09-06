@@ -58,10 +58,10 @@ forwards `serde`, `parallel` and `paranoid`.
 curve, surface and pcurve ever created in it, each behind a typed
 generational id (`VertexId`, `EdgeId`, `FaceId`, `ShellId`, `BodyId`,
 `CurveId`, `SurfaceId`, `Curve2Id`): a `u32` slot index and a `u32`
-generation. Ids are allocated sequentially in creation order and never
-reused until a compaction (below), so in the common case an id is also a
-creation timestamp, and iteration in id order is deterministic on every
-platform. An accessor (`model.face(id)`) returns `NotFound` for an index
+generation. Ids are allocated sequentially in creation order, and a slot is
+reused only after a compaction (below) at a new generation, so in the
+common case an id is also a creation timestamp, and iteration in id order
+is deterministic on every platform. An accessor (`model.face(id)`) returns `NotFound` for an index
 past the arena, a freed slot or a stale generation — never the slot's
 current occupant. Geometry is inserted by value (`add_curve`,
 `add_surface`, `add_curve2`) and never deduplicated: two faces share a
@@ -100,18 +100,29 @@ and its clones are exactly as before. Transactions nest; an inner `Err`
 undoes only the inner appends. A consumer never sees half-built entities.
 
 **Bodies move between models by import.** `Model::import(&mut self, &other,
-body) -> (Body, IdMap)` deep-copies a body's closure and returns the id map.
-This is how independent evaluations on clones are merged, how a consumer
-holds several documents, and how provenance across models is translated.
+body) -> Result<(Body, IdMap), TopoError>` deep-copies a body's closure —
+sorted id order per kind, geometry first — inside a transaction and
+returns the new handle with the id map; a reference in the other model
+that does not resolve is `NotFound` and nothing is appended. This is how
+independent evaluations on clones are merged, how a consumer holds several
+documents, and how provenance across models is translated
+(`Provenance::mapped`).
 
-**Compaction.** `Model::retain(&mut self, keep: &[Body])` drops every entity
-not reachable from `keep` and bumps the generation of freed slots, so stale
-handles fail to resolve instead of aliasing. It is the only operation that
-invalidates handles and it is never called by the kernel itself.
-`⚠ OPEN:` whether compaction also renumbers slots (denser arena, cheaper
-serialisation, but every surviving id changes and the returned `IdMap`
-becomes mandatory for the consumer) or keeps slots sparse. Decided with the
-first consumer that outlives one evaluation, in cycle 2.
+**Compaction.** `Model::retain(&mut self, keep: &[Body]) -> Result<usize,
+NotFound>` frees every entity and geometry value not reachable from `keep`
+— the slot's value dropped, its generation bumped so every handle to it
+stops resolving instead of aliasing — rebuilds the adjacency indices, and
+returns the count. A freed slot keeps its place and is filled by a later
+append, lowest index first, at the bumped generation (ids `v3g1`, then
+`v3g2`…), so a long-lived model does not grow without bound and ids stay
+deterministic; a transaction that fails after filling freed slots empties
+them again, and one that fails after a `retain` does not undo it. It is
+the only operation that invalidates handles and it is never called by
+the kernel itself. `⚠ OPEN:` whether compaction also renumbers slots
+(denser arena, cheaper serialisation, but every surviving id changes and
+the returned `IdMap` becomes mandatory for the consumer) or keeps slots
+sparse, as it does now. Decided with the first consumer that outlives
+one evaluation, in cycle 2.
 
 ## Operations
 

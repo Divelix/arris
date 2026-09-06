@@ -511,6 +511,9 @@ appended (a raw insert with a dangling id) is not indexed: M1 is where it
 is reported. The indices are one value shared by every clone of a model
 and copied whole on the first append after a clone, so `Model::clone`
 stays O(chunks) and the copy is paid once, by the clone that diverges.
+After `retain`, and when a model is read from the native format, they
+are rebuilt from the entities in slot order — the same lists, in creation
+order for a model that never freed a slot.
 
 `Model::shells(body)`, `faces(body)`, `edges(body)`, `vertices(body)`
 iterate in a deterministic order — depth-first over the body's shells,

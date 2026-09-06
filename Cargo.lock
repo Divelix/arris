@@ -117,6 +117,7 @@ dependencies = [
 name = "arris-topo"
 version = "0.0.1"
 dependencies = [
+ "arris-check",
  "arris-debug",
  "arris-geom",
  "arris-math",
