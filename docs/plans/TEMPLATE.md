@@ -15,8 +15,14 @@ Which design docs / types / crate boundaries change, and how. If a decision
 here is non-obvious, it becomes an ADR (list it).
 
 ## Steps
-- [ ] Step 1 — …
-- [ ] Step 2 — …
+Complexity grades the human uses to pick the agent for a step: **[1]**
+routine — the design says exactly what to write and the tests are
+mechanical; **[2]** careful — a geometric or numeric case to get right
+within a given design; **[3]** unproven — an algorithm whose robustness or
+bound has to be established here.
+
+- [ ] Step 1 **[1]** — …
+- [ ] Step 2 **[1]** — …
 Each step is one commit-sized unit with its own test, fixture or oracle comparison.
 
 ## Acceptance

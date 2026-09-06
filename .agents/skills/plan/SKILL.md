@@ -31,7 +31,13 @@ and the human can read in two minutes.
      test, fixture or oracle comparison, and could be reverted alone. Order
      them so the riskiest unknown retires first — for kernel work that is
      almost always the geometric case nobody has proven yet, not the API
-     around it. Numbering is the checkbox order.
+     around it. Numbering is the checkbox order. Every step carries a
+     complexity grade the human uses to pick the agent — state the scale
+     once, right above the step list: **[1]** routine, the design says
+     exactly what to write and the tests are mechanical; **[2]** careful, a
+     geometric or numeric case to get right within a given design; **[3]**
+     unproven, an algorithm whose robustness or bound has to be established
+     here.
    - *Acceptance* is an executable corpus run, ideally the milestone's own:
      which fixtures, which oracle values, which property tests.
    - *Docs to update* is written now, while the deltas are fresh — it is what
