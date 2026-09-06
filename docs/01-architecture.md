@@ -171,11 +171,11 @@ what every test asserts and what every operation asserts on its own
 output. A body handle that does not resolve is one M1 line; a reference
 that does not resolve is reported under M1 and skipped by every other
 row; adjacency is read off the body's own entities, so every row stands
-without the arena's indices and M2 alone speaks for them. The invariants
-are listed in 02-data-model §Invariants; each has a `Violation` variant,
-a test that constructs it and sees it reported, and a level (as of M2
-step 5 the rows M1–M3, V1–V3 and E1–E7 run; the loop, face, shell and
-body rows land in steps 7 and 8):
+without the arena's indices and M2 alone speaks for them. Every report also carries the body's Euler–Poincaré line,
+`Report::euler()`, which is a line and not a violation. The invariants are
+listed in 02-data-model §Invariants; each has a `Violation` variant, a test
+that constructs it and sees it reported, and a level (as of M2 step 7 every
+`Fast` row runs; the `Full` rows land in step 8):
 
 - `Level::Fast` — combinatorial and local geometric checks (ids resolve,
   loops close, orientations compose, tolerances are ordered, pcurves match
@@ -193,7 +193,7 @@ to build an invalid body — every checker test does — constructs it through
 `arris-topo`'s raw insert, which the checker does not guard, and says so by
 name.
 
-**In release builds nothing runs unless asked.** `model.check(body)` is
+**In release builds nothing runs unless asked.** `arris_check::check` is
 public and cheap enough for a consumer to run after every feature; the
 `paranoid` feature turns the debug behaviour on in release, returning
 `OpError::Internal` instead of panicking.

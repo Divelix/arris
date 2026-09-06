@@ -539,12 +539,12 @@ reference tree) mapped onto this representation.
 
 | # | Invariant | Level |
 |---|---|---|
-| L1 | A loop has at least one coedge and is closed: coedge *i*'s effective end vertex is coedge *i+1*'s effective start vertex, cyclically | Fast |
-| L2 | The pcurves are continuous in (u, v) at every coedge junction within `parametric_tolerance`, except across a seam edge where they jump by the period | Fast |
+| L1 | A loop has at least one coedge and is closed: coedge *i*'s effective end vertex is coedge *i+1*'s effective start vertex, cyclically. Reported once per loop, at the first junction that breaks | Fast |
+| L2 | The pcurves are continuous in (u, v) at every coedge junction within `parametric_tolerance` scaled to the surface's speed, or jump by exactly one period in a periodic parameter — across a seam edge, and where a closed edge's pcurve wraps the parameter once. Every junction that is neither is reported | Fast |
 | L3 | No edge is used twice in one loop except as a seam (E7); no edge is used by two loops of the same face except as a seam | Fast |
-| L4 | Each loop's signed area in (u, v) is non-zero, and the loops of a face have exactly one outer loop (positive winding) per connected component of the face's domain, holes with negative winding inside it | Fast |
+| L4 | Each loop's signed area in (u, v) is non-zero — its mean width, the area over half its perimeter, is above `parametric_tolerance` — and the loops of a face have exactly one outer loop (positive winding) per connected component of the domain, holes with negative winding inside one of them. Two outer loops are one component exactly when one contains the other; disjoint ones are two | Fast |
 | L5 | The loops of a face do not intersect each other or themselves in (u, v) | Full |
-| F1 | The face has a surface and at least one loop; every pcurve lies within the surface's non-periodic domain bounds | Fast |
+| F1 | The face has a surface and at least one loop; every pcurve lies within the surface's non-periodic domain bounds, to `parametric_tolerance`. Reported once per face, at the first coedge that leaves them | Fast |
 | F2 | `face.tolerance ≥ Precision::min_tolerance` and ≤ every incident edge's | Fast |
 
 **Shell and body**
@@ -552,7 +552,7 @@ reference tree) mapped onto this representation.
 | # | Invariant | Level |
 |---|---|---|
 | S1 | Every face use in a shell resolves and no face is used twice by one shell | Fast |
-| S2 | In a `Solid` body every edge of the shell is used by exactly two coedges, with opposite effective orientation (the two faces agree on which side the material is); in a `Sheet` by one or two; in `General` by any number, with the orientations pairing up | Fast |
+| S2 | In a `Solid` body every edge of the shell is used by exactly two coedges, with opposite effective orientation (the two faces agree on which side the material is); in a `Sheet` by one or two; in `General` by any number. The orientations pair up in every kind: as many forward uses as reversed, but for an odd count, where exactly one is left over. A `Wire` body's shell is not judged here — B3 says it should have none | Fast |
 | S3 | A shell is connected through its edges | Fast |
 | S4 | A shell of a `Solid` is closed: no edge with one coedge | Fast |
 | S5 | The faces of a shell intersect only along their shared edges and vertices | Full |
@@ -560,11 +560,14 @@ reference tree) mapped onto this representation.
 | B2 | A `Solid` body encloses positive volume (Gauss over the faces) | Full |
 | B3 | A `Wire` body has no shells; `free_edges` form chains (each vertex used by at most two free edges) — `General` bodies exempt | Fast |
 
-**Euler–Poincaré** (`Full`, reported as one line, not a violation on its
-own): for a `Solid`, `V − E + F − (L − F) − 2(S − G) = 0` with `L` the number
-of loops, `S` the number of shells and `G` the genus computed from the
-adjacency; the number is printed in every text dump and asserted in every
-fixture.
+**Euler–Poincaré** (every level, reported as one line, never a violation on
+its own): `V − E + F − (L − F) − 2(S − G) = 0` with `L` the number of loops
+and `S` the number of shells. The genus `G` is *derived* from the counts,
+as the oracle derives it, so the line cannot fail on its genus; what it
+checks is its parity — a count set that leaves a residual of one cannot
+come from any closed orientable surface, whatever its genus. `Report::euler`
+carries the line, `arris_debug::dump_text` prints it, and every fixture
+asserts it. The line is linear in the closure, so it is taken at `Fast` too.
 
 ## Provenance
 

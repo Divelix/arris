@@ -170,6 +170,25 @@ fn assert_lines(report: &Report, expected: &[(&str, String)]) {
     assert_eq!(lines(report), want, "report:\n{report}");
 }
 
+/// The two faces of the rebuilt body that use `edge`, ascending.
+fn faces_of(m: &Model, edge: EdgeId, r: &Rebuilt) -> (String, String) {
+    let mut faces: Vec<FaceId> = r
+        .faces
+        .iter()
+        .copied()
+        .filter(|&f| {
+            m.face(f)
+                .unwrap()
+                .loops()
+                .iter()
+                .flat_map(|l| l.coedges())
+                .any(|c| c.edge() == edge)
+        })
+        .collect();
+    faces.sort();
+    (faces[0].to_string(), faces[1].to_string())
+}
+
 fn cylinder(m: &mut Model) -> Body {
     sample::cylinder(m, 4.0, 12.0).unwrap()
 }
@@ -452,7 +471,18 @@ fn v2_a_range_end_off_its_vertex() {
     );
     let report = check(&m, r.body, Level::Fast);
     let v0 = r.vertices[0].to_string();
-    assert_lines(&report, &[("V2", v0.clone()), ("V3", v0)]);
+    // The moved range end takes the seam's pcurve end with it, so the
+    // wall's loop no longer meets itself in (u, v) at either side of it.
+    let f0 = r.faces[0].to_string();
+    assert_lines(
+        &report,
+        &[
+            ("V2", v0.clone()),
+            ("V3", v0),
+            ("L2", f0.clone()),
+            ("L2", f0),
+        ],
+    );
     assert!(matches!(
         report.violations()[0],
         Violation::VertexOffEdge { edge, distance, .. } if edge == r.edges[1] && (distance - 0.5).abs() < 1e-12
@@ -589,6 +619,7 @@ fn e2_a_closed_curve_with_two_vertices_and_an_open_one_with_one() {
     );
     let report = check(&m, r.body, Level::Fast);
     let v1 = r.vertices[1].to_string();
+    // Both loops that use the circle now break where its end vertex moved.
     assert_lines(
         &report,
         &[
@@ -596,6 +627,8 @@ fn e2_a_closed_curve_with_two_vertices_and_an_open_one_with_one() {
             ("V3", v1.clone()),
             ("V3", v1),
             ("E2", r.edges[0].to_string()),
+            ("L1", r.faces[0].to_string()),
+            ("L1", r.faces[1].to_string()),
         ],
     );
     assert!(matches!(
@@ -622,6 +655,7 @@ fn e2_a_closed_curve_with_two_vertices_and_an_open_one_with_one() {
     );
     let report = check(&m, r.body, Level::Fast);
     let v0 = r.vertices[0].to_string();
+    let (fa, fb) = faces_of(&m, r.edges[0], &r);
     assert_lines(
         &report,
         &[
@@ -629,6 +663,8 @@ fn e2_a_closed_curve_with_two_vertices_and_an_open_one_with_one() {
             ("V3", v0.clone()),
             ("V3", v0),
             ("E2", r.edges[0].to_string()),
+            ("L1", fa),
+            ("L1", fb),
         ],
     );
     assert!(matches!(
@@ -751,13 +787,25 @@ fn e5_an_edge_tolerance_below_its_faces_and_above_its_vertices() {
     );
     let report = check(&m, r.body, Level::Fast);
     let e0 = r.edges[0].to_string();
-    assert_lines(&report, &[("E5", e0.clone()), ("E5", e0)]);
+    // F2 is the same ordering read from the face's side, on each of the
+    // two faces the edge bounds.
+    let (fa, fb) = faces_of(&m, r.edges[0], &r);
+    assert_lines(
+        &report,
+        &[("E5", e0.clone()), ("E5", e0), ("F2", fa), ("F2", fb)],
+    );
     for v in report.violations() {
         assert!(matches!(
             v,
             Violation::EdgeTolerance {
                 bound: ToleranceBound::Neighbour {
                     entity: arris_topo::EntityId::Face(_),
+                    ..
+                },
+                ..
+            } | Violation::FaceTolerance {
+                bound: ToleranceBound::Neighbour {
+                    entity: arris_topo::EntityId::Edge(_),
                     ..
                 },
                 ..
@@ -860,9 +908,15 @@ fn e6_a_degenerate_edge_where_the_surface_is_not_singular_or_with_two_vertices()
     ));
     let (body, edge) = degenerate_on_a_plane(&mut m, true);
     let report = check(&m, body, Level::Fast);
+    // Two vertices on the one coedge of the loop is also an open loop.
+    let face = m.faces(body).unwrap()[0].id.to_string();
     assert_lines(
         &report,
-        &[("E6", edge.to_string()), ("E6", edge.to_string())],
+        &[
+            ("E6", edge.to_string()),
+            ("E6", edge.to_string()),
+            ("L1", face),
+        ],
     );
     assert!(report.violations().iter().any(|v| matches!(
         v,
@@ -890,13 +944,28 @@ fn e7_a_seam_with_both_uses_forward_or_pcurves_not_a_period_apart() {
         }
     });
     let report = check(&m, r.body, Level::Fast);
+    // Turning the wall's uses all forward takes the loop's closure, its
+    // (u, v) junctions and the pairing of two edges' uses with it.
+    let f0 = r.faces[0].to_string();
+    let s0 = m.shells(r.body).unwrap()[0].id.to_string();
+    assert_lines(
+        &report,
+        &[
+            ("E7", r.edges[1].to_string()),
+            ("L1", f0.clone()),
+            ("L2", f0.clone()),
+            ("L2", f0),
+            ("S2", s0.clone()),
+            ("S2", s0),
+        ],
+    );
     assert_eq!(
-        report.violations(),
-        [Violation::Seam {
+        report.violations()[0],
+        Violation::Seam {
             edge: r.edges[1],
             face: r.faces[0],
             fault: SeamFault::SameOrientation,
-        }],
+        },
         "{report}"
     );
     // The seam's up pcurve at u = π instead of 2π: half a period apart,
@@ -926,6 +995,8 @@ fn e7_a_seam_with_both_uses_forward_or_pcurves_not_a_period_apart() {
         }
     });
     let report = check(&m, r.body, Level::Fast);
+    // Half a period is a jump at both ends of the seam's forward use.
+    let f0 = r.faces[0].to_string();
     assert_lines(
         &report,
         &[
@@ -933,6 +1004,8 @@ fn e7_a_seam_with_both_uses_forward_or_pcurves_not_a_period_apart() {
             ("V3", r.vertices[1].to_string()),
             ("E4", r.edges[1].to_string()),
             ("E7", r.edges[1].to_string()),
+            ("L2", f0.clone()),
+            ("L2", f0),
         ],
     );
     assert!(matches!(

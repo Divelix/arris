@@ -4,6 +4,95 @@ use core::fmt;
 
 use crate::violation::{Level, Violation};
 
+/// The Euler–Poincaré line of a body (`docs/02-data-model.md`
+/// §Euler–Poincaré): the five counts of its closure and the genus they
+/// imply through `V − E + F − (L − F) − 2(S − G) = 0`. The genus is
+/// *derived*, as the oracle derives it, so the line is not a violation on
+/// its own; what it checks is its parity — a count set that leaves a
+/// [`EulerLine::residual`] of one cannot come from any closed orientable
+/// surface, whatever its genus.
+///
+/// ```
+/// use arris_check::{Level, check};
+/// use arris_debug::sample;
+/// use arris_topo::Model;
+///
+/// let mut m = Model::default();
+/// let body = sample::cylinder(&mut m, 4.0, 12.0).unwrap();
+/// let line = check(&m, body, Level::Fast).euler().unwrap();
+/// assert_eq!(line.to_string(), "2/3/3/3/1 g0 = 0");
+/// assert!(line.closes());
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct EulerLine {
+    /// Vertices in the closure.
+    pub vertices: usize,
+    /// Edges in the closure.
+    pub edges: usize,
+    /// Faces in the closure.
+    pub faces: usize,
+    /// Loops over those faces.
+    pub loops: usize,
+    /// Shells in the closure.
+    pub shells: usize,
+    /// The genus the counts imply, `S − ⌊(V − E + 2F − L) / 2⌋`.
+    pub genus: i64,
+}
+
+impl EulerLine {
+    /// The line of the counts, with the genus derived from them.
+    pub const fn new(
+        vertices: usize,
+        edges: usize,
+        faces: usize,
+        loops: usize,
+        shells: usize,
+    ) -> Self {
+        // V − E + F − (L − F) − 2(S − G) = 0  ⇒  2G = 2S − (V − E + 2F − L).
+        let x = Self::characteristic(vertices, edges, faces, loops);
+        EulerLine {
+            vertices,
+            edges,
+            faces,
+            loops,
+            shells,
+            genus: shells as i64 - x.div_euclid(2),
+        }
+    }
+
+    const fn characteristic(vertices: usize, edges: usize, faces: usize, loops: usize) -> i64 {
+        vertices as i64 - edges as i64 + 2 * faces as i64 - loops as i64
+    }
+
+    /// What the counts leave once the genus is taken out: `0` for a line
+    /// that closes, `1` for one that cannot come from any genus.
+    pub const fn residual(&self) -> i64 {
+        Self::characteristic(self.vertices, self.edges, self.faces, self.loops).rem_euclid(2)
+    }
+
+    /// `true` when [`EulerLine::residual`] is zero.
+    pub const fn closes(&self) -> bool {
+        self.residual() == 0
+    }
+}
+
+impl fmt::Display for EulerLine {
+    /// `V/E/F/L/S g<genus> = <residual>`.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}/{}/{}/{}/{} g{} = {}",
+            self.vertices,
+            self.edges,
+            self.faces,
+            self.loops,
+            self.shells,
+            self.genus,
+            self.residual()
+        )
+    }
+}
+
 /// Every violation the checker found, in a deterministic order: by
 /// entity (kind, then id), then by invariant code, then by content. Two
 /// runs over the same model print the same report byte for byte.
@@ -24,13 +113,31 @@ use crate::violation::{Level, Violation};
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Report {
     violations: Vec<Violation>,
+    euler: Option<EulerLine>,
 }
 
 impl Report {
     /// A report holding `violations`, sorted into report order.
     pub fn new(mut violations: Vec<Violation>) -> Self {
         violations.sort_by(Self::order);
-        Report { violations }
+        Report {
+            violations,
+            euler: None,
+        }
+    }
+
+    /// The same report carrying `line` as its Euler–Poincaré line.
+    pub fn with_euler(mut self, line: EulerLine) -> Self {
+        self.euler = Some(line);
+        self
+    }
+
+    /// The body's Euler–Poincaré line, or `None` when the body did not
+    /// resolve and there were no counts to take. It is a line, never a
+    /// violation: a body whose line does not close still reports `is_ok`
+    /// unless a row was broken as well.
+    pub const fn euler(&self) -> Option<EulerLine> {
+        self.euler
     }
 
     /// `true` when nothing was violated.
@@ -71,6 +178,7 @@ impl Report {
                 .filter(|v| v.level() <= level)
                 .cloned()
                 .collect(),
+            euler: self.euler,
         }
     }
 

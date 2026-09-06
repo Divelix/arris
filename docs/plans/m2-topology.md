@@ -239,7 +239,7 @@ per-kind counts) accept them; only the raw API and tests build them.
   cylinder wall's `[0, 2π] × [0, h]` recovers the areas to 1e-12·scale,
   and of the Gauss volume integrand over the sample cylinder's faces
   `π·16·12` to 1e-9 relative.
-- [ ] Step 7 — Checker `Fast`, part 2: loops, faces, shells, bodies, the
+- [x] Step 7 — Checker `Fast`, part 2: loops, faces, shells, bodies, the
   Euler line. Rows L1–L4 (L4's winding through `region2`, one positive
   loop per connected component, holes negative and inside), F1–F2, S1–S4
   (S2 per body kind), B3, and `Report::euler()`. Tests: one violation
@@ -485,3 +485,23 @@ step, as for M1.
   joins consecutive pieces at the earlier piece's last point and closes
   the last onto the first, reporting the gap through `gaps()` instead of
   drawing it — L2 is where a gap is judged.
+- Step 7: three rows were reworded in 02 §Invariants (the drift test holds
+  the codes together; the wording is the plan's to move). **L2**'s
+  exception is not "a seam edge" but any jump of exactly one period in a
+  periodic parameter, which is what a seam *and* a closed edge whose
+  pcurve wraps the parameter both are; the bound is
+  `parametric_tolerance` scaled to the surface's speed, as E7's is.
+  **L4**'s "non-zero signed area" needed a bound that is the model's and
+  not a literal: a loop encloses nothing when its mean width — its area
+  over half its (u, v) perimeter — is at or below the parametric
+  tolerance there. **S2**'s "orientations pairing up" is stated for every
+  body kind, not `General` alone: as many forward uses as reversed, but
+  for an odd count, where exactly one is left over; a `Wire` body's shell
+  is left to B3. L1 and F1 report once per loop and per face
+  respectively, at the first break — every later one is its consequence.
+  `Report::euler()` is taken at both levels since it is linear in the
+  closure, and 02 §Euler–Poincaré now says the genus is derived and the
+  parity is the check. Six step-5 tests grew lines: the new rows are the
+  same faults read from the loop's, the face's and the shell's side (a
+  moved vertex opens a loop, a shifted pcurve gaps its junctions, a face
+  coarser than its edge is E5 *and* F2), and each names its full set.

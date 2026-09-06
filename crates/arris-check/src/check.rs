@@ -1,11 +1,12 @@
 //! `check`: the closure walk and the rows it evaluates.
 //!
 //! Rows implemented here: M1–M3, V1–V3 and E1–E7 (`docs/02-data-model.md`
-//! §Invariants); the loop, face, shell and body rows and the `Full` rows
-//! follow in `docs/plans/m2-topology.md` steps 7 and 8, and `level` selects
-//! nothing yet beyond what exists. Every row walks the body's closure in
-//! sorted id order and reports through `Report::new`, so the report is the
-//! same on every run and platform.
+//! §Invariants); the loop, face, shell and body rows are in
+//! `crate::topology` and the `Full` rows follow in
+//! `docs/plans/m2-topology.md` step 8, so `level` selects nothing yet
+//! beyond what exists. Every row walks the body's closure in sorted id
+//! order and reports through `Report::new`, so the report is the same on
+//! every run and platform.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -17,6 +18,7 @@ use arris_topo::{
 };
 
 use crate::report::Report;
+use crate::topology::euler_line;
 use crate::violation::{
     DegenerateFault, EndMismatch, Level, Quantity, Reference, SeamFault, ToleranceBound, Violation,
 };
@@ -89,24 +91,32 @@ pub fn check(model: &Model, body: Body, level: Level) -> Report {
     c.finiteness();
     c.vertex_rows();
     c.edge_rows();
-    let _ = level;
-    Report::new(c.violations)
+    c.face_rows();
+    c.shell_rows();
+    c.body_rows();
+    let line = euler_line(model, &c.closure);
+    let violations = c
+        .violations
+        .into_iter()
+        .filter(|v| v.level() <= level)
+        .collect();
+    Report::new(violations).with_euler(line)
 }
 
-struct Checker<'m> {
-    model: &'m Model,
-    precision: Precision,
-    body: Body,
-    closure: Closure,
+pub(crate) struct Checker<'m> {
+    pub(crate) model: &'m Model,
+    pub(crate) precision: Precision,
+    pub(crate) body: Body,
+    pub(crate) closure: Closure,
     /// Edge → its uses by the body's faces, in face creation order.
-    uses: BTreeMap<EdgeId, Vec<(CoedgeRef, Coedge)>>,
+    pub(crate) uses: BTreeMap<EdgeId, Vec<(CoedgeRef, Coedge)>>,
     /// Vertex → the body's edges that end at it, each once.
-    vertex_edges: BTreeMap<VertexId, Vec<EdgeId>>,
-    violations: Vec<Violation>,
+    pub(crate) vertex_edges: BTreeMap<VertexId, Vec<EdgeId>>,
+    pub(crate) violations: Vec<Violation>,
 }
 
 /// `(face, loop index, coedge index, coedge)` for every coedge of a face.
-fn coedges(face: &Face) -> impl Iterator<Item = (usize, usize, Coedge)> + '_ {
+pub(crate) fn coedges(face: &Face) -> impl Iterator<Item = (usize, usize, Coedge)> + '_ {
     face.loops().iter().enumerate().flat_map(|(li, l)| {
         l.coedges()
             .iter()
@@ -117,7 +127,7 @@ fn coedges(face: &Face) -> impl Iterator<Item = (usize, usize, Coedge)> + '_ {
 
 /// `n` parameters over `range`, both ends included; the midpoint alone
 /// when `n` is one.
-fn samples(range: Interval, n: usize) -> Vec<f64> {
+pub(crate) fn samples(range: Interval, n: usize) -> Vec<f64> {
     if n <= 1 {
         return vec![range.midpoint()];
     }
@@ -242,7 +252,7 @@ fn pcurve_non_finite(c: &Curve2) -> bool {
 }
 
 impl Checker<'_> {
-    fn push(&mut self, v: Violation) {
+    pub(crate) fn push(&mut self, v: Violation) {
         self.violations.push(v);
     }
 
@@ -818,7 +828,7 @@ impl Checker<'_> {
     /// (u, v) bound divided by the surface's speed in that direction, so
     /// it is one length everywhere; unscaled where a direction is singular
     /// to rounding against the other.
-    fn uv_bounds(&self, surface: &Surface, uv: Point2) -> [f64; 2] {
+    pub(crate) fn uv_bounds(&self, surface: &Surface, uv: Point2) -> [f64; 2] {
         let e = surface.eval(uv.x, uv.y);
         let speeds = [e.du.norm(), e.dv.norm()];
         let ptol = self.precision.parametric_tolerance;
