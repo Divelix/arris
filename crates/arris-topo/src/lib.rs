@@ -12,6 +12,7 @@
 #![warn(missing_docs)]
 
 mod arena;
+pub mod builder;
 pub mod entity;
 mod error;
 mod handle;
@@ -24,6 +25,7 @@ pub use arris_geom;
 pub use arris_math;
 
 pub use arena::CHUNK_SIZE;
+pub use builder::Builder;
 pub use error::{AnyId, NotFound, TopoError};
 pub use handle::{Body, Edge, Face, Shape, Shell, Vertex, WrongKind};
 pub use id::{

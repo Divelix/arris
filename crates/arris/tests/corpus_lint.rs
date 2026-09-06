@@ -10,7 +10,7 @@ use arris_debug::fixtures::{Kind, corpus, kind_of, lint, load};
 fn every_fixture_directory_is_clean() {
     let dirs = corpus();
     assert!(
-        dirs.len() >= 17,
+        dirs.len() >= 18,
         "expected the C1 corpus and the two geometry fixtures, found {} directories",
         dirs.len()
     );
@@ -37,6 +37,7 @@ fn every_row_of_the_roadmap_table_has_a_fixture() {
         "boolean/corner-cut",
         "boolean/flush-common",
         "boolean/disjoint-cut",
+        "boolean/frame-cut",
         "sweep/extrude-plate-with-hole",
         "sweep/revolve-tube",
         "sweep/revolve-quarter",

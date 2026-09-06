@@ -19,7 +19,11 @@ arris-geom.workspace = true
 thiserror.workspace = true
 serde = { workspace = true, optional = true }
 
+# The seeded property-test runner lives in `arris-debug`; the dev-dependency
+# cycle it makes is why the property tests are integration tests under
+# `tests/` (docs/01-architecture.md §Formats and tools).
 [dev-dependencies]
+arris-debug.workspace = true
 proptest.workspace = true
 serde_json.workspace = true
 

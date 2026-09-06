@@ -427,6 +427,75 @@ an ordinary edge with an ordinary 3D curve; only its two pcurves know it is
 a seam. This is the representation truck lacks and every seam-crossing
 algorithm quietly needs.
 
+### Euler operators
+
+Entities are immutable and Euler operators mutate; the two meet in
+`arris_topo::Builder`. A builder holds one body under construction as a
+staging area of vertices, edges and faces in tombstoned slots, edited by
+Mäntylä's ten operators (*An Introduction to Solid Modeling*, ch. 9,
+adapted to coedges and seams; ADR-0002) and frozen into the arena by
+`finish(&mut Model, BodyKind) -> Result<Built, BuildError>`, which
+appends every live slot in order inside a transaction and returns the
+body with the slot → id maps an operation's provenance is built from. The
+builder is the only way an operation makes topology; the raw insert and
+`import` are the other two paths into the arena, and neither is an
+operation's.
+
+| Operator | Makes / kills | Inverse |
+|---|---|---|
+| `mvfs(Seed)` | the first vertex, a face with one loop of no coedges at it, the shell | `kvfs()` |
+| `mev(at, Strut)` | a vertex and the edge to it, used twice in a row by the loop at `at` — `Forward` away, `Reversed` back | `kev(edge)` |
+| `mef(from, to, Split)` | an edge between two junctions of one loop and the face on its left: the edge `Forward` then the coedges from `to` around to `from`; the old loop keeps the rest after the edge `Reversed` | `kef(edge)` |
+| `mekr(from, to, Join)` | an edge between two loops of one face, joining them | `kemr(edge)` |
+| `kfmrh(kill, into)` | removes a one-loop face on `into`'s surface with the opposite orientation; its loop becomes a ring of `into`; genus + 1 | `mfkrh(face, ring)` |
+
+Every operator keeps `V − E + F − (L − F) − 2(S − G) = 0` (`counts()`;
+`G` is the builder's own count of handles), and every operator followed by
+its inverse restores the builder byte for byte (`dump()`): a kill leaves a
+tombstone the next make of that kind fills, most recently freed first,
+and loops are kept canonical — rotated to start at their lowest `(edge,
+orientation)` use, ordered within a face by that key, a loop without
+coedges first by its vertex — so the state is a function of the content
+alone. A kill returns the record its make takes, so undoing is a call.
+
+Positions, not vertices: an operator's place in a loop is `Position {
+face, loop_index, coedge_index }`, the junction before that coedge and
+the effective start vertex of it, because a vertex may stand at several
+junctions of one loop (a seam's, a closed edge's) and only the junction
+says which. `coedge_index` runs `0..=len`, `len` being the junction after
+the last coedge — the same vertex as `0`, the same insertion point for
+`mev`, and for `mef` the split that moves every coedge (`from = to +
+len`, from any junction) as opposed to none (`from = to`), which is how a
+closed edge splits off a cap on either side. `find_position(face, loop,
+vertex)` answers the unambiguous case and names every junction otherwise.
+
+Orientations inside the builder are *effective*: a use is walked as seen
+from outside the material with the face's outward normal up, and each
+face carries the orientation the shell will use it with (`Seed`,
+`Split`). `finish` stores a `Reversed` face's loop backwards with every
+use flipped, so every stored loop is counter-clockwise about its
+surface's normal (§Orientation) — the cylinder's bottom cap, used
+`Reversed`, stores its circle `Forward`. `kfmrh` needs the two faces on
+one `SurfaceId` with opposite orientations: two coplanar faces with
+opposing outward normals and nothing between them, which is what the
+floor of a pocket reaching the bottom face is, and the loop moves with
+its pcurves.
+
+Geometry is explicit and the builder never computes any of it: `mev`
+takes the new vertex's point, the edge's `CurveId` and range and the
+*two* pcurves of its two uses on the current face — a seam is exactly a
+strut whose two pcurves differ by the period, and only the caller knows
+which use it is drawing; `mef` takes the curve, the range, the new face's
+`SurfaceId` and one pcurve per side; every pcurve is `Option` and
+`set_pcurve(position, id)` gives or replaces one, since a coedge `mef`
+moves to a face on another surface keeps a pcurve id that is no longer
+its own, and a strut in a face it will leave has none worth giving.
+`finish` refuses a coedge without a pcurve, a loop without coedges, an
+edge not used exactly twice or twice the same way, a geometry id that
+does not resolve, and any kind but `Solid` — each a typed `BuildError`,
+and the model exactly as it was — and never evaluates geometry: the
+checker, above this crate, is where the finished body is proven.
+
 ### Adjacency and iteration
 
 The arena keeps derived indices, maintained on every append because

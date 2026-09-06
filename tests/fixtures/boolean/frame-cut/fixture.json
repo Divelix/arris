@@ -1,0 +1,23 @@
+{
+  "description": "box [0,0,0]–[40,30,10] minus box [10,10,−1]–[30,20,11]: a rectangular frame, genus 1, top and bottom with two loops each — M2 builds it by hand through the Euler operators, M4 by this recipe",
+  "steps": [
+    {"name": "plate", "op": "box", "min": [0, 0, 0], "max": [40, 30, 10]},
+    {"name": "window", "op": "box", "min": [10, 10, -1], "max": [30, 20, 11]},
+    {"name": "result", "op": "cut", "target": "plate", "tool": "window"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [5, 5, 5], "expect": "in"},
+    {"label": "outside", "point": [50, 15, 5], "expect": "out"},
+    {"label": "on_face", "point": [5, 5, 10], "expect": "on"},
+    {"label": "on_edge", "point": [10, 15, 10], "expect": "on"},
+    {"label": "in_window", "point": [20, 15, 5], "expect": "out"}
+  ],
+  "analytic": {
+    "volume": 10000,
+    "area": 4000,
+    "centroid": [20, 15, 5],
+    "counts": {"vertices": 16, "edges": 24, "faces": 10, "loops": 12, "shells": 1},
+    "genus": 1
+  }
+}

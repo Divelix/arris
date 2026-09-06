@@ -1,7 +1,7 @@
 //! Dev-facing tools of the Arris kernel: the deterministic text dump, the
 //! software rasteriser that renders a mesh to a PNG the agent can read, the
 //! samplers that turn a curve or a surface into polylines for it, the
-//! fixture loader and oracle helpers, and the property-test configuration
+//! fixture loader and the seam to the Open CASCADE oracle, and the property-test configuration
 //! and strategies.
 //!
 //! Guarantees: this is the only crate in the workspace that writes files,
@@ -14,6 +14,7 @@
 pub mod dump;
 pub mod fixtures;
 pub mod geom;
+pub mod oracle;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod prop;
 pub mod render;

@@ -271,7 +271,7 @@ per-kind counts) accept them; only the raw API and tests build them.
   and, for B1, a void shell outside its outer and two outer shells; a
   body with a `Nurbs` face pair reports it under `unchecked`, not as a
   violation.
-- [ ] Step 9 — ADR-0002, the builder and the Euler operators. `Builder`
+- [x] Step 9 — ADR-0002, the builder and the Euler operators. `Builder`
   with the ten operators and `finish` as in the design deltas; the
   fixture `boolean/frame-cut` (recipe, `expected.py` run, `selftest.py`
   green). Tests: every operator keeps the Euler line at zero (counts
@@ -376,12 +376,14 @@ layer check and the wasm build pass; CI green on `main`. Then tag `m2`
 Each with a recommendation; the human decides before `/work` reaches the
 step, as for M1.
 
-- `⚠ OPEN:` **Euler operators take explicit pcurves** (`mev` two, `mef`
-  one per side) rather than computing them from the curve and the faces'
-  surfaces. Recommendation: explicit — a seam's second pcurve is the
-  first shifted by the period and `pcurve_on` cannot know which use it
-  is building; the caller (a primitive now, the boolean in M4) always
-  knows. Human, by step 9.
+- **Decided (agent, 2026-09-06, step 9 — the human ran steps 9–13
+  non-interactively and delegated the open questions, so the
+  recommendation was taken): Euler operators take explicit pcurves**
+  (`mev` two, `mef` one per side, every one `Option`, `set_pcurve` for
+  the rest) rather than computing them from the curve and the faces'
+  surfaces — a seam's second pcurve is the first shifted by the period
+  and `pcurve_on` cannot know which use it is building; the caller (a
+  primitive now, the boolean in M4) always knows. ADR-0002.
 - `⚠ OPEN:` **Provenance origins become `Origin::{Entity, Role}`** so a
   primitive's entities are `Generated` from a role rather than from
   nothing, and a naming chain has a root. Recommendation: yes, with
@@ -505,6 +507,33 @@ step, as for M1.
   same faults read from the loop's, the face's and the shell's side (a
   moved vertex opens a loop, a shifted pcurve gaps its junctions, a face
   coarser than its edge is E5 *and* F2), and each names its full set.
+- Step 9: the builder is a value, `Builder::new(tolerance)`, and
+  `finish(&mut Model, BodyKind)` takes the model, rather than a builder
+  opened on a `&mut Model` — so a caller interleaves `add_curve` with the
+  operators instead of front-loading every geometry value, and the
+  transaction is the caller's (`finish` runs its own nested one, so a
+  refused finish appends nothing). `finish` returns `Built { body, shell,
+  vertices, edges, faces }` — the slot → id maps step 10's provenance
+  needs — not a bare `Body`. Every pcurve parameter is `Option<Curve2Id>`
+  with `Builder::set_pcurve` beside the operators: a strut a `mef` will
+  move to another face has no pcurve worth giving on the face it is made
+  in (a vertical strut in a horizontal face has none at all), and a
+  coedge `mef` moves keeps an id on the wrong surface until replaced, so
+  the sample frame gives every pcurve in one pass after the topology is
+  done. `finish` makes `Solid` only: Euler operators build closed
+  surfaces, so a sheet with a single-use edge is unreachable and the
+  `Sheet` allowance was dead code. The inverse property needed three
+  representation decisions the plan did not foresee — tombstoned slots
+  with a LIFO free list, loops in a canonical rotation and order, and a
+  `from = to + len` position for the split that moves a whole loop from
+  a junction other than its first — each found by the property test.
+  `kfmrh` requires one `SurfaceId` and opposite orientations on its two
+  faces (the pocket floor on the bottom's plane), which the sample frame
+  satisfies by creating the plug on the bottom's surface at `mef` time.
+  `arris_debug::oracle::compare` is the seam to `compare.py` (STEP under
+  `target/inspect/`, a typed `Mismatch` with the table, `Environment`
+  for a missing `uv`) that the step-4 test duplicated inline and step
+  13's runner will use; `sample::frame` is the `boolean/frame-cut` twin.
 - Step 8: `Report::unchecked` needed a second variant. B1's ray cast can
   fail the same way S5's face pair can — no closed form, this time for a
   line against the shell's surface — so `Unchecked` is

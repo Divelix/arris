@@ -12,3 +12,4 @@ here; the first ADR is the first decision taken *after* the seed.
 | # | Title | Status |
 |---|---|---|
 | [0001](0001-nalgebra-types-by-alias.md) | `arris-math` exposes `nalgebra`'s types by alias | accepted |
+| [0002](0002-euler-operators-explicit-pcurves-role-provenance.md) | Euler operators over a staging builder; explicit pcurves; provenance rooted in roles | accepted |

@@ -1,0 +1,1732 @@
+//! The builder and the Euler operators (`docs/02-data-model.md` §Euler
+//! operators, ADR-0002): the only way an operation makes topology.
+//!
+//! Entities in the arena are immutable and Euler operators mutate, so the
+//! two meet in a [`Builder`]: a staging area holding one body under
+//! construction, edited by Mäntylä's ten operators (*An Introduction to
+//! Solid Modeling*, ch. 9, adapted to coedges and seams), and frozen into
+//! the arena by [`Builder::finish`], which appends every entity in a
+//! deterministic order inside a transaction.
+//!
+//! What the builder guarantees: every operator keeps the Euler–Poincaré
+//! line at zero ([`Builder::counts`]); every operator has an inverse that
+//! restores the builder byte for byte ([`Builder::dump`]) — a killed slot
+//! is reused by the next make, loops are kept in a canonical rotation and
+//! order, so the state after `op` then `op⁻¹` is the state before; and
+//! `finish` refuses a body that is not closed as the kind asked for, a
+//! loop without coedges, a coedge without a pcurve, or a geometry id that
+//! does not resolve — each a typed [`BuildError`] — and then the model is
+//! exactly as it was.
+//!
+//! What it does not do: it never computes a pcurve and never evaluates
+//! geometry. Every pcurve is the caller's ([`Strut::pcurves`],
+//! [`Split::pcurves`], [`Builder::set_pcurve`]), since only the caller
+//! knows which use of a seam it is drawing; and the checker
+//! (`arris-check`, above this crate) is where the finished body is
+//! proven.
+//!
+//! Orientations inside the builder are *effective*: a [`Use`] is walked
+//! as seen from outside the material with the face's outward normal up,
+//! whatever the surface's own normal, and each [`StagedFace`] carries the
+//! orientation the shell will use it with. `finish` stores a loop of a
+//! `Reversed` face backwards with every use flipped, which is what
+//! `docs/02-data-model.md` §Orientation says a stored loop is.
+
+use core::fmt;
+use std::collections::BTreeMap;
+
+use arris_math::Point3;
+
+use crate::entity::{self, BodyKind, Coedge, EdgeGeometry, Loop};
+use crate::error::NotFound;
+use crate::handle::{self, Body};
+use crate::id::{Curve2Id, EdgeId, FaceId, ShellId, SurfaceId, VertexId};
+use crate::model::Model;
+use crate::orientation::Orientation;
+
+macro_rules! refs {
+    ($( $(#[$doc:meta])* $name:ident => $prefix:literal ),* $(,)?) => {$(
+        $(#[$doc])*
+        ///
+        /// A slot in the builder, not an arena id: the entity gets its
+        /// [`VertexId`]/[`EdgeId`]/[`FaceId`] from [`Builder::finish`],
+        /// which returns the map. Slots are reused by the next make after
+        /// a kill, most recently freed first.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+        pub struct $name(u32);
+
+        impl $name {
+            /// The reference to slot `index`. The operators mint the ones
+            /// that resolve; a test that needs a dangling one builds it here.
+            pub const fn new(index: u32) -> Self {
+                Self(index)
+            }
+
+            /// The slot index.
+            pub const fn index(self) -> u32 {
+                self.0
+            }
+        }
+
+        impl fmt::Display for $name {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                write!(f, "{}{}", $prefix, self.0)
+            }
+        }
+    )*};
+}
+
+refs! {
+    /// A vertex under construction.
+    VertexRef => "v",
+    /// An edge under construction.
+    EdgeRef => "e",
+    /// A face under construction.
+    FaceRef => "f",
+}
+
+/// A place in a loop: the junction before coedge `coedge_index` of loop
+/// `loop_index` of `face`, which is the effective start vertex of that
+/// coedge. `coedge_index` may equal the loop's length, naming the junction
+/// after its last coedge — the same vertex as index 0, and the same
+/// insertion point for [`Builder::mev`], but a different split for
+/// [`Builder::mef`]: the coedges from `to` up to `from` go to the new face,
+/// so `to = 0, from = n` moves them all and `to = from` moves none. For
+/// the full turn from any other junction `s`, `from` is `s + n` — the one
+/// place a position exceeds the length, and only as `mef`'s `from`.
+///
+/// Operators take positions rather than vertices because a vertex may
+/// occur several times in one loop — at a seam, at a closed edge — and
+/// only the position says which occurrence is meant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Position {
+    /// The face.
+    pub face: FaceRef,
+    /// Which loop of the face, in the builder's canonical order.
+    pub loop_index: usize,
+    /// Which junction of the loop, `0..=len`.
+    pub coedge_index: usize,
+}
+
+impl Position {
+    /// The junction before coedge `coedge_index` of loop `loop_index` of
+    /// `face`.
+    pub const fn new(face: FaceRef, loop_index: usize, coedge_index: usize) -> Self {
+        Position {
+            face,
+            loop_index,
+            coedge_index,
+        }
+    }
+}
+
+impl fmt::Display for Position {
+    /// `f3/0/2`: face, loop, coedge.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}/{}/{}", self.face, self.loop_index, self.coedge_index)
+    }
+}
+
+/// One use of an edge by a loop under construction: the edge, the
+/// *effective* direction it is walked in (as seen from outside the
+/// material), and the pcurve of this use on the face's surface, if the
+/// caller has given it yet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Use {
+    /// The edge.
+    pub edge: EdgeRef,
+    /// Along (`Forward`) or against (`Reversed`) the edge's curve, as seen
+    /// from outside with the face's outward normal up.
+    pub orientation: Orientation,
+    /// The pcurve of this use on the face's surface; `None` until
+    /// [`Builder::set_pcurve`] or the operator that made the use gave it.
+    /// [`Builder::finish`] refuses a `None`.
+    pub pcurve: Option<Curve2Id>,
+}
+
+impl Use {
+    const fn key(&self) -> (EdgeRef, Orientation) {
+        (self.edge, self.orientation)
+    }
+}
+
+/// What a loop sorts by within its face: loops without uses first, by
+/// their seed, then the rest by their first use — so a face's loop order
+/// is a function of its content alone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum LoopKey {
+    Seed(VertexRef),
+    Use(EdgeRef, Orientation),
+}
+
+impl fmt::Display for Use {
+    /// `+e3 p7`, or `+e3 ?` without a pcurve.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}{} ", self.orientation, self.edge)?;
+        match self.pcurve {
+            Some(p) => write!(f, "{p}"),
+            None => f.write_str("?"),
+        }
+    }
+}
+
+/// A vertex under construction.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct StagedVertex {
+    point: Point3,
+    tolerance: f64,
+}
+
+impl StagedVertex {
+    /// The point.
+    pub const fn point(&self) -> Point3 {
+        self.point
+    }
+
+    /// The tolerance it will be stored with.
+    pub const fn tolerance(&self) -> f64 {
+        self.tolerance
+    }
+}
+
+/// An edge under construction: its geometry and its two vertices, the
+/// start at the lower end of the range.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct StagedEdge {
+    geometry: EdgeGeometry,
+    start: VertexRef,
+    end: VertexRef,
+    tolerance: f64,
+}
+
+impl StagedEdge {
+    /// The geometry.
+    pub const fn geometry(&self) -> EdgeGeometry {
+        self.geometry
+    }
+
+    /// The vertex at the lower end of the range.
+    pub const fn start(&self) -> VertexRef {
+        self.start
+    }
+
+    /// The vertex at the upper end of the range.
+    pub const fn end(&self) -> VertexRef {
+        self.end
+    }
+
+    /// The tolerance it will be stored with.
+    pub const fn tolerance(&self) -> f64 {
+        self.tolerance
+    }
+}
+
+/// A loop under construction: its uses in effective walking order, kept
+/// rotated so that the use with the lowest `(edge, orientation)` comes
+/// first. A loop with no uses is one vertex, `seed` — what
+/// [`Builder::mvfs`] starts from and what a kill leaves behind; `finish`
+/// refuses it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StagedLoop {
+    uses: Vec<Use>,
+    seed: VertexRef,
+}
+
+impl StagedLoop {
+    /// The uses in walking order.
+    pub fn uses(&self) -> &[Use] {
+        &self.uses
+    }
+
+    /// The vertex a loop without uses stands at.
+    pub const fn seed(&self) -> VertexRef {
+        self.seed
+    }
+
+    fn key(&self) -> LoopKey {
+        match self.uses.first() {
+            Some(u) => LoopKey::Use(u.edge, u.orientation),
+            None => LoopKey::Seed(self.seed),
+        }
+    }
+
+    fn canonicalise(&mut self) {
+        let Some(at) = (0..self.uses.len()).min_by_key(|&i| self.uses[i].key()) else {
+            return;
+        };
+        self.uses.rotate_left(at);
+    }
+}
+
+/// A face under construction: its surface, the orientation the shell will
+/// use it with, and its loops in the builder's canonical order (loops
+/// without uses first, by their seed; then by their first use).
+#[derive(Debug, Clone, PartialEq)]
+pub struct StagedFace {
+    surface: SurfaceId,
+    orientation: Orientation,
+    loops: Vec<StagedLoop>,
+    tolerance: f64,
+}
+
+impl StagedFace {
+    /// The surface.
+    pub const fn surface(&self) -> SurfaceId {
+        self.surface
+    }
+
+    /// `Forward` when the surface's normal is the outward one, `Reversed`
+    /// when it points into the material.
+    pub const fn orientation(&self) -> Orientation {
+        self.orientation
+    }
+
+    /// The loops in canonical order.
+    pub fn loops(&self) -> &[StagedLoop] {
+        &self.loops
+    }
+
+    /// The tolerance it will be stored with.
+    pub const fn tolerance(&self) -> f64 {
+        self.tolerance
+    }
+
+    fn canonicalise(&mut self) {
+        for lp in &mut self.loops {
+            lp.canonicalise();
+        }
+        self.loops.sort_by_key(StagedLoop::key);
+    }
+}
+
+/// What [`Builder::mvfs`] makes and [`Builder::kvfs`] returns: the first
+/// vertex, and the surface and orientation of the first face.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Seed {
+    /// The vertex's point.
+    pub point: Point3,
+    /// The face's surface.
+    pub surface: SurfaceId,
+    /// The orientation the shell will use the face with.
+    pub orientation: Orientation,
+}
+
+/// What [`Builder::mev`] makes and [`Builder::kev`] returns: a new vertex
+/// and the edge from the position's vertex to it, used twice in a row by
+/// the loop — away and back.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Strut {
+    /// The new vertex's point.
+    pub point: Point3,
+    /// The edge's geometry; its range runs from the existing vertex to the
+    /// new one. Never `Degenerate`: a strut has two vertices.
+    pub geometry: EdgeGeometry,
+    /// The pcurves of the two uses on the face's surface: the `Forward`
+    /// use away from the position, then the `Reversed` use back. A seam is
+    /// exactly a strut whose two pcurves differ by the period.
+    pub pcurves: [Option<Curve2Id>; 2],
+}
+
+/// What [`Builder::mef`] makes and [`Builder::kef`] returns: an edge
+/// across a loop and the face on its left.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Split {
+    /// The edge's geometry; its range runs from `from`'s vertex to `to`'s.
+    /// `Degenerate` only when both are the same vertex.
+    pub geometry: EdgeGeometry,
+    /// The new face's surface.
+    pub surface: SurfaceId,
+    /// The orientation the shell will use the new face with.
+    pub orientation: Orientation,
+    /// The pcurves of the edge's two uses: `Forward` on the new face,
+    /// `Reversed` on the old one.
+    pub pcurves: [Option<Curve2Id>; 2],
+}
+
+/// What [`Builder::mekr`] makes and [`Builder::kemr`] returns: an edge
+/// joining two loops of one face into one.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Join {
+    /// The edge's geometry; its range runs from `from`'s vertex to `to`'s.
+    pub geometry: EdgeGeometry,
+    /// The pcurves of the two uses, both on the face's surface: `Forward`
+    /// from `from` to `to`, then `Reversed` back.
+    pub pcurves: [Option<Curve2Id>; 2],
+}
+
+/// The counts of a builder and the genus it has made with
+/// [`Builder::kfmrh`]: the Euler–Poincaré line
+/// `V − E + F − (L − F) − 2(S − G)`, which every operator keeps at zero.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Counts {
+    /// Live vertices.
+    pub vertices: usize,
+    /// Live edges.
+    pub edges: usize,
+    /// Live faces.
+    pub faces: usize,
+    /// Loops over those faces.
+    pub loops: usize,
+    /// One while a face exists, else zero: the builder makes one shell.
+    pub shells: usize,
+    /// Handles made by `kfmrh` and not yet removed by `mfkrh`.
+    pub genus: usize,
+}
+
+impl Counts {
+    /// `V − E + F − (L − F) − 2(S − G)`: zero for every state an operator
+    /// leaves behind.
+    pub const fn euler(&self) -> i64 {
+        let (v, e, f, l, s, g) = (
+            self.vertices as i64,
+            self.edges as i64,
+            self.faces as i64,
+            self.loops as i64,
+            self.shells as i64,
+            self.genus as i64,
+        );
+        v - e + f - (l - f) - 2 * (s - g)
+    }
+}
+
+impl fmt::Display for Counts {
+    /// `V/E/F/L/S g<G> = <euler>`.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}/{}/{}/{}/{} g{} = {}",
+            self.vertices,
+            self.edges,
+            self.faces,
+            self.loops,
+            self.shells,
+            self.genus,
+            self.euler()
+        )
+    }
+}
+
+/// What [`Builder::finish`] appended: the body, its shell, and the arena
+/// id of every slot — what an operation's provenance is built from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Built {
+    /// The body, `Forward`.
+    pub body: Body,
+    /// Its one shell.
+    pub shell: ShellId,
+    /// Slot → arena id, every live vertex.
+    pub vertices: BTreeMap<VertexRef, VertexId>,
+    /// Slot → arena id, every live edge.
+    pub edges: BTreeMap<EdgeRef, EdgeId>,
+    /// Slot → arena id, every live face.
+    pub faces: BTreeMap<FaceRef, FaceId>,
+}
+
+/// Why an operator or [`Builder::finish`] refused. Every variant names
+/// the slot, position or edge it is about; none is a panic.
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+pub enum BuildError {
+    /// `mvfs` on a builder that already holds a body.
+    #[error("the builder already holds a body; mvfs starts one from nothing")]
+    NotEmpty,
+    /// `finish` on a builder holding nothing.
+    #[error("the builder holds no face")]
+    Empty,
+    /// A vertex slot that is not live.
+    #[error("{0} is not a vertex of the builder")]
+    NoVertex(VertexRef),
+    /// An edge slot that is not live.
+    #[error("{0} is not an edge of the builder")]
+    NoEdge(EdgeRef),
+    /// A face slot that is not live.
+    #[error("{0} is not a face of the builder")]
+    NoFace(FaceRef),
+    /// A loop index past the face's loops.
+    #[error("{face} has no loop {loop_index}")]
+    NoLoop {
+        /// The face.
+        face: FaceRef,
+        /// The index asked for.
+        loop_index: usize,
+    },
+    /// A coedge index past the loop's junctions.
+    #[error("{position} is past the end of a loop of {len} coedge(s)")]
+    BadPosition {
+        /// The position.
+        position: Position,
+        /// The loop's length; `len` itself is the last valid junction.
+        len: usize,
+    },
+    /// `mef` needs both positions in one loop.
+    #[error("{from} and {to} are not in the same loop")]
+    NotOneLoop {
+        /// The first position.
+        from: Position,
+        /// The second.
+        to: Position,
+    },
+    /// `mekr` needs two loops of one face.
+    #[error("{from} and {to} are not two loops of one face")]
+    NotTwoLoops {
+        /// The first position.
+        from: Position,
+        /// The second.
+        to: Position,
+    },
+    /// The vertex is at several junctions of the loop; say which.
+    #[error("{vertex} is at junctions {positions:?} of loop {loop_index} of {face}")]
+    Ambiguous {
+        /// The vertex.
+        vertex: VertexRef,
+        /// The face.
+        face: FaceRef,
+        /// The loop.
+        loop_index: usize,
+        /// Every junction it is at.
+        positions: Vec<usize>,
+    },
+    /// The vertex is not on the loop.
+    #[error("{vertex} is not on loop {loop_index} of {face}")]
+    NotInLoop {
+        /// The vertex.
+        vertex: VertexRef,
+        /// The face.
+        face: FaceRef,
+        /// The loop.
+        loop_index: usize,
+    },
+    /// `kvfs` needs exactly the state `mvfs` makes.
+    #[error("kvfs needs one vertex, one face with one empty loop and nothing else")]
+    NotASeed,
+    /// `kev` needs an edge used twice in a row by one loop, away and back,
+    /// with distinct vertices.
+    #[error("{edge} is not a strut: its two uses are not consecutive in one loop")]
+    NotAStrut {
+        /// The edge.
+        edge: EdgeRef,
+    },
+    /// The vertex `kev` would kill is an end of another edge.
+    #[error("{vertex} is used by {other}")]
+    VertexInUse {
+        /// The vertex.
+        vertex: VertexRef,
+        /// The other edge.
+        other: EdgeRef,
+    },
+    /// The vertex `kev` would kill is the seed of an empty loop.
+    #[error("{vertex} seeds loop {loop_index} of {face}")]
+    VertexSeeds {
+        /// The vertex.
+        vertex: VertexRef,
+        /// The face.
+        face: FaceRef,
+        /// The loop.
+        loop_index: usize,
+    },
+    /// `kef` needs an edge used once by each of two faces.
+    #[error("{edge} does not separate two faces")]
+    NotSeparating {
+        /// The edge.
+        edge: EdgeRef,
+    },
+    /// `kemr` needs an edge used twice by one loop.
+    #[error("{edge} is not used twice by one loop")]
+    NotInOneLoop {
+        /// The edge.
+        edge: EdgeRef,
+    },
+    /// `kef` and `kfmrh` kill a face of one loop only.
+    #[error("{face} has {loops} loops; it must have one")]
+    Rings {
+        /// The face.
+        face: FaceRef,
+        /// How many loops it has.
+        loops: usize,
+    },
+    /// `mfkrh` needs a face with a ring to lift out.
+    #[error("{face} has no loop {ring} to make a face of, or it is the only one")]
+    NoRing {
+        /// The face.
+        face: FaceRef,
+        /// The index asked for.
+        ring: usize,
+    },
+    /// `kfmrh` needs two faces.
+    #[error("{face} cannot be joined to itself")]
+    OneFace {
+        /// The face.
+        face: FaceRef,
+    },
+    /// `kfmrh` joins two faces on one surface.
+    #[error("{kill} is on {kill_surface} and {into} on {into_surface}; kfmrh needs one surface")]
+    SurfaceMismatch {
+        /// The face to kill.
+        kill: FaceRef,
+        /// Its surface.
+        kill_surface: SurfaceId,
+        /// The face to keep.
+        into: FaceRef,
+        /// Its surface.
+        into_surface: SurfaceId,
+    },
+    /// `kfmrh` joins two faces whose outward normals oppose.
+    #[error("{kill} and {into} are used with the same orientation; a handle needs opposite ones")]
+    SameOrientation {
+        /// The face to kill.
+        kill: FaceRef,
+        /// The face to keep.
+        into: FaceRef,
+    },
+    /// `mfkrh` on a builder with no handle.
+    #[error("no handle to remove: the genus is zero")]
+    NoHandle,
+    /// `mev` with a degenerate edge.
+    #[error("a strut has two vertices and needs a curve; a degenerate edge has neither")]
+    DegenerateStrut,
+    /// A degenerate edge between two vertices.
+    #[error("a degenerate edge joins one vertex to itself, not {start} to {end}")]
+    DegenerateEnds {
+        /// The vertex at `from`.
+        start: VertexRef,
+        /// The vertex at `to`.
+        end: VertexRef,
+    },
+    /// `finish` makes solids: Euler operators build closed surfaces, and
+    /// no operation of cycle 1 returns another kind.
+    #[error("the builder makes a solid, not a {0} body")]
+    Kind(BodyKind),
+    /// A loop without coedges cannot be stored.
+    #[error("loop {loop_index} of {face} has no coedges")]
+    EmptyLoop {
+        /// The face.
+        face: FaceRef,
+        /// The loop.
+        loop_index: usize,
+    },
+    /// A coedge the caller never gave a pcurve.
+    #[error("the coedge at {position} has no pcurve")]
+    MissingPcurve {
+        /// The coedge.
+        position: Position,
+    },
+    /// An edge not used by exactly two coedges, which a solid needs. The
+    /// operators never make one; the check is the contract, stated.
+    #[error("{edge} is used by {uses} coedge(s); a solid needs two")]
+    EdgeUses {
+        /// The edge.
+        edge: EdgeRef,
+        /// Its uses.
+        uses: usize,
+    },
+    /// An edge used twice in the same effective direction.
+    #[error("{edge} is used twice in the same direction")]
+    SameDirection {
+        /// The edge.
+        edge: EdgeRef,
+    },
+    /// A geometry id a slot references does not resolve in the model.
+    #[error(transparent)]
+    NotFound(#[from] NotFound),
+}
+
+/// Tombstoned slots with a LIFO free list: a kill leaves a hole and the
+/// next make of the same kind fills the most recently freed one, so a
+/// kill undone by its make gives the slot back and a make undone by its
+/// kill leaves only a hole.
+#[derive(Debug, Clone)]
+struct Slots<T> {
+    items: Vec<Option<T>>,
+    free: Vec<u32>,
+}
+
+impl<T> Default for Slots<T> {
+    fn default() -> Self {
+        Slots {
+            items: Vec::new(),
+            free: Vec::new(),
+        }
+    }
+}
+
+impl<T> Slots<T> {
+    fn insert(&mut self, value: T) -> u32 {
+        if let Some(i) = self.free.pop() {
+            self.items[i as usize] = Some(value);
+            return i;
+        }
+        // Slots are addressed by `u32`, as the arena's are; running out is
+        // resource exhaustion, not a geometric condition.
+        let i = u32::try_from(self.items.len()).expect("the builder holds at most u32::MAX slots");
+        self.items.push(Some(value));
+        i
+    }
+
+    fn remove(&mut self, i: u32) -> Option<T> {
+        let value = self.items.get_mut(i as usize)?.take();
+        if value.is_some() {
+            self.free.push(i);
+        }
+        value
+    }
+
+    fn get(&self, i: u32) -> Option<&T> {
+        self.items.get(i as usize)?.as_ref()
+    }
+
+    fn get_mut(&mut self, i: u32) -> Option<&mut T> {
+        self.items.get_mut(i as usize)?.as_mut()
+    }
+
+    /// Live slots in index order.
+    fn iter(&self) -> impl Iterator<Item = (u32, &T)> {
+        self.items
+            .iter()
+            .enumerate()
+            .filter_map(|(i, v)| v.as_ref().map(|v| (i as u32, v)))
+    }
+
+    fn len(&self) -> usize {
+        self.items.iter().filter(|v| v.is_some()).count()
+    }
+
+    fn clear(&mut self) {
+        self.items.clear();
+        self.free.clear();
+    }
+}
+
+/// The uses from `from` up to but not including `to`, around the loop:
+/// nothing when they are equal, `uses[from..]` then `uses[..to]` when
+/// `from` is past `to`.
+fn around(uses: &[Use], from: usize, to: usize) -> Vec<Use> {
+    let n = uses.len();
+    let (from, to) = (from.min(n), to.min(n));
+    if from < to {
+        uses[from..to].to_vec()
+    } else if from > to {
+        let mut v = uses[from..].to_vec();
+        v.extend_from_slice(&uses[..to]);
+        v
+    } else {
+        Vec::new()
+    }
+}
+
+/// One body under construction, edited by the Euler operators and frozen
+/// into a [`Model`] by [`Builder::finish`]. Module docs for the
+/// guarantees.
+///
+/// The cylinder of `docs/02-data-model.md` §Seams, as the primitive
+/// builds it: a seed vertex on the bottom cap, the bottom circle as a
+/// closed edge splitting off the wall, the seam as a strut whose two
+/// pcurves differ by the period, the top circle splitting off the top
+/// cap.
+///
+/// ```
+/// use arris_topo::arris_geom::{Curve, Curve2, Surface};
+/// use arris_topo::arris_math::{Frame, Frame2, Interval, Point2, Point3, Vec2};
+/// use arris_topo::builder::{Builder, Position, Seed, Split, Strut};
+/// use arris_topo::entity::{BodyKind, EdgeGeometry};
+/// use arris_topo::{Model, Orientation};
+/// use core::f64::consts::TAU;
+///
+/// let mut m = Model::default();
+/// let (r, h) = (4.0, 12.0);
+/// let base = Frame::world();
+/// let top = base.with_origin(Point3::new(0.0, 0.0, h));
+/// let wall = m.add_surface(Surface::Cylinder { frame: base, radius: r });
+/// let bottom = m.add_surface(Surface::Plane { frame: base });
+/// let top_plane = m.add_surface(Surface::Plane { frame: top });
+/// let uv_line = |m: &mut Model, u, v, along_u: bool| m.add_curve2(Curve2::Line {
+///     origin: Point2::new(u, v),
+///     direction: if along_u { Vec2::x_axis() } else { Vec2::y_axis() },
+/// });
+/// let cap_circle = |m: &mut Model| m.add_curve2(Curve2::Circle { frame: Frame2::identity(), radius: r });
+///
+/// let mut b = Builder::new(m.precision().default_tolerance);
+/// let (v0, f_bottom) = b.mvfs(Seed { point: Point3::new(r, 0.0, 0.0), surface: bottom, orientation: Orientation::Reversed })?;
+/// let at = Position::new(f_bottom, 0, 0);
+/// let circle = m.add_curve(Curve::Circle { frame: base, radius: r });
+/// let (p_wall_bottom, p_cap_bottom) = (uv_line(&mut m, 0.0, 0.0, true), cap_circle(&mut m));
+/// let (_e_bottom, f_wall) = b.mef(at, at, Split {
+///     geometry: EdgeGeometry::Curve { curve: circle, range: Interval::TURN },
+///     surface: wall,
+///     orientation: Orientation::Forward,
+///     pcurves: [Some(p_wall_bottom), Some(p_cap_bottom)],
+/// })?;
+/// let seam = m.add_curve(Curve::Line { origin: Point3::new(r, 0.0, 0.0), direction: arris_topo::arris_math::Vec3::z_axis() });
+/// let (up, down) = (uv_line(&mut m, TAU, 0.0, false), uv_line(&mut m, 0.0, 0.0, false));
+/// let (v1, _e_seam) = b.mev(b.find_position(f_wall, 0, v0)?, Strut {
+///     point: Point3::new(r, 0.0, h),
+///     geometry: EdgeGeometry::Curve { curve: seam, range: Interval::new(0.0, h).unwrap() },
+///     pcurves: [Some(up), Some(down)],
+/// })?;
+/// let top_circle = m.add_curve(Curve::Circle { frame: top, radius: r });
+/// let (p_wall_top, p_cap_top) = (uv_line(&mut m, 0.0, h, true), cap_circle(&mut m));
+/// let at = b.find_position(f_wall, 0, v1)?;
+/// let (_e_top, _f_top) = b.mef(at, at, Split {
+///     geometry: EdgeGeometry::Curve { curve: top_circle, range: Interval::TURN },
+///     surface: top_plane,
+///     orientation: Orientation::Forward,
+///     pcurves: [Some(p_cap_top), Some(p_wall_top)],
+/// })?;
+/// assert_eq!(b.counts().to_string(), "2/3/3/3/1 g0 = 0");
+/// let built = b.finish(&mut m, BodyKind::Solid)?;
+/// assert_eq!(m.faces(built.body)?.len(), 3);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+#[derive(Debug, Clone)]
+pub struct Builder {
+    tolerance: f64,
+    vertices: Slots<StagedVertex>,
+    edges: Slots<StagedEdge>,
+    faces: Slots<StagedFace>,
+    genus: usize,
+}
+
+impl Builder {
+    /// An empty builder whose every entity will carry `tolerance` — a
+    /// primitive passes the model's `default_tolerance`.
+    pub fn new(tolerance: f64) -> Self {
+        Builder {
+            tolerance,
+            vertices: Slots::default(),
+            edges: Slots::default(),
+            faces: Slots::default(),
+            genus: 0,
+        }
+    }
+
+    /// The tolerance every entity is made with.
+    pub const fn tolerance(&self) -> f64 {
+        self.tolerance
+    }
+
+    /// `true` before `mvfs` and after `kvfs`.
+    pub fn is_empty(&self) -> bool {
+        self.faces.len() == 0 && self.edges.len() == 0 && self.vertices.len() == 0
+    }
+
+    /// The counts and the Euler line they make.
+    pub fn counts(&self) -> Counts {
+        let loops = self.faces.iter().map(|(_, f)| f.loops.len()).sum();
+        let faces = self.faces.len();
+        Counts {
+            vertices: self.vertices.len(),
+            edges: self.edges.len(),
+            faces,
+            loops,
+            shells: usize::from(faces > 0),
+            genus: self.genus,
+        }
+    }
+
+    /// The vertex under `v`. Errors: the slot is not live.
+    pub fn vertex(&self, v: VertexRef) -> Result<&StagedVertex, BuildError> {
+        self.vertices.get(v.0).ok_or(BuildError::NoVertex(v))
+    }
+
+    /// The edge under `e`. Errors: the slot is not live.
+    pub fn edge(&self, e: EdgeRef) -> Result<&StagedEdge, BuildError> {
+        self.edges.get(e.0).ok_or(BuildError::NoEdge(e))
+    }
+
+    /// The face under `f`. Errors: the slot is not live.
+    pub fn face(&self, f: FaceRef) -> Result<&StagedFace, BuildError> {
+        self.faces.get(f.0).ok_or(BuildError::NoFace(f))
+    }
+
+    /// Every live vertex, in slot order.
+    pub fn vertices(&self) -> impl Iterator<Item = (VertexRef, &StagedVertex)> {
+        self.vertices.iter().map(|(i, v)| (VertexRef(i), v))
+    }
+
+    /// Every live edge, in slot order.
+    pub fn edges(&self) -> impl Iterator<Item = (EdgeRef, &StagedEdge)> {
+        self.edges.iter().map(|(i, e)| (EdgeRef(i), e))
+    }
+
+    /// Every live face, in slot order.
+    pub fn faces(&self) -> impl Iterator<Item = (FaceRef, &StagedFace)> {
+        self.faces.iter().map(|(i, f)| (FaceRef(i), f))
+    }
+
+    fn face_mut(&mut self, f: FaceRef) -> Result<&mut StagedFace, BuildError> {
+        self.faces.get_mut(f.0).ok_or(BuildError::NoFace(f))
+    }
+
+    fn loop_ref(&self, f: FaceRef, loop_index: usize) -> Result<&StagedLoop, BuildError> {
+        self.face(f)?
+            .loops
+            .get(loop_index)
+            .ok_or(BuildError::NoLoop {
+                face: f,
+                loop_index,
+            })
+    }
+
+    fn loop_mut(&mut self, f: FaceRef, loop_index: usize) -> Result<&mut StagedLoop, BuildError> {
+        self.face_mut(f)?
+            .loops
+            .get_mut(loop_index)
+            .ok_or(BuildError::NoLoop {
+                face: f,
+                loop_index,
+            })
+    }
+
+    /// The effective start vertex of `u`.
+    fn use_start(&self, u: &Use) -> Result<VertexRef, BuildError> {
+        let e = self.edge(u.edge)?;
+        Ok(match u.orientation {
+            Orientation::Forward => e.start,
+            Orientation::Reversed => e.end,
+        })
+    }
+
+    /// The vertex at a junction: the effective start of the coedge there,
+    /// or the seed of a loop without coedges. Errors: the position does
+    /// not resolve or is past the loop's last junction.
+    pub fn vertex_at(&self, at: Position) -> Result<VertexRef, BuildError> {
+        let lp = self.loop_ref(at.face, at.loop_index)?;
+        let n = lp.uses.len();
+        if at.coedge_index > n {
+            return Err(BuildError::BadPosition {
+                position: at,
+                len: n,
+            });
+        }
+        if n == 0 {
+            return Ok(lp.seed);
+        }
+        self.use_start(&lp.uses[at.coedge_index % n])
+    }
+
+    /// The one junction of the loop where `vertex` stands. Errors: it is
+    /// at none, or at several (a seam vertex, a closed edge's vertex) —
+    /// then the caller says which through [`Builder::vertex_at`].
+    pub fn find_position(
+        &self,
+        face: FaceRef,
+        loop_index: usize,
+        vertex: VertexRef,
+    ) -> Result<Position, BuildError> {
+        let lp = self.loop_ref(face, loop_index)?;
+        let n = lp.uses.len();
+        let mut positions = Vec::new();
+        if n == 0 {
+            if lp.seed == vertex {
+                positions.push(0);
+            }
+        } else {
+            for (i, u) in lp.uses.iter().enumerate() {
+                if self.use_start(u)? == vertex {
+                    positions.push(i);
+                }
+            }
+        }
+        match positions.as_slice() {
+            [i] => Ok(Position::new(face, loop_index, *i)),
+            [] => Err(BuildError::NotInLoop {
+                vertex,
+                face,
+                loop_index,
+            }),
+            _ => Err(BuildError::Ambiguous {
+                vertex,
+                face,
+                loop_index,
+                positions,
+            }),
+        }
+    }
+
+    /// Every use of `e`: `(face, loop, coedge, orientation)`, in face slot
+    /// order.
+    fn uses_of(&self, e: EdgeRef) -> Vec<(FaceRef, usize, usize, Orientation)> {
+        let mut out = Vec::new();
+        for (fi, face) in self.faces.iter() {
+            for (li, lp) in face.loops.iter().enumerate() {
+                for (ci, u) in lp.uses.iter().enumerate() {
+                    if u.edge == e {
+                        out.push((FaceRef(fi), li, ci, u.orientation));
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// Where the use `(edge, orientation)` is in `f`, after
+    /// canonicalisation.
+    fn locate(&self, f: FaceRef, key: (EdgeRef, Orientation)) -> Option<(usize, usize)> {
+        let face = self.faces.get(f.0)?;
+        for (li, lp) in face.loops.iter().enumerate() {
+            if let Some(ci) = lp.uses.iter().position(|u| u.key() == key) {
+                return Some((li, ci));
+            }
+        }
+        None
+    }
+
+    /// The index of the loop of `f` that has no uses and stands at `seed`.
+    fn empty_loop(&self, f: FaceRef, seed: VertexRef) -> Option<usize> {
+        self.faces
+            .get(f.0)?
+            .loops
+            .iter()
+            .position(|lp| lp.uses.is_empty() && lp.seed == seed)
+    }
+
+    fn canonicalise(&mut self, f: FaceRef) {
+        if let Some(face) = self.faces.get_mut(f.0) {
+            face.canonicalise();
+        }
+    }
+
+    /// The position of the use `(edge, orientation)` in `f`, or of the
+    /// empty loop at `seed` when there is no such use. Both exist by
+    /// construction after the kills that call this.
+    fn position_after(
+        &self,
+        f: FaceRef,
+        key: Option<(EdgeRef, Orientation)>,
+        seed: VertexRef,
+    ) -> Position {
+        let (li, ci) = key
+            .and_then(|k| self.locate(f, k))
+            .or_else(|| self.empty_loop(f, seed).map(|li| (li, 0)))
+            .unwrap_or((0, 0));
+        Position::new(f, li, ci)
+    }
+
+    /// **mvfs** — make vertex, face, shell: the first vertex of a body, a
+    /// face with one loop of no coedges standing at it, and the shell.
+    /// Returns the vertex and the face; the loop is `Position::new(face,
+    /// 0, 0)`. Errors: the builder already holds a body.
+    pub fn mvfs(&mut self, seed: Seed) -> Result<(VertexRef, FaceRef), BuildError> {
+        if !self.is_empty() {
+            return Err(BuildError::NotEmpty);
+        }
+        let v = VertexRef(self.vertices.insert(StagedVertex {
+            point: seed.point,
+            tolerance: self.tolerance,
+        }));
+        let f = FaceRef(self.faces.insert(StagedFace {
+            surface: seed.surface,
+            orientation: seed.orientation,
+            loops: vec![StagedLoop {
+                uses: Vec::new(),
+                seed: v,
+            }],
+            tolerance: self.tolerance,
+        }));
+        Ok((v, f))
+    }
+
+    /// **kvfs** — kill vertex, face, shell: the inverse of [`Builder::mvfs`],
+    /// leaving the builder empty. Errors: the builder holds anything but
+    /// one vertex and one face of one loop of no coedges.
+    pub fn kvfs(&mut self) -> Result<Seed, BuildError> {
+        let seed = match (
+            self.vertices.iter().next(),
+            self.faces.iter().next(),
+            self.vertices.len(),
+            self.edges.len(),
+            self.faces.len(),
+        ) {
+            (Some((_, v)), Some((_, f)), 1, 0, 1)
+                if f.loops.len() == 1 && f.loops[0].uses.is_empty() =>
+            {
+                Seed {
+                    point: v.point,
+                    surface: f.surface,
+                    orientation: f.orientation,
+                }
+            }
+            _ => return Err(BuildError::NotASeed),
+        };
+        self.vertices.clear();
+        self.edges.clear();
+        self.faces.clear();
+        self.genus = 0;
+        Ok(seed)
+    }
+
+    /// **mev** — make edge, vertex: a new vertex and the edge from the
+    /// vertex at `at` to it, inserted at `at` as two consecutive uses —
+    /// `Forward` away, `Reversed` back. Returns the vertex and the edge.
+    /// Errors: `at` does not resolve; the strut is degenerate.
+    pub fn mev(&mut self, at: Position, strut: Strut) -> Result<(VertexRef, EdgeRef), BuildError> {
+        if matches!(strut.geometry, EdgeGeometry::Degenerate { .. }) {
+            return Err(BuildError::DegenerateStrut);
+        }
+        let start = self.vertex_at(at)?;
+        let v = VertexRef(self.vertices.insert(StagedVertex {
+            point: strut.point,
+            tolerance: self.tolerance,
+        }));
+        let e = EdgeRef(self.edges.insert(StagedEdge {
+            geometry: strut.geometry,
+            start,
+            end: v,
+            tolerance: self.tolerance,
+        }));
+        let lp = self.loop_mut(at.face, at.loop_index)?;
+        let i = at.coedge_index.min(lp.uses.len());
+        lp.uses.splice(
+            i..i,
+            [
+                Use {
+                    edge: e,
+                    orientation: Orientation::Forward,
+                    pcurve: strut.pcurves[0],
+                },
+                Use {
+                    edge: e,
+                    orientation: Orientation::Reversed,
+                    pcurve: strut.pcurves[1],
+                },
+            ],
+        );
+        self.canonicalise(at.face);
+        Ok((v, e))
+    }
+
+    /// **kev** — kill edge, vertex: the inverse of [`Builder::mev`]. The
+    /// edge must be a strut — used twice in a row by one loop, `Forward`
+    /// then `Reversed` — and its end vertex on nothing else; both are
+    /// removed. Returns the position and the strut that remake them.
+    /// Errors: not a strut; the end vertex is used by another edge or
+    /// seeds an empty loop.
+    pub fn kev(&mut self, edge: EdgeRef) -> Result<(Position, Strut), BuildError> {
+        let e = *self.edge(edge)?;
+        let uses = self.uses_of(edge);
+        let (f, li, i) = match uses.as_slice() {
+            [
+                (fa, la, i, Orientation::Forward),
+                (fb, lb, j, Orientation::Reversed),
+            ]
+            | [
+                (fb, lb, j, Orientation::Reversed),
+                (fa, la, i, Orientation::Forward),
+            ] if fa == fb && la == lb => {
+                let n = self.loop_ref(*fa, *la)?.uses.len();
+                if (*i + 1) % n != *j || e.start == e.end {
+                    return Err(BuildError::NotAStrut { edge });
+                }
+                (*fa, *la, *i)
+            }
+            _ => return Err(BuildError::NotAStrut { edge }),
+        };
+        let tip = e.end;
+        for (k, other) in self.edges.iter() {
+            if k != edge.0 && (other.start == tip || other.end == tip) {
+                return Err(BuildError::VertexInUse {
+                    vertex: tip,
+                    other: EdgeRef(k),
+                });
+            }
+        }
+        for (fi, face) in self.faces.iter() {
+            for (l, lp) in face.loops.iter().enumerate() {
+                if lp.uses.is_empty() && lp.seed == tip {
+                    return Err(BuildError::VertexSeeds {
+                        vertex: tip,
+                        face: FaceRef(fi),
+                        loop_index: l,
+                    });
+                }
+            }
+        }
+        let point = self.vertex(tip)?.point;
+        let lp = self.loop_mut(f, li)?;
+        let n = lp.uses.len();
+        let j = (i + 1) % n;
+        let following = (n > 2).then(|| lp.uses[(i + 2) % n].key());
+        let (p0, p1) = (lp.uses[i].pcurve, lp.uses[j].pcurve);
+        let (first, second) = if j > i { (j, i) } else { (i, j) };
+        lp.uses.remove(first);
+        lp.uses.remove(second);
+        if lp.uses.is_empty() {
+            lp.seed = e.start;
+        }
+        self.vertices.remove(tip.0);
+        self.edges.remove(edge.0);
+        self.canonicalise(f);
+        let at = self.position_after(f, following, e.start);
+        Ok((
+            at,
+            Strut {
+                point,
+                geometry: e.geometry,
+                pcurves: [p0, p1],
+            },
+        ))
+    }
+
+    /// **mef** — make edge, face: an edge from the vertex at `from` to the
+    /// vertex at `to`, both junctions of one loop, splitting it. The new
+    /// face is on the edge's left: its loop is the edge `Forward` then the
+    /// coedges from `to` around to `from`; the old loop keeps the rest
+    /// after the edge `Reversed`. With `from == to` the new face is the
+    /// edge alone (a closed edge splitting off a cap); with `from = to +
+    /// len` it takes every coedge, the old face keeping the edge alone.
+    /// Coedges that move keep their pcurve ids, which are on the old
+    /// surface — [`Builder::set_pcurve`] is the caller's next call unless
+    /// the surfaces are one. Returns the edge and the new face. Errors:
+    /// the positions are not in one loop; `from` is past the loop and not
+    /// `to + len`; a degenerate edge between two vertices.
+    pub fn mef(
+        &mut self,
+        from: Position,
+        to: Position,
+        split: Split,
+    ) -> Result<(EdgeRef, FaceRef), BuildError> {
+        if from.face != to.face || from.loop_index != to.loop_index {
+            return Err(BuildError::NotOneLoop { from, to });
+        }
+        let n = self.loop_ref(from.face, from.loop_index)?.uses.len();
+        let (a, b) = (from.coedge_index, to.coedge_index);
+        let full_turn = n > 0 && a == b + n;
+        if a > n && !full_turn {
+            return Err(BuildError::BadPosition {
+                position: from,
+                len: n,
+            });
+        }
+        let end = self.vertex_at(to)?;
+        let start = if full_turn {
+            end
+        } else {
+            self.vertex_at(from)?
+        };
+        if matches!(split.geometry, EdgeGeometry::Degenerate { .. }) && start != end {
+            return Err(BuildError::DegenerateEnds { start, end });
+        }
+        let e = EdgeRef(self.edges.insert(StagedEdge {
+            geometry: split.geometry,
+            start,
+            end,
+            tolerance: self.tolerance,
+        }));
+        let tolerance = self.tolerance;
+        let lp = self.loop_mut(from.face, from.loop_index)?;
+        let mut new_uses = vec![Use {
+            edge: e,
+            orientation: Orientation::Forward,
+            pcurve: split.pcurves[0],
+        }];
+        let mut old_uses = vec![Use {
+            edge: e,
+            orientation: Orientation::Reversed,
+            pcurve: split.pcurves[1],
+        }];
+        if full_turn {
+            // Every coedge moves, the edge going in at the junction.
+            let b = b.min(n);
+            new_uses.extend_from_slice(&lp.uses[b..]);
+            new_uses.extend_from_slice(&lp.uses[..b]);
+        } else if a == b {
+            // Every coedge stays, the edge going in at the junction.
+            let a = a.min(n);
+            old_uses.extend_from_slice(&lp.uses[a..]);
+            old_uses.extend_from_slice(&lp.uses[..a]);
+        } else {
+            new_uses.extend(around(&lp.uses, b, a));
+            old_uses.extend(around(&lp.uses, a, b));
+        }
+        lp.uses = old_uses;
+        let f = FaceRef(self.faces.insert(StagedFace {
+            surface: split.surface,
+            orientation: split.orientation,
+            loops: vec![StagedLoop {
+                uses: new_uses,
+                seed: end,
+            }],
+            tolerance,
+        }));
+        self.canonicalise(from.face);
+        self.canonicalise(f);
+        Ok((e, f))
+    }
+
+    /// **kef** — kill edge, face: the inverse of [`Builder::mef`]. The
+    /// edge must be used once by each of two faces; the face on its left
+    /// (the `Forward` use), which must have one loop, is removed and its
+    /// other coedges take the edge's place in the other face's loop.
+    /// Returns the two positions and the split that remake them. Errors:
+    /// the edge does not separate two faces; the face to kill has rings.
+    pub fn kef(&mut self, edge: EdgeRef) -> Result<(Position, Position, Split), BuildError> {
+        let e = *self.edge(edge)?;
+        let uses = self.uses_of(edge);
+        let ((fa, la, i), (fb, lb, j)) = match uses.as_slice() {
+            [
+                (fa, la, i, Orientation::Forward),
+                (fb, lb, j, Orientation::Reversed),
+            ]
+            | [
+                (fb, lb, j, Orientation::Reversed),
+                (fa, la, i, Orientation::Forward),
+            ] if fa != fb => ((*fa, *la, *i), (*fb, *lb, *j)),
+            _ => return Err(BuildError::NotSeparating { edge }),
+        };
+        let loops = self.face(fa)?.loops.len();
+        if loops != 1 {
+            return Err(BuildError::Rings { face: fa, loops });
+        }
+        let Some(killed) = self.faces.remove(fa.0) else {
+            return Err(BuildError::NoFace(fa));
+        };
+        let mut spliced = killed.loops[la].uses.clone();
+        spliced.rotate_left(i);
+        let plus = spliced.remove(0);
+        let first_spliced = spliced.first().map(Use::key);
+        let count = spliced.len();
+        let lp = self.loop_mut(fb, lb)?;
+        let n = lp.uses.len();
+        let minus = lp.uses[j];
+        let following = (n > 1).then(|| lp.uses[(j + 1) % n].key());
+        lp.uses.splice(j..=j, spliced);
+        if lp.uses.is_empty() {
+            lp.seed = e.start;
+        }
+        self.edges.remove(edge.0);
+        self.canonicalise(fb);
+        let to = self.position_after(fb, first_spliced.or(following), e.start);
+        let n = self.loop_ref(fb, to.loop_index)?.uses.len();
+        let mut from = to;
+        if first_spliced.is_some() {
+            if count == n {
+                // The spliced block is the whole loop: `from = to + n` is
+                // the split that moves every coedge back from there.
+                from.coedge_index = to.coedge_index + n;
+            } else {
+                from.coedge_index = (to.coedge_index + count) % n;
+            }
+        }
+        Ok((
+            from,
+            to,
+            Split {
+                geometry: e.geometry,
+                surface: killed.surface,
+                orientation: killed.orientation,
+                pcurves: [plus.pcurve, minus.pcurve],
+            },
+        ))
+    }
+
+    /// **mekr** — make edge, kill ring: an edge from the vertex at `from`
+    /// to the vertex at `to`, junctions of two loops of one face, joining
+    /// them into one loop — `from`'s loop up to `from`, the edge
+    /// `Forward`, all of `to`'s loop from `to` around, the edge
+    /// `Reversed`, the rest of `from`'s loop. Returns the edge. Errors: the
+    /// positions are not two loops of one face; a degenerate edge between
+    /// two vertices.
+    pub fn mekr(
+        &mut self,
+        from: Position,
+        to: Position,
+        join: Join,
+    ) -> Result<EdgeRef, BuildError> {
+        if from.face != to.face || from.loop_index == to.loop_index {
+            return Err(BuildError::NotTwoLoops { from, to });
+        }
+        let start = self.vertex_at(from)?;
+        let end = self.vertex_at(to)?;
+        if matches!(join.geometry, EdgeGeometry::Degenerate { .. }) && start != end {
+            return Err(BuildError::DegenerateEnds { start, end });
+        }
+        let e = EdgeRef(self.edges.insert(StagedEdge {
+            geometry: join.geometry,
+            start,
+            end,
+            tolerance: self.tolerance,
+        }));
+        let face = self.face_mut(from.face)?;
+        let ring = face.loops.remove(to.loop_index);
+        let la = if to.loop_index < from.loop_index {
+            from.loop_index - 1
+        } else {
+            from.loop_index
+        };
+        let lp = &mut face.loops[la];
+        let a = from.coedge_index.min(lp.uses.len());
+        let b = to.coedge_index.min(ring.uses.len());
+        let mut merged = lp.uses[..a].to_vec();
+        merged.push(Use {
+            edge: e,
+            orientation: Orientation::Forward,
+            pcurve: join.pcurves[0],
+        });
+        merged.extend_from_slice(&ring.uses[b..]);
+        merged.extend_from_slice(&ring.uses[..b]);
+        merged.push(Use {
+            edge: e,
+            orientation: Orientation::Reversed,
+            pcurve: join.pcurves[1],
+        });
+        merged.extend_from_slice(&lp.uses[a..]);
+        lp.uses = merged;
+        self.canonicalise(from.face);
+        Ok(e)
+    }
+
+    /// **kemr** — kill edge, make ring: the inverse of [`Builder::mekr`].
+    /// The edge must be used twice by one loop; removing it splits the
+    /// loop at its two uses, the coedges between the `Forward` and the
+    /// `Reversed` use becoming a second loop of the face (a ring, possibly
+    /// a lone vertex). Returns the two positions and the join that remake
+    /// them. Errors: the edge is not used twice by one loop.
+    pub fn kemr(&mut self, edge: EdgeRef) -> Result<(Position, Position, Join), BuildError> {
+        let e = *self.edge(edge)?;
+        let uses = self.uses_of(edge);
+        let (f, li, i, j) = match uses.as_slice() {
+            [
+                (fa, la, i, Orientation::Forward),
+                (fb, lb, j, Orientation::Reversed),
+            ]
+            | [
+                (fb, lb, j, Orientation::Reversed),
+                (fa, la, i, Orientation::Forward),
+            ] if fa == fb && la == lb => (*fa, *la, *i, *j),
+            _ => return Err(BuildError::NotInOneLoop { edge }),
+        };
+        let lp = self.loop_mut(f, li)?;
+        let n = lp.uses.len();
+        let (plus, minus) = (lp.uses[i], lp.uses[j]);
+        let ring = around(&lp.uses, (i + 1) % n, j);
+        let rest = around(&lp.uses, (j + 1) % n, i);
+        let (ring_first, rest_first) = (ring.first().map(Use::key), rest.first().map(Use::key));
+        lp.uses = rest;
+        if lp.uses.is_empty() {
+            lp.seed = e.start;
+        }
+        self.face_mut(f)?.loops.push(StagedLoop {
+            uses: ring,
+            seed: e.end,
+        });
+        self.edges.remove(edge.0);
+        self.canonicalise(f);
+        let from = self.position_after(f, rest_first, e.start);
+        let to = self.position_after(f, ring_first, e.end);
+        Ok((
+            from,
+            to,
+            Join {
+                geometry: e.geometry,
+                pcurves: [plus.pcurve, minus.pcurve],
+            },
+        ))
+    }
+
+    /// **kfmrh** — kill face, make ring, hole: `kill`, a face of one loop
+    /// on the same surface as `into` and used with the opposite
+    /// orientation (two coplanar faces with opposing outward normals and
+    /// nothing between them), is removed and its loop becomes a ring of
+    /// `into`, keeping its uses and pcurves; the body gains a handle.
+    /// Returns the ring's index in `into`. Errors: the faces are one; the
+    /// surfaces or orientations do not match; `kill` has rings.
+    pub fn kfmrh(&mut self, kill: FaceRef, into: FaceRef) -> Result<usize, BuildError> {
+        let k = self.face(kill)?;
+        let t = self.face(into)?;
+        if kill == into {
+            return Err(BuildError::OneFace { face: kill });
+        }
+        if k.surface != t.surface {
+            return Err(BuildError::SurfaceMismatch {
+                kill,
+                kill_surface: k.surface,
+                into,
+                into_surface: t.surface,
+            });
+        }
+        if k.orientation == t.orientation {
+            return Err(BuildError::SameOrientation { kill, into });
+        }
+        if k.loops.len() != 1 {
+            return Err(BuildError::Rings {
+                face: kill,
+                loops: k.loops.len(),
+            });
+        }
+        let Some(killed) = self.faces.remove(kill.0) else {
+            return Err(BuildError::NoFace(kill));
+        };
+        let ring = killed.loops.into_iter().next().ok_or(BuildError::Rings {
+            face: kill,
+            loops: 0,
+        })?;
+        let key = ring.uses.first().map(Use::key);
+        let seed = ring.seed;
+        self.face_mut(into)?.loops.push(ring);
+        self.genus += 1;
+        self.canonicalise(into);
+        Ok(self.position_after(into, key, seed).loop_index)
+    }
+
+    /// **mfkrh** — make face, kill ring, hole: the inverse of
+    /// [`Builder::kfmrh`]. Loop `ring` of `face` is lifted out as the one
+    /// loop of a new face on the same surface with the opposite
+    /// orientation; the body loses a handle. Returns the new face. Errors:
+    /// `face` has no such ring or no other loop; the genus is zero.
+    pub fn mfkrh(&mut self, face: FaceRef, ring: usize) -> Result<FaceRef, BuildError> {
+        let f = self.face(face)?;
+        if f.loops.len() < 2 || ring >= f.loops.len() {
+            return Err(BuildError::NoRing { face, ring });
+        }
+        if self.genus == 0 {
+            return Err(BuildError::NoHandle);
+        }
+        let (surface, orientation, tolerance) = (f.surface, f.orientation, f.tolerance);
+        let lifted = self.face_mut(face)?.loops.remove(ring);
+        let new = FaceRef(self.faces.insert(StagedFace {
+            surface,
+            orientation: orientation.flipped(),
+            loops: vec![lifted],
+            tolerance,
+        }));
+        self.genus -= 1;
+        self.canonicalise(face);
+        self.canonicalise(new);
+        Ok(new)
+    }
+
+    /// Gives the coedge at `at` its pcurve on the face's surface,
+    /// returning the previous one. Errors: `at` does not name a coedge.
+    pub fn set_pcurve(
+        &mut self,
+        at: Position,
+        pcurve: Curve2Id,
+    ) -> Result<Option<Curve2Id>, BuildError> {
+        let lp = self.loop_mut(at.face, at.loop_index)?;
+        let n = lp.uses.len();
+        let Some(u) = lp.uses.get_mut(at.coedge_index) else {
+            return Err(BuildError::BadPosition {
+                position: at,
+                len: n,
+            });
+        };
+        Ok(u.pcurve.replace(pcurve))
+    }
+
+    /// The builder's state as text: every live slot in order with its
+    /// geometry ids, every loop's uses, the genus and the counts line.
+    /// Identical for two builders that went through the same calls, and
+    /// restored byte for byte by an operator's inverse.
+    pub fn dump(&self) -> String {
+        use core::fmt::Write as _;
+        let mut out = String::new();
+        let _ = writeln!(
+            out,
+            "builder tolerance {} genus {}",
+            self.tolerance, self.genus
+        );
+        let _ = writeln!(out, "vertices");
+        for (i, v) in self.vertices.iter() {
+            let _ = writeln!(
+                out,
+                "  v{i} ({}, {}, {}) tol {}",
+                v.point.x, v.point.y, v.point.z, v.tolerance
+            );
+        }
+        let _ = writeln!(out, "edges");
+        for (i, e) in self.edges.iter() {
+            let _ = write!(out, "  e{i} {} -> {} ", e.start, e.end);
+            match e.geometry {
+                EdgeGeometry::Curve { curve, range } => {
+                    let _ = write!(out, "{curve} [{}, {}]", range.lo(), range.hi());
+                }
+                EdgeGeometry::Degenerate { range } => {
+                    let _ = write!(out, "degenerate [{}, {}]", range.lo(), range.hi());
+                }
+            }
+            let _ = writeln!(out, " tol {}", e.tolerance);
+        }
+        let _ = writeln!(out, "faces");
+        for (i, f) in self.faces.iter() {
+            let _ = writeln!(
+                out,
+                "  f{i} {} {} tol {}",
+                f.surface, f.orientation, f.tolerance
+            );
+            for (li, lp) in f.loops.iter().enumerate() {
+                if lp.uses.is_empty() {
+                    let _ = writeln!(out, "    loop {li} at {}", lp.seed);
+                } else {
+                    let _ = writeln!(out, "    loop {li}");
+                }
+                for u in &lp.uses {
+                    let _ = writeln!(out, "      {u}");
+                }
+            }
+        }
+        let _ = writeln!(out, "counts {}", self.counts());
+        out
+    }
+
+    /// Freezes the body into `model` as a `Solid`: every live vertex,
+    /// edge and face appended in slot order, then the shell and the body,
+    /// inside a transaction. A loop of a `Reversed` face is stored
+    /// backwards with every use flipped, so every stored loop is
+    /// counter-clockwise about its surface's normal. Returns the body and
+    /// the slot → id maps.
+    ///
+    /// Errors, each leaving the model untouched: [`BuildError::Kind`] for
+    /// any kind but `Solid` (the operators build closed surfaces, and no
+    /// operation of cycle 1 returns a sheet, wire or general body);
+    /// [`BuildError::Empty`]; an [`BuildError::EmptyLoop`]; a
+    /// [`BuildError::MissingPcurve`]; an edge not used exactly twice
+    /// ([`BuildError::EdgeUses`]) or used twice the same way
+    /// ([`BuildError::SameDirection`]); a curve, surface or pcurve id
+    /// that does not resolve ([`BuildError::NotFound`]).
+    pub fn finish(self, model: &mut Model, kind: BodyKind) -> Result<Built, BuildError> {
+        match kind {
+            BodyKind::Solid => {}
+            BodyKind::Sheet | BodyKind::Wire | BodyKind::General => {
+                return Err(BuildError::Kind(kind));
+            }
+        }
+        if self.faces.len() == 0 {
+            return Err(BuildError::Empty);
+        }
+        let mut uses: BTreeMap<EdgeRef, Vec<Orientation>> = BTreeMap::new();
+        for (fi, face) in self.faces.iter() {
+            model.surface(face.surface)?;
+            for (li, lp) in face.loops.iter().enumerate() {
+                if lp.uses.is_empty() {
+                    return Err(BuildError::EmptyLoop {
+                        face: FaceRef(fi),
+                        loop_index: li,
+                    });
+                }
+                for (ci, u) in lp.uses.iter().enumerate() {
+                    let Some(p) = u.pcurve else {
+                        return Err(BuildError::MissingPcurve {
+                            position: Position::new(FaceRef(fi), li, ci),
+                        });
+                    };
+                    model.curve2(p)?;
+                    self.edge(u.edge)?;
+                    uses.entry(u.edge).or_default().push(u.orientation);
+                }
+            }
+        }
+        for (ei, e) in self.edges.iter() {
+            let edge = EdgeRef(ei);
+            let list = uses.get(&edge).map_or(&[][..], Vec::as_slice);
+            if list.len() != 2 {
+                return Err(BuildError::EdgeUses {
+                    edge,
+                    uses: list.len(),
+                });
+            }
+            if list.len() == 2 && list[0] == list[1] {
+                return Err(BuildError::SameDirection { edge });
+            }
+            if let EdgeGeometry::Curve { curve, .. } = e.geometry {
+                model.curve(curve)?;
+            }
+            self.vertex(e.start)?;
+            self.vertex(e.end)?;
+        }
+        model.transaction(|m| {
+            let mut vertices = BTreeMap::new();
+            for (i, v) in self.vertices.iter() {
+                vertices.insert(
+                    VertexRef(i),
+                    m.push_vertex(entity::Vertex::new(v.point, v.tolerance)),
+                );
+            }
+            let mut edges = BTreeMap::new();
+            for (i, e) in self.edges.iter() {
+                let start = *vertices
+                    .get(&e.start)
+                    .ok_or(BuildError::NoVertex(e.start))?;
+                let end = *vertices.get(&e.end).ok_or(BuildError::NoVertex(e.end))?;
+                edges.insert(
+                    EdgeRef(i),
+                    m.push_edge(entity::Edge::new(e.geometry, start, end, e.tolerance)),
+                );
+            }
+            let mut faces = BTreeMap::new();
+            let mut shell = Vec::with_capacity(self.faces.len());
+            for (i, f) in self.faces.iter() {
+                let mut loops = Vec::with_capacity(f.loops.len());
+                for (li, lp) in f.loops.iter().enumerate() {
+                    let mut coedges = Vec::with_capacity(lp.uses.len());
+                    for (ci, u) in lp.uses.iter().enumerate() {
+                        let edge = *edges.get(&u.edge).ok_or(BuildError::NoEdge(u.edge))?;
+                        let pcurve = u.pcurve.ok_or(BuildError::MissingPcurve {
+                            position: Position::new(FaceRef(i), li, ci),
+                        })?;
+                        coedges.push(Coedge::new(
+                            edge,
+                            f.orientation.compose(u.orientation),
+                            pcurve,
+                        ));
+                    }
+                    if f.orientation.is_reversed() {
+                        coedges.reverse();
+                    }
+                    loops.push(Loop::new(coedges));
+                }
+                let id = m.push_face(entity::Face::new(f.surface, loops, f.tolerance));
+                faces.insert(FaceRef(i), id);
+                shell.push(handle::Face::new(id, f.orientation));
+            }
+            let shell = m.push_shell(entity::Shell::new(shell));
+            let body = m.push_body(entity::Body::new(
+                kind,
+                vec![handle::Shell::forward(shell)],
+                Vec::new(),
+                Vec::new(),
+            ));
+            Ok(Built {
+                body: Body::forward(body),
+                shell,
+                vertices,
+                edges,
+                faces,
+            })
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn slots_reuse_the_most_recently_freed_first() {
+        let mut s = Slots::default();
+        assert_eq!((s.insert('a'), s.insert('b'), s.insert('c')), (0, 1, 2));
+        assert_eq!(s.remove(0), Some('a'));
+        assert_eq!(s.remove(2), Some('c'));
+        assert_eq!(s.remove(2), None, "already free");
+        assert_eq!(s.len(), 1);
+        assert_eq!(s.insert('d'), 2, "the last freed slot comes back first");
+        assert_eq!(s.insert('e'), 0);
+        assert_eq!(s.insert('f'), 3);
+        let live: Vec<_> = s.iter().collect();
+        assert_eq!(live, [(0, &'e'), (1, &'b'), (2, &'d'), (3, &'f')]);
+    }
+
+    #[test]
+    fn around_is_the_cyclic_half_open_range() {
+        let u = |i: u32| Use {
+            edge: EdgeRef(i),
+            orientation: Orientation::Forward,
+            pcurve: None,
+        };
+        let uses = [u(0), u(1), u(2), u(3)];
+        let edges = |v: Vec<Use>| v.iter().map(|u| u.edge.0).collect::<Vec<_>>();
+        assert_eq!(edges(around(&uses, 1, 3)), [1, 2]);
+        assert_eq!(edges(around(&uses, 3, 1)), [3, 0]);
+        assert_eq!(edges(around(&uses, 2, 2)), Vec::<u32>::new());
+        assert_eq!(edges(around(&uses, 0, 4)), [0, 1, 2, 3]);
+        assert_eq!(edges(around(&uses, 4, 0)), Vec::<u32>::new());
+        assert_eq!(edges(around(&[], 0, 0)), Vec::<u32>::new());
+    }
+}

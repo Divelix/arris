@@ -241,6 +241,7 @@ edges (a seam counted once), faces, loops. `χ` is the Euler line
 | `boolean/corner-cut` | same, − | 7 | 24 | 14/21/9/9 | 0 |
 | `boolean/flush-common` | the two flush boxes, ∩ | — | — | `OpError::Degenerate` (zero-thickness result) | — |
 | `boolean/disjoint-cut` | box − a cylinder clear of it | 12000 | 3800 | 8/12/6/6, provenance: every tool entity `Deleted`, target kept | 0 |
+| `boolean/frame-cut` | box [0,0,0]–[40,30,10] − box [10,10,−1]–[30,20,11]: a rectangular frame; M2 builds it by hand through the Euler operators (`sample::frame`), M4 by this recipe — the cross-check between the two paths, as `extrude-plate-with-hole` is for `through-hole` | 10000 | 4000 | 16/24/10/12 | 1 |
 | `sweep/extrude-plate-with-hole` | rectangle 40×30 with a hole r 4 at (20,15), extruded 10 | 11497.3452 | 3950.7964 | 10/15/7/9 (same numbers as `through-hole`: the cross-check between the two paths) | 1 |
 | `sweep/revolve-tube` | rectangle x∈[1,2], z∈[−1,1] revolved 2π about z | 18.8496 | 56.5487 | 4/6/4/6 | 1 |
 | `sweep/revolve-quarter` | the same rectangle revolved π/2 | 4.7124 | 18.1372 | 8/12/6/6 | 0 |
