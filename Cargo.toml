@@ -39,6 +39,9 @@ proptest = { version = "1.11", default-features = false, features = ["std"] }
 # PNG only: the rasteriser writes one format, and the default codec set
 # pulls in dependencies that do not build for wasm32.
 image = { version = "0.25", default-features = false, features = ["png"] }
+# `arris-debug`'s `rerun` feature only, and never on wasm32 (01 §Threading).
+# `sdk` alone (no viewer, no importers, no analytics) is the logging client.
+rerun = { version = "0.37.1", default-features = false, features = ["sdk"] }
 
 # Every crate opts in with `[lints] workspace = true`
 # (.agents/rules/kernel.md §API).

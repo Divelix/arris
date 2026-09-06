@@ -284,7 +284,7 @@ robustness or bound has to be established here (Fable).
   the origin against the direct integral; a `Sheet` is `NotSolid`; a
   raw-broken body is `InvalidInput`; the two live fixtures pass the
   `measure` stage at 1e-9.
-- [ ] Step 6 **[1]** — Rerun for the human. The `rerun` workspace
+- [x] Step 6 **[1]** — Rerun for the human. The `rerun` workspace
   dependency behind `arris-debug`'s feature, `arris_debug::rerun::{log,
   spawn}` as in the design deltas, `sample` bodies logged under distinct
   entity paths. Tests (feature-gated): logging the cylinder into a memory
@@ -420,12 +420,9 @@ step.
   Recommendation: record it now — every measured number should have an
   oracle, and C2 can change the convention with an ADR and one more
   `fixtures:` commit. Human, by step 5.
-- `⚠ OPEN:` **Where the `rerun` feature builds.** The `rerun` crate is
-  large; building it in the pre-commit hook and every CI job would slow
-  both for a feature only the human uses. Recommendation: a separate CI
-  job `rerun` that runs `cargo build -p arris-debug --features rerun`
-  (blocking, since a broken feature is a broken crate), the hook and the
-  `test` job untouched. Human, by step 6.
+- **Where the `rerun` feature builds — resolved, step 6.** A separate
+  blocking CI job `rerun` runs `cargo build -p arris-debug --features
+  rerun`; the hook and the `test` job are untouched, as recommended.
 - `⚠ OPEN:` **Keep step 7.** `parallel` is not in the roadmap's M3 "in"
   list; it is in 01 §Threading's contract and costs one afternoon.
   Recommendation: keep it — it is the first test of "identical output

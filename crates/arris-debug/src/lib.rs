@@ -7,7 +7,7 @@
 //! Guarantees: this is the only crate in the workspace that writes files,
 //! and it is a dependency of the workspace's tests, never of a consumer
 //! (`docs/01-architecture.md` §Formats and tools). The `rerun` feature
-//! reserves the Rerun stream for the human.
+//! streams a body to a Rerun viewer for the human.
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
@@ -20,6 +20,8 @@ pub mod oracle;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod prop;
 pub mod render;
+#[cfg(feature = "rerun")]
+pub mod rerun;
 pub mod sample;
 
 pub use body::{

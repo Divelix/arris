@@ -18,10 +18,13 @@ has no better tool than you do until Arris sits behind a CAD application.
 | What does it look like? | PNG — `arris_debug::render_body(&model, body, View::Iso, highlight, "name")` for a body with topology, `render_png(&mesh, &polylines, view, highlight, "name")` over a bare `TriMesh` and `Polyline`s otherwise (`arris_debug::polyline_of(&curve, range, n)` and `wireframe_of(&surface, domain, n)` give the polylines of geometry that has no body yet — an intersection curve, a surface under test) | Orthographic 800×600 render to `target/inspect/<name>.png`, one flat colour per face id (a curved face's own shading splits it into several — highlight it to see its extent, don't count colours), edges black with hidden parts hidden, dots at edge ends, `Some(Highlight::Face(id) / Edge(id) / Point(p))` in red. `View::{Iso, Top, Front, Right}`; `Iso` looks from (+1, −1, +1) so +x, −y and +z faces are visible. `render_body` meshes through `arris_debug::mesh_of(&model, body)`, at a chord found from the body's own bounding-box diagonal — never pass it a model tolerance. When a face's *mesh* is the suspect, not its position, `arris_debug::render_domain(&model, face, "name")` draws its (u, v) loops and triangulation instead — the CDT never sees 3D, so this is the debugger for a face that comes out wrong. **Read the PNG with the Read tool** — it renders as an image. `arris_debug::render` returns the pixel buffer for a test that counts colours. |
 | Is it right? | oracle — `arris_debug::oracle::compare("<area>/<slug>", &step_text, variant, tag)` from Rust, or `uv run --project tools/oracle tools/oracle/compare.py <fixture-dir> <file.step> [--variant NAME]` on a file from `arris_io::step::write(&model, &[body])` | Arris's volume, area, centroid, counts, genus and probe classifications (read from the STEP it wrote) against Open CASCADE's `expected.json`, within the fixture's tolerances; a table, exit 1 on mismatch (`OracleError::Mismatch` with the table from Rust). `expected.py <dir>` regenerates the oracle's answer, `selftest.py` proves the oracle against itself. The whole chain for one fixture — checker at `Full`, counts, oracle, provenance accounting, dump diff — is `cargo test -p arris --test corpus <name>`; `ARRIS_BLESS=1` writes `dump.txt` instead of diffing it. |
 
-For the human: `arris_debug::rerun(&model, shape)` (M3) streams the same
-scene to a Rerun viewer, with intersection curves and per-entity colours as separate
-entity paths so they can be toggled. Use it when the human asks to see
-something; do not use it to convince yourself — the PNG is what you can read.
+For the human: `arris_debug::rerun::{spawn, log}` (the `rerun` feature)
+spawns a Rerun viewer and streams a body's mesh to it — a `Mesh3D` per
+face under `<body>/faces/<face>`, a `LineStrips3D` per edge under
+`<body>/edges/<edge>`, one `Points3D` of every mesh vertex under
+`<body>/vertices` — as separate entity paths so each layer toggles in the
+viewer. Use it when the human asks to see something; do not use it to
+convince yourself — the PNG is what you can read.
 
 ## Reading a picture
 

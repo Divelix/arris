@@ -8,8 +8,9 @@ rust-version.workspace = true
 license.workspace = true
 
 [features]
-# Reserved: stream shapes to a Rerun viewer for the human.
-rerun = []
+# Stream a body to a Rerun viewer for the human (`arris_debug::rerun`).
+# Native-only, never on wasm32 — see the target-gated dependency below.
+rerun = ["dep:rerun"]
 
 [dependencies]
 arris-math.workspace = true
@@ -26,8 +27,11 @@ sha2.workspace = true
 
 # Property tests never run on wasm, and proptest's random source does not
 # build for wasm32-unknown-unknown; the `prop` module follows this cfg.
+# The `rerun` feature is native-only for the same reason (01 §Threading);
+# `dep:rerun` above only pulls it in when the feature is also on.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 proptest.workspace = true
+rerun = { workspace = true, optional = true }
 
 [lints]
 workspace = true
