@@ -11,6 +11,7 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod body;
 pub mod corpus;
 pub mod dump;
 pub mod fixtures;
@@ -21,6 +22,10 @@ pub mod prop;
 pub mod render;
 pub mod sample;
 
+pub use body::{
+    DebugMeshError, DomainError, RENDER_CHORD_FRACTION, RenderBodyError, mesh_of, render_body,
+    render_domain,
+};
 pub use dump::{dump_text, euler_line};
 pub use geom::{polyline_of, wireframe_of};
 pub use render::{Highlight, Raster, RenderError, View, render, render_png};

@@ -243,7 +243,7 @@ robustness or bound has to be established here (Fable).
   edges yield one index each and no collapsed triangle survives; a torus
   face and a bilinear NURBS face raw-built on a box-sized region mesh
   closed together with their neighbours.
-- [ ] Step 4 **[1]** — A picture of a body. `arris_debug::{mesh_of,
+- [x] Step 4 **[1]** — A picture of a body. `arris_debug::{mesh_of,
   render_body, render_domain}` and `RENDER_CHORD_FRACTION`; the `inspect`
   skill updated to say the body step exists. Tests: the cylinder's `Iso`
   render has exactly three face colours plus line, dot and background in
@@ -330,6 +330,20 @@ layer check and the wasm build pass; CI green on `main`. Then tag `m3`
 
 ## Findings
 
+- **A curved face's own shading, not its face id, drives the histogram**:
+  step 4's design guessed the cylinder's `Iso` render would show "exactly
+  three face colours" the way the hand-built cube's does. It shows nine —
+  the per-triangle quantised shade (`render.rs`'s `shade = 0.35 + 0.65 ·
+  (n · light)`, rounded to 1/32) varies continuously across the wall's
+  curvature, so one `FaceId` paints several distinct `[u8; 3]` values
+  where a planar face paints exactly one. `the_box_shows_three_faces_
+  from_iso_and_one_from_top` keeps the design's original claim, since a
+  box's faces are planar; the cylinder's test reads the picture the way
+  the render is actually used — by highlighting an entity and comparing
+  areas (`Highlight::Edge`'s run is a small fraction of `Highlight::
+  Face`'s), not by counting raw colours. No code changed; the finding is
+  the acceptance criterion, corrected here rather than in a rewrite of
+  the step once it had already landed.
 - **A degenerate edge still counts as an edge in the Euler line**, so
   `sample::sphere` prints `2/3/1/1/1 g1 = 0` where a sphere is genus 0:
   the two pole edges each take one off `V − E + F`. The residual is
