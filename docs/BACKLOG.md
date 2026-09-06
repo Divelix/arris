@@ -15,5 +15,8 @@ re-brainstormed.
 - Publish the workspace crates to crates.io over the 0.0.1 `arris` reservation once cycle 1's vertical slice passes its corpus
 - NURBS degree elevation as a primitive edit (02-data-model §NURBS names it; no C1 step needs it — knot insertion is enough for M1's fitting)
 - Knot insertion on a periodic NURBS that keeps the wrap: today the result's knots no longer imply a period and it extrapolates outside its domain (02-data-model §NURBS); needed once a periodic curve from STEP is edited
+- S5's coincident-surface arm tests face overlap on a grid of interior points carried through 3D, so an overlap thinner than the grid spacing passes; an exact (u, v) region intersection replaces it once a boolean can produce such faces (M4 finding candidate)
+- `Builder::finish` makes `Solid` only; `Sheet` needs an operator that leaves an edge with one use (a `mev` strut not closed by a `mef`), which no C1 operation asks for — with sheet bodies in C7
+- STEP cannot carry a left-handed pcurve conic (`AXIS2_PLACEMENT_2D` is direct) or a degenerate edge's coedge; both are dropped on write (01-architecture §Formats and tools). A reader (C7) must rebuild them from the 3D curve and the surface's singularity
 
 ## Rejected

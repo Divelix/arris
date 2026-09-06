@@ -33,13 +33,17 @@ The unit of acceptance. A fixture is a directory
   the regression guard for ids and provenance. Absent while the fixture is
   `#[ignore]`d.
 
-The test for a fixture builds the recipe in Arris, runs the checker at
-`Level::Full`, compares its own `measure` against `expected.json`, writes
-STEP and runs `tools/oracle/compare.py` on it, asserts the provenance
-accounting (02-data-model §Provenance), and diffs the dump. Tolerances are
-the fixture's: relative 1e-9 on volume and area for analytic results,
-exact on counts and classifications. The oracle is run, never linked
-(`SEED.md` §7).
+The test for a fixture (`arris_debug::corpus::run`, one `#[test]` per
+fixture in `crates/arris/tests/corpus.rs`) builds the recipe in Arris,
+runs the checker at `Level::Full` — nothing violated, nothing left
+`unchecked` — compares counts and genus against `expected.json`, writes
+STEP and runs `tools/oracle/compare.py` on it (volume, area, centroid
+and every probe, read back by Open CASCADE), asserts the provenance
+accounting (02-data-model §Provenance), and diffs the dump — written
+instead under `ARRIS_BLESS=1`. `measure` joins the comparison in M3.
+Tolerances are the fixture's: relative 1e-9 on volume and area for
+analytic results, exact on counts and classifications. The oracle is run,
+never linked (`SEED.md` §7).
 
 ---
 
@@ -134,6 +138,19 @@ forms in random poses.
 
 *Goal: a box and a cylinder exist as bodies in the arena, pass every
 invariant, and Open CASCADE reads them back with the right numbers.*
+
+**Status: done 2026-09-06.** Retired the seam — through the checker
+(E7, L2 as a one-period jump) and through Open CASCADE's reader, which
+took Arris's `SEAM_CURVE` and both pcurves as written — and Euler
+operators over immutable entities (a staging builder whose ten operators
+keep the Euler line at zero and invert byte for byte). ADR-0002: the
+builder, explicit pcurves, provenance rooted in `Origin::Role`. Deltas:
+the `Origin::{Entity, Role}` provenance keys; `retain` reusing freed
+slots lowest-first at a bumped generation; the (u, v) toolkit in
+`arris-geom`; `Report::unchecked` for `Full` rows without a closed form.
+Accepted on the two `primitive/*` fixtures end to end, the hand-built
+`boolean/frame-cut` twin, 29 violation tests, native round trips of
+three bodies, and 1000 property cases per test; tag `m2`.
 
 - `arris-topo`: the chunked arena, entities, orientation composition,
   adjacency indices, deterministic iteration, transactions, `import`,

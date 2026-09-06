@@ -22,16 +22,17 @@ git config core.hooksPath .githooks   # fmt, clippy -D warnings, test, doc befor
 
 ## Current state
 
-**M1 done (2026-09-06).** Every curve and surface C1 needs exists and is
-proven, with no entity and no operation yet: `arris-math` (frames,
-isometries, intervals, tolerances, exact predicates, roots to quartic,
-bracketed Newton; ADR-0001); `arris-geom` (`Surface`, `Curve`, `Curve2`
-with the Open CASCADE parametrisations, NURBS evaluation, knot insertion
-and fitting, projection onto every variant, the C1 intersection table with
-every other pair `Unsupported`, pcurves on planes and cylinders); the
-geometry oracle kind under `tests/fixtures/geom/`. Property tests pass at
-1000 cases; the two geometry fixtures match Open CASCADE. M0's harness
-stands underneath. **Next:** `/plan m2-topology` (roadmap §M2).
+**M2 done (2026-09-06).** A box and a cylinder are bodies: `arris-topo`
+(the chunked arena, entities, adjacency, iteration, transactions,
+`import`, sparse `retain`, the Euler-operator `Builder`, `Provenance`
+rooted in roles; ADR-0002), `arris-check` (every invariant row at `Fast`,
+L5/S5/B1/B2/E8 at `Full`, `unchecked` for what has no closed form),
+`ops::{primitive_box, primitive_cylinder}`, `io::step::write`,
+`io::native`, `arris_debug::dump_text` and the corpus runner. The two
+`primitive/*` fixtures pass end to end through Open CASCADE; the
+`boolean/frame-cut` twin is hand-built; 14 fixtures wait on M4/M5. M1's
+geometry and M0's harness stand underneath. **Next:** `/plan
+m3-tessellation` (roadmap §M3).
 
 ## Rules that are not derivable from the code
 

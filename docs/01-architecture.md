@@ -21,10 +21,10 @@ re-exports the public API. Lower crates never name types from upper ones.
 | `arris-geom` | `Surface`, `Curve`, `Curve2` (analytic + NURBS): evaluation, derivatives, point projection, curve/surface and surface/surface intersection, pcurves and the NURBS fit behind them; the (u, v) toolkit `region2` and `integrate` shared by the checker, tessellation, mass properties and classification; `GeomError` | `arris-math`, `thiserror`, `serde` (feature) | 0 — representation |
 | `arris-topo` | `Model` (the arena), typed ids, `Shape`/`Body`/`Face`/… handles, orientation, entities, pcurves, per-entity tolerances, Euler operators, adjacency and iteration, `Provenance`; re-exports `arris-geom` and `arris-math` | `arris-geom`, `arris-math`, `thiserror`, `serde` (feature) | 0 — representation |
 | `arris-check` | The invariant checker: `check(&Model, Body, Level) -> Report` and the `Violation` list of 02-data-model §Invariants; re-exports `arris-topo` | `arris-topo` | 1 |
-| `arris-ops` | Primitives, planar profiles, extrude, revolve, transform, booleans, later blends; `measure` (mass properties); each returns `Provenance` | `arris-check`, `rayon` (feature) | 2 — algorithms |
+| `arris-ops` | Primitives, planar profiles, extrude, revolve, transform, booleans, later blends; `measure` (mass properties); each returns `Provenance` | `arris-check`, `thiserror`, `rayon` (feature) | 2 — algorithms |
 | `arris-mesh` | `TriMesh`, `Polyline`, `Aabb`, tessellation of faces and edges with shared edge discretisation | `arris-check`, `arris-topo`, `thiserror` | 2 — algorithms |
 | `arris-io` | STEP AP214 Part 21 writer (later reader), the native format (`native`); re-exports `arris-check` | `arris-check`, `thiserror`, `serde`, `serde_json`, `postcard` (the last three behind the `serde` feature) | 2 — algorithms |
-| `arris-debug` | Text dump, the hand-built sample bodies (`sample`), PNG render (own software rasteriser over `image`), Rerun stream (feature), the fixture loader and corpus lint, the seeded property-test runner and strategies | `arris-ops`, `arris-mesh`, `arris-io`, `arris-topo`, `arris-geom`, `arris-math`, `image`, `serde`, `serde_json`, `sha2`, `thiserror`, `proptest` (not on `wasm32`), `rerun` (feature) | 3 — dev-facing |
+| `arris-debug` | Text dump, the hand-built sample bodies (`sample`), PNG render (own software rasteriser over `image`), Rerun stream (feature), the fixture loader and corpus lint, the corpus runner (`corpus`) and the oracle seam (`oracle`), the seeded property-test runner and strategies | `arris-ops`, `arris-mesh`, `arris-io`, `arris-topo`, `arris-geom`, `arris-math`, `image`, `serde`, `serde_json`, `sha2`, `thiserror`, `proptest` (not on `wasm32`), `rerun` (feature) | 3 — dev-facing |
 | `arris` | Facade: re-exports | `math` through `io`; `debug` as a dev-dependency only | 4 |
 
 `math`, `geom` and `topo` are the representation: they change rarely and a
@@ -92,12 +92,15 @@ newtypes over the same pair and convert to `Shape` for free. Copying a
 handle is copying two integers. Orientation composes down the hierarchy
 (02-data-model §Orientation); a handle never carries geometry.
 
-**Failed operations leave the model as it was.** Because the arena is
-append-only, an operation runs inside `Model::transaction(|m| …)`, which
-records every arena's length at entry and on `Err` truncates them all —
-the adjacency indices and the next id with them — so the model, its ids
-and its clones are exactly as before. Transactions nest; an inner `Err`
-undoes only the inner appends. A consumer never sees half-built entities.
+**Failed operations leave the model as it was.** Because the arena only
+grows and refills slots `retain` freed, an operation runs inside
+`Model::transaction(|m| …)`, which marks every arena at entry — its
+length and its free set — and on `Err` drops everything appended since:
+the tail of every arena and the freed slots the transaction filled,
+emptied again at the generation they had, with the adjacency indices and
+the next id rolled back with them — so the model, its ids and its clones
+are exactly as before. Transactions nest; an inner `Err` undoes only the
+inner appends. A consumer never sees half-built entities.
 
 **Bodies move between models by import.** `Model::import(&mut self, &other,
 body) -> Result<(Body, IdMap), TopoError>` deep-copies a body's closure —
@@ -309,11 +312,17 @@ analytic pairs never route through it.
   role is 03-roadmap §Fixtures.
 - **`arris-debug`** is dev-facing: the text dump (`dump_text`), the
   sample bodies built by hand through the raw insert with explicit
-  pcurves (`sample::{cuboid, unit_box, cylinder}` — what the checker's
-  tests start from, since they cannot use `arris-ops`), the rasteriser
-  (`render_png`) and the samplers that feed it a curve or a surface
-  without a body (`polyline_of`, `wireframe_of`), the Rerun stream, the
-  fixture loader and corpus lint (`fixtures`), and the seeded property-test runner and strategies (`prop`,
+  pcurves (`sample::{cuboid, cuboid_nurbs, unit_box, cylinder}` — what
+  the checker's tests start from, since they cannot use `arris-ops`) and
+  through the Euler operators (`sample::frame`, the genus-1 twin of
+  `boolean/frame-cut`), the rasteriser (`render_png`) and the samplers
+  that feed it a curve or a surface without a body (`polyline_of`,
+  `wireframe_of`), the Rerun stream, the fixture loader and corpus lint
+  (`fixtures`), the corpus runner (`corpus::run`, the fixture test of
+  03-roadmap §Fixtures, `ARRIS_BLESS=1` writing `dump.txt`) over the
+  oracle seam (`oracle::compare`: STEP under `target/inspect/`, then
+  `compare.py` through `uv`, a missing environment a loud error), and
+  the seeded property-test runner and strategies (`prop`,
   with every analytic surface and curve in a random pose and random
   clamped NURBS curves and surfaces under `prop::geom`). It is a
   dev-dependency of the workspace's crates and never of a consumer. For
