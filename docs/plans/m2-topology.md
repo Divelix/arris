@@ -180,7 +180,7 @@ per-kind counts) accept them; only the raw API and tests build them.
   copies only the tail chunk; a stale id is `NotFound` and never aliases;
   a `Precision` that is not consistent is refused; `serde` round trip of
   an entity; the raw insert accepts a dangling reference (it is raw).
-- [ ] Step 2 — Adjacency, iteration, closure, transactions. The three
+- [x] Step 2 — Adjacency, iteration, closure, transactions. The three
   indices maintained on every append (raw or otherwise); `shells`,
   `faces`, `edges`, `vertices` in the order of 02 §Adjacency and
   iteration with effective orientations composed by XOR down the path;
@@ -411,3 +411,10 @@ step, as for M1.
   `Deserialize` validates through `Interval::new`) and `arris-math`'s
   `serde` feature turns on `nalgebra/serde-serialize`, since a vertex's
   point is part of an entity's encoding.
+- Step 2: the adjacency queries return `Result<&[_], NotFound>` rather
+  than a bare slice, so a stale id is an error and never an empty answer;
+  the indices are one `Arc` value shared by clones and copied whole on the
+  first append after a clone (02 §Adjacency and iteration says so), since
+  a per-chunk index would have to edit earlier chunks on every append. A
+  vertex handle yielded by iteration carries the orientation of the edge
+  use that reached it — meaningless geometrically, stated in the docs.

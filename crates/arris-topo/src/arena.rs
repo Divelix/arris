@@ -49,6 +49,12 @@ impl<T> Default for Arena<T> {
 }
 
 impl<T: Clone> Arena<T> {
+    /// The number of slots ever minted, freed ones included: the index the
+    /// next append gets.
+    pub(crate) fn len(&self) -> usize {
+        self.len
+    }
+
     /// Appends `value` in a fresh slot and returns `(index, generation)`.
     /// Only the tail chunk is touched, and it is copied first if a clone
     /// shares it.
@@ -86,6 +92,37 @@ impl<T: Clone> Arena<T> {
             .flatten()
     }
 
+    /// The value at `index` whatever its generation, `None` for an empty
+    /// or missing slot. For the arena's own bookkeeping (a rollback reads
+    /// the slots it is about to drop); every id-based lookup goes through
+    /// [`Arena::get`].
+    pub(crate) fn value_at(&self, index: usize) -> Option<&T> {
+        self.chunks
+            .get(index / CHUNK_SIZE)?
+            .slots
+            .get(index % CHUNK_SIZE)?
+            .value
+            .as_ref()
+    }
+
+    /// Drops every slot from `len` on, so the next append gets index
+    /// `len` again. A no-op when the arena is already that short; only the
+    /// chunk that is cut is copied if a clone shares it.
+    pub(crate) fn truncate(&mut self, len: usize) {
+        if len >= self.len {
+            return;
+        }
+        let keep_chunks = len.div_ceil(CHUNK_SIZE);
+        self.chunks.truncate(keep_chunks);
+        if let Some(tail) = self.chunks.last_mut() {
+            let keep = len - (keep_chunks - 1) * CHUNK_SIZE;
+            if tail.slots.len() > keep {
+                Arc::make_mut(tail).slots.truncate(keep);
+            }
+        }
+        self.len = len;
+    }
+
     /// `true` when chunk `i` of both arenas is the same allocation.
     #[cfg(test)]
     pub(crate) fn shares_chunk(&self, other: &Self, i: usize) -> bool {
@@ -113,6 +150,7 @@ mod tests {
             assert_eq!(a.push(i), (i as u32, 0));
         }
         assert_eq!(a.chunk_count(), 3);
+        assert_eq!(a.len(), 2 * CHUNK_SIZE + 1);
         assert_eq!(a.get(0, 0), Some(&0));
         assert_eq!(a.get(CHUNK_SIZE as u32, 0), Some(&CHUNK_SIZE));
         assert_eq!(a.get(2 * CHUNK_SIZE as u32 + 1, 0), None, "past the end");
@@ -135,5 +173,35 @@ mod tests {
         );
         assert_eq!(a.get(CHUNK_SIZE as u32 + 10, 0), None);
         assert_eq!(b.get(CHUNK_SIZE as u32 + 10, 0), Some(&usize::MAX));
+    }
+
+    #[test]
+    fn truncate_drops_whole_chunks_and_part_of_the_tail() {
+        let mut a = Arena::default();
+        for i in 0..(2 * CHUNK_SIZE + 5) {
+            a.push(i);
+        }
+        let shared = a.clone();
+        a.truncate(CHUNK_SIZE + 3);
+        assert_eq!(a.len(), CHUNK_SIZE + 3);
+        assert_eq!(a.chunk_count(), 2);
+        assert_eq!(a.get(CHUNK_SIZE as u32 + 2, 0), Some(&(CHUNK_SIZE + 2)));
+        assert_eq!(a.get(CHUNK_SIZE as u32 + 3, 0), None);
+        assert!(a.shares_chunk(&shared, 0), "untouched chunks stay shared");
+        assert!(!a.shares_chunk(&shared, 1), "the cut chunk was copied");
+        assert_eq!(
+            shared.len(),
+            2 * CHUNK_SIZE + 5,
+            "the clone kept everything"
+        );
+        assert_eq!(
+            a.push(7),
+            (CHUNK_SIZE as u32 + 3, 0),
+            "the next index is the new length"
+        );
+        a.truncate(0);
+        assert_eq!((a.len(), a.chunk_count()), (0, 0));
+        a.truncate(10);
+        assert_eq!(a.len(), 0, "truncating past the end is a no-op");
     }
 }

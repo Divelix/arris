@@ -1,6 +1,9 @@
 //! The `Model`: the arena every entity and geometry value of a document
 //! lives in (`docs/01-architecture.md` §The model).
 
+use core::fmt;
+use std::sync::Arc;
+
 use arris_geom::{Curve, Curve2, Surface};
 use arris_math::Precision;
 
@@ -8,6 +11,54 @@ use crate::arena::Arena;
 use crate::entity::{Body, Edge, Face, Shell, Vertex};
 use crate::error::{NotFound, TopoError};
 use crate::id::{BodyId, Curve2Id, CurveId, EdgeId, FaceId, ShellId, SurfaceId, VertexId};
+
+/// One use of an edge: the face, the loop within it and the coedge within
+/// the loop. What the edge → coedge index answers with; loops and coedges
+/// are not entities, so this is their address.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct CoedgeRef {
+    /// The face whose loop uses the edge.
+    pub face: FaceId,
+    /// Which loop of the face.
+    pub loop_index: usize,
+    /// Which coedge of the loop.
+    pub coedge_index: usize,
+}
+
+impl fmt::Display for CoedgeRef {
+    /// `f3/0/2`: face, loop, coedge.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}/{}/{}", self.face, self.loop_index, self.coedge_index)
+    }
+}
+
+/// The derived adjacency, keyed by slot index and maintained on every
+/// append (`docs/02-data-model.md` §Adjacency and iteration). Shared by
+/// clones and copied whole on the first append after a clone.
+#[derive(Debug, Clone, Default)]
+struct Indices {
+    /// Edge index → its uses, in the creation order of the faces.
+    edge_uses: Vec<Vec<CoedgeRef>>,
+    /// Vertex index → the edges that end at it, in creation order, each
+    /// once (a closed edge is listed once).
+    vertex_edges: Vec<Vec<EdgeId>>,
+    /// Face index → the shells that use it, in creation order.
+    face_shells: Vec<Vec<ShellId>>,
+}
+
+/// The arena lengths at a transaction's entry: what a rollback restores.
+#[derive(Debug, Clone, Copy)]
+struct Lengths {
+    vertices: usize,
+    edges: usize,
+    faces: usize,
+    shells: usize,
+    bodies: usize,
+    curves: usize,
+    surfaces: usize,
+    curve2s: usize,
+}
 
 /// The arena: every vertex, edge, face, shell, body, curve, surface and
 /// pcurve ever created in it, each behind a typed generational id.
@@ -51,6 +102,7 @@ pub struct Model {
     curves: Arena<Curve>,
     surfaces: Arena<Surface>,
     curve2s: Arena<Curve2>,
+    indices: Arc<Indices>,
 }
 
 macro_rules! accessors {
@@ -84,6 +136,7 @@ impl Model {
             curves: Arena::default(),
             surfaces: Arena::default(),
             curve2s: Arena::default(),
+            indices: Arc::default(),
         })
     }
 
@@ -139,24 +192,214 @@ impl Model {
         RawInsert { model: self }
     }
 
+    /// Every use of `edge` by a loop, in the creation order of the faces:
+    /// two for an edge between two faces of a solid, two in one face for a
+    /// seam, one for a boundary edge of a sheet. Model-wide — an edge
+    /// shared by several bodies lists every body's uses; filter through
+    /// [`Model::closure`] for one body. Errors: the edge does not resolve.
+    pub fn edge_uses(&self, edge: EdgeId) -> Result<&[CoedgeRef], NotFound> {
+        self.edge(edge)?;
+        Ok(self
+            .indices
+            .edge_uses
+            .get(edge.index() as usize)
+            .map_or(&[], Vec::as_slice))
+    }
+
+    /// Every edge that starts or ends at `vertex`, in creation order, each
+    /// once. Model-wide. Errors: the vertex does not resolve.
+    pub fn vertex_edges(&self, vertex: VertexId) -> Result<&[EdgeId], NotFound> {
+        self.vertex(vertex)?;
+        Ok(self
+            .indices
+            .vertex_edges
+            .get(vertex.index() as usize)
+            .map_or(&[], Vec::as_slice))
+    }
+
+    /// Every shell that uses `face`, in creation order. Model-wide.
+    /// Errors: the face does not resolve.
+    pub fn face_shells(&self, face: FaceId) -> Result<&[ShellId], NotFound> {
+        self.face(face)?;
+        Ok(self
+            .indices
+            .face_shells
+            .get(face.index() as usize)
+            .map_or(&[], Vec::as_slice))
+    }
+
+    /// Runs `f` on the model and, if it returns `Err`, drops every entity
+    /// and geometry value it appended — arenas, indices and the next id
+    /// all return to what they were at entry — so a failed operation
+    /// leaves the model as it was (`docs/01-architecture.md` §The model).
+    /// On `Ok` everything stays. Transactions nest: an inner `Err` undoes
+    /// the inner appends only.
+    ///
+    /// ```
+    /// use arris_topo::entity::Vertex;
+    /// use arris_topo::{Model, VertexId};
+    /// use arris_topo::arris_math::Point3;
+    ///
+    /// let mut m = Model::default();
+    /// let r: Result<(), &str> = m.transaction(|m| {
+    ///     m.raw().add_vertex(Vertex::new(Point3::origin(), 1e-7));
+    ///     Err("changed my mind")
+    /// });
+    /// assert!(r.is_err());
+    /// assert!(m.vertex(VertexId::new(0, 0)).is_err());
+    /// let v = m.raw().add_vertex(Vertex::new(Point3::origin(), 1e-7));
+    /// assert_eq!(v, VertexId::new(0, 0), "the id was not consumed");
+    /// ```
+    pub fn transaction<T, E>(
+        &mut self,
+        f: impl FnOnce(&mut Model) -> Result<T, E>,
+    ) -> Result<T, E> {
+        let at_entry = self.lengths();
+        let result = f(self);
+        if result.is_err() {
+            self.rollback(at_entry);
+        }
+        result
+    }
+
+    fn lengths(&self) -> Lengths {
+        Lengths {
+            vertices: self.vertices.len(),
+            edges: self.edges.len(),
+            faces: self.faces.len(),
+            shells: self.shells.len(),
+            bodies: self.bodies.len(),
+            curves: self.curves.len(),
+            surfaces: self.surfaces.len(),
+            curve2s: self.curve2s.len(),
+        }
+    }
+
+    /// Undoes every append since `at`. The index entries an appended
+    /// entity made are the tails of the lists they went into, because
+    /// lists grow in creation order; so each appended entity's references
+    /// are popped back off, then everything is truncated.
+    fn rollback(&mut self, at: Lengths) {
+        let removed_edges: Vec<Edge> = (at.edges..self.edges.len())
+            .filter_map(|i| self.edges.value_at(i).copied())
+            .collect();
+        let removed_faces: Vec<Face> = (at.faces..self.faces.len())
+            .filter_map(|i| self.faces.value_at(i).cloned())
+            .collect();
+        let removed_shells: Vec<Shell> = (at.shells..self.shells.len())
+            .filter_map(|i| self.shells.value_at(i).cloned())
+            .collect();
+        let indices = Arc::make_mut(&mut self.indices);
+        for edge in &removed_edges {
+            for v in [edge.start(), edge.end()] {
+                if let Some(list) = indices.vertex_edges.get_mut(v.index() as usize) {
+                    while list.last().is_some_and(|e| e.index() as usize >= at.edges) {
+                        list.pop();
+                    }
+                }
+            }
+        }
+        for face in &removed_faces {
+            for coedge in face.loops().iter().flat_map(|l| l.coedges()) {
+                if let Some(list) = indices.edge_uses.get_mut(coedge.edge().index() as usize) {
+                    while list
+                        .last()
+                        .is_some_and(|u| u.face.index() as usize >= at.faces)
+                    {
+                        list.pop();
+                    }
+                }
+            }
+        }
+        for shell in &removed_shells {
+            for face in shell.faces() {
+                if let Some(list) = indices.face_shells.get_mut(face.id.index() as usize) {
+                    while list.last().is_some_and(|s| s.index() as usize >= at.shells) {
+                        list.pop();
+                    }
+                }
+            }
+        }
+        indices.vertex_edges.truncate(at.vertices);
+        indices.edge_uses.truncate(at.edges);
+        indices.face_shells.truncate(at.faces);
+        self.vertices.truncate(at.vertices);
+        self.edges.truncate(at.edges);
+        self.faces.truncate(at.faces);
+        self.shells.truncate(at.shells);
+        self.bodies.truncate(at.bodies);
+        self.curves.truncate(at.curves);
+        self.surfaces.truncate(at.surfaces);
+        self.curve2s.truncate(at.curve2s);
+    }
+
     pub(crate) fn push_vertex(&mut self, vertex: Vertex) -> VertexId {
         let (i, g) = self.vertices.push(vertex);
+        Arc::make_mut(&mut self.indices)
+            .vertex_edges
+            .push(Vec::new());
         VertexId::new(i, g)
     }
 
     pub(crate) fn push_edge(&mut self, edge: Edge) -> EdgeId {
+        let ends: Vec<VertexId> = [edge.start(), edge.end()]
+            .into_iter()
+            .filter(|&v| self.vertex(v).is_ok())
+            .collect();
         let (i, g) = self.edges.push(edge);
-        EdgeId::new(i, g)
+        let id = EdgeId::new(i, g);
+        let indices = Arc::make_mut(&mut self.indices);
+        for v in ends {
+            let list = &mut indices.vertex_edges[v.index() as usize];
+            if list.last() != Some(&id) {
+                list.push(id);
+            }
+        }
+        indices.edge_uses.push(Vec::new());
+        id
     }
 
     pub(crate) fn push_face(&mut self, face: Face) -> FaceId {
+        let uses: Vec<(EdgeId, usize, usize)> = face
+            .loops()
+            .iter()
+            .enumerate()
+            .flat_map(|(li, l)| {
+                l.coedges()
+                    .iter()
+                    .enumerate()
+                    .map(move |(ci, c)| (c.edge(), li, ci))
+            })
+            .filter(|&(e, _, _)| self.edge(e).is_ok())
+            .collect();
         let (i, g) = self.faces.push(face);
-        FaceId::new(i, g)
+        let id = FaceId::new(i, g);
+        let indices = Arc::make_mut(&mut self.indices);
+        for (edge, loop_index, coedge_index) in uses {
+            indices.edge_uses[edge.index() as usize].push(CoedgeRef {
+                face: id,
+                loop_index,
+                coedge_index,
+            });
+        }
+        indices.face_shells.push(Vec::new());
+        id
     }
 
     pub(crate) fn push_shell(&mut self, shell: Shell) -> ShellId {
+        let faces: Vec<FaceId> = shell
+            .faces()
+            .iter()
+            .map(|f| f.id)
+            .filter(|&f| self.face(f).is_ok())
+            .collect();
         let (i, g) = self.shells.push(shell);
-        ShellId::new(i, g)
+        let id = ShellId::new(i, g);
+        let indices = Arc::make_mut(&mut self.indices);
+        for f in faces {
+            indices.face_shells[f.index() as usize].push(id);
+        }
+        id
     }
 
     pub(crate) fn push_body(&mut self, body: Body) -> BodyId {

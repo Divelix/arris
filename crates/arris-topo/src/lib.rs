@@ -18,6 +18,7 @@ mod handle;
 mod id;
 mod model;
 mod orientation;
+mod walk;
 
 pub use arris_geom;
 pub use arris_math;
@@ -29,5 +30,6 @@ pub use id::{
     BodyId, Curve2Id, CurveId, EdgeId, EntityId, EntityKind, FaceId, GeometryId, ShellId,
     SurfaceId, VertexId,
 };
-pub use model::{Model, RawInsert};
+pub use model::{CoedgeRef, Model, RawInsert};
 pub use orientation::Orientation;
+pub use walk::Closure;

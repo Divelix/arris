@@ -400,13 +400,35 @@ algorithm quietly needs.
 
 ### Adjacency and iteration
 
-The arena keeps derived indices, rebuilt incrementally on append because
-entities are immutable: edge → coedges (face, loop index, coedge index),
-vertex → edges, face → shells. `Model::faces(body)`, `edges(body)`,
-`vertices(body)` iterate in a deterministic order — depth-first over the
-body's shells, faces, loops and coedges in stored order, each entity once at
-first visit. That order is the order tessellation numbers `FaceRange`s in
-and the order provenance lists entities in.
+The arena keeps derived indices, maintained on every append because
+entities are immutable: edge → coedges (`CoedgeRef { face, loop_index,
+coedge_index }`, the address of a coedge, since loops and coedges are not
+entities), vertex → edges (each edge once, a closed edge included), face →
+shells. The queries — `Model::edge_uses(edge)`, `vertex_edges(vertex)`,
+`face_shells(face)` — are model-wide, in creation order of the referencing
+entity, and `NotFound` for an id that does not resolve; an entity shared
+by two bodies lists both bodies' uses, and a per-body question filters
+through the closure. A reference that does not resolve when its entity is
+appended (a raw insert with a dangling id) is not indexed: M1 is where it
+is reported. The indices are one value shared by every clone of a model
+and copied whole on the first append after a clone, so `Model::clone`
+stays O(chunks) and the copy is paid once, by the clone that diverges.
+
+`Model::shells(body)`, `faces(body)`, `edges(body)`, `vertices(body)`
+iterate in a deterministic order — depth-first over the body's shells,
+faces, loops and coedges in stored order, then the free edges, then the
+free vertices; each entity once at first visit, so a seam edge appears
+once and a face used by two shells appears under the first. Every handle
+yielded carries its *effective* orientation, composed by XOR from the
+body handle down the path it was first reached by (§Orientation); a
+vertex's is the orientation of the edge use that reached it — its
+effective start first, then its end — which means nothing geometrically
+and is there so every handle composes alike. A reference that does not
+resolve is skipped; only the body handle itself is `NotFound`.
+`closure(body)` is the same reach as sorted, duplicate-free id lists per
+kind, geometry included: what the checker, `import`, `retain` and the
+text dump walk. That order is the order tessellation numbers `FaceRange`s
+in and the order provenance lists entities in.
 
 ## Tolerances
 

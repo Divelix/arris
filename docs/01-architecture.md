@@ -93,9 +93,11 @@ handle is copying two integers. Orientation composes down the hierarchy
 (02-data-model §Orientation); a handle never carries geometry.
 
 **Failed operations leave the model as it was.** Because the arena is
-append-only, an operation runs inside a transaction that records the arena's
-length at entry and truncates to it on `Err`. A consumer never sees
-half-built entities.
+append-only, an operation runs inside `Model::transaction(|m| …)`, which
+records every arena's length at entry and on `Err` truncates them all —
+the adjacency indices and the next id with them — so the model, its ids
+and its clones are exactly as before. Transactions nest; an inner `Err`
+undoes only the inner appends. A consumer never sees half-built entities.
 
 **Bodies move between models by import.** `Model::import(&mut self, &other,
 body) -> (Body, IdMap)` deep-copies a body's closure and returns the id map.
