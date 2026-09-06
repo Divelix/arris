@@ -1,7 +1,7 @@
 //! Dev-facing tools of the Arris kernel: the deterministic text dump, the
 //! software rasteriser that renders a mesh to a PNG the agent can read, the
 //! samplers that turn a curve or a surface into polylines for it, the
-//! fixture loader and the seam to the Open CASCADE oracle, and the property-test configuration
+//! fixture loader, the corpus runner and the seam to the Open CASCADE oracle, and the property-test configuration
 //! and strategies.
 //!
 //! Guarantees: this is the only crate in the workspace that writes files,
@@ -11,6 +11,7 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod corpus;
 pub mod dump;
 pub mod fixtures;
 pub mod geom;

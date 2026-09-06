@@ -320,7 +320,7 @@ per-kind counts) accept them; only the raw API and tests build them.
   is `NotFound`, the next primitive reuses the freed slots at generation
   one and the box's ids are unchanged; two models built by the same
   calls agree on every id after a `retain`.
-- [ ] Step 13 — The corpus runner and the facade. `arris_debug::corpus::
+- [x] Step 13 — The corpus runner and the facade. `arris_debug::corpus::
   run` and `crates/arris/tests/corpus.rs` with one test per fixture:
   `primitive/box` and `primitive/cylinder` live, the thirteen others
   `#[ignore = "M4: …"]`/`"M5: …"` naming the milestone; `dump.txt` for
@@ -533,6 +533,17 @@ step, as for M1.
   `target/inspect/`, a typed `Mismatch` with the table, `Environment`
   for a missing `uv`) that the step-4 test duplicated inline and step
   13's runner will use; `sample::frame` is the `boolean/frame-cut` twin.
+- Step 13: the runner's provenance accounting is stated for any
+  operation, not the primitives alone — every entity of the output body
+  is kept from an input or has an origin, every entity of every input
+  body is kept or recorded, nothing is both deleted and modified — so
+  M4's booleans are held to it without a change. `unchecked` rows fail a
+  fixture as a violation would: the corpus is where nothing is passed
+  quietly. `arris_debug::oracle::compare_dir` takes a fixture directory,
+  since the dump-diff test runs the runner on a scratch copy outside the
+  corpus. The facade re-exports `mesh` beside the six modules the design
+  delta named, being a dependency already. Fourteen fixtures are
+  `#[ignore]`d (the plan said thirteen before `boolean/frame-cut`).
 - Step 12: slot reuse reached the transaction: an append inside a
   transaction may now fill a freed slot below the arena's length, so a
   rollback can no longer be a truncation. Each arena records a mark (its

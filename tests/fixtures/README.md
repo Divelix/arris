@@ -10,7 +10,7 @@ intersected; §Geometry fixtures below) — holding:
 |---|---|---|
 | `fixture.json` | a person or the agent | the **recipe**: operands and operations both sides evaluate, probe points, tolerances, and the closed-form `analytic` values |
 | `expected.json` | `tools/oracle/expected.py`, never by hand | the **oracle's answer** per variant: volume, area, centroid, counts, Euler characteristic and genus, probe classifications, plus the OCCT version and the recipe hash |
-| `dump.txt` | Arris, once the fixture passes | the text dump of the result, the regression guard for ids and provenance (absent while the fixture is `#[ignore]`d) |
+| `dump.txt` | Arris, through the corpus runner under `ARRIS_BLESS=1`, once the fixture passes | the text dump of the result, the regression guard for ids and provenance (absent while the fixture is `#[ignore]`d); `dump.<variant>.txt` for a variant other than `default` |
 
 The Rust reading of both files is `arris_debug::fixtures`; the Python one
 is `tools/oracle/oracle/recipe.py` and `fixture.py`. The corpus lint
@@ -20,6 +20,20 @@ Euler line zero, every `analytic` value matching the oracle to 1e-6
 relative, counts and probe expectations exactly. The oracle's own self-test
 (`uv run --project tools/oracle tools/oracle/selftest.py`) reproduces every
 committed `expected.json` and round-trips each result through STEP.
+
+The corpus **runner** (`arris_debug::corpus::run(dir, variant)`, one
+`#[test]` per fixture in `crates/arris/tests/corpus.rs`) is the fixture
+test itself: it builds the recipe in Arris, runs the checker at `Full`
+(nothing violated, nothing undecided), compares counts and genus against
+`expected.json`, writes STEP under `target/inspect/` and has the oracle
+read it back (`compare.py`), asserts every step's provenance accounting,
+and diffs the dump against `dump.txt`. A fixture whose recipe needs an
+operation of a later milestone is `#[ignore = "M4: needs ops::cut"]` and
+fails naming the op under `--include-ignored`, so the day the operation
+lands the test says so. `ARRIS_BLESS=1 cargo test -p arris --test corpus
+<name>` writes the dump instead of diffing it; commit the file as part
+of the step that made the fixture pass, and a later change to it is a
+`fixtures:` commit that says why the ids or the geometry moved.
 
 ## `fixture.json`
 

@@ -64,9 +64,26 @@ pub fn compare(
     variant: Option<&str>,
     tag: &str,
 ) -> Result<String, OracleError> {
-    let dir = scratch_dir();
-    let file = dir.join(format!("{tag}.step"));
-    std::fs::create_dir_all(&dir)
+    compare_dir(
+        &workspace_root().join("tests/fixtures").join(fixture),
+        step_text,
+        variant,
+        tag,
+    )
+}
+
+/// [`compare`] against a fixture directory anywhere — a scratch copy in
+/// a test, a fixture outside the corpus.
+pub fn compare_dir(
+    dir: &Path,
+    step_text: &str,
+    variant: Option<&str>,
+    tag: &str,
+) -> Result<String, OracleError> {
+    let fixture = dir.to_string_lossy().into_owned();
+    let scratch = scratch_dir();
+    let file = scratch.join(format!("{tag}.step"));
+    std::fs::create_dir_all(&scratch)
         .and_then(|()| std::fs::write(&file, step_text))
         .map_err(|e| OracleError::Write {
             path: file.clone(),
@@ -82,7 +99,7 @@ pub fn compare(
             "tools/oracle",
             "tools/oracle/compare.py",
         ])
-        .arg(root.join("tests/fixtures").join(fixture))
+        .arg(dir)
         .arg(&file);
     if let Some(v) = variant {
         command.args(["--variant", v]);
@@ -95,7 +112,7 @@ pub fn compare(
     match output.status.code() {
         Some(0) if stdout.contains("MATCH") => Ok(stdout),
         Some(1) => Err(OracleError::Mismatch {
-            fixture: fixture.to_string(),
+            fixture,
             file,
             table: stdout,
         }),
