@@ -17,8 +17,10 @@ pub mod entity;
 mod error;
 mod handle;
 mod id;
+mod idmap;
 mod model;
 mod orientation;
+pub mod provenance;
 mod walk;
 
 pub use arris_geom;
@@ -32,6 +34,8 @@ pub use id::{
     BodyId, Curve2Id, CurveId, EdgeId, EntityId, EntityKind, FaceId, GeometryId, ShellId,
     SurfaceId, VertexId,
 };
+pub use idmap::IdMap;
 pub use model::{CoedgeRef, Model, RawInsert};
 pub use orientation::Orientation;
+pub use provenance::{Origin, Provenance, Relation, Role};
 pub use walk::Closure;

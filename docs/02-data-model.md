@@ -641,57 +641,77 @@ asserts it. The line is linear in the closure, so it is taken at `Fast` too.
 ## Provenance
 
 Every operation returns a `Provenance`: which output entities came from
-which input entities, and how. Three relations, in Open CASCADE's
+which origins, and how. Three relations, in Open CASCADE's
 `BRepTools_History` vocabulary (read in the reference tree), because they
-are the three a parametric history needs:
+are the three a parametric history needs; and an origin is an input
+entity *or a role* — what an entity is to the operation that made it from
+nothing — so that every chain has a root (ADR-0002):
 
 ```rust
 pub enum Relation { Generated, Modified, Deleted }
+pub enum Origin   { Entity(Shape), Role(Role) }
+pub enum Role     { Box(BoxPart), Cylinder(CylinderPart) }   // exhaustive; M5 adds the profile roles
 
 pub struct Provenance {
-    // (input entities, relation, output entity), stored sorted by input id
-    generated: BTreeMap<Shape, Vec<Shape>>,      // input  → outputs generated from it
-    generated_pair: BTreeMap<(Shape, Shape), Vec<Shape>>, // an intersection edge from two faces
-    modified:  BTreeMap<Shape, Vec<Shape>>,      // input  → outputs that are pieces of it
+    generated: BTreeMap<Origin, Vec<Shape>>,   // origin → outputs generated from it, sorted
+    modified:  BTreeMap<Origin, Vec<Shape>>,   // origin → outputs that are pieces of it
     deleted:   BTreeSet<Shape>,
 }
 ```
 
 - **Generated**: the output is a new entity of a *different* kind or role
-  built from the input — the wall of a hole from the tool's cylindrical
-  face, an intersection edge from a pair of faces, the side faces of an
-  extrude from the profile's edges, the cap faces from the profile face.
+  built from the origin — the wall of a hole from the tool's cylindrical
+  face, an intersection edge from a pair of faces (one record per face;
+  `generated_pair(a, b)` is their intersection), the side faces of an
+  extrude from the profile's edges, every entity of a primitive from its
+  role (`Role::Box(BoxPart::Face(Coord::Z, Side::Max))` is a box's top;
+  `BoxPart::Edge { along, sides }` and `BoxPart::Vertex([Side; 3])` name
+  the rest; `CylinderPart::{Wall, BottomCap, TopCap, BottomRim, TopRim,
+  Seam, BottomVertex, TopVertex}` a cylinder's; both have `Shell` and
+  `Body`).
 - **Modified**: the output is a trimmed, split or re-tolerated piece of the
   input, same kind — the box's top face with a circle cut out of it, each
   half of a face split by an intersection curve (one input, several
   outputs), a transformed face.
-- **Deleted**: the input has no image in the output — the part of the tool
-  inside the target, a face swallowed by a fuse.
+- **Deleted**: the input has no image of its own kind in the output — the
+  part of the tool inside the target, a face swallowed by a fuse.
 - **Kept** is not recorded: an entity untouched by the operation keeps its
   id and is simply present in the output body. `Provenance::is_kept(input,
   &model, output_body)` is a query, not a relation.
 
-Every entity of every input body is accounted for: it is kept, or it appears
-in exactly one of the three relations (an entity can be both `Modified` into
-pieces and have `Generated` children; it cannot be `Deleted` and anything
-else). The ops tests assert that accounting on every fixture, and that the
-relations are the same on every run.
+Every entity of every input body is accounted for: it is kept, or it is
+recorded — `Modified` into pieces, `Generated` from, `Deleted`, or both
+`Deleted` and `Generated` from (the tool face that is gone and whose
+image is the hole's wall); never both `Deleted` and `Modified`, since a
+piece is an image. The ops tests assert that accounting on every fixture,
+and that the relations are the same on every run.
 
-Queries: `generated_from(input) -> &[Shape]`, `modified_from(input)`,
-`is_deleted(input)`, `origins(output) -> Vec<(Relation, Shape)>` (the
-inverse), and `Provenance::then(&self, &next) -> Provenance`, which composes
-two records so that a chain of operations (eight cuts of a bolt pattern)
-reports against the original inputs. Composition is associative and the
-tests check it.
+Queries: `generated_from(origin) -> &[Shape]`, `modified_from(origin)`,
+`is_deleted(input)`, `origins(output) -> Vec<(Relation, Origin)>` (the
+inverse), `outputs()`, `origins_recorded()`, and `Provenance::then(&self,
+&next) -> Provenance`, which composes two records so that a chain of
+operations (eight cuts of a bolt pattern) reports against the original
+inputs: an output of the first that the second modifies is replaced by
+its pieces and one it deletes is dropped, with the relations chained
+(`Modified` then `Modified` is `Modified`; anything through `Generated`
+is `Generated`); one the second generates from stays and gains the
+children; an input modified into pieces that are all gone is deleted;
+intermediate entities appear nowhere. Composition is associative over
+well-formed chains — an output is a new entity, and a record names only
+what exists when it runs — and the tests check it at a thousand random
+chains. `Provenance::mapped(&IdMap)` translates a record through the id
+map `import` returns, leaving ids the map does not hold (origins in
+bodies that were not imported) as they are.
 
 **Stability** is what the record is for. Rebuilding the same feature tree
 with a changed parameter produces, for each output entity, the same
-`origins` chain in terms of the *inputs' roles* (the third hole's tool face,
-the top face of the base plate) — because the record is built inside the
-algorithm from the entity ids it actually split, not recovered afterwards
-by geometric matching. A consumer's persistent name is therefore a function
-of the origins chain, and the roadmap's acceptance corpus asserts that
-function is constant across parameter changes.
+`origins` chain in terms of the *inputs' roles* (the third hole's tool
+face, the top face of the base plate) — because the record is built inside
+the algorithm from the entity ids it actually split, not recovered afterwards
+by geometric matching, and because the chain ends at a `Role`. A consumer's
+persistent name is therefore a function of the origins chain, and the
+roadmap's acceptance corpus asserts that function is constant across
+parameter changes.
 
 `⚠ OPEN:` how a consumer's persistent topological references map onto
 provenance ids — 01-architecture §Facade.

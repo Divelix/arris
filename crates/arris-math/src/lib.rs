@@ -1,5 +1,5 @@
 //! Numeric foundation of the Arris kernel: points, vectors and unit vectors
-//! over `nalgebra`, frames and rigid motions, intervals, exact orientation
+//! over `nalgebra`, frames, axes and rigid motions, intervals, exact orientation
 //! predicates over `robust`, polynomial and interval-guarded root finding,
 //! and `Precision`, the model-wide tolerance configuration.
 //!
@@ -16,6 +16,7 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+mod axis;
 mod frame;
 mod interval;
 mod isometry;
@@ -26,6 +27,7 @@ mod tolerance;
 
 pub use nalgebra;
 
+pub use axis::Axis;
 pub use frame::{Frame, Frame2, FrameError, Handedness};
 pub use interval::{Interval, IntervalError};
 pub use isometry::Isometry;

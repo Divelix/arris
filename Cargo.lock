@@ -104,6 +104,9 @@ name = "arris-ops"
 version = "0.0.1"
 dependencies = [
  "arris-check",
+ "arris-debug",
+ "arris-io",
+ "thiserror",
 ]
 
 [[package]]

@@ -10,11 +10,20 @@ license.workspace = true
 [features]
 # Reserved: rayon inside operations; never enabled on wasm32.
 parallel = []
-# Reserved: run the checker after every operation in release builds too.
+# Run the checker after every operation in release builds too, returning
+# `OpError::Internal` instead of a debug build's panic.
 paranoid = []
 
 [dependencies]
 arris-check.workspace = true
+thiserror.workspace = true
+
+# The sample bodies, the dump and the oracle seam live in `arris-debug`,
+# the STEP writer in `arris-io`; dev-dependencies are exempt from the
+# layer rule.
+[dev-dependencies]
+arris-debug.workspace = true
+arris-io.workspace = true
 
 [lints]
 workspace = true

@@ -130,7 +130,14 @@ pub fn cut(m: &mut Model, target: Body, tool: Body) -> Result<(Body, Provenance)
   a hash map where the order can reach a geometric decision or an id.
 - Parameters that are geometry (`Axis`, `Frame`, `Profile`) are plain
   values from `arris-math`/`arris-geom`, not handles: a primitive is built
-  from numbers, and only the result lives in the model.
+  from numbers, and only the result lives in the model. `arris_math::Axis
+  { origin, direction }` is a point and a unit direction, normalised by
+  `Axis::new` (`Axis::z_at` for the common case); `primitive_cylinder(m,
+  axis, radius, height)` places its frame by `Frame::from_z` of it, so it
+  seams where the oracle's cylinder does, and `primitive_box(m, min,
+  max)` takes two corners. Both build through the Euler operators
+  (02-data-model §Euler operators) and return every entity `Generated`
+  from a `Role`.
 - Same input, same output, same ids, on every platform. The tests assert
   this by dumping twice and diffing.
 
@@ -148,17 +155,19 @@ involved, so the message a consumer shows — or the agent reads — says
 | Variant | When | Carries |
 |---|---|---|
 | `InvalidInput` | an input body fails the checker (checked in debug builds before the operation starts, and in release when the `paranoid` feature is on) | `Body`, the `Report` |
-| `Unsupported` | the exhaustive dispatch reached a surface or curve pair the kernel has no formula for yet | the two `SurfaceKind`s or `CurveKind`s, the two entities |
-| `Degenerate` | the requested result has no valid representation: zero-thickness intersection, a profile crossing its revolve axis, a sweep of zero length | the entities and a `Reason` enum |
+| `Unsupported` | the exhaustive dispatch reached a surface or curve pair the kernel has no formula for yet | the two `GeomKind`s with their entities |
+| `Degenerate` | the requested result has no valid representation: a parameter that makes no geometry (`Reason::NonFinite`, `Reason::NotPositive` naming it — a zero radius, a box whose `min` is not below its `max`), a zero-thickness intersection, a profile crossing its revolve axis, a sweep of zero length | the entities (none for a primitive) and a `Reason` enum |
 | `Tolerance` | the result would need an entity tolerance above `Precision::max_tolerance` | the entity, the tolerance it wanted |
 | `NotFound` | a handle does not resolve in this model (wrong model, or compacted away) | the `Shape` |
-| `Internal` | the checker rejected the operation's own output — a kernel bug | the `Report` |
+| `Internal` | a kernel bug the operation caught: the checker rejected its own output, the builder refused a step of its fixed sequence, a frame could not be placed from inputs it had validated | a `Fault` — the `Report`, the `BuildError` or the `FrameError` |
 
 `Internal` is returned only in release builds with `paranoid` on; in debug
 builds the same condition panics (below). A degenerate *result* that the
 consumer might reasonably want anyway (the flush intersection that is a
 face, not a solid) is `Degenerate` with a reason, never a silently empty
-body: the kernel does not decide what fail-soft means.
+body: the kernel does not decide what fail-soft means. Every operation
+runs inside `Model::transaction`, so on any `Err` the model — its ids
+included — is as it was.
 
 ## The checker
 

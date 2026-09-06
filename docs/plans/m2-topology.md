@@ -286,7 +286,7 @@ per-kind counts) accept them; only the raw API and tests build them.
   faces) and matches `boolean/frame-cut`; a `finish` on a builder whose
   body is not closed as a `Solid` is a typed error, and the transaction
   leaves nothing behind.
-- [ ] Step 10 — Provenance, `OpError`, the primitives. `Provenance` with
+- [x] Step 10 — Provenance, `OpError`, the primitives. `Provenance` with
   `Origin`, the three relations, the queries, `then`, `mapped`;
   `arris_math::Axis`; `primitive_box`, `primitive_cylinder` through the
   builder in a transaction, tolerances at `default_tolerance`, the caps'
@@ -384,13 +384,13 @@ step, as for M1.
   surfaces — a seam's second pcurve is the first shifted by the period
   and `pcurve_on` cannot know which use it is building; the caller (a
   primitive now, the boolean in M4) always knows. ADR-0002.
-- `⚠ OPEN:` **Provenance origins become `Origin::{Entity, Role}`** so a
-  primitive's entities are `Generated` from a role rather than from
-  nothing, and a naming chain has a root. Recommendation: yes, with
-  `Role` an exhaustive enum extended per operation kind; the alternative
-  (a fourth relation `Created` with no origin) leaves the bolt-pattern
-  rebuild fixture with nothing to name a hole wall after. Human, by
-  step 10.
+- **Decided (agent, 2026-09-06, step 10 — delegated as for step 9):
+  provenance origins become `Origin::{Entity, Role}`** so a primitive's
+  entities are `Generated` from a role rather than from nothing, and a
+  naming chain has a root; `Role` is an exhaustive enum extended per
+  operation kind. The alternative (a fourth relation `Created` with no
+  origin) leaves the bolt-pattern rebuild fixture with nothing to name a
+  hole wall after. ADR-0002.
 - **Decided (human, 2026-09-06, step 6): the (u, v) toolkit and the
   region integral live in `arris-geom`**, shared by the checker (L4, L5,
   S5, B1, B2), M3's tessellation and `measure`, and M4's classification —
@@ -534,6 +534,25 @@ step, as for M1.
   `target/inspect/`, a typed `Mismatch` with the table, `Environment`
   for a missing `uv`) that the step-4 test duplicated inline and step
   13's runner will use; `sample::frame` is the `boolean/frame-cut` twin.
+- Step 10: the associativity property found the composition rule the
+  doc's accounting sentence hid. "An entity cannot be `Deleted` and
+  anything else" cannot be kept: a tool face that generated the hole's
+  wall and is itself gone is both, and erasing the deletion makes a
+  later composition keep an edge to an entity that no longer exists.
+  02 §Provenance now says deletion follows `Modified` alone — an input
+  whose every piece is gone is deleted, whatever it generated; an input
+  only generated from is still there — and never both `Deleted` and
+  `Modified`. The `generated_pair` map of the doc's struct became a query
+  over two `Generated` records, since two edges say the same thing. Every
+  parameter fault of a primitive is `OpError::Degenerate` with a
+  `Reason::{NonFinite, NotPositive}` naming the parameter, not
+  `InvalidInput`, whose payload is a body and its report; `Internal`
+  carries a `Fault::{Checker, Builder, Frame}` rather than the `Report`
+  alone, since a builder refusal or a frame failure inside a primitive's
+  fixed sequence is the same class of bug. `IdMap` exists now (step 12
+  fills it) because `Provenance::mapped` needed its type. Both
+  primitives give every planar pcurve in one pass after the topology, as
+  `sample::frame` does; the cylinder gives its six at the operators.
 - Step 8: `Report::unchecked` needed a second variant. B1's ray cast can
   fail the same way S5's face pair can — no closed form, this time for a
   line against the shell's surface — so `Unchecked` is
