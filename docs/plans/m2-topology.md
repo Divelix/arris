@@ -226,7 +226,7 @@ per-kind counts) accept them; only the raw API and tests build them.
   a period, a seam with both coedges forward, a degenerate edge with a
   curve, …) and asserts the report holds that violation on that entity
   and nothing else; the report order is deterministic.
-- [ ] Step 6 — The (u, v) toolkit in `arris-geom`. `region2::{Polygon2,
+- [x] Step 6 — The (u, v) toolkit in `arris-geom`. `region2::{Polygon2,
   discretise, signed_area, winding_number, intersections}` and
   `integrate::{region_integral, GAUSS_ORDER}` as in the design deltas.
   Tests (1000 cases): the signed area of a discretised circle of either
@@ -389,12 +389,12 @@ step, as for M1.
   (a fourth relation `Created` with no origin) leaves the bolt-pattern
   rebuild fixture with nothing to name a hole wall after. Human, by
   step 10.
-- `⚠ OPEN:` **The (u, v) toolkit and the region integral live in
-  `arris-geom`**, shared by the checker (L4, L5, S5, B1, B2), M3's
-  tessellation and `measure`, and M4's classification — while the
-  checker's 3D containment test for voids stays private to `arris-check`.
-  Recommendation: as stated; the checker must not depend on `ops`, so a
-  shared integrator can only sit below both. Human, by step 6.
+- **Decided (human, 2026-09-06, step 6): the (u, v) toolkit and the
+  region integral live in `arris-geom`**, shared by the checker (L4, L5,
+  S5, B1, B2), M3's tessellation and `measure`, and M4's classification —
+  while the checker's 3D containment test for voids stays private to
+  `arris-check`. The checker must not depend on `ops`, so a shared
+  integrator can only sit below both. 02 §Pcurves documents it.
 - `⚠ OPEN:` **`retain` reuses freed slots** lowest-index-first at the
   bumped generation, so a long-lived model does not grow without bound
   before C2 decides on renumbering. Recommendation: reuse — it is what
@@ -469,3 +469,19 @@ step, as for M1.
   to one line. E7 compares seam pcurves in (u, v) with
   `parametric_tolerance` divided by the surface's speed in each
   direction, unscaled where a direction is singular to rounding.
+- Step 6: `region2::Piece` carries `reversed: bool` rather than
+  `Orientation`, which is `arris-topo`'s and cannot be named below it; a
+  caller maps the coedge's orientation. `discretise` takes
+  `f64::INFINITY` for "the minimum counts", which is what a sign needs
+  (the STEP writer's outer bound uses it; L4 will too), while a finer
+  chord tolerance is bounded by `MAX_SEGMENTS_PER_PIECE` and the deviation
+  actually achieved is reported, never silently met. Gauss–Legendre
+  nodes are computed by Newton to a fixed point rather than tabled, so
+  there is no 17-digit literal to mistype and every platform gets the
+  same values to rounding. Pieces built corner to corner meet only to
+  rounding, and a ring that kept the rounding-length closing segment
+  tripped its own self-intersection test (the segment touched a
+  non-adjacent side); a loop is closed by definition, so `discretise`
+  joins consecutive pieces at the earlier piece's last point and closes
+  the last onto the first, reporting the gap through `gaps()` instead of
+  drawing it — L2 is where a gap is judged.

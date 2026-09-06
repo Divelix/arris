@@ -16,6 +16,9 @@ thiserror.workspace = true
 # tools).
 [dev-dependencies]
 arris-debug.workspace = true
+# The region integral is proven on the sample cylinder's faces, read
+# through the topology crate; a dev-dependency is exempt from the layer rule.
+arris-topo.workspace = true
 proptest.workspace = true
 
 [lints]

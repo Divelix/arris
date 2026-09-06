@@ -246,6 +246,33 @@ the range is `GeomError::NotOnSurface` naming the parameter and the
 distance; cone, sphere, torus and NURBS surfaces are `Unsupported` arms
 until revolve needs them (M5).
 
+**The (u, v) toolkit** is what every algorithm that reasons about a
+face's domain shares — the checker's loop, face and body rows,
+tessellation, mass properties and classification — and it lives in
+`arris-geom` below all of them (decided in M2). `region2`: a loop is a
+sequence of `Piece { curve: &Curve2, range, reversed }` walked in order,
+and `discretise(pieces, chord_tolerance)` is its `Polygon2` — each piece
+sampled at the segment count its second derivative bounds the chord
+deviation by (`|d2| h² / 8`; a line is one segment, a conic never fewer
+than `MIN_SEGMENTS_PER_TURN` per turn, a NURBS never fewer than
+`MIN_SEGMENTS_PER_SPAN` per knot span, and never more than
+`MAX_SEGMENTS_PER_PIECE`, the deviation achieved reported by
+`chord_deviation()`; `f64::INFINITY` asks for the minimum counts, enough
+for a sign) with the pieces taken as written, so a seam-crossing loop's
+`u` runs past the period and is never wrapped. Over the polygon:
+`signed_area()` (shoelace), `winding_number(p)` by `orient2d` crossings
+(zero outside, `±1` inside by the turn), `contains(p)` exactly on a
+segment, `gaps()` between consecutive pieces (L2), and
+`self_intersections()` / `intersections(&other)` over
+`segments_intersect`, exact through `orient2d` with touching counted
+(L5, S5). `integrate::region_integral(pieces, f)` is `∬ f du dv` over
+the region by Green's theorem — `∮ G dv` with `G = ∫_{u₀}^{u} f ds` —
+with Gauss–Legendre quadrature of `GAUSS_ORDER` points per interval, a
+conic piece split at quarter turns and a NURBS at its knots, signed by
+the loop's turn so holes subtract themselves: `f = |∂P/∂u × ∂P/∂v|` is
+an area, `f = P · (∂P/∂u × ∂P/∂v) / 3` summed over a solid's faces with
+their use orientation is Gauss's volume (B2, `measure`).
+
 `project_to_plane(curve, plane)` is the orthogonal projection onto a plane
 for a consumer's sketch (01-architecture §Facade): a point-set projection
 whose parameter is the variant's own — a line stays a `Line`, a circle

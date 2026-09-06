@@ -48,6 +48,7 @@
 use core::fmt::Write as _;
 use std::collections::{BTreeMap, BTreeSet};
 
+use arris_check::arris_topo::arris_geom::region2::{Piece, discretise};
 use arris_check::arris_topo::arris_geom::{
     Curve, Curve2, NurbsCurve, NurbsCurve2, NurbsSurface, Surface,
 };
@@ -128,12 +129,6 @@ impl core::fmt::Display for Unsupported {
         }
     }
 }
-
-/// Points sampled along a curved pcurve piece when a loop's signed area
-/// decides which bound is the outer one. Only the sign is used, so the
-/// count needs to resolve a loop's turn, not its shape; thirty-two puts a
-/// full circle's polygon well within one percent of its area.
-const AREA_SAMPLES: usize = 32;
 
 /// The STEP AP214 Part 21 text of `bodies` in the order given, as one
 /// product whose shape representation lists one `MANIFOLD_SOLID_BREP` per
@@ -459,34 +454,29 @@ impl<'m> Writer<'m> {
         Ok(number)
     }
 
-    /// The signed area of a loop's pcurve polygon in (u, v), sampled at the
-    /// edges' ranges; degenerate coedges contribute nothing.
+    /// The signed area of a loop in (u, v) through `region2`, its pieces
+    /// sampled at the toolkit's minimum counts: only the sign is used, and
+    /// the minimum counts resolve the turn of any loop the checker accepts.
+    /// Degenerate coedges contribute nothing.
     fn loop_area(&self, l: &Loop) -> Result<f64, StepError> {
-        let mut polygon: Vec<Point2> = Vec::new();
+        let mut pcurves = Vec::with_capacity(l.coedges().len());
         for coedge in l.coedges() {
             let edge = self.model.edge(coedge.edge())?;
             let Some((_, range)) = edge.curve() else {
                 continue;
             };
             let pcurve = self.model.curve2(coedge.pcurve())?;
-            let samples = match pcurve {
-                Curve2::Line { .. } => 2,
-                Curve2::Circle { .. } | Curve2::Ellipse { .. } | Curve2::Nurbs(_) => AREA_SAMPLES,
-            };
-            let mut points: Vec<Point2> = (0..samples)
-                .map(|i| pcurve.point(range.lerp(i as f64 / (samples - 1) as f64)))
-                .collect();
-            if coedge.orientation() == Orientation::Reversed {
-                points.reverse();
-            }
-            polygon.extend(points);
+            pcurves.push((pcurve, range, coedge.orientation() == Orientation::Reversed));
         }
-        let mut twice = 0.0;
-        for (i, p) in polygon.iter().enumerate() {
-            let q = polygon[(i + 1) % polygon.len()];
-            twice += p.x * q.y - q.x * p.y;
-        }
-        Ok(twice / 2.0)
+        let pieces: Vec<Piece<'_>> = pcurves
+            .iter()
+            .map(|&(curve, range, reversed)| Piece {
+                curve,
+                range,
+                reversed,
+            })
+            .collect();
+        Ok(discretise(&pieces, f64::INFINITY).signed_area())
     }
 
     /// The `EDGE_CURVE` of a non-degenerate edge, once: its vertices, its
