@@ -251,7 +251,7 @@ per-kind counts) accept them; only the raw API and tests build them.
   face sets in one shell; a wire with a shell); the sample bodies' Euler
   lines are `8/12/6/6/1 g0` and `2/3/3/3/1 g0`; a body with an odd line
   is reported.
-- [ ] Step 8 — Checker `Full`: L5, E8, S5, B1, B2. L5 over `region2`'s
+- [x] Step 8 — Checker `Full`: L5, E8, S5, B1, B2. L5 over `region2`'s
   intersections; E8 trivially true for the analytic curves, by polyline
   self-intersection within the edge's tolerance for a NURBS; S5 over
   every face pair of a shell through M1's `intersect_surfaces` — `Empty`
@@ -505,3 +505,24 @@ step, as for M1.
   same faults read from the loop's, the face's and the shell's side (a
   moved vertex opens a loop, a shifted pcurve gaps its junctions, a face
   coarser than its edge is E5 *and* F2), and each names its full set.
+- Step 8: `Report::unchecked` needed a second variant. B1's ray cast can
+  fail the same way S5's face pair can — no closed form, this time for a
+  line against the shell's surface — so `Unchecked` is
+  `{ FacePair, ShellNesting }`, not S5's alone; both are printed with a
+  `?` after the row number and are outside `is_ok`. `Polygon2::
+  self_intersections` and `intersections` became a sweep in `u`
+  (`arris-geom`, step 6's module): L5 discretises a loop within the
+  model's parametric tolerance, which is fourteen thousand segments for a
+  cylinder cap's circle, and the quadratic pair test made a debug run of
+  the corpus minutes long. The answer is unchanged — the same pairs,
+  ascending — and the worst case is still every pair. S5's transversal arm
+  samples the intersection curve over the parameters *both* faces'
+  boundaries reach, found by projecting each face's polygon onto the
+  curve; the coincident arm carries a grid of each face's interior points
+  through 3D onto the other surface, so an overlap finer than the grid is
+  not seen (L5 and the curve test cover a crossing). E8 is a no-op for the
+  analytic curves — over a range E1 accepted they cannot cross — so only a
+  NURBS is sampled, at `check_samples` per knot span. B1 reads each
+  shell's Gauss volume for the outer/void split and casts a ray only to
+  place a void; `ShellNestingFault::InsideOut` is what is left for a
+  non-outer shell of zero volume.

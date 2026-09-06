@@ -2,6 +2,7 @@
 
 use core::fmt;
 
+use crate::unchecked::Unchecked;
 use crate::violation::{Level, Violation};
 
 /// The Euler–Poincaré line of a body (`docs/02-data-model.md`
@@ -98,7 +99,10 @@ impl fmt::Display for EulerLine {
 /// runs over the same model print the same report byte for byte.
 ///
 /// `Report::is_ok()` is what every test asserts and what every operation
-/// asserts on its own output before returning `Ok`.
+/// asserts on its own output before returning `Ok`. It speaks for the
+/// violations alone: a `Full` row the kernel could not decide is listed
+/// by [`Report::unchecked`], printed with a `?` after its code, and is
+/// neither a violation nor a silent pass.
 ///
 /// ```
 /// use arris_check::{Report, Violation};
@@ -114,6 +118,7 @@ impl fmt::Display for EulerLine {
 pub struct Report {
     violations: Vec<Violation>,
     euler: Option<EulerLine>,
+    unchecked: Vec<Unchecked>,
 }
 
 impl Report {
@@ -123,6 +128,7 @@ impl Report {
         Report {
             violations,
             euler: None,
+            unchecked: Vec::new(),
         }
     }
 
@@ -138,6 +144,26 @@ impl Report {
     /// unless a row was broken as well.
     pub const fn euler(&self) -> Option<EulerLine> {
         self.euler
+    }
+
+    /// The same report carrying `unchecked`, sorted into report order.
+    pub fn with_unchecked(mut self, mut unchecked: Vec<Unchecked>) -> Self {
+        unchecked.sort_by(|a, b| {
+            a.entity()
+                .cmp(&b.entity())
+                .then_with(|| a.code().cmp(b.code()))
+                .then_with(|| a.cmp(b))
+        });
+        unchecked.dedup();
+        self.unchecked = unchecked;
+        self
+    }
+
+    /// The `Full` rows the checker could not decide on this body, in
+    /// report order. Empty for a body every row could be decided on; a
+    /// non-empty list is not a failure, and not a pass either.
+    pub fn unchecked(&self) -> &[Unchecked] {
+        &self.unchecked
     }
 
     /// `true` when nothing was violated.
@@ -179,6 +205,11 @@ impl Report {
                 .cloned()
                 .collect(),
             euler: self.euler,
+            unchecked: if level == Level::Full {
+                self.unchecked.clone()
+            } else {
+                Vec::new()
+            },
         }
     }
 
@@ -192,10 +223,14 @@ impl Report {
 }
 
 impl fmt::Display for Report {
-    /// One line per violation, in report order; empty for an ok report.
+    /// One line per violation, in report order, then one per undecided
+    /// row; empty for an ok report that decided everything.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for v in &self.violations {
             writeln!(f, "{v}")?;
+        }
+        for u in &self.unchecked {
+            writeln!(f, "{u}")?;
         }
         Ok(())
     }

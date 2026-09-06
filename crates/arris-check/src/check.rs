@@ -19,6 +19,7 @@ use arris_topo::{
 
 use crate::report::Report;
 use crate::topology::euler_line;
+use crate::unchecked::Unchecked;
 use crate::violation::{
     DegenerateFault, EndMismatch, Level, Quantity, Reference, SeamFault, ToleranceBound, Violation,
 };
@@ -85,6 +86,8 @@ pub fn check(model: &Model, body: Body, level: Level) -> Report {
         uses,
         vertex_edges,
         violations: Vec::new(),
+        faces_fine: BTreeMap::new(),
+        unchecked: Vec::new(),
     };
     c.references();
     c.indices();
@@ -94,13 +97,19 @@ pub fn check(model: &Model, body: Body, level: Level) -> Report {
     c.face_rows();
     c.shell_rows();
     c.body_rows();
+    if level == Level::Full {
+        c.full_rows();
+    }
     let line = euler_line(model, &c.closure);
+    let unchecked = core::mem::take(&mut c.unchecked);
     let violations = c
         .violations
         .into_iter()
         .filter(|v| v.level() <= level)
         .collect();
-    Report::new(violations).with_euler(line)
+    Report::new(violations)
+        .with_euler(line)
+        .with_unchecked(unchecked)
 }
 
 pub(crate) struct Checker<'m> {
@@ -113,6 +122,11 @@ pub(crate) struct Checker<'m> {
     /// Vertex → the body's edges that end at it, each once.
     pub(crate) vertex_edges: BTreeMap<VertexId, Vec<EdgeId>>,
     pub(crate) violations: Vec<Violation>,
+    /// Every face's loops as polygons in (u, v), built by the `Full`
+    /// rows and empty at `Fast`.
+    pub(crate) faces_fine: BTreeMap<FaceId, Vec<arris_topo::arris_geom::region2::Polygon2>>,
+    /// The `Full` rows this body could not be decided on.
+    pub(crate) unchecked: Vec<Unchecked>,
 }
 
 /// `(face, loop index, coedge index, coedge)` for every coedge of a face.

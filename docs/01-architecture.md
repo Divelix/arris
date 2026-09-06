@@ -174,16 +174,23 @@ row; adjacency is read off the body's own entities, so every row stands
 without the arena's indices and M2 alone speaks for them. Every report also carries the body's Euler–Poincaré line,
 `Report::euler()`, which is a line and not a violation. The invariants are
 listed in 02-data-model §Invariants; each has a `Violation` variant, a test
-that constructs it and sees it reported, and a level (as of M2 step 7 every
-`Fast` row runs; the `Full` rows land in step 8):
+that constructs it and sees it reported, and a level:
 
 - `Level::Fast` — combinatorial and local geometric checks (ids resolve,
   loops close, orientations compose, tolerances are ordered, pcurves match
   their 3D curves at sample points). Linear in the body. This is what runs
   after every operation.
-- `Level::Full` — adds the global checks: faces of a shell intersect only
-  at shared edges, shells nest, a solid encloses positive volume. Not
+- `Level::Full` — adds the global checks: an edge does not cross itself,
+  the loops of a face do not cross, faces of a shell intersect only at
+  shared edges, shells nest, a solid encloses positive volume. Not
   linear. Runs on demand, in the fixture corpus and in `/close-cycle`.
+
+A `Full` row the kernel has no closed form for — a face pair whose
+surfaces the intersector cannot intersect, a shell no containment ray
+could be classified against — is never guessed at and never quietly
+passed: it is listed by `Report::unchecked()`, printed with a `?` after
+its row number, and left out of `is_ok()`. An operation that cannot afford
+an undecided row asks for the list.
 
 **In debug builds every operation runs `Level::Fast` on its output before
 returning `Ok`, and panics with the report if it fails.** A checker failure

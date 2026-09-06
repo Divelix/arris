@@ -311,43 +311,91 @@ impl Polygon2 {
     }
 
     /// Pairs of segment indices (into [`Polygon2::segments`]) of this ring
-    /// that meet, non-adjacent ones only: a simple polygon reports none.
-    /// Quadratic in the segment count.
+    /// that meet, non-adjacent ones only and ascending: a simple polygon
+    /// reports none. Found by a sweep in `u` over the segments' spans, so
+    /// a ring whose segments overlap few others — every ring a pcurve
+    /// discretises to — costs `n log n`; the worst case is still every
+    /// pair.
     pub fn self_intersections(&self) -> Vec<(usize, usize)> {
         let segments: Vec<_> = self.segments().collect();
         let n = segments.len();
-        let mut hits = Vec::new();
-        for i in 0..n {
-            for j in i + 1..n {
-                let adjacent = j == i + 1 || (i == 0 && j == n - 1);
-                if adjacent {
-                    continue;
-                }
-                let (a0, a1) = segments[i];
-                let (b0, b1) = segments[j];
-                if segments_intersect(a0, a1, b0, b1) {
-                    hits.push((i, j));
-                }
-            }
-        }
-        hits
+        sweep(&segments, &segments, |i, j| {
+            i < j && !(j == i + 1 || (i == 0 && j == n - 1))
+        })
     }
 
     /// Pairs `(i, j)` of a segment of this ring and a segment of `other`
-    /// that meet, touching included. Quadratic in the segment counts.
+    /// that meet, touching included, ascending. The sweep of
+    /// [`Polygon2::self_intersections`].
     pub fn intersections(&self, other: &Polygon2) -> Vec<(usize, usize)> {
         let mine: Vec<_> = self.segments().collect();
         let theirs: Vec<_> = other.segments().collect();
-        let mut hits = Vec::new();
-        for (i, &(a0, a1)) in mine.iter().enumerate() {
-            for (j, &(b0, b1)) in theirs.iter().enumerate() {
-                if segments_intersect(a0, a1, b0, b1) {
+        sweep(&mine, &theirs, |_, _| true)
+    }
+}
+
+/// The pairs `(i, j)` — `i` into `a`, `j` into `b` — that `keep` admits
+/// and whose segments meet, ascending. A sweep in `u`: each list is
+/// visited in order of its segments' least `u`, and a segment is compared
+/// only against those still spanning that `u`.
+fn sweep(
+    a: &[(Point2, Point2)],
+    b: &[(Point2, Point2)],
+    keep: impl Fn(usize, usize) -> bool,
+) -> Vec<(usize, usize)> {
+    let span = |s: &(Point2, Point2)| (s.0.x.min(s.1.x), s.0.x.max(s.1.x));
+    let order = |xs: &[(Point2, Point2)]| {
+        let mut order: Vec<usize> = (0..xs.len()).collect();
+        order.sort_by(|&i, &j| {
+            span(&xs[i])
+                .0
+                .partial_cmp(&span(&xs[j]).0)
+                .unwrap_or(core::cmp::Ordering::Equal)
+                .then(i.cmp(&j))
+        });
+        order
+    };
+    let (order_a, order_b) = (order(a), order(b));
+    let mut hits = Vec::new();
+    // Both lists are swept together: a segment of one is compared with
+    // every segment of the other whose span has not ended.
+    let (mut ia, mut ib) = (0, 0);
+    let (mut active_a, mut active_b): (Vec<usize>, Vec<usize>) = (Vec::new(), Vec::new());
+    while ia < order_a.len() || ib < order_b.len() {
+        let next_a = order_a.get(ia).map(|&i| span(&a[i]).0);
+        let next_b = order_b.get(ib).map(|&j| span(&b[j]).0);
+        let from_a = match (next_a, next_b) {
+            (Some(x), Some(y)) => x <= y,
+            (Some(_), None) => true,
+            _ => false,
+        };
+        if from_a {
+            let i = order_a[ia];
+            ia += 1;
+            let lo = span(&a[i]).0;
+            active_b.retain(|&j| span(&b[j]).1 >= lo);
+            for &j in &active_b {
+                if keep(i, j) && segments_intersect(a[i].0, a[i].1, b[j].0, b[j].1) {
                     hits.push((i, j));
                 }
             }
+            active_a.push(i);
+        } else {
+            let j = order_b[ib];
+            ib += 1;
+            let lo = span(&b[j]).0;
+            active_a.retain(|&i| span(&a[i]).1 >= lo);
+            for &i in &active_a {
+                if keep(i, j) && segments_intersect(a[i].0, a[i].1, b[j].0, b[j].1) {
+                    hits.push((i, j));
+                }
+            }
+            active_b.push(j);
         }
-        hits
     }
+    hits.sort_unstable();
+    hits.dedup();
+    hits
 }
 
 /// `true` when `p` lies on the closed segment `ab`, exactly: collinear by

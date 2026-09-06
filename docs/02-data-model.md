@@ -533,7 +533,7 @@ reference tree) mapped onto this representation.
 | E5 | `edge.tolerance ≥ face.tolerance` for every face it bounds; `≤ vertex.tolerance` of both vertices | Fast |
 | E6 | A degenerate edge has `start == end` and lies on faces whose surface is singular along its pcurve over its range (the image at `check_samples` parameters spans at most the vertex's tolerance) | Fast |
 | E7 | A seam edge (used twice by one loop) has its two coedges in opposite orientation and pcurves that differ by exactly the surface's period in the periodic parameter | Fast |
-| E8 | The edge does not self-intersect within its range | Full |
+| E8 | The edge does not self-intersect within its range. An analytic curve over a range E1 accepted cannot; a NURBS is tested as a polyline of `check_samples` points per knot span, two non-adjacent segments closer than the edge's tolerance being the crossing | Full |
 
 **Loop and face**
 
@@ -543,7 +543,7 @@ reference tree) mapped onto this representation.
 | L2 | The pcurves are continuous in (u, v) at every coedge junction within `parametric_tolerance` scaled to the surface's speed, or jump by exactly one period in a periodic parameter — across a seam edge, and where a closed edge's pcurve wraps the parameter once. Every junction that is neither is reported | Fast |
 | L3 | No edge is used twice in one loop except as a seam (E7); no edge is used by two loops of the same face except as a seam | Fast |
 | L4 | Each loop's signed area in (u, v) is non-zero — its mean width, the area over half its perimeter, is above `parametric_tolerance` — and the loops of a face have exactly one outer loop (positive winding) per connected component of the domain, holes with negative winding inside one of them. Two outer loops are one component exactly when one contains the other; disjoint ones are two | Fast |
-| L5 | The loops of a face do not intersect each other or themselves in (u, v) | Full |
+| L5 | The loops of a face do not intersect each other or themselves in (u, v), as polygons within `parametric_tolerance` of the pcurves | Full |
 | F1 | The face has a surface and at least one loop; every pcurve lies within the surface's non-periodic domain bounds, to `parametric_tolerance`. Reported once per face, at the first coedge that leaves them | Fast |
 | F2 | `face.tolerance ≥ Precision::min_tolerance` and ≤ every incident edge's | Fast |
 
@@ -555,9 +555,9 @@ reference tree) mapped onto this representation.
 | S2 | In a `Solid` body every edge of the shell is used by exactly two coedges, with opposite effective orientation (the two faces agree on which side the material is); in a `Sheet` by one or two; in `General` by any number. The orientations pair up in every kind: as many forward uses as reversed, but for an odd count, where exactly one is left over. A `Wire` body's shell is not judged here — B3 says it should have none | Fast |
 | S3 | A shell is connected through its edges | Fast |
 | S4 | A shell of a `Solid` is closed: no edge with one coedge | Fast |
-| S5 | The faces of a shell intersect only along their shared edges and vertices | Full |
-| B1 | A `Solid` body has at least one shell; every shell is closed and oriented; exactly one shell is outer and the rest are voids inside it, each void's effective normals pointing into the void | Full |
-| B2 | A `Solid` body encloses positive volume (Gauss over the faces) | Full |
+| S5 | The faces of a shell intersect only along their shared edges and vertices: their surfaces' intersection is empty, or every point of it that is interior to both faces is within the tolerance of an edge or vertex they share; two coincident surfaces must not carry faces whose interiors overlap. A pair the intersector has no closed form for is **unchecked** — listed by `Report::unchecked`, never passed and never a violation | Full |
+| B1 | A `Solid` body has at least one shell; exactly one shell encloses positive volume and is the outer one, and every other encloses negative volume — its effective normals turned into the void — and lies inside it, by the parity of a ray cast from one of its vertices. A shell no ray could be classified against is **unchecked**, as S5's undecided pairs are | Full |
+| B2 | A `Solid` body encloses positive volume: `∬ p · (r_u × r_v) / 3` over each face's region in (u, v), summed with the sign of each face use. The value is reported with the violation | Full |
 | B3 | A `Wire` body has no shells; `free_edges` form chains (each vertex used by at most two free edges) — `General` bodies exempt | Fast |
 
 **Euler–Poincaré** (every level, reported as one line, never a violation on

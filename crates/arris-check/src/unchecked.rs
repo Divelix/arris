@@ -1,0 +1,82 @@
+//! A `Full` row the kernel could not decide.
+
+use core::fmt;
+
+use arris_topo::arris_geom::SurfaceKind;
+use arris_topo::{BodyId, EntityId, FaceId, ShellId};
+
+/// A `Full` invariant the checker could not decide on this body, listed
+/// by [`Report::unchecked`](crate::Report::unchecked). Never a violation
+/// and never a silent pass: an operation that cannot afford an undecided
+/// row asks for the list and refuses.
+///
+/// Every variant names the row it belongs to and the entities it is
+/// about; [`Unchecked::code`] gives the row's number in
+/// `docs/02-data-model.md` §Invariants.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
+pub enum Unchecked {
+    /// **S5** — the intersector has no closed form for this pair of
+    /// surfaces, so whether the two faces meet away from their shared
+    /// edges is not known.
+    FacePair {
+        /// The shell holding both faces.
+        shell: ShellId,
+        /// The first face.
+        face_a: FaceId,
+        /// The second face.
+        face_b: FaceId,
+        /// Their surfaces' kinds, in that order.
+        kinds: (SurfaceKind, SurfaceKind),
+    },
+    /// **B1** — no ray from this shell could be classified against the
+    /// solid's outer shell, so whether it is a void inside it is not
+    /// known.
+    ShellNesting {
+        /// The body.
+        body: BodyId,
+        /// The shell that could not be placed.
+        shell: ShellId,
+    },
+}
+
+impl Unchecked {
+    /// The row number in `docs/02-data-model.md` §Invariants.
+    pub const fn code(&self) -> &'static str {
+        match self {
+            Unchecked::FacePair { .. } => "S5",
+            Unchecked::ShellNesting { .. } => "B1",
+        }
+    }
+
+    /// The entity the row is reported against: what the list is sorted
+    /// by, as a violation's is.
+    pub fn entity(&self) -> EntityId {
+        match *self {
+            Unchecked::FacePair { shell, .. } => shell.into(),
+            Unchecked::ShellNesting { body, .. } => body.into(),
+        }
+    }
+}
+
+impl fmt::Display for Unchecked {
+    /// One line, marked `?` where a violation's line has its code alone.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}? {}: ", self.code(), self.entity())?;
+        match self {
+            Unchecked::FacePair {
+                face_a,
+                face_b,
+                kinds,
+                ..
+            } => write!(
+                f,
+                "no closed form for {face_a} ({}) against {face_b} ({})",
+                kinds.0, kinds.1
+            ),
+            Unchecked::ShellNesting { shell, .. } => {
+                write!(f, "no ray from {shell} could be classified")
+            }
+        }
+    }
+}

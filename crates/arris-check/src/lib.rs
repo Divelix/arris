@@ -13,14 +13,17 @@
 #![warn(missing_docs)]
 
 mod check;
+mod full;
 mod report;
 mod topology;
+mod unchecked;
 mod violation;
 
 pub use arris_topo;
 
 pub use check::check;
 pub use report::{EulerLine, Report};
+pub use unchecked::Unchecked;
 pub use violation::{
     DegenerateFault, EdgeUseFault, EndMismatch, FaceFault, Level, LoopBreak, NestingFault,
     Quantity, Reference, SeamFault, ShellNestingFault, ToleranceBound, Violation, WireFault,
