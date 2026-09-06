@@ -259,7 +259,9 @@ than `MIN_SEGMENTS_PER_TURN` per turn, a NURBS never fewer than
 `MAX_SEGMENTS_PER_PIECE`, the deviation achieved reported by
 `chord_deviation()`; `f64::INFINITY` asks for the minimum counts, enough
 for a sign) with the pieces taken as written, so a seam-crossing loop's
-`u` runs past the period and is never wrapped. Over the polygon:
+`u` runs past the period and is never wrapped; `Polygon2::from_points`
+is the same ring from points a caller sampled itself, as tessellation
+does at the parameters its 3D edges were discretised at. Over the polygon:
 `signed_area()` (shoelace), `winding_number(p)` by `orient2d` crossings
 (zero outside, `±1` inside by the turn), `contains(p)` exactly on a
 segment, `gaps()` between consecutive pieces (L2), and

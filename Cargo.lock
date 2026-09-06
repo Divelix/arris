@@ -99,7 +99,9 @@ name = "arris-mesh"
 version = "0.0.1"
 dependencies = [
  "arris-check",
+ "arris-debug",
  "arris-topo",
+ "proptest",
  "thiserror",
 ]
 

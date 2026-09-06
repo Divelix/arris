@@ -16,5 +16,11 @@ arris-topo.workspace = true
 arris-check.workspace = true
 thiserror.workspace = true
 
+# The seeded property-test runner and the sample bodies live in
+# `arris-debug`; a dev-dependency is exempt from the layer rule.
+[dev-dependencies]
+arris-debug.workspace = true
+proptest.workspace = true
+
 [lints]
 workspace = true

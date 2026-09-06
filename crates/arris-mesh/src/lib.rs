@@ -11,6 +11,7 @@
 #![warn(missing_docs)]
 
 mod aabb;
+pub mod cdt;
 mod polyline;
 mod trimesh;
 

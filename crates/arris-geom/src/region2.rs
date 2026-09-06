@@ -245,6 +245,41 @@ pub fn discretise(pieces: &[Piece<'_>], chord_tolerance: f64) -> Polygon2 {
 }
 
 impl Polygon2 {
+    /// A polygon from a ring of points already in walking order: what a
+    /// caller that sampled the pieces itself — tessellation, which samples
+    /// each pcurve at the parameters its 3D edge was discretised at —
+    /// builds instead of [`discretise`]. A point equal to its predecessor
+    /// is dropped, and so is a last point equal to the first, so every
+    /// segment has length; there are no junctions ([`Polygon2::gaps`] is
+    /// empty) and the chord deviation is zero, since the points *are* the
+    /// boundary.
+    ///
+    /// ```
+    /// use arris_geom::region2::Polygon2;
+    /// use arris_math::Point2;
+    ///
+    /// let p = |x, y| Point2::new(x, y);
+    /// let square = Polygon2::from_points([p(0.0, 0.0), p(2.0, 0.0), p(2.0, 2.0), p(0.0, 2.0), p(0.0, 0.0)]);
+    /// assert_eq!(square.points().len(), 4);
+    /// assert_eq!(square.signed_area(), 4.0);
+    /// ```
+    pub fn from_points(points: impl IntoIterator<Item = Point2>) -> Polygon2 {
+        let mut ring: Vec<Point2> = Vec::new();
+        for p in points {
+            if ring.last() != Some(&p) {
+                ring.push(p);
+            }
+        }
+        if ring.len() > 1 && ring.first() == ring.last() {
+            ring.pop();
+        }
+        Polygon2 {
+            points: ring,
+            junctions: Vec::new(),
+            chord_deviation: 0.0,
+        }
+    }
+
     /// The ring of vertices in walking order, the closing edge implied.
     pub fn points(&self) -> &[Point2] {
         &self.points
