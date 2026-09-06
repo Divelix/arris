@@ -463,6 +463,11 @@ pub struct Measured {
     /// Centroid.
     #[serde(default)]
     pub centroid: Option<[f64; 3]>,
+    /// The inertia tensor about the centroid at unit density, as rows,
+    /// in the physical convention (the products of inertia negated):
+    /// OCCT's `MatrixOfInertia`, and `arris_ops::measure`'s.
+    #[serde(default)]
+    pub inertia: Option<[[f64; 3]; 3]>,
     /// `V − E + 2F − L`.
     #[serde(default)]
     pub euler_characteristic: Option<i64>,

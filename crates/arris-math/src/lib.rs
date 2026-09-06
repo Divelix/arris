@@ -74,3 +74,6 @@ pub type Vec2 = nalgebra::Vector2<f64>;
 /// A direction in the (u, v) plane: a [`Vec2`] of unit length.
 /// `nalgebra::Unit<Vector2<f64>>` (ADR-0001).
 pub type UnitVec2 = nalgebra::Unit<Vec2>;
+/// A 3x3 matrix, column-major: a rotation, or a tensor such as the
+/// inertia of a body. `nalgebra::Matrix3<f64>` (ADR-0001).
+pub type Matrix3 = nalgebra::Matrix3<f64>;

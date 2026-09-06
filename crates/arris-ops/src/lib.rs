@@ -16,6 +16,7 @@
 #![warn(missing_docs)]
 
 mod error;
+pub mod measure;
 mod primitive;
 
 pub use arris_check;

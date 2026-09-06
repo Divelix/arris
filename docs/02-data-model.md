@@ -286,13 +286,19 @@ segment, `gaps()` between consecutive pieces (L2), and
 `self_intersections()` / `intersections(&other)` over
 `segments_intersect`, exact through `orient2d` with touching counted
 (L5, S5). `Curve2::speed_bounds(range)` bounds `|du/dt|` and `|dv/dt|`
-over a range, exact for a line and a conic and sampled for a NURBS. `integrate::region_integral(pieces, f)` is `∬ f du dv` over
+over a range, exact for a line and a conic and sampled for a NURBS. `integrate::region_integral(pieces, inner_step, f)` is `∬ f du dv` over
 the region by Green's theorem — `∮ G dv` with `G = ∫_{u₀}^{u} f ds` —
 with Gauss–Legendre quadrature of `GAUSS_ORDER` points per interval, a
 conic piece split at quarter turns and a NURBS at its knots, signed by
 the loop's turn so holes subtract themselves: `f = |∂P/∂u × ∂P/∂v|` is
 an area, `f = P · (∂P/∂u × ∂P/∂v) / 3` summed over a solid's faces with
-their use orientation is Gauss's volume (B2, `measure`).
+their use orientation is Gauss's volume (B2, `measure`). The *inner*
+integral is split the same way, into equal steps no longer than
+`inner_step` (at most `MAX_INNER_INTERVALS` of them): a strip that
+crosses a whole turn of `cos u` is not one interval's work, so a caller
+passes `integrate::inner_step(surface)` — a quarter period on the
+quadrics, a knot span on a NURBS, `f64::INFINITY` (one interval, exact
+for a polynomial `f`) on a plane.
 
 `project_to_plane(curve, plane)` is the orthogonal projection onto a plane
 for a consumer's sketch (01-architecture §Facade): a point-set projection

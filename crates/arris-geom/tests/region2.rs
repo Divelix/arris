@@ -7,7 +7,7 @@ use core::f64::consts::{PI, TAU};
 
 use arris_debug::prop::{DEFAULT_SCALE, check, finite_f64, radius};
 use arris_debug::sample;
-use arris_geom::integrate::region_integral;
+use arris_geom::integrate::{self, region_integral};
 use arris_geom::region2::{Piece, Polygon2, discretise};
 use arris_geom::{Curve2, Surface};
 use arris_math::predicates::{Sign, orient2d};
@@ -215,7 +215,7 @@ fn the_region_integral_of_one_is_the_area_of_a_rectangle_and_of_the_cylinder_wal
                 .map(|i| line_between(corners[i], corners[(i + 1) % 4]))
                 .collect();
             let pieces: Vec<Piece<'_>> = sides.iter().map(|(c, r)| Piece::along(c, *r)).collect();
-            let area = region_integral(&pieces, |_, _| 1.0);
+            let area = region_integral(&pieces, f64::INFINITY, |_, _| 1.0);
             prop_assert!(
                 (area - w * h).abs() <= EXACT * (w + h).max(1.0),
                 "{area} vs {}",
@@ -232,7 +232,7 @@ fn the_region_integral_of_one_is_the_area_of_a_rectangle_and_of_the_cylinder_wal
                 .map(|i| line_between(corners[i], corners[(i + 1) % 4]))
                 .collect();
             let pieces: Vec<Piece<'_>> = sides.iter().map(|(c, r)| Piece::along(c, *r)).collect();
-            let area = region_integral(&pieces, |u, v| {
+            let area = region_integral(&pieces, integrate::inner_step(&wall), |u, v| {
                 let e = wall.eval(u, v);
                 e.du.cross(&e.dv).norm()
             });
@@ -276,7 +276,7 @@ fn gauss_volume(m: &Model, body: arris_topo::Body) -> f64 {
                 })
                 .collect();
             volume += sign
-                * region_integral(&pieces, |u, v| {
+                * region_integral(&pieces, integrate::inner_step(surface), |u, v| {
                     let e = surface.eval(u, v);
                     (e.point - Point3::origin()).dot(&e.du.cross(&e.dv)) / 3.0
                 });

@@ -26,7 +26,10 @@ The corpus **runner** (`arris_debug::corpus::run(dir, variant)`, one
 test itself: it builds the recipe in Arris, runs the checker at `Full`
 (nothing violated, nothing undecided), compares counts and genus against
 `expected.json`, writes STEP under `target/inspect/` and has the oracle
-read it back (`compare.py`), tessellates the result at `mesh_chord` and
+read it back (`compare.py`), measures it over the B-Rep
+(`ops::measure::mass_properties`) and holds its volume, area, centroid
+and inertia tensor to the oracle's within `volume_rel`, `area_rel`,
+`centroid_abs` and `inertia_rel`, tessellates the result at `mesh_chord` and
 holds the mesh closed with a positive signed volume within
 `mesh_volume_rel` of the oracle's, asserts every step's provenance
 accounting, and diffs the dump against `dump.txt`. A fixture whose recipe needs an

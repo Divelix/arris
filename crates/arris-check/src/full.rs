@@ -14,7 +14,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use arris_topo::arris_geom::integrate::region_integral;
+use arris_topo::arris_geom::integrate::{inner_step, region_integral};
 use arris_topo::arris_geom::region2::{Piece, Polygon2, discretise};
 use arris_topo::arris_geom::{
     Curve, CurveSurfaceIntersection, Surface, SurfaceIntersection, intersect_curve_surface,
@@ -482,7 +482,7 @@ impl<'m> Checker<'m> {
         let mut total = 0.0;
         for l in face.loops() {
             let pieces = self.loop_pieces(l)?;
-            total += region_integral(&pieces, |u, v| {
+            total += region_integral(&pieces, inner_step(surface), |u, v| {
                 let e = surface.eval(u, v);
                 e.point.coords.dot(&e.du.cross(&e.dv)) / 3.0
             });

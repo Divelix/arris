@@ -155,6 +155,23 @@ pub fn cut(m: &mut Model, target: Body, tool: Body) -> Result<(Body, Provenance)
 - Same input, same output, same ids, on every platform. The tests assert
   this by dumping twice and diffing.
 
+A **query** has a different shape: it takes `&Model`, makes no body and
+records no provenance, because there is nothing for a later operation to
+name. `ops::measure::mass_properties(&Model, Body) ->
+Result<MassProperties, OpError>` is the first — volume, area, centroid
+and the inertia tensor about the centroid at unit density, in the
+physical convention, with `MassProperties::inertia_about(point)` for any
+other point. Every quantity is a flux integral over the body's faces by
+Green's theorem in each face's own (u, v) (`geom::integrate`), as the
+checker's B2 row already computes an enclosed volume: nothing is
+discretised, so the numbers are the geometry's and not a mesh's, and the
+corpus holds them to the oracle's within each fixture's tolerance. The
+second moments are integrated about the centroid itself rather than
+carried there by the parallel-axis theorem, which a small body far from
+the origin would pay for in cancellation. A body that is not a `Solid`
+is `OpError::Degenerate` with `Reason::NotSolid`; an invalid one
+`InvalidInput`, as an operation's input is.
+
 Sweeps take a planar `Profile` — an outer loop and holes of lines and arcs
 in a plane's own (u, v) — and build the planar face themselves (`ops::
 planar_face`), so a consumer's sketch never has to become topology before
@@ -371,7 +388,11 @@ mesh-based mass properties (`ops::measure` integrates the B-Rep).
   that feed it a curve or a surface without a body (`polyline_of`,
   `wireframe_of`), the Rerun stream, the fixture loader and corpus lint
   (`fixtures`), the corpus runner (`corpus::run`, the fixture test of
-  03-roadmap §Fixtures, `ARRIS_BLESS=1` writing `dump.txt`) over the
+  03-roadmap §Fixtures — checker, counts and genus, the oracle's reading
+  of the STEP, the mass properties against the oracle's within the
+  fixture's tolerances, the mesh closed and within `mesh_volume_rel`,
+  provenance accounting, the dump; `ARRIS_BLESS=1` writing `dump.txt`)
+  over the
   oracle seam (`oracle::compare`: STEP under `target/inspect/`, then
   `compare.py` through `uv`, a missing environment a loud error), and
   the seeded property-test runner and strategies (`prop`,
@@ -398,7 +419,7 @@ facade needs Arris types above it.
 | Fillet / chamfer of named edges, one call for all edges | `ops::fillet`, `ops::chamfer` (cycle 2) |
 | Tessellation into a render mesh with per-face and per-edge ranges | `arris_mesh::tessellate` → `TriMesh` with `FaceRange`/`EdgeRange` keyed by `FaceId`/`EdgeId` |
 | A planar face's frame | `Face::surface()` is `Surface::Plane { frame }`; the frame *is* the answer, and it is stable across re-evaluation because the primitive's frame is |
-| Mass properties (volume, centroid, inertia) | `ops::measure::mass_properties` (exact over the B-Rep); or the consumer's own integrator over `TriMesh` |
+| Mass properties (volume, area, centroid, inertia) | `ops::measure::mass_properties` → `MassProperties` (exact over the B-Rep, the tensor about the centroid); or the consumer's own integrator over `TriMesh` |
 | STEP export of several bodies | `io::step::write(&model, &[bodies])` |
 | Projecting an edge or vertex onto a sketch plane | `geom::project_to_plane` on the edge's `Curve` — a line stays a line, a circle becomes a circle or an ellipse, an ellipse stays an ellipse, a NURBS a `Curve2::Nurbs`; a point-set projection with the variant's own parameter (02 §Pcurves) |
 | Persistent topological names (origin-based) | Emitted by the consumer from `Provenance`: an output face is named after the input face it was `Modified` from, `Split(k)` when one input yields several outputs, and after the tool face when `Generated`; edges and vertices derive from their faces exactly as today. No centroid matching. `⚠ OPEN:` whether Arris ships the origin-name grammar as a helper (`arris-topo::naming`) or leaves it to the consumer; the seed lists this among the kickoff questions. Decided in cycle 2 with the consumer's adapter |

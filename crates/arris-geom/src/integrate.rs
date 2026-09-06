@@ -8,6 +8,7 @@
 
 use core::f64::consts::{FRAC_PI_2, PI};
 
+use crate::Surface;
 use crate::region2::Piece;
 
 /// Points per Gauss–Legendre interval. Sixteen integrate a polynomial of
@@ -23,6 +24,47 @@ pub const GAUSS_ORDER: usize = 16;
 /// place the inner integral's origin `u₀` at the region's left edge so the
 /// strip it integrates over stays inside the region's bounding box.
 const ORIGIN_SAMPLES: usize = 8;
+
+/// The most sub-intervals the inner integral is ever split into,
+/// whatever step the caller asks for. A quarter-period step over a whole
+/// period is four; the cap is there so a step of zero, or one far below
+/// the region's own scale, costs bounded time instead of hanging.
+pub const MAX_INNER_INTERVALS: usize = 256;
+
+/// The longest interval in `u` the inner integral of [`region_integral`]
+/// should be taken over on `surface`: a quarter of the surface's period,
+/// where it turns in `u`, so that no Gauss–Legendre interval spans more
+/// than a quarter of an oscillation of the integrand — the same cadence
+/// [`region_integral`] already splits a conic boundary piece at. A plane
+/// is affine in (u, v) and every integrand this module is used with is a
+/// low-degree polynomial along it, which the quadrature is exact for, so
+/// it asks for no split at all; a NURBS surface asks for its smallest
+/// knot span in `u`, the scale on which its polynomial pieces change.
+///
+/// ```
+/// use arris_geom::Surface;
+/// use arris_geom::integrate::inner_step;
+/// use arris_math::Frame;
+/// use core::f64::consts::FRAC_PI_2;
+///
+/// let cylinder = Surface::Cylinder { frame: Frame::world(), radius: 2.0 };
+/// assert_eq!(inner_step(&cylinder), FRAC_PI_2);
+/// assert_eq!(inner_step(&Surface::Plane { frame: Frame::world() }), f64::INFINITY);
+/// ```
+pub fn inner_step(surface: &Surface) -> f64 {
+    match surface {
+        Surface::Plane { .. } => f64::INFINITY,
+        Surface::Cylinder { .. }
+        | Surface::Cone { .. }
+        | Surface::Sphere { .. }
+        | Surface::Torus { .. } => FRAC_PI_2,
+        Surface::Nurbs(s) => s.knots()[0]
+            .windows(2)
+            .map(|w| w[1] - w[0])
+            .filter(|&d| d > 0.0)
+            .fold(f64::INFINITY, f64::min),
+    }
+}
 
 /// The nodes and weights of Gauss–Legendre quadrature of [`GAUSS_ORDER`]
 /// on `[-1, 1]`, as `(node, weight)` pairs ascending in the node: the
@@ -88,6 +130,20 @@ fn gauss_split(
     total + gauss(from, b, table, &g)
 }
 
+/// How many equal sub-intervals a span of `length` is integrated in at a
+/// step of `step`: at least one, at most [`MAX_INNER_INTERVALS`].
+fn intervals(length: f64, step: f64) -> usize {
+    let wanted = (length.abs() / step).ceil();
+    // A zero span, a NaN step, or a step above the span: one interval.
+    if wanted.is_nan() || wanted < 1.0 {
+        return 1;
+    }
+    if wanted >= MAX_INNER_INTERVALS as f64 {
+        return MAX_INNER_INTERVALS;
+    }
+    wanted as usize
+}
+
 /// Where a piece's parameter range is cut before quadrature: a conic at
 /// every quarter turn, a NURBS at its interior knots, a line nowhere.
 fn breaks_of(piece: &Piece<'_>) -> Vec<f64> {
@@ -117,10 +173,14 @@ fn breaks_of(piece: &Piece<'_>) -> Vec<f64> {
 /// quadrature of [`GAUSS_ORDER`] points per interval, each piece split
 /// at its quarter turns or knots. `f` is evaluated across the strip
 /// between the region's least `u` and each boundary point, so it must be
-/// defined over the region's bounding box in `u`. Exact to rounding for
-/// `f` polynomial of degree below `2 · GAUSS_ORDER` in `u` along
-/// polynomial pieces, and to well below any model tolerance for the
-/// analytic surfaces and their conic pcurves. An empty `pieces` is zero.
+/// defined over the region's bounding box in `u`. The inner integral is
+/// itself split into equal sub-intervals no longer than `inner_step`, at
+/// most [`MAX_INNER_INTERVALS`] of them: `f64::INFINITY` takes it in one,
+/// which is exact for an `f` polynomial in `u` of degree below
+/// `2 · GAUSS_ORDER`, and [`inner_step`] of the surface `f` evaluates is
+/// what a caller integrating over a periodic surface passes, since a
+/// strip that spans a whole turn of `cos u` is not one interval's work.
+/// An empty `pieces` is zero.
 ///
 /// ```
 /// use arris_geom::integrate::region_integral;
@@ -130,10 +190,14 @@ fn breaks_of(piece: &Piece<'_>) -> Vec<f64> {
 /// use core::f64::consts::PI;
 ///
 /// let circle = Curve2::Circle { frame: Frame2::identity(), radius: 3.0 };
-/// let area = region_integral(&[Piece::along(&circle, Interval::TURN)], |_, _| 1.0);
+/// let area = region_integral(
+///     &[Piece::along(&circle, Interval::TURN)],
+///     f64::INFINITY,
+///     |_, _| 1.0,
+/// );
 /// assert!((area - 9.0 * PI).abs() < 1e-12);
 /// ```
-pub fn region_integral(pieces: &[Piece<'_>], f: impl Fn(f64, f64) -> f64) -> f64 {
+pub fn region_integral(pieces: &[Piece<'_>], inner_step: f64, f: impl Fn(f64, f64) -> f64) -> f64 {
     let table = gauss_legendre();
     let u0 = pieces
         .iter()
@@ -149,7 +213,16 @@ pub fn region_integral(pieces: &[Piece<'_>], f: impl Fn(f64, f64) -> f64) -> f64
     if !u0.is_finite() {
         return 0.0;
     }
-    let inner = |u: f64, v: f64| gauss(u0, u, &table, |s| f(s, v));
+    let inner = |u: f64, v: f64| {
+        let n = intervals(u - u0, inner_step);
+        let step = (u - u0) / n as f64;
+        (0..n)
+            .map(|i| {
+                let a = u0 + i as f64 * step;
+                gauss(a, a + step, &table, |s| f(s, v))
+            })
+            .sum::<f64>()
+    };
     let mut total = 0.0;
     for piece in pieces {
         let breaks = breaks_of(piece);
@@ -167,6 +240,7 @@ mod tests {
     use super::*;
     use crate::Curve2;
     use arris_math::{Frame2, Interval, Point2, UnitVec2, Vec2};
+    use core::f64::consts::TAU;
 
     #[test]
     fn nodes_are_symmetric_and_weights_sum_to_two() {
@@ -205,7 +279,7 @@ mod tests {
             .map(|(c, r)| Piece::along(c, r))
             .collect();
         // ∬ u² v du dv = w³/3 · h²/2.
-        let v = region_integral(&pieces, |u, v| u * u * v);
+        let v = region_integral(&pieces, f64::INFINITY, |u, v| u * u * v);
         assert!((v - w.powi(3) / 3.0 * h * h / 2.0).abs() < 1e-12, "{v}");
         let reversed: Vec<Piece<'_>> = sides
             .iter()
@@ -213,8 +287,44 @@ mod tests {
             .rev()
             .map(|(c, r)| Piece::against(c, r))
             .collect();
-        let v = region_integral(&reversed, |_, _| 1.0);
+        let v = region_integral(&reversed, f64::INFINITY, |_, _| 1.0);
         assert!((v + w * h).abs() < 1e-12, "{v}");
+    }
+
+    #[test]
+    fn the_inner_step_splits_what_one_interval_does_not_resolve() {
+        assert_eq!(intervals(0.0, f64::INFINITY), 1);
+        assert_eq!(intervals(10.0, f64::NAN), 1);
+        assert_eq!(intervals(TAU, FRAC_PI_2), 4);
+        assert_eq!(intervals(1.0, 0.0), MAX_INNER_INTERVALS);
+        // A whole turn of `cos⁴ u` over [0, 2π] × [0, 1]: `2π · 3/8`. The
+        // inner integral runs from `u₀ = 0` to each boundary point, so
+        // one Gauss interval has to carry a full turn of the integrand
+        // and leaves a thousand times more than rounding; at a quarter
+        // turn a step it is exact.
+        let (w, h) = (TAU, 1.0);
+        let line = |ox: f64, oy: f64, dx: f64, dy: f64| Curve2::Line {
+            origin: Point2::new(ox, oy),
+            direction: UnitVec2::new_normalize(Vec2::new(dx, dy)),
+        };
+        let sides = [
+            line(0.0, 0.0, 1.0, 0.0),
+            line(w, 0.0, 0.0, 1.0),
+            line(w, h, -1.0, 0.0),
+            line(0.0, h, 0.0, -1.0),
+        ];
+        let ranges = [w, h, w, h].map(|l| Interval::new(0.0, l).unwrap());
+        let pieces: Vec<Piece<'_>> = sides
+            .iter()
+            .zip(ranges)
+            .map(|(c, r)| Piece::along(c, r))
+            .collect();
+        let exact = TAU * 3.0 / 8.0;
+        let f = |u: f64, _: f64| u.cos().powi(4);
+        let coarse = region_integral(&pieces, f64::INFINITY, f);
+        let fine = region_integral(&pieces, FRAC_PI_2, f);
+        assert!((coarse - exact).abs() > 1e-12, "{coarse}");
+        assert!((fine - exact).abs() < 1e-14, "{fine}");
     }
 
     #[test]
@@ -230,7 +340,7 @@ mod tests {
         };
         let piece = Piece::along(&cw, Interval::TURN);
         assert_eq!(breaks_of(&piece).len(), 3);
-        let v = region_integral(&[piece], |_, _| 1.0);
+        let v = region_integral(&[piece], f64::INFINITY, |_, _| 1.0);
         assert!((v + 4.0 * PI).abs() < 1e-12, "{v}");
         let arc = Piece::along(&cw, Interval::new(0.3, 5.0).unwrap());
         assert_eq!(breaks_of(&arc), [FRAC_PI_2, PI, 3.0 * FRAC_PI_2]);

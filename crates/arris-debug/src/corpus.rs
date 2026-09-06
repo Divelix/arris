@@ -2,10 +2,12 @@
 //! one call per fixture and variant. [`run`] builds the recipe in Arris,
 //! runs the checker at `Full`, compares counts and genus against the
 //! oracle's `expected.json`, writes STEP and has the oracle read it back
-//! (`compare.py`), tessellates the result and holds the mesh closed with
-//! its signed volume within the fixture's `mesh_volume_rel` of the
-//! oracle's at `mesh_chord`, asserts the provenance accounting of every
-//! step, and diffs the text dump against the committed `dump.txt` —
+//! (`compare.py`), measures the result over the B-Rep and holds its
+//! volume, area, centroid and inertia to the oracle's within the
+//! fixture's tolerances, tessellates the result and holds the mesh
+//! closed with its signed volume within the fixture's `mesh_volume_rel`
+//! of the oracle's at `mesh_chord`, asserts the provenance accounting of
+//! every step, and diffs the text dump against the committed `dump.txt` —
 //! written only under `ARRIS_BLESS=1`. Every stage that fails is a typed
 //! [`CorpusError`] saying which fixture, which stage and what differed;
 //! a recipe step the kernel has no operation for yet is
@@ -20,10 +22,13 @@ use arris_io::arris_check::arris_topo::{Body, Model, Orientation, Origin, Proven
 use arris_io::arris_check::{Level, Report, check};
 use arris_io::step::{self, StepError};
 use arris_mesh::tessellate;
+use arris_ops::measure::mass_properties;
 use arris_ops::{OpError, primitive_box, primitive_cylinder};
 
 use crate::dump::dump_text;
-use crate::fixtures::{self, Counts, ExprError, Fixture, FixtureError, Num, Step};
+use crate::fixtures::{
+    self, Counts, ExprError, Fixture, FixtureError, Measured, Num, Step, Tolerances,
+};
 use crate::oracle::{self, OracleError};
 
 /// The environment variable that makes [`run`] write `dump.txt` instead
@@ -134,6 +139,15 @@ pub enum CorpusError {
     /// The oracle did not match Arris's STEP, or could not run.
     #[error(transparent)]
     Oracle(#[from] OracleError),
+    /// A mass property could not be computed, or is not the oracle's
+    /// within the fixture's tolerance for it.
+    #[error("{fixture}: measure: {what}")]
+    Measure {
+        /// The fixture.
+        fixture: String,
+        /// Which quantity differed, and by how much.
+        what: String,
+    },
     /// The mesh could not be built, is not closed, or its volume is not
     /// the oracle's within `mesh_volume_rel`.
     #[error("{fixture}: mesh at chord {chord}: {what}")]
@@ -285,9 +299,17 @@ pub fn run(dir: &Path, variant: &str) -> Result<(), CorpusError> {
     let tag = format!("{}-{variant}", name.replace('/', "-"));
     oracle::compare_dir(dir, &text, Some(variant), &tag)?;
 
+    let tolerances = fixture.recipe.tolerances;
+
+    // `measure` over the B-Rep against what the oracle measured of the
+    // same recipe: volume, area, centroid and the inertia tensor.
+    measure_stage(&m, body, expected, &tolerances).map_err(|what| CorpusError::Measure {
+        fixture: name.clone(),
+        what,
+    })?;
+
     // The mesh: closed, positive, and the oracle's volume within the
     // fixture's mesh tolerance at its chord.
-    let tolerances = fixture.recipe.tolerances;
     let mesh_failure = |what: String| CorpusError::Mesh {
         fixture: name.clone(),
         chord: tolerances.mesh_chord,
@@ -545,6 +567,67 @@ fn account(m: &Model, made: &Made) -> Result<(), String> {
     Ok(())
 }
 
+/// Compares Arris's mass properties against the oracle's, quantity by
+/// quantity: volume and area relative, the centroid's distance
+/// absolute, each component of the inertia tensor relative to the
+/// tensor's largest one, so a product of inertia that cancels to zero is
+/// not compared against itself. A quantity the oracle did not record is
+/// skipped. Errors: the first quantity that differs, named with both
+/// values.
+fn measure_stage(
+    m: &Model,
+    body: Body,
+    expected: &Measured,
+    tolerances: &Tolerances,
+) -> Result<(), String> {
+    let found = mass_properties(m, body).map_err(|e| e.to_string())?;
+    let relative = |name: &str, a: f64, e: f64, tolerance: f64| -> Result<(), String> {
+        let difference = (a - e).abs() / e.abs().max(a.abs()).max(f64::MIN_POSITIVE);
+        if difference.is_nan() || difference > tolerance {
+            return Err(format!(
+                "{name} {a} vs the oracle's {e}: {difference:e} relative, above {tolerance:e}"
+            ));
+        }
+        Ok(())
+    };
+    if let Some(volume) = expected.volume {
+        relative("volume", found.volume, volume, tolerances.volume_rel)?;
+    }
+    if let Some(area) = expected.area {
+        relative("area", found.area, area, tolerances.area_rel)?;
+    }
+    if let Some(centroid) = expected.centroid {
+        let oracle = Point3::new(centroid[0], centroid[1], centroid[2]);
+        let distance = (found.centroid - oracle).norm();
+        if distance.is_nan() || distance > tolerances.centroid_abs {
+            return Err(format!(
+                "centroid {} vs the oracle's {oracle}: {distance:e} apart, above centroid_abs {:e}",
+                found.centroid, tolerances.centroid_abs
+            ));
+        }
+    }
+    if let Some(inertia) = expected.inertia {
+        let scale = inertia
+            .iter()
+            .flatten()
+            .fold(0.0f64, |m, x| m.max(x.abs()))
+            .max(f64::MIN_POSITIVE);
+        for (i, row) in inertia.iter().enumerate() {
+            for (j, &e) in row.iter().enumerate() {
+                let a = found.inertia[(i, j)];
+                let difference = (a - e).abs() / scale;
+                if difference.is_nan() || difference > tolerances.inertia_rel {
+                    return Err(format!(
+                        "inertia[{i}][{j}] {a} vs the oracle's {e}: {difference:e} of the tensor, above inertia_rel {:e}",
+                        tolerances.inertia_rel
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 /// The lines that differ, with their numbers: `-` for the committed
 /// side, `+` for this build's.
 fn diff(committed: &str, actual: &str) -> String {
@@ -591,6 +674,52 @@ mod tests {
             "-    2 b\n+    2 x\n+    4 d\n(3 lines committed, 4 in this build)\n"
         );
         assert_eq!(diff("same\n", "same\n"), "");
+    }
+
+    #[test]
+    fn the_measure_stage_holds_the_box_to_the_oracle_and_names_what_differs() {
+        let dir = fixtures::corpus_root().join("primitive/box");
+        let fixture = fixtures::load(&dir).unwrap();
+        let expected = fixture.expected.results["default"].clone();
+        let tolerances = fixture.recipe.tolerances;
+        let mut m = Model::default();
+        let (body, _) = primitive_box(&mut m, Point3::origin(), Point3::new(40.0, 30.0, 10.0))
+            .expect("the box of the recipe");
+        measure_stage(&m, body, &expected, &tolerances).expect("the oracle's numbers");
+        // Every quantity is actually compared: move each one just past
+        // its tolerance and the stage says which.
+        let mut wrong = expected.clone();
+        wrong.volume = Some(expected.volume.unwrap() * (1.0 + 1e-6));
+        assert!(
+            measure_stage(&m, body, &wrong, &tolerances)
+                .unwrap_err()
+                .starts_with("volume ")
+        );
+        let mut wrong = expected.clone();
+        wrong.area = Some(expected.area.unwrap() * (1.0 + 1e-6));
+        assert!(
+            measure_stage(&m, body, &wrong, &tolerances)
+                .unwrap_err()
+                .starts_with("area ")
+        );
+        let mut wrong = expected.clone();
+        let mut centroid = expected.centroid.unwrap();
+        centroid[1] += 1e-3;
+        wrong.centroid = Some(centroid);
+        assert!(
+            measure_stage(&m, body, &wrong, &tolerances)
+                .unwrap_err()
+                .starts_with("centroid ")
+        );
+        let mut wrong = expected.clone();
+        let mut inertia = expected.inertia.unwrap();
+        inertia[0][1] += inertia[2][2] * 1e-6;
+        wrong.inertia = Some(inertia);
+        assert!(
+            measure_stage(&m, body, &wrong, &tolerances)
+                .unwrap_err()
+                .starts_with("inertia[0][1] ")
+        );
     }
 
     #[test]

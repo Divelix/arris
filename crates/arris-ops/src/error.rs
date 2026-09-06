@@ -15,8 +15,9 @@ pub enum Reason {
         /// Which parameter.
         what: &'static str,
     },
-    /// A length that must be positive is not: a radius, a height, an
-    /// extent of a box whose `min` is not below its `max`.
+    /// A length or a measure that must be positive is not: a radius, a
+    /// height, an extent of a box whose `min` is not below its `max`, the
+    /// volume a body's faces enclose.
     NotPositive {
         /// Which length.
         what: &'static str,
@@ -28,6 +29,9 @@ pub enum Reason {
     ZeroThickness,
     /// A revolve profile crosses its axis.
     ProfileCrossesAxis,
+    /// The query needs an enclosed volume and the body is not a solid:
+    /// a sheet, a wire, a general body.
+    NotSolid,
 }
 
 impl core::fmt::Display for Reason {
@@ -39,6 +43,7 @@ impl core::fmt::Display for Reason {
             }
             Reason::ZeroThickness => f.write_str("the result has no thickness"),
             Reason::ProfileCrossesAxis => f.write_str("the profile crosses the revolve axis"),
+            Reason::NotSolid => f.write_str("the body is not a solid"),
         }
     }
 }

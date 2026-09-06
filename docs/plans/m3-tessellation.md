@@ -98,6 +98,22 @@ remeshing). No window in `arris-debug`.
   no iso-curve bounds) join `sample::sphere`; `patch` is what the
   property test meshes, since a body of every kind is the only way to
   reach `tessellate`.
+- **Step 5 as built.** Three things the design did not have. (a)
+  `integrate::region_integral` gains an `inner_step` argument (a public
+  signature change) and `integrate::{inner_step, MAX_INNER_INTERVALS}`
+  are new: the *inner* integral `∫_{u₀}^{u} f ds` was taken in one
+  Gauss–Legendre interval, and one interval cannot carry a whole turn of
+  a quadric's integrand — the cylinder's tensor came out 5e-12 relative
+  off its closed form. A caller passes a quarter period on the quadrics,
+  a knot span on a NURBS, `f64::INFINITY` on a plane; the checker's B2
+  row passes the same. (b) The second moments are integrated about the
+  centroid (a second pass over the faces with the point translated),
+  not about the origin and carried by the parallel-axis theorem. (c)
+  `arris_math::Matrix3` (the `nalgebra::Matrix3<f64>` alias, ADR-0001) is
+  new, and a body whose faces enclose no positive volume — reachable
+  only in a release build, where the checker does not run — is
+  `Reason::NotPositive { what: "the enclosed volume" }` rather than a
+  new variant.
 - **`arris-ops` — `measure`** (01 §Operations gains the query shape,
   §Facade row): `measure::mass_properties(&Model, Body) ->
   Result<MassProperties, OpError>` with `MassProperties { volume, area,
@@ -255,7 +271,7 @@ robustness or bound has to be established here (Fable).
   face an outer with a hole; every PNG lands under `target/inspect/`. The
   agent reads the cylinder's PNG and states what it sees in the commit
   body (the roadmap's accept).
-- [ ] Step 5 **[2]** — `measure`, the oracle's inertia, the corpus stage.
+- [x] Step 5 **[2]** — `measure`, the oracle's inertia, the corpus stage.
   `mass_properties`, `MassProperties`, `Reason::NotSolid`; `measure.py`
   records `inertia`, every `expected.json` regenerated (`fixtures:`
   commit, body naming the script change), `selftest.py` green; the
@@ -360,6 +376,23 @@ layer check and the wasm build pass; CI green on `main`. Then tag `m3`
   kinds' is. `a_nurbs_patch_meshes_through_its_grid` measures it against
   a closed form instead — a bilinear saddle `z = x y`, whose vertical
   distance bounds the true one.
+
+- **A tensor's zero is not an absolute number.** Step 5's test text asked
+  for the box's products of inertia "below `default_tolerance²`" — 1e-14.
+  That bound is not scale-free: the moments a 40 × 30 × 10 box integrates
+  are of order 1e6, so f64 rounding alone leaves ~1e-10 on a product that
+  is mathematically zero. `the_box_measures_its_closed_forms` asserts
+  them below 1e-12 *of the tensor's largest component* instead, which is
+  the same claim made relative — and the same relative bound every other
+  quantity in the step is held to.
+- **Carrying a tensor to the centroid costs what a small body far from the
+  origin is worth.** The random-pose property test found it: a cylinder of
+  radius and height 0.1 at `z = 86` has `∫ x² dV ≈ V |c|² ≈ 23` and a
+  tensor of 1e-5, so the parallel-axis subtraction spends thirteen digits
+  before it starts. `mass_properties` integrates the second moments about
+  the centroid in a second pass instead, which is why it makes two passes
+  over the faces and not one. `MassProperties::inertia_about` carries the
+  tensor *outward*, where nothing cancels.
 
 ## Open questions
 
