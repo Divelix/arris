@@ -843,15 +843,23 @@ impl Checker<'_> {
     /// it is one length everywhere; unscaled where a direction is singular
     /// to rounding against the other.
     pub(crate) fn uv_bounds(&self, surface: &Surface, uv: Point2) -> [f64; 2] {
-        let e = surface.eval(uv.x, uv.y);
-        let speeds = [e.du.norm(), e.dv.norm()];
-        let ptol = self.precision.parametric_tolerance;
-        [0, 1].map(|i| {
-            if is_negligible(speeds[i], speeds[1 - i]) || speeds[i] == 0.0 {
-                ptol
-            } else {
-                ptol / speeds[i]
-            }
-        })
+        uv_bounds(&self.precision, surface, uv)
     }
+}
+
+/// How far a (u, v) step may be and still be within the model's
+/// parametric tolerance in 3D, per direction, at `uv`: the tolerance
+/// divided by the surface's speed there, and the raw tolerance where a
+/// speed is zero or negligible beside the other (a pole).
+pub(crate) fn uv_bounds(precision: &Precision, surface: &Surface, uv: Point2) -> [f64; 2] {
+    let e = surface.eval(uv.x, uv.y);
+    let speeds = [e.du.norm(), e.dv.norm()];
+    let ptol = precision.parametric_tolerance;
+    [0, 1].map(|i| {
+        if is_negligible(speeds[i], speeds[1 - i]) || speeds[i] == 0.0 {
+            ptol
+        } else {
+            ptol / speeds[i]
+        }
+    })
 }

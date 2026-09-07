@@ -31,8 +31,13 @@ read it back (`compare.py`), measures it over the B-Rep
 and inertia tensor to the oracle's within `volume_rel`, `area_rel`,
 `centroid_abs` and `inertia_rel`, tessellates the result at `mesh_chord` and
 holds the mesh closed with a positive signed volume within
-`mesh_volume_rel` of the oracle's, asserts every step's provenance
-accounting, and diffs the dump against `dump.txt`. A fixture whose recipe needs an
+`mesh_volume_rel` of the oracle's, classifies every probe point against
+the result (`arris_check::classify::classify_point`) and holds it to the
+oracle's class *exactly* — both sides have their own tolerance for "on",
+the fixture's `probe` for the oracle and the entities' own for Arris, and
+a probe is placed so the two agree, so a disagreement is a finding and
+never something a band is widened to cover — asserts every step's
+provenance accounting, and diffs the dump against `dump.txt`. A fixture whose recipe needs an
 operation of a later milestone is `#[ignore = "M4: needs ops::cut"]` and
 fails naming the op under `--include-ignored`, so the day the operation
 lands the test says so. `ARRIS_BLESS=1 cargo test -p arris --test corpus

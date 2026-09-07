@@ -13,6 +13,7 @@
 #![warn(missing_docs)]
 
 mod check;
+pub mod classify;
 mod full;
 mod report;
 mod topology;
@@ -22,6 +23,7 @@ mod violation;
 pub use arris_topo;
 
 pub use check::check;
+pub use classify::{Classification, ClassifyError, classify_point};
 pub use report::{EulerLine, Report};
 pub use unchecked::Unchecked;
 pub use violation::{

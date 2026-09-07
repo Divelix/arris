@@ -11,9 +11,12 @@ license.workspace = true
 arris-topo.workspace = true
 
 # The sample bodies the violation tests break live in `arris-debug`; a
-# dev-dependency is exempt from the layer rule.
+# dev-dependency is exempt from the layer rule. The seeded property-test
+# runner is there too, and `proptest` supplies the assertion macros the
+# classifier's properties are written with.
 [dev-dependencies]
 arris-debug.workspace = true
+proptest.workspace = true
 
 [lints]
 workspace = true

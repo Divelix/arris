@@ -1,11 +1,11 @@
 //! The typed errors of the operations (`docs/01-architecture.md` §Errors):
 //! every variant names the entities involved.
 
-use arris_check::Report;
 use arris_check::arris_topo::arris_geom::GeomKind;
 use arris_check::arris_topo::arris_math::FrameError;
 use arris_check::arris_topo::builder::BuildError;
 use arris_check::arris_topo::{Body, Shape};
+use arris_check::{ClassifyError, Report};
 
 /// Why a requested result has no valid representation.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -61,6 +61,10 @@ pub enum Fault {
     /// A frame the operation placed could not be built from inputs it had
     /// already validated.
     Frame(FrameError),
+    /// A point the operation had to classify against a body could not be:
+    /// every ray direction grazed it, a surface has no closed form
+    /// against a ray, or an id did not resolve (`arris_check::classify`).
+    Classify(ClassifyError),
 }
 
 impl core::fmt::Display for Fault {
@@ -69,6 +73,7 @@ impl core::fmt::Display for Fault {
             Fault::Checker(report) => write!(f, "the output fails the checker:\n{report}"),
             Fault::Builder(e) => write!(f, "the builder refused: {e}"),
             Fault::Frame(e) => write!(f, "a frame could not be placed: {e}"),
+            Fault::Classify(e) => write!(f, "a point could not be classified: {e}"),
         }
     }
 }

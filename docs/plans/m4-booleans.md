@@ -263,7 +263,7 @@ or bound has to be established here.
   tight; `interior_point` of random star polygons with holes and of
   every face of every sample body has non-zero winding and is farther
   from every segment than the chord deviation; two runs identical.
-- [ ] Step 4 **[2]** — Point classification. `arris_check::classify`,
+- [x] Step 4 **[2]** — Point classification. `arris_check::classify`,
   B1 over it, `Fault::Classify`, the corpus runner's probe stage. Tests
   (1000 cases): random points against a box's and a cylinder's closed
   forms in random poses through `sample`/the primitives; a point on a
@@ -474,6 +474,17 @@ deltas above, not a new decision.
   reports a deviation of zero while its caller may still want a margin,
   and a piece's polygons may come from several loops with different
   deviations. The clearance is the caller's argument.
+- **Step 4 — random *poses* wait for `transform`.** The classifier's
+  property tests run over random sizes and positions of `sample::cuboid`
+  and `sample::cylinder`, which the samples place axis-aligned; random
+  orientations arrive with `ops::transform` at step 5, where
+  `transform/posed-cylinder` lands.
+- **Step 4 — the classifier tries a periodic parameter a period either
+  way.** A face's loops may be written in any translate of the
+  fundamental domain — a wall piece spanning `u ∈ [1.5π, 2.5π]` after a
+  split — while `Surface::project` answers in the first copy. The
+  checker's own `face_side` (E8, L5, S5) does not shift and is left as it
+  was; `classify` and B1, which share the code, do.
 - **Step 1 — `sample::sphere` is not assemblable.** Its two degenerate
   pole edges are used once each, which `finish` has always refused (it is
   why the sample goes through the raw insert). The round trip runs over

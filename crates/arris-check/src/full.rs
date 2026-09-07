@@ -16,32 +16,15 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use arris_topo::arris_geom::integrate::{inner_step, region_integral};
 use arris_topo::arris_geom::region2::{Piece, Polygon2, Side, discretise, point_side};
-use arris_topo::arris_geom::{
-    Curve, CurveSurfaceIntersection, Surface, SurfaceIntersection, intersect_curve_surface,
-    intersect_surfaces,
-};
-use arris_topo::arris_math::{Interval, Point2, Point3, UnitVec3, Vec3};
+use arris_topo::arris_geom::{Curve, Surface, SurfaceIntersection, intersect_surfaces};
+use arris_topo::arris_math::{Interval, Point2, Point3};
 use arris_topo::entity::{BodyKind, Face};
 use arris_topo::{EdgeId, FaceId, Orientation, ShellId, VertexId};
 
 use crate::check::{Checker, coedges, samples};
+use crate::classify::Classifier;
 use crate::unchecked::Unchecked;
 use crate::violation::{ShellNestingFault, Violation};
-
-/// The directions a containment ray is tried in, in order: the axes
-/// first, then directions no two faces of an axis-aligned body share a
-/// plane with. The first that meets no face boundary within tolerance
-/// decides, so the answer is the same on every platform.
-const RAY_DIRECTIONS: [[f64; 3]; 8] = [
-    [1.0, 0.0, 0.0],
-    [0.0, 1.0, 0.0],
-    [0.0, 0.0, 1.0],
-    [1.0, 1.0, 1.0],
-    [1.0, 2.0, 3.0],
-    [-3.0, 1.0, 2.0],
-    [2.0, -3.0, 1.0],
-    [1.0, -2.0, -5.0],
-];
 
 impl<'m> Checker<'m> {
     /// E8, L5, S5, B1 and B2.
@@ -571,48 +554,22 @@ impl<'m> Checker<'m> {
         self.shell_contains(outer, from)
     }
 
-    /// Whether `point` is inside the closed shell `shell`, by the parity
-    /// of the crossings of a ray from it. A direction whose ray grazes a
-    /// face's boundary, touches a surface tangentially or lies in one is
-    /// abandoned for the next; `None` when every direction was.
+    /// Whether `point` is inside the closed shell `shell`, by
+    /// [`crate::classify`]'s ray cast over that shell's faces alone —
+    /// the same code the public classifier runs, so B1 and a boolean can
+    /// never disagree about a point (ADR-0004). `None` when every
+    /// direction was abandoned or a surface has no closed form against a
+    /// ray, which is what the row records as unchecked.
     fn shell_contains(&self, shell_id: ShellId, point: Point3) -> Option<bool> {
-        let model = self.model;
-        let shell = model.shell(shell_id).ok()?;
-        let tolerance = self.precision.tolerance();
-        'direction: for d in RAY_DIRECTIONS {
-            let direction = UnitVec3::new_normalize(Vec3::new(d[0], d[1], d[2]));
-            let ray = Curve::Line {
-                origin: point,
-                direction,
-            };
-            let mut crossings = 0usize;
-            for face_use in shell.faces() {
-                let face = model.face(face_use.id).ok()?;
-                let surface = model.surface(face.surface()).ok()?;
-                let hits = match intersect_curve_surface(&ray, surface, tolerance) {
-                    Ok(CurveSurfaceIntersection::Points(hits)) => hits,
-                    Ok(CurveSurfaceIntersection::Coincident) => continue 'direction,
-                    Err(_) => return None,
-                };
-                for hit in hits {
-                    if hit.t.abs() <= self.precision.default_tolerance {
-                        // The point is on this face: no parity to take.
-                        continue 'direction;
-                    }
-                    if hit.t < 0.0 {
-                        continue;
-                    }
-                    match self.face_side(face_use.id, surface, hit.uv) {
-                        Side::Inside if hit.tangent => continue 'direction,
-                        Side::Inside => crossings += 1,
-                        Side::Boundary => continue 'direction,
-                        Side::Outside => {}
-                    }
-                }
-            }
-            return Some(crossings % 2 == 1);
-        }
-        None
+        let faces = self
+            .model
+            .shell(shell_id)
+            .ok()?
+            .faces()
+            .iter()
+            .map(|f| f.id)
+            .collect();
+        Classifier::over(self.model, faces).contains(point).ok()?
     }
 }
 
@@ -684,17 +641,5 @@ mod tests {
             (p(1.0, 0.0, 0.0), p(1.0, 1.0, 0.0)),
         );
         assert_eq!(d, 0.0);
-    }
-
-    #[test]
-    fn the_ray_directions_are_distinct_and_finite() {
-        let mut seen = Vec::new();
-        for d in RAY_DIRECTIONS {
-            assert!(d.iter().all(|x| x.is_finite()));
-            let n = Vec3::new(d[0], d[1], d[2]).normalize();
-            assert!(n.norm() > 0.0);
-            assert!(!seen.iter().any(|s: &Vec3| (s - n).norm() < 1e-12));
-            seen.push(n);
-        }
     }
 }

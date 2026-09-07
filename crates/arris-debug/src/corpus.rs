@@ -19,6 +19,7 @@ use std::path::{Path, PathBuf};
 
 use arris_io::arris_check::arris_topo::arris_math::{Axis, FrameError, Point3, Vec3};
 use arris_io::arris_check::arris_topo::{Body, Model, Orientation, Origin, Provenance, Shape};
+use arris_io::arris_check::classify::{Classification, classify_point};
 use arris_io::arris_check::{Level, Report, check};
 use arris_io::step::{self, StepError};
 use arris_mesh::tessellate;
@@ -27,7 +28,7 @@ use arris_ops::{OpError, primitive_box, primitive_cylinder};
 
 use crate::dump::dump_text;
 use crate::fixtures::{
-    self, Counts, ExprError, Fixture, FixtureError, Measured, Num, Step, Tolerances,
+    self, Class, Counts, ExprError, Fixture, FixtureError, Measured, Num, Step, Tolerances,
 };
 use crate::oracle::{self, OracleError};
 
@@ -107,6 +108,22 @@ pub enum CorpusError {
         fixture: String,
         /// The report.
         report: Box<Report>,
+    },
+    /// Arris classifies a probe point differently from the oracle.
+    #[error(
+        "{fixture}: probe {label:?} at {point:?}: Arris says {found}, the oracle says {expected:?}"
+    )]
+    Probe {
+        /// The fixture.
+        fixture: String,
+        /// The probe's label.
+        label: String,
+        /// The point.
+        point: [f64; 3],
+        /// The oracle's class.
+        expected: Class,
+        /// What Arris said — a classification, or why it could not.
+        found: String,
     },
     /// The counts differ from the oracle's.
     #[error("{fixture}: counts {found:?} but the oracle says {expected:?}")]
@@ -332,6 +349,37 @@ pub fn run(dir: &Path, variant: &str) -> Result<(), CorpusError> {
                 "mesh volume {mesh_volume} vs the oracle's {oracle_volume}: {relative:e} relative, above mesh_volume_rel {:e}",
                 tolerances.mesh_volume_rel
             )));
+        }
+    }
+
+    // The probes: Arris's classification of each point against the
+    // oracle's, exactly. Both sides have their own tolerance for "on" —
+    // the fixture's `probe` for the oracle, the entities' own for Arris
+    // — and a probe is placed so that the two agree; a disagreement is a
+    // finding, never something a band is widened to cover.
+    for probe in &expected.probes {
+        let point = Point3::new(probe.point[0], probe.point[1], probe.point[2]);
+        let found = match classify_point(&m, body, point) {
+            Ok(Classification::Inside) => Ok(Class::In),
+            Ok(Classification::Outside) => Ok(Class::Out),
+            Ok(Classification::On(_)) => Ok(Class::On),
+            Err(e) => Err(e.to_string()),
+        };
+        let matches = match &found {
+            Ok(class) => *class == probe.class,
+            Err(_) => false,
+        };
+        if !matches {
+            return Err(CorpusError::Probe {
+                fixture: name,
+                label: probe.label.clone(),
+                point: probe.point,
+                expected: probe.class,
+                found: match found {
+                    Ok(class) => format!("{class:?}"),
+                    Err(e) => e,
+                },
+            });
         }
     }
 

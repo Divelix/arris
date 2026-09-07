@@ -190,7 +190,7 @@ involved, so the message a consumer shows — or the agent reads — says
 | `Degenerate` | the requested result has no valid representation: a parameter that makes no geometry (`Reason::NonFinite`, `Reason::NotPositive` naming it — a zero radius, a box whose `min` is not below its `max`), a zero-thickness intersection, a profile crossing its revolve axis, a sweep of zero length | the entities (none for a primitive) and a `Reason` enum |
 | `Tolerance` | the result would need an entity tolerance above `Precision::max_tolerance` | the entity, the tolerance it wanted |
 | `NotFound` | a handle does not resolve in this model (wrong model, or compacted away) | the `Shape` |
-| `Internal` | a kernel bug the operation caught: the checker rejected its own output, the builder refused a step of its fixed sequence, a frame could not be placed from inputs it had validated | a `Fault` — the `Report`, the `BuildError` or the `FrameError` |
+| `Internal` | a kernel bug the operation caught: the checker rejected its own output, the builder refused a step of its fixed sequence, a frame could not be placed from inputs it had validated, a point it had to classify could not be | a `Fault` — the `Report`, the `BuildError`, the `FrameError` or the `ClassifyError` |
 
 `Internal` is returned only in release builds with `paranoid` on; in debug
 builds the same condition panics (below). A degenerate *result* that the
@@ -224,6 +224,21 @@ that constructs it and sees it reported, and a level:
   the loops of a face do not cross, faces of a shell intersect only at
   shared edges, shells nest, a solid encloses positive volume. Not
   linear. Runs on demand, in the fixture corpus and in `/close-cycle`.
+
+`arris_check::classify::classify_point(&model, body, point) ->
+Result<Classification, ClassifyError>` is B1's ray cast made public and
+complete: `Inside`, `Outside`, or `On(Shape)` naming the most specific
+entity the point is within the tolerance of — the vertex, else the edge,
+else the face. The boundary test comes first, by the entities' own
+tolerances; only a point that is on nothing is cast for, and then the
+eight fixed directions are tried in order, a direction abandoned on a
+boundary, tangent or coincident hit, with all eight abandoned reported as
+`ClassifyError::Undecided` naming the body and the point. B1 is the same
+code over one shell's faces, so the row that proves a shell nesting and
+the predicate that decides which piece of a split face a boolean keeps
+can never disagree about a point (ADR-0004). It lives in `check` because
+that is where B1 already was, and `ops` depends on `check`; the facade
+re-exports it.
 
 A `Full` row the kernel has no closed form for — a face pair whose
 surfaces the intersector cannot intersect, a shell no containment ray
@@ -395,7 +410,11 @@ mesh-based mass properties (`ops::measure` integrates the B-Rep).
   03-roadmap §Fixtures — checker, counts and genus, the oracle's reading
   of the STEP, the mass properties against the oracle's within the
   fixture's tolerances, the mesh closed and within `mesh_volume_rel`,
-  provenance accounting, the dump; `ARRIS_BLESS=1` writing `dump.txt`)
+  every probe classified as the oracle classifies it
+  (`classify_point`, exactly: both sides have their own tolerance for
+  "on" and a probe is placed so the two agree, so a disagreement is a
+  finding and never something a band is widened to cover), provenance
+  accounting, the dump; `ARRIS_BLESS=1` writing `dump.txt`)
   over the
   oracle seam (`oracle::compare`: STEP under `target/inspect/`, then
   `compare.py` through `uv`, a missing environment a loud error), and
