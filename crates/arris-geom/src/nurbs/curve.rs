@@ -1,6 +1,6 @@
 //! Rational B-spline curves in 3D and in the (u, v) plane.
 
-use arris_math::{Interval, Isometry, Point2, Point3};
+use arris_math::{Interval, Isometry, Point2, Point3, Vec2};
 
 use super::spline::Spline;
 use crate::{Curve2Eval, Curve2Kind, CurveEval, CurveKind, GeomError, GeomKind};
@@ -313,6 +313,15 @@ impl NurbsCurve2 {
     /// [`NurbsCurve::project_parameter`].
     pub fn project_parameter(&self, p: Point2) -> f64 {
         self.spline.project(&p)
+    }
+
+    /// The same curve with every control point moved by `by`; weights
+    /// and knots unchanged, so `moved.eval(t).point == self.eval(t).point
+    /// + by` to rounding.
+    pub fn translated(&self, by: Vec2) -> NurbsCurve2 {
+        NurbsCurve2 {
+            spline: self.spline.map_points(|p| p + by),
+        }
     }
 }
 

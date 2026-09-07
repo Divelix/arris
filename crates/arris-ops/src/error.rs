@@ -1,10 +1,10 @@
 //! The typed errors of the operations (`docs/01-architecture.md` §Errors):
 //! every variant names the entities involved.
 
-use arris_check::arris_topo::arris_geom::GeomKind;
+use arris_check::arris_topo::arris_geom::{GeomError, GeomKind};
 use arris_check::arris_topo::arris_math::FrameError;
 use arris_check::arris_topo::builder::BuildError;
-use arris_check::arris_topo::{Body, Shape};
+use arris_check::arris_topo::{Body, FaceId, Shape};
 use arris_check::{ClassifyError, Report};
 
 /// Why a requested result has no valid representation.
@@ -65,6 +65,20 @@ pub enum Fault {
     /// every ray direction grazed it, a surface has no closed form
     /// against a ray, or an id did not resolve (`arris_check::classify`).
     Classify(ClassifyError),
+    /// A geometry query on inputs the operation had already validated
+    /// failed for a reason other than a missing closed form: a
+    /// projection with no unique answer, a degenerate operand, a pcurve
+    /// fit that would not converge.
+    Geometry(GeomError),
+    /// A section edge of a face pair crosses a seam of `face` inside
+    /// itself. The seam's own hit on `other` is the pave that should
+    /// have split it there (ADR-0004), so the two decisions disagreed.
+    Seam {
+        /// The face whose seam is crossed.
+        face: FaceId,
+        /// The other face of the pair.
+        other: FaceId,
+    },
 }
 
 impl core::fmt::Display for Fault {
@@ -74,6 +88,11 @@ impl core::fmt::Display for Fault {
             Fault::Builder(e) => write!(f, "the builder refused: {e}"),
             Fault::Frame(e) => write!(f, "a frame could not be placed: {e}"),
             Fault::Classify(e) => write!(f, "a point could not be classified: {e}"),
+            Fault::Geometry(e) => write!(f, "a geometry query failed: {e}"),
+            Fault::Seam { face, other } => write!(
+                f,
+                "a section edge of {face} and {other} crosses a seam of {face} without a pave there"
+            ),
         }
     }
 }

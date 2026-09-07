@@ -1,0 +1,90 @@
+{
+  "occt": "8.0.1.0.0",
+  "recipe_sha256": "15cb70a771892e50cf37bd43aa7b1de436c1977a9815920440729b4d8ba43602",
+  "results": {
+    "default": {
+      "area": 3799.999999999999,
+      "centroid": [
+        20.0,
+        14.999999999999998,
+        5.0
+      ],
+      "counts": {
+        "edges": 15,
+        "faces": 7,
+        "loops": 7,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 10
+      },
+      "degenerate": false,
+      "euler_characteristic": 2,
+      "genus": 0,
+      "inertia": [
+        [
+          1000000.0000000005,
+          0.0,
+          2.3283064365386963e-10
+        ],
+        [
+          0.0,
+          1699999.999999999,
+          -1.1641532182693481e-10
+        ],
+        [
+          2.3283064365386963e-10,
+          -1.1641532182693481e-10,
+          2499999.999999998
+        ]
+      ],
+      "probes": [
+        {
+          "class": "in",
+          "label": "inside",
+          "point": [
+            20.0,
+            15.0,
+            5.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "outside",
+          "point": [
+            44.0,
+            15.0,
+            5.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_face",
+          "point": [
+            20.0,
+            15.0,
+            10.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_edge",
+          "point": [
+            40.0,
+            15.0,
+            10.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_contact",
+          "point": [
+            40.0,
+            15.0,
+            5.0
+          ]
+        }
+      ],
+      "volume": 12000.0
+    }
+  }
+}

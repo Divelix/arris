@@ -49,17 +49,8 @@ pub fn transform(
     motion: &Isometry,
 ) -> Result<(Body, Provenance), OpError> {
     let not_found = || OpError::NotFound(Shape::new(body.id, body.orientation));
+    crate::verify_input(m, body)?;
     let entity = m.body(body.id).map_err(|_| not_found())?.clone();
-    #[cfg(any(debug_assertions, feature = "paranoid"))]
-    {
-        let report = arris_check::check(m, body, arris_check::Level::Fast);
-        if !report.is_ok() {
-            return Err(OpError::InvalidInput {
-                body,
-                report: Box::new(report),
-            });
-        }
-    }
     let faces = m.faces(body).map_err(|_| not_found())?;
     let closure = m.closure(body).map_err(|_| not_found())?;
     let tolerance = m.precision().default_tolerance;

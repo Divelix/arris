@@ -345,7 +345,12 @@ geometry is a NURBS, whose control hull over the spans the range touches
 contains it. A face's box is the union of its edges' boxes and its
 surface's over the loops' (u, v) bounds, inflated by the face's
 tolerance; `Aabb::intersects` on two of them is the cheap reject a
-boolean's face pairs go through before any intersection is computed. `integrate::region_integral(pieces, inner_step, f)` is `∬ f du dv` over
+boolean's face pairs go through before any intersection is computed.
+`Curve2::translated(by)` (and `Frame2::translated`) is the same pcurve
+moved in (u, v) with its parameter carried along: how a boolean puts a
+section edge's pcurve on a periodic surface into the copy of the domain
+the face's loops are written in, a whole number of periods along `u`.
+`integrate::region_integral(pieces, inner_step, f)` is `∬ f du dv` over
 the region by Green's theorem — `∮ G dv` with `G = ∫_{u₀}^{u} f ds` —
 with Gauss–Legendre quadrature of `GAUSS_ORDER` points per interval, a
 conic piece split at quarter turns and a NURBS at its knots, signed by

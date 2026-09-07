@@ -1,0 +1,117 @@
+{
+  "occt": "8.0.1.0.0",
+  "recipe_sha256": "6c2677d49b20d8851268cbfd225e9b9992764bf22e7eea7577f09ec85b8881bb",
+  "results": {
+    "default": {
+      "area": 4051.3274122871826,
+      "centroid": [
+        20.000000000000004,
+        15.0,
+        5.402038472330199
+      ],
+      "counts": {
+        "edges": 15,
+        "faces": 8,
+        "loops": 9,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 10
+      },
+      "degenerate": false,
+      "euler_characteristic": 2,
+      "genus": 0,
+      "inertia": [
+        [
+          1054444.0261827079,
+          9.313225746154785e-10,
+          2.3283064365386963e-10
+        ],
+        [
+          9.313225746154785e-10,
+          1754444.0261827055,
+          -1.1641532182693481e-10
+        ],
+        [
+          2.3283064365386963e-10,
+          -1.1641532182693481e-10,
+          2504021.238596592
+        ]
+      ],
+      "probes": [
+        {
+          "class": "in",
+          "label": "inside_plate",
+          "point": [
+            5.0,
+            5.0,
+            5.0
+          ]
+        },
+        {
+          "class": "in",
+          "label": "inside_boss",
+          "point": [
+            20.0,
+            15.0,
+            15.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "outside",
+          "point": [
+            50.0,
+            15.0,
+            5.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_face",
+          "point": [
+            5.0,
+            5.0,
+            10.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_wall",
+          "point": [
+            24.0,
+            15.0,
+            15.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_section",
+          "point": [
+            24.0,
+            15.0,
+            10.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_cap",
+          "point": [
+            20.0,
+            15.0,
+            20.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "above_cap",
+          "point": [
+            20.0,
+            15.0,
+            25.0
+          ]
+        }
+      ],
+      "volume": 12502.654824574367
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "description": "box [0,0,0]–[40,30,10] minus a cylinder r 3 whose axis is tilted 30° about x through (20,15,5): two ellipse sections, NURBS pcurves on the wall, genus 1",
+  "params": {"r": 3, "tilt": 30, "half": 8},
+  "steps": [
+    {"name": "plate", "op": "box", "min": [0, 0, 0], "max": [40, 30, 10]},
+    {"name": "hole", "op": "cylinder",
+     "base": [20, "15 - half * sin(radians(tilt))", "5 - half * cos(radians(tilt))"],
+     "axis": [0, "sin(radians(tilt))", "cos(radians(tilt))"],
+     "radius": "r", "height": "2 * half"},
+    {"name": "result", "op": "cut", "target": "plate", "tool": "hole"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [5, 5, 5], "expect": "in"},
+    {"label": "outside", "point": [50, 15, 5], "expect": "out"},
+    {"label": "on_face", "point": [5, 5, 10], "expect": "on"},
+    {"label": "on_wall", "point": ["20 + r", 15, 5], "expect": "on"},
+    {"label": "on_section", "point": ["20 + r", "15 + 5 * tan(radians(tilt))", 10], "expect": "on"},
+    {"label": "on_axis", "point": [20, 15, 5], "expect": "out"}
+  ],
+  "analytic": {
+    "volume": "12000 - pi * r^2 * 10 / cos(radians(tilt))",
+    "area": "3800 - 2 * pi * r^2 / cos(radians(tilt)) + 2 * pi * r * 10 / cos(radians(tilt))",
+    "centroid": [20, 15, 5],
+    "counts": {"vertices": 10, "edges": 15, "faces": 7, "loops": 9, "shells": 1},
+    "genus": 1
+  }
+}

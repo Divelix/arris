@@ -96,6 +96,24 @@ fn boolean_frame_cut() {
 }
 
 #[test]
+#[ignore = "M4: needs ops::fuse (step 8)"]
+fn boolean_boss() {
+    run("boolean/boss");
+}
+
+#[test]
+#[ignore = "M4: needs ops::cut (step 8)"]
+fn boolean_oblique_hole() {
+    run("boolean/oblique-hole");
+}
+
+#[test]
+#[ignore = "M4: needs ops::cut and the tangent case (step 11); the oracle splits the touched face along the ruling"]
+fn boolean_tangent_outside_cut() {
+    run("boolean/tangent-outside-cut");
+}
+
+#[test]
 #[ignore = "M5: needs ops::planar_face and ops::extrude"]
 fn sweep_extrude_plate_with_hole() {
     run("sweep/extrude-plate-with-hole");

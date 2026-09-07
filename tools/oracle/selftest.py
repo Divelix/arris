@@ -22,7 +22,7 @@ require_ocp()
 from oracle import step  # noqa: E402
 from oracle.fixture import compute_expected, fixture_dirs, load_expected, load_fixture  # noqa: E402
 from oracle.measure import DEFAULT_TOLERANCES, compare, format_table, measure  # noqa: E402
-from oracle.recipe import build, fixture_kind, variant_names  # noqa: E402
+from oracle.recipe import build, fixture_kind, probes, variant_names  # noqa: E402
 
 PI = 3.141592653589793
 
@@ -294,7 +294,7 @@ def round_trip(name: str, fixture: dict, expected: dict, tmp: Path) -> bool:
         path = tmp / f"{name.replace('/', '_')}-{variant}.step"
         step.write(shape, path)
         back = step.read(path)
-        actual = measure(back, fixture.get("probes", []), tol["probe"])
+        actual = measure(back, probes(fixture, variant), tol["probe"])
         rows = compare(expected["results"][variant], actual, tol)
         ok = all(r[3] for r in rows)
         ok_all &= ok

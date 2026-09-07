@@ -281,7 +281,7 @@ or bound has to be established here.
   scale; mass properties are covariant at 1000 random poses; provenance
   is one `Modified` per entity in iteration order and nothing else; the
   checker green at `Full`; two runs identical.
-- [ ] Step 6 **[3]** — Interferences: the pave model. `ops::boolean::
+- [x] Step 6 **[3]** — Interferences: the pave model. `ops::boolean::
   {interferences, Interferences}` as in the deltas: box reject per face
   pair; `intersect_surfaces` per surviving pair; every edge of each
   operand against every face of the other by `intersect_curve_surface`,
@@ -510,6 +510,60 @@ deltas above, not a new decision.
   `extrude` recipe into a `tempdir`, the same pattern the dump-diff test
   beside it already uses, rather than adding a fixture to the corpus
   purely to exercise an error path.
+- **Step 6 — the seam split *is* the seam's hit.** The deltas say a
+  section edge's pcurve is "split where they cross a seam — the seam's
+  own hit is that pave", and the second clause is the whole mechanism:
+  the seam is an edge of the wall, its hit on the other face is a section
+  vertex like any other, and a block between consecutive paves never
+  contains a seam crossing in its interior — a crossing inside the other
+  face is a hit there, one outside it means the whole block is outside.
+  The pcurve is translated by whole periods so its point at the block's
+  midpoint is the face's own (u, v) there, then held to the face's (u, v)
+  box within the edge's tolerance; a block that still leaves it is
+  `Fault::Seam` naming both faces, a kernel bug, never a split by
+  bisection.
+- **Step 6 — a touch pierces nothing.** An edge-on-face hit
+  `intersect_curve_surface` reports `tangent` is recorded with its
+  `Landing` but merged into no section vertex and paves nothing: the
+  edge does not cross the face there, so no piece boundary lies there.
+  `tangent-outside-cut`'s plate edges touch the wall at (40, 15, 0) and
+  (40, 15, 10); both are in `hits` with `vertex: None`, and the wall ×
+  side-face pair is `Tangent` with no section edge. Step 11 reads them.
+- **Step 6 — the oracle splits a face touched from outside.** The
+  deltas expected `tangent-outside-cut` to be "the plate unchanged,
+  8/12/6/6"; Open CASCADE cuts the touched face x = 40 along the contact
+  ruling and reports 10/15/7/7 (two vertices, the ruling and the two
+  rim edges it splits, one more face and loop). The fixture's `analytic`
+  keeps the volume, area, centroid and genus and leaves the counts to
+  step 11, which decides whether Arris reproduces the split or refuses
+  it through `expect_error` (`⚠ OPEN` 1's neighbour: a touch from
+  outside is not the interior slit, and either answer is a manifold
+  solid).
+- **Step 6 — probe coordinates may be expressions.**
+  `tests/fixtures/README.md` promised expressions "anywhere in `steps`,
+  `probes` and `analytic`", and the Rust loader reads `Probe.point` as
+  `Num`, but the oracle's `measure` cast a probe's coordinates with
+  `float()`. `oracle/recipe.py` gained `probes(fixture, variant)`, used
+  by `expected.py`, `compare.py` and `selftest.py`; `oblique-hole`'s
+  on-wall and on-section probes are written as expressions in `r` and
+  `tilt`.
+- **Step 6 — `prop::body` and `corpus::inputs` landed here, not at
+  step 9.** The step's 200-pose test needs `overlapping_pair`, so the
+  three strategies are step 6's; a strategy yields a description
+  (`Boxed`, `Cylindrical`, `OverlappingPair` with their `build(&mut
+  Model)`) rather than bodies, since a model is not a `proptest` value
+  and a failing case should print as numbers a fixture is written from.
+  `arris_debug::corpus::inputs(dir, variant)` builds a fixture's recipe
+  up to its result step and hands back the operands, so the fixture
+  tests of the pave model read the corpus rather than restating it.
+- **Step 6 — public additions beyond the deltas.** `Fault::Geometry(
+  GeomError)` for a geometry query that fails on validated input for a
+  reason other than a missing closed form (a `Degenerate` or `Fit`
+  from the intersectors or `pcurve_on`), `Fault::Seam { face, other }`
+  above, `Curve2::translated(Vec2)` with `Frame2::translated` and
+  `NurbsCurve2::translated` underneath, and `crate::verify_input` shared
+  by `measure`, `transform` and `interferences` (the deltas placed it at
+  step 7).
 - **Step 1 — `sample::sphere` is not assemblable.** Its two degenerate
   pole edges are used once each, which `finish` has always refused (it is
   why the sample goes through the raw insert). The round trip runs over

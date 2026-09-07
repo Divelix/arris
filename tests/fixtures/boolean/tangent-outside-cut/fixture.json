@@ -1,0 +1,22 @@
+{
+  "description": "box [0,0,0]–[40,30,10] minus a cylinder r 4 whose wall touches the face x = 40 from outside along a ruling: a tangent contact that removes no material; Open CASCADE splits the touched face along the ruling (10/15/7/7), which is why the counts are left to plan m4-booleans step 11",
+  "steps": [
+    {"name": "plate", "op": "box", "min": [0, 0, 0], "max": [40, 30, 10]},
+    {"name": "tool", "op": "cylinder", "base": [44, 15, -1], "axis": [0, 0, 1], "radius": 4, "height": 12},
+    {"name": "result", "op": "cut", "target": "plate", "tool": "tool"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [20, 15, 5], "expect": "in"},
+    {"label": "outside", "point": [44, 15, 5], "expect": "out"},
+    {"label": "on_face", "point": [20, 15, 10], "expect": "on"},
+    {"label": "on_edge", "point": [40, 15, 10], "expect": "on"},
+    {"label": "on_contact", "point": [40, 15, 5], "expect": "on"}
+  ],
+  "analytic": {
+    "volume": 12000,
+    "area": 3800,
+    "centroid": [20, 15, 5],
+    "genus": 0
+  }
+}

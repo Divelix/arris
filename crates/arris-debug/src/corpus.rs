@@ -434,6 +434,81 @@ pub fn run(dir: &Path, variant: &str) -> Result<(), CorpusError> {
     Ok(())
 }
 
+/// A fixture's recipe built up to, but not including, its result step:
+/// what a test of the boolean decomposition reads a `boolean/*` fixture
+/// through before the boolean exists to run.
+#[derive(Debug)]
+pub struct Inputs {
+    /// The model the steps were built in.
+    pub model: Model,
+    /// Every step before the result, by name.
+    pub bodies: BTreeMap<String, Body>,
+    /// The result step, unbuilt.
+    pub result: Step,
+}
+
+impl Inputs {
+    /// The two bodies the result step combines — `a` and `b` of a `fuse`
+    /// or `common`, the target and the tool of a `cut` — or `None` when
+    /// the result is not a boolean.
+    pub fn operands(&self) -> Option<(Body, Body)> {
+        let (x, y) = match &self.result {
+            Step::Fuse { a, b, .. } | Step::Common { a, b, .. } => (a, b),
+            Step::Cut { target, tool, .. } => (target, tool),
+            Step::Box { .. }
+            | Step::Cylinder { .. }
+            | Step::Profile { .. }
+            | Step::Extrude { .. }
+            | Step::Revolve { .. }
+            | Step::Transform { .. } => return None,
+        };
+        Some((*self.bodies.get(x)?, *self.bodies.get(y)?))
+    }
+}
+
+/// Builds every step of `dir`'s recipe under `variant` before the one
+/// named as the result, and returns them with the result step itself.
+/// Errors: as [`run`]'s build stage, and [`CorpusError::Reference`] when
+/// no step is named as the result.
+///
+/// ```no_run
+/// use arris_debug::{corpus, fixtures};
+///
+/// let dir = fixtures::corpus_root().join("boolean/through-hole");
+/// let inputs = corpus::inputs(&dir, "default").unwrap();
+/// let (plate, hole) = inputs.operands().unwrap();
+/// assert_ne!(plate, hole);
+/// ```
+pub fn inputs(dir: &Path, variant: &str) -> Result<Inputs, CorpusError> {
+    let fixture = fixtures::load(dir)?;
+    let name = fixture.name.clone();
+    let Some(params) = fixture.recipe.params_of(variant) else {
+        return Err(CorpusError::Variant {
+            fixture: name,
+            variant: variant.to_string(),
+        });
+    };
+    let mut model = Model::default();
+    let mut made: BTreeMap<String, Made> = BTreeMap::new();
+    for step in &fixture.recipe.steps {
+        if step.name() == fixture.recipe.result {
+            let bodies = made.iter().map(|(k, v)| (k.clone(), v.body)).collect();
+            return Ok(Inputs {
+                model,
+                bodies,
+                result: step.clone(),
+            });
+        }
+        let out = build_step(&mut model, &fixture, step, &params, &made)?;
+        made.insert(step.name().to_string(), out);
+    }
+    Err(CorpusError::Reference {
+        fixture: name,
+        step: "result".into(),
+        name: fixture.recipe.result.clone(),
+    })
+}
+
 fn number(
     fixture: &Fixture,
     step: &Step,

@@ -6,7 +6,7 @@ from pathlib import Path
 from . import OracleError, occt_version
 from .measure import DEFAULT_TOLERANCES, measure
 from .geometry import compute_geometry
-from .recipe import build, fixture_kind, recipe_hash, variant_names
+from .recipe import build, fixture_kind, probes, recipe_hash, variant_names
 
 FIXTURE = "fixture.json"
 EXPECTED = "expected.json"
@@ -50,7 +50,7 @@ def compute_expected(fixture: dict) -> dict:
     results = {}
     for variant in variant_names(fixture):
         shape, _ = build(fixture, variant)
-        results[variant] = measure(shape, fixture.get("probes", []), tol["probe"])
+        results[variant] = measure(shape, probes(fixture, variant), tol["probe"])
     return {"occt": occt_version(), "recipe_sha256": recipe_hash(fixture), "results": results}
 
 

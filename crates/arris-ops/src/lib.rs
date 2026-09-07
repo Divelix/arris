@@ -1,5 +1,6 @@
 //! Operations of the Arris kernel: primitives, planar profiles, extrude,
-//! revolve, transform, the booleans, and `measure` for mass properties.
+//! revolve, transform, the booleans (and `boolean::interferences`, their
+//! decomposition as a value), and `measure` for mass properties.
 //!
 //! Guarantees: every operation has the shape `op(&mut Model, inputs…) ->
 //! Result<(Body, Provenance), OpError>` (`docs/01-architecture.md`
@@ -15,6 +16,7 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod boolean;
 mod error;
 pub mod measure;
 mod primitive;
@@ -26,7 +28,28 @@ pub use error::{Fault, OpError, Reason};
 pub use primitive::{primitive_box, primitive_cylinder};
 pub use transform::transform;
 
-use arris_check::arris_topo::{Body, Model};
+use arris_check::arris_topo::{Body, Model, Shape};
+
+/// The input check every operation and query runs before it reads a
+/// body: the handle resolves ([`OpError::NotFound`] otherwise), and in
+/// debug builds — or release with the `paranoid` feature — the body
+/// passes the checker at `Level::Fast` ([`OpError::InvalidInput`] with
+/// the report otherwise).
+fn verify_input(m: &Model, body: Body) -> Result<(), OpError> {
+    m.body(body.id)
+        .map_err(|_| OpError::NotFound(Shape::new(body.id, body.orientation)))?;
+    #[cfg(any(debug_assertions, feature = "paranoid"))]
+    {
+        let report = arris_check::check(m, body, arris_check::Level::Fast);
+        if !report.is_ok() {
+            return Err(OpError::InvalidInput {
+                body,
+                report: Box::new(report),
+            });
+        }
+    }
+    Ok(())
+}
 
 /// The debug-build guard every operation runs on its output before
 /// returning `Ok`: `Level::Fast`, a panic with the report on a failure.

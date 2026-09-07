@@ -413,6 +413,23 @@ impl Frame2 {
         self.origin
     }
 
+    /// The same axes at the origin moved by `by`.
+    ///
+    /// ```
+    /// use arris_math::{Frame2, Point2, Vec2};
+    ///
+    /// let f = Frame2::identity().translated(Vec2::new(1.0, 2.0));
+    /// assert_eq!(f.origin(), Point2::new(1.0, 2.0));
+    /// assert_eq!(f.x(), Frame2::identity().x());
+    /// ```
+    pub fn translated(&self, by: Vec2) -> Frame2 {
+        Frame2 {
+            origin: self.origin + by,
+            x: self.x,
+            y: self.y,
+        }
+    }
+
     /// The `x` axis.
     pub const fn x(&self) -> UnitVec2 {
         self.x

@@ -172,6 +172,34 @@ the origin would pay for in cancellation. A body that is not a `Solid`
 is `OpError::Degenerate` with `Reason::NotSolid`; an invalid one
 `InvalidInput`, as an operation's input is.
 
+`ops::boolean::interferences(&Model, a, b) -> Result<Interferences,
+OpError>` is the second query: the boolean decomposition of ADR-0004 as
+a value, computed without building anything. It holds every face pair
+whose boxes overlap with its `SurfaceIntersection`; every point where
+an edge of one operand pierces a face of the other, kept when the
+parameter is in the edge's range and the (u, v) is on the face
+(`region2::point_side` on the face's loops, a `Boundary` verdict
+resolved to the edge or vertex of the face within its own tolerance,
+the edge's own end vertex when the hit is within its ball); those hits
+merged into section vertices — a hit joins the first vertex whose point
+is within the larger of the two tolerances or that shares an operand
+vertex with it, and the vertex's tolerance is the largest of the
+entities merged plus the spread of the points (02-data-model
+§Tolerances); the paves each vertex puts on the edge that hit it and on
+every section curve it projects onto within its tolerance; and the
+section edges — the blocks between consecutive paves whose midpoint is
+inside both faces, a closed curve with no pave seeded at its parameter
+zero when it is interior to both — each with a pcurve on each face by
+`pcurve_on`, translated by whole periods into the copy of the domain the
+face's loops are written in, its tolerance the larger of the faces'
+raised to the pcurves' residual. A `Tangent` or `Coincident` pair and a
+touching or coincident edge are recorded and contribute nothing here:
+plan steps 10 and 11 decide them. Every list is in a deterministic
+order and `Display` prints the whole model, which is what the `inspect`
+skill reads when a boolean is wrong. The property tests build their
+operands through `arris_debug::prop::body` — a box and a cylinder whose
+axis passes through the box, both under one random motion.
+
 Sweeps take a planar `Profile` — an outer loop and holes of lines and arcs
 in a plane's own (u, v) — and build the planar face themselves (`ops::
 planar_face`), so a consumer's sketch never has to become topology before
@@ -190,7 +218,7 @@ involved, so the message a consumer shows — or the agent reads — says
 | `Degenerate` | the requested result has no valid representation: a parameter that makes no geometry (`Reason::NonFinite`, `Reason::NotPositive` naming it — a zero radius, a box whose `min` is not below its `max`), a zero-thickness intersection, a profile crossing its revolve axis, a sweep of zero length | the entities (none for a primitive) and a `Reason` enum |
 | `Tolerance` | the result would need an entity tolerance above `Precision::max_tolerance` | the entity, the tolerance it wanted |
 | `NotFound` | a handle does not resolve in this model (wrong model, or compacted away) | the `Shape` |
-| `Internal` | a kernel bug the operation caught: the checker rejected its own output, the builder refused a step of its fixed sequence, a frame could not be placed from inputs it had validated, a point it had to classify could not be | a `Fault` — the `Report`, the `BuildError`, the `FrameError` or the `ClassifyError` |
+| `Internal` | a kernel bug the operation caught: the checker rejected its own output, the builder refused a step of its fixed sequence, a frame could not be placed from inputs it had validated, a point it had to classify could not be, a geometry query failed on validated input for a reason other than a missing closed form, a section edge crossed a seam the seam's own hit should have paved | a `Fault` — the `Report`, the `BuildError`, the `FrameError`, the `ClassifyError`, the `GeomError`, or the two faces of the seam crossing |
 
 `Internal` is returned only in release builds with `paranoid` on; in debug
 builds the same condition panics (below). A degenerate *result* that the

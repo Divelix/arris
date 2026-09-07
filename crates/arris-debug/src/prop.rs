@@ -13,7 +13,9 @@
 //!
 //! The geometric strategies produce `arris-math` types in random poses;
 //! every one is uniform over its space so a property that holds "at 1000
-//! cases" has seen the seams, the poles and the octants.
+//! cases" has seen the seams, the poles and the octants. `geom` places
+//! every surface and curve kind and random NURBS; `body` describes boxes
+//! and cylinders in random poses that a test builds into a model.
 //!
 //! ```
 //! use arris_debug::prop::{check, frame, point_in_box, DEFAULT_SCALE};
@@ -26,6 +28,7 @@
 //! });
 //! ```
 
+pub mod body;
 pub mod geom;
 
 use core::fmt::Debug;

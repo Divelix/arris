@@ -139,19 +139,10 @@ const SECOND: [Integrand; 6] = [
 /// assert!((p.inertia[(2, 2)] - volume * 2.0).abs() < 1e-12 * volume);
 /// ```
 pub fn mass_properties(m: &Model, body: Body) -> Result<MassProperties, OpError> {
+    crate::verify_input(m, body)?;
     let entity = m
         .body(body.id)
         .map_err(|_| OpError::NotFound(Shape::new(body.id, body.orientation)))?;
-    #[cfg(any(debug_assertions, feature = "paranoid"))]
-    {
-        let report = arris_check::check(m, body, arris_check::Level::Fast);
-        if !report.is_ok() {
-            return Err(OpError::InvalidInput {
-                body,
-                report: Box::new(report),
-            });
-        }
-    }
     if entity.kind() != BodyKind::Solid {
         return Err(OpError::Degenerate {
             entities: vec![Shape::new(body.id, body.orientation)],

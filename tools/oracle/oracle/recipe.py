@@ -149,6 +149,14 @@ def variant_names(fixture: dict) -> list[str]:
     return ["default"] + sorted(fixture.get("variants", {}).keys())
 
 
+def probes(fixture: dict, variant: str = "default") -> list[dict]:
+    """The recipe's probes with their points evaluated under the variant's
+    params: a probe's coordinates may be expressions like a step's
+    (`tests/fixtures/README.md`)."""
+    params = resolve_params(fixture, variant)
+    return [{**p, "point": vector(p["point"], params)} for p in fixture.get("probes", [])]
+
+
 SOLID_KEYS = ("params", "variants", "steps", "result", "probes")
 GEOMETRY_KEYS = ("kind", "params", "surfaces", "curves", "samples", "pairs")
 

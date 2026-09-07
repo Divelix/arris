@@ -232,6 +232,45 @@ impl Curve2 {
         }
     }
 
+    /// The same curve moved by `by` in (u, v), parametrisation carried
+    /// along: `moved.eval(t).point == self.eval(t).point + by` to
+    /// rounding. What a boolean does to a section edge's pcurve on a
+    /// periodic surface — a whole number of periods along `u` — so the
+    /// pcurve lies in the translate of the fundamental domain the face's
+    /// loops are written in (`docs/02-data-model.md` §Seams).
+    ///
+    /// ```
+    /// use arris_geom::Curve2;
+    /// use arris_math::{Frame2, Point2, Vec2};
+    /// use core::f64::consts::TAU;
+    ///
+    /// let c = Curve2::Circle { frame: Frame2::identity(), radius: 2.0 };
+    /// let moved = c.translated(Vec2::new(TAU, 0.0));
+    /// assert_eq!(moved.point(0.0), Point2::new(TAU + 2.0, 0.0));
+    /// ```
+    pub fn translated(&self, by: Vec2) -> Curve2 {
+        match self {
+            &Curve2::Line { origin, direction } => Curve2::Line {
+                origin: origin + by,
+                direction,
+            },
+            &Curve2::Circle { frame, radius } => Curve2::Circle {
+                frame: frame.translated(by),
+                radius,
+            },
+            &Curve2::Ellipse {
+                frame,
+                major_radius,
+                minor_radius,
+            } => Curve2::Ellipse {
+                frame: frame.translated(by),
+                major_radius,
+                minor_radius,
+            },
+            Curve2::Nurbs(c) => Curve2::Nurbs(c.translated(by)),
+        }
+    }
+
     /// The nearest point of the curve to `p` with its parameter, by the
     /// closed form of each analytic variant and by sampling and bracketed
     /// Newton for a NURBS ([`NurbsCurve2::project_parameter`]).
