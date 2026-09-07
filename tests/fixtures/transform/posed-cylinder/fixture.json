@@ -1,0 +1,24 @@
+{
+  "description": "cylinder r 4, h 12, axis z, rotated 30 deg about [1, 1, 0] through the origin and translated: ops::transform's fixture",
+  "steps": [
+    {"name": "cyl", "op": "cylinder", "base": [0, 0, 0], "axis": [0, 0, 1], "radius": 4, "height": 12},
+    {"name": "result", "op": "transform", "of": "cyl",
+     "rotate": {"axis": [1, 1, 0], "angle_deg": 30},
+     "translate": [10, -5, 3]}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [13.121320343559642, -6.121320343559642, 8.196152422706632], "expect": "in"},
+    {"label": "outside", "point": [16.786383853020737, -6.786383853020739, 6.428385469740263], "expect": "out"},
+    {"label": "on_wall", "point": [15.85337115112852, -6.85337115112852, 6.781938860333537], "expect": "on"},
+    {"label": "on_edge", "point": [14.510589879550405, -5.510589879550406, 14.806518407786358], "expect": "on"},
+    {"label": "on_axis", "point": [12.121320343559642, -7.121320343559642, 8.196152422706632], "expect": "in"}
+  ],
+  "analytic": {
+    "volume": "pi * 16 * 12",
+    "area": "2 * pi * 16 + 2 * pi * 4 * 12",
+    "centroid": [12.121320343559642, -7.121320343559642, 8.196152422706632],
+    "counts": {"vertices": 2, "edges": 3, "faces": 3, "loops": 3, "shells": 1},
+    "genus": 0
+  }
+}

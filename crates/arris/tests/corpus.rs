@@ -31,6 +31,11 @@ fn primitive_cylinder() {
 }
 
 #[test]
+fn transform_posed_cylinder() {
+    run("transform/posed-cylinder");
+}
+
+#[test]
 #[ignore = "M4: needs ops::cut"]
 fn boolean_through_hole() {
     run("boolean/through-hole");
@@ -114,16 +119,39 @@ fn provenance_bolt_pattern_rebuild() {
     run("provenance/bolt-pattern-rebuild");
 }
 
-/// A recipe with an op the kernel has no operation for fails naming it.
+/// A recipe with an op the kernel has no operation for fails naming it:
+/// `extrude`, since a box, a cylinder and now `transform` all build (M5
+/// is where this is retargeted again).
 #[test]
 fn an_unsupported_op_fails_with_its_name() {
-    let dir = fixtures::corpus_root().join("boolean/through-hole");
+    let dir = tempdir("unsupported-op");
+    std::fs::write(
+        dir.join("fixture.json"),
+        r#"{
+            "description": "a box referenced by an op the kernel does not have yet",
+            "steps": [
+                {"name": "base", "op": "box", "min": [0, 0, 0], "max": [1, 1, 1]},
+                {"name": "result", "op": "extrude", "profile": "base", "direction": [0, 0, 1], "length": 1}
+            ],
+            "result": "result"
+        }"#,
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("expected.json"),
+        r#"{
+            "occt": "n/a",
+            "recipe_sha256": "0",
+            "results": {"default": {"degenerate": false, "counts": {"vertices": 0, "edges": 0, "faces": 0, "loops": 0}}}
+        }"#,
+    )
+    .unwrap();
     let err = corpus::run(&dir, "default").unwrap_err();
     assert!(
-        matches!(&err, CorpusError::Unsupported { step, op: "cut", .. } if step == "result"),
+        matches!(&err, CorpusError::Unsupported { step, op: "extrude", .. } if step == "result"),
         "{err}"
     );
-    assert!(err.to_string().contains("op \"cut\""), "{err}");
+    assert!(err.to_string().contains("op \"extrude\""), "{err}");
     let err = corpus::run(&dir, "nope").unwrap_err();
     assert!(matches!(err, CorpusError::Variant { .. }), "{err}");
 }

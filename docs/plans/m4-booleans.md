@@ -271,7 +271,7 @@ or bound has to be established here.
   point inside a hole of `sample::frame` is `Outside`; every probe of the
   two `primitive/*` fixtures matches the oracle's class through the new
   stage; the checker's B1 tests unchanged.
-- [ ] Step 5 **[1]** — `ops::transform` and its fixture. The operation,
+- [x] Step 5 **[1]** — `ops::transform` and its fixture. The operation,
   the runner's `transform` arm and `Made::inputs`, `transform/
   posed-cylinder` un-ignored and blessed, the unsupported-op test
   retargeted at `extrude`. Tests: a transformed cylinder measures as
@@ -485,6 +485,31 @@ deltas above, not a new decision.
   split — while `Surface::project` answers in the first copy. The
   checker's own `face_side` (E8, L5, S5) does not shift and is left as it
   was; `classify` and B1, which share the code, do.
+- **Step 5 — `transform` goes through `Builder::assemble`'s `New` specs,
+  not `RawInsert`.** `Model::raw`'s own doc says it is "never an
+  operation's path into the arena"; `assemble` (step 1) is the sanctioned
+  one, already shaped for a caller with a full entity table. `transform`
+  walks the body's closure, transforms every curve, surface and vertex,
+  reuses every pcurve id, and rebuilds the loops with `UseSpec::
+  orientation` composed from the face's effective orientation and the
+  original coedge's — the same conversion `assemble`'s own `Keep` case
+  applies — since that field is documented as the *effective* direction,
+  not the coedge's raw one. This reaches exactly as far as `assemble`
+  does: one shell, no free edges or vertices (every operation's output
+  today).
+- **Step 5 — `transform/posed-cylinder` did not exist to un-ignore.** No
+  fixture directory was committed for it yet; this step authored
+  `fixture.json` (r 4, h 12 cylinder, rotated 30° about `[1, 1, 0]`
+  through the origin, then translated) and generated `expected.json`
+  fresh.
+- **Step 5 — the unsupported-op test builds its fixture ad hoc.** Pointing
+  it at a committed corpus fixture stopped working once `transform`
+  became supported (every corpus fixture's still-unsupported step is
+  `cut`, `fuse`, `common` or `profile`, none of them `extrude` first);
+  `an_unsupported_op_fails_with_its_name` now writes a two-step `box` then
+  `extrude` recipe into a `tempdir`, the same pattern the dump-diff test
+  beside it already uses, rather than adding a fixture to the corpus
+  purely to exercise an error path.
 - **Step 1 — `sample::sphere` is not assemblable.** Its two degenerate
   pole edges are used once each, which `finish` has always refused (it is
   why the sample goes through the raw insert). The round trip runs over

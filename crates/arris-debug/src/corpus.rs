@@ -17,18 +17,21 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use arris_io::arris_check::arris_topo::arris_math::{Axis, FrameError, Point3, Vec3};
+use arris_io::arris_check::arris_topo::arris_math::nalgebra::UnitQuaternion;
+use arris_io::arris_check::arris_topo::arris_math::{
+    Axis, FrameError, Isometry, Point3, UnitVec3, Vec3,
+};
 use arris_io::arris_check::arris_topo::{Body, Model, Orientation, Origin, Provenance, Shape};
 use arris_io::arris_check::classify::{Classification, classify_point};
 use arris_io::arris_check::{Level, Report, check};
 use arris_io::step::{self, StepError};
 use arris_mesh::tessellate;
 use arris_ops::measure::mass_properties;
-use arris_ops::{OpError, primitive_box, primitive_cylinder};
+use arris_ops::{OpError, primitive_box, primitive_cylinder, transform};
 
 use crate::dump::dump_text;
 use crate::fixtures::{
-    self, Class, Counts, ExprError, Fixture, FixtureError, Measured, Num, Step, Tolerances,
+    self, Class, Counts, ExprError, Fixture, FixtureError, Measured, Num, Rotate, Step, Tolerances,
 };
 use crate::oracle::{self, OracleError};
 
@@ -457,6 +460,52 @@ fn point(
     ))
 }
 
+fn vector(
+    fixture: &Fixture,
+    step: &Step,
+    v: &[Num; 3],
+    params: &BTreeMap<String, f64>,
+) -> Result<Vec3, CorpusError> {
+    Ok(Vec3::new(
+        number(fixture, step, &v[0], params)?,
+        number(fixture, step, &v[1], params)?,
+        number(fixture, step, &v[2], params)?,
+    ))
+}
+
+/// The rigid motion of a `Step::Transform`: the rotation about `origin`
+/// (the world origin when absent) applied first, then the translation —
+/// `tools/oracle/oracle/recipe.py`'s `gp_Trsf` composition.
+fn motion(
+    fixture: &Fixture,
+    step: &Step,
+    rotate: &Option<Rotate>,
+    translate: &Option<[Num; 3]>,
+    params: &BTreeMap<String, f64>,
+) -> Result<Isometry, CorpusError> {
+    let mut m = Isometry::identity();
+    if let Some(rot) = rotate {
+        let axis = vector(fixture, step, &rot.axis, params)?;
+        let origin = match &rot.origin {
+            Some(o) => point(fixture, step, o, params)?,
+            None => Point3::origin(),
+        };
+        let angle = number(fixture, step, &rot.angle_deg, params)?.to_radians();
+        let rotation = UnitQuaternion::from_axis_angle(&UnitVec3::new_normalize(axis), angle);
+        let about_origin = Isometry::from_rotation(rotation);
+        m = Isometry::new(
+            rotation,
+            origin.coords - about_origin.apply_vec(origin.coords),
+        );
+    }
+    if let Some(t) = translate {
+        m = m.then(&Isometry::from_translation(vector(
+            fixture, step, t, params,
+        )?));
+    }
+    Ok(m)
+}
+
 fn build_step(
     m: &mut Model,
     fixture: &Fixture,
@@ -522,9 +571,20 @@ fn build_step(
             reference(fixture, step, profile, made)?;
             Err(unsupported("revolve"))
         }
-        Step::Transform { of, .. } => {
-            reference(fixture, step, of, made)?;
-            Err(unsupported("transform"))
+        Step::Transform {
+            of,
+            translate,
+            rotate,
+            ..
+        } => {
+            let of_body = reference(fixture, step, of, made)?.body;
+            let motion = motion(fixture, step, rotate, translate, params)?;
+            let (body, provenance) = transform(m, of_body, &motion).map_err(op)?;
+            Ok(Made {
+                body,
+                provenance,
+                inputs: vec![of_body],
+            })
         }
         Step::Fuse { a, b, .. } => {
             reference(fixture, step, a, made)?;

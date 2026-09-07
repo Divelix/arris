@@ -1,0 +1,220 @@
+//! `ops::transform` (`docs/plans/m4-booleans.md` step 5): clean at `Full`,
+//! one `Modified` per entity and nothing else, the identity motion gives
+//! new ids over the same shape, a motion then its inverse returns every
+//! vertex, mass properties are covariant, and two runs are identical.
+
+use std::collections::BTreeSet;
+
+use arris_debug::{dump_text, prop};
+use arris_ops::arris_check::arris_topo::arris_math::{Axis, Isometry, Point3};
+use arris_ops::arris_check::arris_topo::{Body, Model, Orientation, Shape};
+use arris_ops::arris_check::{Level, check};
+use arris_ops::measure::mass_properties;
+use arris_ops::{primitive_cylinder, transform};
+use proptest::prelude::*;
+
+fn the_cylinder(m: &mut Model) -> Body {
+    primitive_cylinder(m, Axis::z_at(Point3::origin()), 4.0, 12.0)
+        .unwrap()
+        .0
+}
+
+/// The vertices, edges, faces, shells and the body itself, each once as a
+/// `Forward` [`Shape`] — the same set `arris-debug`'s corpus accounting
+/// and `primitives.rs`'s role tests read a closure through.
+fn entities_of(m: &Model, body: Body) -> BTreeSet<Shape> {
+    let c = m.closure(body).unwrap();
+    let mut set: BTreeSet<Shape> = BTreeSet::new();
+    set.extend(
+        c.vertices
+            .iter()
+            .map(|&v| Shape::new(v, Orientation::Forward)),
+    );
+    set.extend(c.edges.iter().map(|&e| Shape::new(e, Orientation::Forward)));
+    set.extend(c.faces.iter().map(|&f| Shape::new(f, Orientation::Forward)));
+    set.extend(
+        c.shells
+            .iter()
+            .map(|&s| Shape::new(s, Orientation::Forward)),
+    );
+    set.insert(Shape::from(body));
+    set
+}
+
+fn a_pose() -> Isometry {
+    Isometry::new(
+        arris_ops::arris_check::arris_topo::arris_math::nalgebra::UnitQuaternion::from_axis_angle(
+            &arris_ops::arris_check::arris_topo::arris_math::UnitVec3::new_normalize(
+                arris_ops::arris_check::arris_topo::arris_math::Vec3::new(1.0, 1.0, 0.0),
+            ),
+            core::f64::consts::FRAC_PI_6,
+        ),
+        arris_ops::arris_check::arris_topo::arris_math::Vec3::new(10.0, -5.0, 3.0),
+    )
+}
+
+#[test]
+fn a_transformed_cylinder_is_clean_at_full_and_one_to_one_modified() {
+    let mut m = Model::default();
+    let body = the_cylinder(&mut m);
+    let motion = a_pose();
+    let (moved, p) = transform(&mut m, body, &motion).unwrap();
+    let report = check(&m, moved, Level::Full);
+    assert!(
+        report.is_ok(),
+        "{report}\n{}",
+        dump_text(&m, moved).unwrap()
+    );
+    assert!(report.unchecked().is_empty());
+
+    let old = entities_of(&m, body);
+    let new = entities_of(&m, moved);
+    assert_eq!(old.len(), new.len());
+    assert_eq!(p.deleted().count(), 0, "{p}");
+    assert_eq!(p.origins_recorded().count(), old.len(), "{p}");
+    assert_eq!(p.outputs(), new, "{p}");
+    for &e in &old {
+        let images = p.modified_from(e);
+        assert_eq!(images.len(), 1, "{e}: {images:?}\n{p}");
+        assert!(new.contains(&images[0]), "{e} -> {}", images[0]);
+        assert!(p.generated_from(e).is_empty(), "{e}");
+    }
+    for &e in &new {
+        let origins = p.origins(e);
+        assert_eq!(origins.len(), 1, "{e}: {origins:?}\n{p}");
+        assert_eq!(
+            origins[0].0,
+            arris_ops::arris_check::arris_topo::Relation::Modified,
+            "{e}"
+        );
+    }
+}
+
+#[test]
+fn the_identity_motion_gives_new_ids_over_the_same_shape() {
+    let mut m = Model::default();
+    let body = the_cylinder(&mut m);
+    let (moved, _) = transform(&mut m, body, &Isometry::identity()).unwrap();
+    assert_ne!(body, moved);
+    let strip = |t: String| -> String {
+        t.lines()
+            .filter(|l| !l.starts_with("body"))
+            .map(|l| {
+                l.chars()
+                    .filter(|c| !c.is_ascii_digit())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    assert_eq!(
+        strip(dump_text(&m, body).unwrap()),
+        strip(dump_text(&m, moved).unwrap())
+    );
+}
+
+#[test]
+fn a_motion_then_its_inverse_returns_every_vertex() {
+    let mut m = Model::default();
+    let body = the_cylinder(&mut m);
+    let motion = a_pose();
+    let (moved, _) = transform(&mut m, body, &motion).unwrap();
+    let (back, _) = transform(&mut m, moved, &motion.inverse()).unwrap();
+    let scale = 12.0;
+    for (a, b) in m
+        .vertices(body)
+        .unwrap()
+        .iter()
+        .zip(m.vertices(back).unwrap().iter())
+    {
+        let (pa, pb) = (
+            m.vertex(a.id).unwrap().point(),
+            m.vertex(b.id).unwrap().point(),
+        );
+        assert!((pa - pb).norm() <= 1e-12 * scale, "{pa} vs {pb}");
+    }
+}
+
+#[test]
+fn mass_properties_are_covariant_at_random_poses() {
+    let strategy = (
+        prop::point_in_box(prop::DEFAULT_SCALE),
+        prop::unit_vec3(),
+        prop::radius(0.1..=20.0),
+        prop::radius(0.1..=20.0),
+        prop::pose(),
+    );
+    prop::check(strategy, |(origin, direction, radius, height, motion)| {
+        let axis = Axis::new(origin, direction.into_inner()).unwrap();
+        let mut m = Model::default();
+        let (body, _) = primitive_cylinder(&mut m, axis, radius, height).unwrap();
+        let (moved, _) = transform(&mut m, body, &motion).unwrap();
+        let before = mass_properties(&m, body).unwrap();
+        let after = mass_properties(&m, moved).unwrap();
+        let scale = before.volume.abs().max(1.0);
+        prop_assert!((after.volume - before.volume).abs() <= 1e-9 * scale);
+        prop_assert!((after.area - before.area).abs() <= 1e-9 * scale);
+        let centroid = motion.apply(before.centroid);
+        prop_assert!(
+            (after.centroid - centroid).norm() <= 1e-9 * centroid.coords.abs().max().max(1.0)
+        );
+        let r = motion.rotation().to_rotation_matrix().into_inner();
+        let expected_inertia = r * before.inertia * r.transpose();
+        let inertia_scale = before.inertia.abs().max().max(1.0);
+        for i in 0..3 {
+            for j in 0..3 {
+                prop_assert!(
+                    (after.inertia[(i, j)] - expected_inertia[(i, j)]).abs()
+                        <= 1e-9 * inertia_scale,
+                    "[{i}, {j}]: {} vs {}",
+                    after.inertia[(i, j)],
+                    expected_inertia[(i, j)]
+                );
+            }
+        }
+        Ok(())
+    });
+}
+
+#[test]
+fn two_runs_dump_identically() {
+    let build = |m: &mut Model| {
+        let body = the_cylinder(m);
+        transform(m, body, &a_pose()).unwrap()
+    };
+    let mut m = Model::default();
+    let (b1, p1) = build(&mut m);
+    let mut n = Model::default();
+    let (b2, p2) = build(&mut n);
+    assert_eq!(dump_text(&m, b1).unwrap(), dump_text(&n, b2).unwrap());
+    assert_eq!(p1, p2, "the same relations on every run");
+    assert_eq!(b1, b2, "the same ids");
+}
+
+#[test]
+fn a_body_that_does_not_resolve_is_not_found() {
+    let mut m = Model::default();
+    let body = Body::forward(arris_ops::arris_check::arris_topo::BodyId::new(3, 0));
+    assert!(matches!(
+        transform(&mut m, body, &Isometry::identity()),
+        Err(arris_ops::OpError::NotFound(_))
+    ));
+}
+
+#[cfg(debug_assertions)]
+#[test]
+fn a_broken_body_is_invalid_input_in_a_debug_build() {
+    let mut m = Model::default();
+    let body = m
+        .raw()
+        .add_body(arris_ops::arris_check::arris_topo::entity::Body::solid(
+            vec![arris_ops::arris_check::arris_topo::Shell::forward(
+                arris_ops::arris_check::arris_topo::ShellId::new(9, 0),
+            )],
+        ));
+    let err = transform(&mut m, Body::forward(body), &Isometry::identity()).unwrap_err();
+    assert!(
+        matches!(err, arris_ops::OpError::InvalidInput { .. }),
+        "{err}"
+    );
+}
