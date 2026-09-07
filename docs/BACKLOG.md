@@ -11,7 +11,6 @@ re-brainstormed.
 - `cargo-fuzz` targets for the STEP reader and the intersectors, seeded from the fixture corpus
 - A `no_std`-friendly `arris-math`, if an embedded or wasm consumer ever wants it
 - IGES read/write (SEED §6, later cycles)
-- Move `Aabb` from `arris-mesh` to `arris-math` once M1 geometry wants bounding boxes; `arris-mesh` re-exports it
 - Publish the workspace crates to crates.io over the 0.0.1 `arris` reservation once cycle 1's vertical slice passes its corpus
 - NURBS degree elevation as a primitive edit (02-data-model §NURBS names it; no C1 step needs it — knot insertion is enough for M1's fitting)
 - Knot insertion on a periodic NURBS that keeps the wrap: today the result's knots no longer imply a period and it extrapolates outside its domain (02-data-model §NURBS); needed once a periodic curve from STEP is edited
