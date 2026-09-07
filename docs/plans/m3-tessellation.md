@@ -292,7 +292,7 @@ robustness or bound has to be established here (Fable).
   batch, under the paths the doc states; `cargo build -p arris-debug
   --features rerun` green; the default build unchanged. The `inspect`
   skill names it.
-- [ ] Step 7 **[1]** — `parallel` over faces. `rayon` behind
+- [x] Step 7 **[1]** — `parallel` over faces. `rayon` behind
   `arris-mesh`'s feature: faces triangulated in parallel after the edge
   pass, collected in face order. Tests: the mesh of every sample body and
   both primitives is byte-identical with the feature on and off (a test
@@ -423,8 +423,8 @@ step.
 - **Where the `rerun` feature builds — resolved, step 6.** A separate
   blocking CI job `rerun` runs `cargo build -p arris-debug --features
   rerun`; the hook and the `test` job are untouched, as recommended.
-- `⚠ OPEN:` **Keep step 7.** `parallel` is not in the roadmap's M3 "in"
-  list; it is in 01 §Threading's contract and costs one afternoon.
-  Recommendation: keep it — it is the first test of "identical output
-  with the feature off", which M4's boolean will also need. Human, by
-  step 7.
+- **Keep step 7 — resolved, step 7.** `parallel` is not in the roadmap's
+  M3 "in" list; it is in 01 §Threading's contract and costs one
+  afternoon. The human confirmed the recommendation: keep it — it is the
+  first test of "identical output with the feature off", which M4's
+  boolean will also need.

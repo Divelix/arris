@@ -45,6 +45,10 @@ jobs:
           enable-cache: true
       - run: uv sync --project tools/oracle
       - run: cargo test --workspace
+      # arris-mesh's `parallel` feature (docs/plans/m3-tessellation.md
+      # step 7): the same tests, so every sample body's and primitive's
+      # mesh is byte-identical with faces triangulated in parallel.
+      - run: cargo test -p arris-mesh --features parallel
 
   # A library's docs are part of its API: a broken intra-doc link or a
   # missing doc on a public item fails the build.

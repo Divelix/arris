@@ -249,10 +249,12 @@ fn both_primitives_mesh() {
     let mesh = tessellate(&m, cube, 1e-3).unwrap();
     assert_structure(&m, cube, &mesh);
     assert!((mesh.signed_volume().unwrap() - 12000.0).abs() <= EXACT * 12000.0);
+    assert_eq!(mesh, tessellate(&m, cube, 1e-3).unwrap(), "two runs");
     let (cylinder, _) =
         primitive_cylinder(&mut m, Axis::z_at(Point3::origin()), 4.0, 12.0).unwrap();
     let mesh = tessellate(&m, cylinder, 1e-2).unwrap();
     assert_cylinder(&m, cylinder, &mesh, 4.0, 12.0, 1e-2);
+    assert_eq!(mesh, tessellate(&m, cylinder, 1e-2).unwrap(), "two runs");
 }
 
 #[test]

@@ -8,7 +8,7 @@ use arris_topo::arris_geom::Surface;
 use arris_topo::arris_geom::region2::{MAX_SEGMENTS_PER_PIECE, Polygon2, discretise};
 use arris_topo::arris_math::{Interval, Point2};
 use arris_topo::entity::{EdgeGeometry, Face as FaceEntity};
-use arris_topo::{Body, EdgeId, Model, NotFound, Orientation, VertexId};
+use arris_topo::{Body, EdgeId, FaceId, Model, NotFound, Orientation, VertexId};
 
 use crate::cdt::{self, CdtError, VertexRef};
 use crate::{MeshError, TriMesh};
@@ -178,7 +178,11 @@ pub fn tessellate(m: &Model, body: Body, chord: f64) -> Result<TriMesh, MeshErro
     }
 
     // Pass three: every face's loops through its pcurves at the edges'
-    // parameters, triangulated, mapped back to the shared indices.
+    // parameters, mapped back to the shared indices, positions pushed —
+    // all sequential, since the shared position buffer's indices depend
+    // on push order. What is left, [`triangulate_face`]'s CDT, touches
+    // only its own face's data and runs in parallel behind `parallel`.
+    let mut works: Vec<FaceWork> = Vec::with_capacity(faces.len());
     for (k, f) in faces.iter().enumerate() {
         let face = m.face(f.id)?;
         let mut polygons: Vec<Polygon2> = Vec::with_capacity(face.loops().len());
@@ -242,42 +246,102 @@ pub fn tessellate(m: &Model, body: Body, chord: f64) -> Result<TriMesh, MeshErro
             .collect();
         let scaled_interior: Vec<Point2> =
             interior.iter().map(|p| scaled_point(*p, scale)).collect();
-        let triangulation = cdt::triangulate(&scaled, &scaled_interior)
-            .map_err(|source| MeshError::Face { face: f.id, source })?;
-        let index_of = |v: usize| -> Result<u32, MeshError> {
-            match triangulation.vertex_ref(v) {
-                Some(VertexRef::Polygon { polygon, vertex }) => rings
-                    .get(polygon)
-                    .and_then(|r| r.get(vertex))
-                    .copied()
-                    .ok_or(MeshError::Face {
-                        face: f.id,
-                        source: CdtError::Internal("a triangle corner names no loop point"),
-                    }),
-                Some(VertexRef::Interior(i)) => {
-                    interior_indices.get(i).copied().ok_or(MeshError::Face {
-                        face: f.id,
-                        source: CdtError::Internal("a triangle corner names no interior point"),
-                    })
-                }
-                None => Err(MeshError::Face {
-                    face: f.id,
-                    source: CdtError::Internal("a triangle corner is not an input point"),
-                }),
-            }
-        };
-        let reversed = f.orientation == Orientation::Reversed;
-        let mut triangles = Vec::with_capacity(triangulation.triangles().len());
-        for &[a, b, c] in triangulation.triangles() {
-            let (ia, ib, ic) = (index_of(a)?, index_of(b)?, index_of(c)?);
-            if ia == ib || ib == ic || ic == ia {
-                continue;
-            }
-            triangles.push(if reversed { [ia, ic, ib] } else { [ia, ib, ic] });
-        }
-        mesh.push_face(f.id, triangles)?;
+        works.push(FaceWork {
+            face: f.id,
+            reversed: f.orientation == Orientation::Reversed,
+            polygons: scaled,
+            interior: scaled_interior,
+            rings,
+            interior_indices,
+        });
+    }
+
+    // Pass four: each face's CDT and the mapping of its triangle corners
+    // back to the shared indices — the compute-heavy, purely local step,
+    // over `rayon` behind `parallel`, sequential otherwise; either way
+    // the results are collected in face order before they reach `mesh`,
+    // so the mesh is identical with the feature on or off.
+    for (w, triangles) in works.iter().zip(triangulate_faces(&works)?) {
+        mesh.push_face(w.face, triangles)?;
     }
     Ok(mesh)
+}
+
+/// One face's inputs to its CDT, gathered while the shared position
+/// buffer is still being pushed to in face order (`tessellate`'s pass
+/// three) so that [`triangulate_faces`] can run each face independently.
+struct FaceWork {
+    face: FaceId,
+    reversed: bool,
+    /// Loop polygons and interior points, in the scaled (u, v) [`uv_scale`]
+    /// defines.
+    polygons: Vec<Polygon2>,
+    interior: Vec<Point2>,
+    /// Loop `i`, vertex `j`'s mesh index, indexed the same as `polygons`.
+    rings: Vec<Vec<u32>>,
+    /// Interior point `i`'s mesh index, indexed the same as `interior`.
+    interior_indices: Vec<u32>,
+}
+
+/// One face's CDT and the triangle corners mapped back to the shared
+/// mesh indices, oriented by `reversed`, collapsed triangles dropped.
+fn triangulate_face(w: &FaceWork) -> Result<Vec<[u32; 3]>, MeshError> {
+    let triangulation =
+        cdt::triangulate(&w.polygons, &w.interior).map_err(|source| MeshError::Face {
+            face: w.face,
+            source,
+        })?;
+    let index_of = |v: usize| -> Result<u32, MeshError> {
+        match triangulation.vertex_ref(v) {
+            Some(VertexRef::Polygon { polygon, vertex }) => w
+                .rings
+                .get(polygon)
+                .and_then(|r| r.get(vertex))
+                .copied()
+                .ok_or(MeshError::Face {
+                    face: w.face,
+                    source: CdtError::Internal("a triangle corner names no loop point"),
+                }),
+            Some(VertexRef::Interior(i)) => {
+                w.interior_indices.get(i).copied().ok_or(MeshError::Face {
+                    face: w.face,
+                    source: CdtError::Internal("a triangle corner names no interior point"),
+                })
+            }
+            None => Err(MeshError::Face {
+                face: w.face,
+                source: CdtError::Internal("a triangle corner is not an input point"),
+            }),
+        }
+    };
+    let mut triangles = Vec::with_capacity(triangulation.triangles().len());
+    for &[a, b, c] in triangulation.triangles() {
+        let (ia, ib, ic) = (index_of(a)?, index_of(b)?, index_of(c)?);
+        if ia == ib || ib == ic || ic == ia {
+            continue;
+        }
+        triangles.push(if w.reversed {
+            [ia, ic, ib]
+        } else {
+            [ia, ib, ic]
+        });
+    }
+    Ok(triangles)
+}
+
+/// [`triangulate_face`] over every face, in face order in the result
+/// regardless of how it was computed: over `rayon` behind `parallel`,
+/// a plain iterator otherwise.
+fn triangulate_faces(works: &[FaceWork]) -> Result<Vec<Vec<[u32; 3]>>, MeshError> {
+    #[cfg(feature = "parallel")]
+    {
+        use rayon::prelude::*;
+        works.par_iter().map(triangulate_face).collect()
+    }
+    #[cfg(not(feature = "parallel"))]
+    {
+        works.iter().map(triangulate_face).collect()
+    }
 }
 
 /// How much longer the surface is along `u` than along `v` over the

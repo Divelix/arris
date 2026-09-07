@@ -42,6 +42,8 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 # `arris-debug`'s `rerun` feature only, and never on wasm32 (01 §Threading).
 # `sdk` alone (no viewer, no importers, no analytics) is the logging client.
 rerun = { version = "0.37.1", default-features = false, features = ["sdk"] }
+# `arris-mesh`'s `parallel` feature only, and never on wasm32 (01 §Threading).
+rayon = "1.10"
 
 # Every crate opts in with `[lints] workspace = true`
 # (.agents/rules/kernel.md §API).

@@ -157,6 +157,7 @@ dependencies = [
  "arris-ops",
  "arris-topo",
  "proptest",
+ "rayon",
  "thiserror",
 ]
 

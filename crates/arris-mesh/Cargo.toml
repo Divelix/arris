@@ -8,13 +8,16 @@ rust-version.workspace = true
 license.workspace = true
 
 [features]
-# Reserved: rayon over faces; never enabled on wasm32.
-parallel = []
+# Faces triangulated in parallel after the sequential edge pass, results
+# collected in face order so the mesh is identical either way; never
+# enabled on wasm32 (01 §Threading).
+parallel = ["dep:rayon"]
 
 [dependencies]
 arris-topo.workspace = true
 arris-check.workspace = true
 thiserror.workspace = true
+rayon = { workspace = true, optional = true }
 
 # The seeded property-test runner and the sample bodies live in
 # `arris-debug`; a dev-dependency is exempt from the layer rule.
