@@ -40,9 +40,11 @@ runs the checker at `Level::Full` — nothing violated, nothing left
 STEP and runs `tools/oracle/compare.py` on it (volume, area, centroid
 and every probe, read back by Open CASCADE), tessellates the result at
 the fixture's `mesh_chord` and holds the mesh closed with its signed
-volume within `mesh_volume_rel` of the oracle's, asserts the provenance
+volume within `mesh_volume_rel` of the oracle's, measures it over the
+B-Rep (`ops::measure::mass_properties`) and holds volume, area, centroid
+and inertia to the oracle's within `inertia_rel`, asserts the provenance
 accounting (02-data-model §Provenance), and diffs the dump — written
-instead under `ARRIS_BLESS=1`. `measure` joins the comparison in M3.
+instead under `ARRIS_BLESS=1`.
 Tolerances are the fixture's: relative 1e-9 on volume and area for
 analytic results, exact on counts and classifications. The oracle is run,
 never linked (`SEED.md` §7).
@@ -176,6 +178,20 @@ identically; ids identical across two runs.
 
 *Goal: the agent can look at a body, and the kernel can measure one.*
 
+**Status: done 2026-09-07.** Retired the constrained Delaunay
+triangulation of our own over `robust` (ADR-0003) — edges discretised
+once and shared through the pcurves, seams and poles as (u, v) copies of
+one mesh vertex, interior points on a chord-bound grid rather than
+adaptive refinement — and `ops::measure::mass_properties` as an exact
+flux integral over the B-Rep, matching the oracle's newly recorded
+inertia tensor to 1e-9 relative. The roadmap's mesh acceptance number did
+not hold for a curved fixture (an inscribed-polygon prism's relative
+volume error is `≈ 4δ/(3r)`, not a flat 1e-3); corrected below, sized by
+the corpus's smallest radius. Accepted at 1000 property cases per test,
+`parallel` byte-identical with the feature on and off, `cargo build -p
+arris-debug --features rerun` green, the two `primitive/*` fixtures
+passing the corpus's new mesh and `measure` stages; tag `m3`.
+
 - `arris-mesh::tessellate`: edges discretised once at the model's
   tolerance and shared by both faces; faces triangulated in (u, v) by
   constrained Delaunay over `robust` predicates, seams and periods handled
@@ -189,9 +205,11 @@ identically; ids identical across two runs.
 `f32` output.
 
 **Accept:** the mesh of every `primitive/*` fixture is closed and its
-signed volume matches the oracle to 1e-3 relative at tolerance 0.01;
-`measure` matches the oracle to 1e-9 relative; a PNG of the cylinder shows
-one wall, two caps and a seam, read by the agent.
+signed volume matches the oracle within the closed form of an inscribed
+polygon's error, `4δ/(3r)` at the runner's `mesh_chord` (`mesh_volume_rel
+= 2e-3`, sized by the corpus's smallest radius); `measure` matches the
+oracle to 1e-9 relative; a PNG of the cylinder shows one wall, two caps
+and a seam, read by the agent.
 
 ### M4 — booleans on plane and cylinder (the risk milestone)
 

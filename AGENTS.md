@@ -22,17 +22,15 @@ git config core.hooksPath .githooks   # fmt, clippy -D warnings, test, doc befor
 
 ## Current state
 
-**M2 done (2026-09-06).** A box and a cylinder are bodies: `arris-topo`
-(the chunked arena, entities, adjacency, iteration, transactions,
-`import`, sparse `retain`, the Euler-operator `Builder`, `Provenance`
-rooted in roles; ADR-0002), `arris-check` (every invariant row at `Fast`,
-L5/S5/B1/B2/E8 at `Full`, `unchecked` for what has no closed form),
-`ops::{primitive_box, primitive_cylinder}`, `io::step::write`,
-`io::native`, `arris_debug::dump_text` and the corpus runner. The two
-`primitive/*` fixtures pass end to end through Open CASCADE; the
-`boolean/frame-cut` twin is hand-built; 14 fixtures wait on M4/M5. M1's
-geometry and M0's harness stand underneath. **Next:** `/plan
-m3-tessellation` (roadmap §M3).
+**M3 done (2026-09-07).** A body tessellates and measures: `arris-mesh`
+(`cdt`, a constrained Delaunay triangulation of our own over `robust`,
+ADR-0003; `tessellate` through the pcurves, seams and poles as (u, v)
+copies of one mesh vertex; `parallel` over faces), `ops::measure::
+mass_properties` (volume, area, centroid, inertia exact over the B-Rep),
+`arris_debug::{render_body, render_domain, rerun}`. The two `primitive/*`
+fixtures pass every corpus stage including the new mesh and `measure`
+ones; M2's topology and M1's geometry stand underneath. **Next:** `/plan
+m4-booleans` (roadmap §M4).
 
 ## Rules that are not derivable from the code
 

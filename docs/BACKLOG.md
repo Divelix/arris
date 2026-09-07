@@ -21,5 +21,7 @@ re-brainstormed.
 - The Euler line counts degenerate edges, so a sphere derives genus 1 (`sample::sphere` prints `2/3/1/1/1 g1 = 0`); excluding them would change every fixture's printed counts and the oracle's own derivation, so it waits for a cycle that can regenerate both (M3 finding)
 - `TriMesh::push_position` casts the position count to `u32` with no bound, so a mesh past four billion vertices wraps silently instead of returning a typed error (M3 finding)
 - A NURBS surface has no `project` (cycle 1, by design), so a NURBS face's mesh deviation can only be measured against a closed form; the tessellation property test covers the analytic kinds and one hand-built saddle (M3 finding)
+- Per-vertex normals and (u, v) in `TriMesh`, alongside the `f32` position boundary (01-architecture §Threading `⚠ OPEN`), once a consumer's renderer asks for either (M3 non-goal)
+- Adaptive or curvature-driven mesh refinement beyond a chord tolerance, if a consumer's mesh sizes come out too coarse or too dense against `arris-mesh`'s uniform (u, v) grid (M3 non-goal)
 
 ## Rejected
