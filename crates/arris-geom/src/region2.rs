@@ -369,6 +369,149 @@ impl Polygon2 {
     }
 }
 
+/// Where a point lies with respect to a set of loop polygons: the answer
+/// a face's own (u, v) gives about a point on its surface.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Side {
+    /// Strictly inside the region the polygons bound: the winding number
+    /// is not zero and the point is clear of every segment.
+    Inside,
+    /// Strictly outside it.
+    Outside,
+    /// Within the boundary tolerance of a segment of some polygon.
+    Boundary,
+}
+
+/// Where `p` lies with respect to the region `polygons` bound: within
+/// `boundary_tolerance` of any segment is [`Side::Boundary`], and
+/// otherwise the sum of the polygons' winding numbers decides — non-zero
+/// is [`Side::Inside`] (an outer ring counter-clockwise and its holes
+/// clockwise, as a stored loop is: `docs/02-data-model.md` §Orientation).
+/// No polygons is [`Side::Outside`].
+///
+/// The tolerance is a distance in the *parameter* plane and is the
+/// caller's: the checker passes the model's parametric tolerance scaled
+/// to the surface, a boolean the face's tolerance converted the same way.
+/// Nothing here knows the model.
+///
+/// ```
+/// use arris_geom::region2::{Polygon2, Side, point_side};
+/// use arris_math::Point2;
+///
+/// let p = |x, y| Point2::new(x, y);
+/// let square = Polygon2::from_points([p(0.0, 0.0), p(4.0, 0.0), p(4.0, 4.0), p(0.0, 4.0)]);
+/// let hole = Polygon2::from_points([p(1.0, 1.0), p(1.0, 2.0), p(2.0, 2.0), p(2.0, 1.0)]);
+/// let region = [square, hole];
+/// assert_eq!(point_side(&region, p(3.0, 3.0), 1e-9), Side::Inside);
+/// assert_eq!(point_side(&region, p(1.5, 1.5), 1e-9), Side::Outside);
+/// assert_eq!(point_side(&region, p(4.0, 2.0), 1e-9), Side::Boundary);
+/// ```
+pub fn point_side(polygons: &[Polygon2], p: Point2, boundary_tolerance: f64) -> Side {
+    let mut winding = 0;
+    for polygon in polygons {
+        for (a, b) in polygon.segments() {
+            if point_segment_distance(a, b, p) <= boundary_tolerance {
+                return Side::Boundary;
+            }
+        }
+        winding += polygon.winding_number(p);
+    }
+    if winding != 0 {
+        Side::Inside
+    } else {
+        Side::Outside
+    }
+}
+
+/// A point strictly inside the region `polygons` bound and further than
+/// `clearance` from every segment, or `None` when the construction below
+/// finds none.
+///
+/// The construction, which is what makes it deterministic: the horizontal
+/// line through the middle of the polygons' bounding box is cut by the
+/// segments into spans; the spans whose midpoint has a non-zero winding
+/// number are the inside ones; the longest of them that clears every
+/// segment by more than `clearance` gives its middle. A caller passes the
+/// polygons' [`Polygon2::chord_deviation`] as the clearance, so the point
+/// is inside the *curved* region and not merely inside its polygon.
+///
+/// `None` for a region the mid-height line misses — two pieces one above
+/// the other, say — and for one too thin to hold a point at that
+/// clearance. It is never a point the caller has to check again.
+///
+/// ```
+/// use arris_geom::region2::{Polygon2, Side, interior_point, point_side};
+/// use arris_math::Point2;
+///
+/// let p = |x, y| Point2::new(x, y);
+/// let c = Polygon2::from_points([p(0.0, 0.0), p(4.0, 0.0), p(4.0, 1.0), p(1.0, 1.0),
+///                                p(1.0, 3.0), p(4.0, 3.0), p(4.0, 4.0), p(0.0, 4.0)]);
+/// let inside = interior_point(&[c.clone()], 0.0).unwrap();
+/// assert_eq!(inside, p(0.5, 2.0), "the middle of the only inside span");
+/// assert_eq!(point_side(&[c], inside, 1e-9), Side::Inside);
+/// ```
+pub fn interior_point(polygons: &[Polygon2], clearance: f64) -> Option<Point2> {
+    let segments: Vec<(Point2, Point2)> = polygons.iter().flat_map(Polygon2::segments).collect();
+    let (mut lo, mut hi) = (Point2::origin(), Point2::origin());
+    for (i, p) in segments.iter().map(|s| s.0).enumerate() {
+        if i == 0 {
+            (lo, hi) = (p, p);
+        }
+        lo = Point2::new(lo.x.min(p.x), lo.y.min(p.y));
+        hi = Point2::new(hi.x.max(p.x), hi.y.max(p.y));
+    }
+    if segments.is_empty() {
+        return None;
+    }
+    let height = 0.5 * (lo.y + hi.y);
+    // Where the horizontal meets the boundary, by the half-open rule that
+    // counts a vertex once.
+    let mut crossings: Vec<f64> = segments
+        .iter()
+        .filter_map(|&(a, b)| {
+            if (a.y <= height) == (b.y <= height) {
+                return None;
+            }
+            Some(a.x + (height - a.y) * (b.x - a.x) / (b.y - a.y))
+        })
+        .collect();
+    crossings.sort_by(f64::total_cmp);
+    let mut spans: Vec<(f64, Point2)> = crossings
+        .windows(2)
+        .filter_map(|w| {
+            let middle = Point2::new(0.5 * (w[0] + w[1]), height);
+            let inside = polygons
+                .iter()
+                .map(|p| p.winding_number(middle))
+                .sum::<i32>()
+                != 0;
+            inside.then_some((w[1] - w[0], middle))
+        })
+        .collect();
+    // Widest first; ties by the point, so two runs choose the same span.
+    spans.sort_by(|a, b| {
+        b.0.total_cmp(&a.0)
+            .then(a.1.x.total_cmp(&b.1.x))
+            .then(a.1.y.total_cmp(&b.1.y))
+    });
+    spans.into_iter().map(|(_, middle)| middle).find(|&middle| {
+        segments
+            .iter()
+            .all(|&(a, b)| point_segment_distance(a, b, middle) > clearance)
+    })
+}
+
+/// The distance from `p` to the closed segment `ab`, clamped to its ends.
+pub(crate) fn point_segment_distance(a: Point2, b: Point2, p: Point2) -> f64 {
+    let ab = b - a;
+    let length = ab.norm_squared();
+    if length == 0.0 {
+        return (p - a).norm();
+    }
+    let t = ((p - a).dot(&ab) / length).clamp(0.0, 1.0);
+    (p - (a + t * ab)).norm()
+}
+
 /// The pairs `(i, j)` — `i` into `a`, `j` into `b` — that `keep` admits
 /// and whose segments meet, ascending. A sweep in `u`: each list is
 /// visited in order of its segments' least `u`, and a segment is compared
@@ -479,6 +622,23 @@ pub fn segments_intersect(a0: Point2, a1: Point2, b0: Point2, b1: Point2) -> boo
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn point_segment_distance_clamps_to_the_ends() {
+        let q = |x, y| Point2::new(x, y);
+        assert_eq!(
+            point_segment_distance(q(0.0, 0.0), q(2.0, 0.0), q(1.0, 3.0)),
+            3.0
+        );
+        assert_eq!(
+            point_segment_distance(q(0.0, 0.0), q(2.0, 0.0), q(5.0, 0.0)),
+            3.0
+        );
+        assert_eq!(
+            point_segment_distance(q(0.0, 0.0), q(0.0, 0.0), q(0.0, 4.0)),
+            4.0
+        );
+    }
+
     use super::*;
     use arris_math::{Frame2, Vec2};
 

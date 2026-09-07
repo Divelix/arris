@@ -15,7 +15,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use arris_topo::arris_geom::integrate::{inner_step, region_integral};
-use arris_topo::arris_geom::region2::{Piece, Polygon2, discretise};
+use arris_topo::arris_geom::region2::{Piece, Polygon2, Side, discretise, point_side};
 use arris_topo::arris_geom::{
     Curve, CurveSurfaceIntersection, Surface, SurfaceIntersection, intersect_curve_surface,
     intersect_surfaces,
@@ -42,17 +42,6 @@ const RAY_DIRECTIONS: [[f64; 3]; 8] = [
     [2.0, -3.0, 1.0],
     [1.0, -2.0, -5.0],
 ];
-
-/// Where a (u, v) point lies with respect to a face's loops.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Side {
-    /// Strictly inside the region the loops bound.
-    Inside,
-    /// Strictly outside it.
-    Outside,
-    /// Within the parametric tolerance of a loop.
-    Boundary,
-}
 
 impl<'m> Checker<'m> {
     /// E8, L5, S5, B1 and B2.
@@ -103,31 +92,15 @@ impl<'m> Checker<'m> {
     }
 
     /// Where `uv` lies with respect to `face`'s loops, using the
-    /// polygons [`Checker::discretise_faces`] built. A face whose loops
-    /// could not be discretised answers `Outside`.
+    /// polygons [`Checker::discretise_faces`] built and the model's
+    /// parametric tolerance at that point as the boundary band. A face
+    /// whose loops could not be discretised answers `Outside`.
     pub(crate) fn face_side(&self, face_id: FaceId, surface: &Surface, uv: Point2) -> Side {
         let Some(polygons) = self.faces_fine.get(&face_id) else {
             return Side::Outside;
         };
-        if polygons.is_empty() {
-            return Side::Outside;
-        }
         let bound = self.uv_bounds(surface, uv);
-        let near = bound[0].min(bound[1]);
-        let mut winding = 0;
-        for polygon in polygons {
-            for (a, b) in polygon.segments() {
-                if point_segment_distance(a, b, uv) <= near {
-                    return Side::Boundary;
-                }
-            }
-            winding += polygon.winding_number(uv);
-        }
-        if winding != 0 {
-            Side::Inside
-        } else {
-            Side::Outside
-        }
+        point_side(polygons, uv, bound[0].min(bound[1]))
     }
 
     /// E8: an analytic curve over a range E1 accepted cannot cross
@@ -656,17 +629,6 @@ fn corner(points: &[Point2], pick: fn(f64, f64) -> f64) -> Option<Point2> {
         .reduce(|a, b| Point2::new(pick(a.x, b.x), pick(a.y, b.y)))
 }
 
-/// The distance from `p` to the segment `ab` in (u, v).
-fn point_segment_distance(a: Point2, b: Point2, p: Point2) -> f64 {
-    let d = b - a;
-    let length2 = d.norm_squared();
-    if length2 == 0.0 {
-        return (p - a).norm();
-    }
-    let s = ((p - a).dot(&d) / length2).clamp(0.0, 1.0);
-    (p - (a + d * s)).norm()
-}
-
 /// The distance between two segments in 3D and the parameters in `[0, 1]`
 /// of the nearest point on each: the standard clamped solution of the
 /// two-parameter least-squares problem, with the degenerate cases (a
@@ -722,23 +684,6 @@ mod tests {
             (p(1.0, 0.0, 0.0), p(1.0, 1.0, 0.0)),
         );
         assert_eq!(d, 0.0);
-    }
-
-    #[test]
-    fn point_segment_distance_clamps_to_the_ends() {
-        let q = |x, y| Point2::new(x, y);
-        assert_eq!(
-            point_segment_distance(q(0.0, 0.0), q(2.0, 0.0), q(1.0, 3.0)),
-            3.0
-        );
-        assert_eq!(
-            point_segment_distance(q(0.0, 0.0), q(2.0, 0.0), q(5.0, 0.0)),
-            3.0
-        );
-        assert_eq!(
-            point_segment_distance(q(0.0, 0.0), q(0.0, 0.0), q(0.0, 4.0)),
-            4.0
-        );
     }
 
     #[test]

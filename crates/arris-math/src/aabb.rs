@@ -1,10 +1,13 @@
-//! Axis-aligned bounding boxes of mesh data.
+//! Axis-aligned bounding boxes: the cheap reject a boolean's face pairs
+//! and a renderer's camera fit are both over.
+
+use crate::Point3;
 
 /// The axis-aligned box around a set of points: `min ≤ max` on every axis,
 /// both finite. A box is never empty; an empty point set has no box.
 ///
 /// ```
-/// use arris_mesh::Aabb;
+/// use arris_math::Aabb;
 ///
 /// let b = Aabb::of_points(&[[0.0, 0.0, 0.0], [2.0, -1.0, 3.0]]).unwrap();
 /// assert_eq!(b.min, [0.0, -1.0, 0.0]);
@@ -72,5 +75,59 @@ impl Aabb {
     pub fn diagonal(&self) -> f64 {
         let e = self.extent();
         (e[0] * e[0] + e[1] * e[1] + e[2] * e[2]).sqrt()
+    }
+
+    /// The box holding one point, of zero extent.
+    ///
+    /// ```
+    /// use arris_math::{Aabb, Point3};
+    ///
+    /// let b = Aabb::of_point(Point3::new(1.0, 2.0, 3.0));
+    /// assert_eq!(b.min, b.max);
+    /// assert_eq!(b.extent(), [0.0; 3]);
+    /// ```
+    pub fn of_point(p: Point3) -> Aabb {
+        Aabb {
+            min: [p.x, p.y, p.z],
+            max: [p.x, p.y, p.z],
+        }
+    }
+
+    /// `true` when the two boxes share a point, touching included: the
+    /// cheap reject before a face pair is intersected. Boxes that only
+    /// touch on a face intersect, so a caller that needs a margin
+    /// [`Aabb::inflated`] one of them by its tolerance first.
+    ///
+    /// ```
+    /// use arris_math::Aabb;
+    ///
+    /// let a = Aabb { min: [0.0; 3], max: [1.0; 3] };
+    /// let touching = Aabb { min: [1.0, 0.0, 0.0], max: [2.0, 1.0, 1.0] };
+    /// let clear = Aabb { min: [1.5, 0.0, 0.0], max: [2.0, 1.0, 1.0] };
+    /// assert!(a.intersects(&touching));
+    /// assert!(!a.intersects(&clear));
+    /// ```
+    pub fn intersects(&self, other: &Aabb) -> bool {
+        (0..3).all(|i| self.min[i] <= other.max[i] && other.min[i] <= self.max[i])
+    }
+
+    /// The box grown by `by` on every side; a negative `by` shrinks it,
+    /// and never past a point — the centre holds.
+    ///
+    /// ```
+    /// use arris_math::Aabb;
+    ///
+    /// let b = Aabb { min: [0.0; 3], max: [2.0; 3] };
+    /// assert_eq!(b.inflated(0.5).min, [-0.5; 3]);
+    /// assert_eq!(b.inflated(-5.0).extent(), [0.0; 3], "never past a point");
+    /// ```
+    pub fn inflated(&self, by: f64) -> Aabb {
+        let mut out = *self;
+        for i in 0..3 {
+            let centre = 0.5 * (self.min[i] + self.max[i]);
+            out.min[i] = (self.min[i] - by).min(centre);
+            out.max[i] = (self.max[i] + by).max(centre);
+        }
+        out
     }
 }

@@ -314,7 +314,38 @@ segment, `gaps()` between consecutive pieces (L2), and
 `self_intersections()` / `intersections(&other)` over
 `segments_intersect`, exact through `orient2d` with touching counted
 (L5, S5). `Curve2::speed_bounds(range)` bounds `|du/dt|` and `|dv/dt|`
-over a range, exact for a line and a conic and sampled for a NURBS. `integrate::region_integral(pieces, inner_step, f)` is `∬ f du dv` over
+over a range, exact for a line and a conic and sampled for a NURBS.
+
+`region2::point_side(polygons, p, boundary_tolerance) -> Side::{Inside,
+Outside, Boundary}` is where a (u, v) point lies with respect to the
+polygons of a face's loops: within the tolerance of any segment is
+`Boundary`, and otherwise the sum of the winding numbers decides. The
+tolerance is a distance in the parameter plane and is the caller's — the
+checker passes the model's parametric tolerance scaled to the surface, a
+boolean the face's tolerance converted the same way; nothing in `region2`
+knows the model. `region2::interior_point(polygons, clearance)` is a
+point strictly inside the region and further than `clearance` from every
+segment: the horizontal through the middle of the polygons' bounding box
+is cut into spans, the spans whose midpoint has a non-zero winding number
+are the inside ones, and the widest of those that clears the segments
+gives its middle — deterministic, and `None` (never a guess) for a region
+the line misses or one too thin to hold a point at that clearance. A
+caller passes the polygons' `chord_deviation` so the point is inside the
+*curved* region and not merely inside its polygon; a boolean classifies a
+piece there rather than at its centroid, which for a sliver rounds onto
+its own boundary (ADR-0004).
+
+`Curve::bounds(range)` and `Surface::bounds([u, v])` are the axis-aligned
+box each fills over a parameter range, `None` when a range is not finite.
+Exact where the geometry is affine or separable — a line's two endpoints,
+a conic's extrema per axis, a plane rectangle's four corners, a
+cylinder's sinusoid in `u` and travel in `v` — and an outer bound where
+the two parameters multiply (a cone, a sphere, a torus) or where the
+geometry is a NURBS, whose control hull over the spans the range touches
+contains it. A face's box is the union of its edges' boxes and its
+surface's over the loops' (u, v) bounds, inflated by the face's
+tolerance; `Aabb::intersects` on two of them is the cheap reject a
+boolean's face pairs go through before any intersection is computed. `integrate::region_integral(pieces, inner_step, f)` is `∬ f du dv` over
 the region by Green's theorem — `∮ G dv` with `G = ∫_{u₀}^{u} f ds` —
 with Gauss–Legendre quadrature of `GAUSS_ORDER` points per interval, a
 conic piece split at quarter turns and a NURBS at its knots, signed by

@@ -3,9 +3,10 @@
 use core::f64::consts::{FRAC_PI_2, TAU};
 use core::fmt;
 
-use arris_math::{Frame, Interval, Isometry, Point3, UnitVec3, Vec3, is_negligible};
+use arris_math::{Aabb, Frame, Interval, Isometry, Point3, UnitVec3, Vec3, is_negligible};
 
 use crate::NurbsSurface;
+use crate::curve::{active_points, coords, linear_range, product_range, sinusoid_range};
 
 /// A surface, placed by its frame, with the parametrisation of
 /// `docs/02-data-model.md` §Surfaces (the one Open CASCADE's `Geom`
@@ -245,6 +246,106 @@ impl Surface {
         self.eval(u, v).point
     }
 
+    /// The axis-aligned box the surface fills over the parameter
+    /// rectangle `uv`, or `None` when either range is not finite — a
+    /// box has finite corners, and an unbounded plane has no box.
+    ///
+    /// Exact for a plane (the rectangle's four corners) and a cylinder
+    /// (a sinusoid in `u` per axis, and `v` along the axis); an outer
+    /// bound for the surfaces whose two parameters multiply — a cone, a
+    /// sphere, a torus — where the box is the product of the two
+    /// intervals rather than of the pairs that actually occur, and for a
+    /// NURBS, whose control hull over the spans the rectangle touches
+    /// contains it.
+    ///
+    /// ```
+    /// use arris_geom::Surface;
+    /// use arris_math::{Frame, Interval};
+    /// use core::f64::consts::TAU;
+    ///
+    /// let wall = Surface::Cylinder { frame: Frame::world(), radius: 2.0 };
+    /// let whole = wall
+    ///     .bounds([Interval::TURN, Interval::new(0.0, 5.0).unwrap()])
+    ///     .unwrap();
+    /// assert_eq!(whole.min, [-2.0, -2.0, 0.0]);
+    /// assert_eq!(whole.max, [2.0, 2.0, 5.0]);
+    /// assert_eq!(TAU, Interval::TURN.length());
+    /// ```
+    pub fn bounds(&self, uv: [Interval; 2]) -> Option<Aabb> {
+        let [u, v] = uv;
+        if ![u.lo(), u.hi(), v.lo(), v.hi()]
+            .iter()
+            .all(|x| x.is_finite())
+        {
+            return None;
+        }
+        match self {
+            Surface::Nurbs(s) => {
+                let [du, dv] = [s.degree()[0], s.degree()[1]];
+                let [ku, kv] = s.knots();
+                let rows: Vec<usize> = active_points(ku, du, u).collect();
+                let hull: Vec<[f64; 3]> = active_points(kv, dv, v)
+                    .flat_map(|j| rows.iter().map(move |&i| (i, j)))
+                    .filter_map(|(i, j)| s.control_point(i, j).map(coords))
+                    .collect();
+                Aabb::of_points(&hull)
+            }
+            Surface::Plane { .. } => {
+                let corners: Vec<[f64; 3]> = [u.lo(), u.hi()]
+                    .into_iter()
+                    .flat_map(|a| [v.lo(), v.hi()].map(|b| coords(self.point(a, b))))
+                    .collect();
+                Aabb::of_points(&corners)
+            }
+            &Surface::Cylinder { ref frame, radius } => Some(axis_bounds(|k| {
+                let (o, x, y, z) = axes3(frame, k);
+                let radial = sinusoid_range(radius * x, radius * y, u);
+                let along = linear_range(z, v);
+                [o + radial[0] + along[0], o + radial[1] + along[1]]
+            })),
+            &Surface::Cone {
+                ref frame,
+                radius,
+                half_angle,
+            } => {
+                let (sa, ca) = half_angle.sin_cos();
+                // The radius at `v`, which the sinusoid across the axis
+                // is scaled by; both may change sign past the apex.
+                let rho = {
+                    let span = linear_range(sa, v);
+                    [radius + span[0], radius + span[1]]
+                };
+                Some(axis_bounds(|k| {
+                    let (o, x, y, z) = axes3(frame, k);
+                    let radial = product_range(rho, sinusoid_range(x, y, u));
+                    let along = linear_range(ca * z, v);
+                    [o + radial[0] + along[0], o + radial[1] + along[1]]
+                }))
+            }
+            &Surface::Sphere { ref frame, radius } => Some(axis_bounds(|k| {
+                let (o, x, y, z) = axes3(frame, k);
+                // `R cos v` scales the sinusoid across the axis and
+                // `R sin v` runs along it.
+                let scale = sinusoid_range(radius, 0.0, v);
+                let radial = product_range(scale, sinusoid_range(x, y, u));
+                let along = sinusoid_range(0.0, radius * z, v);
+                [o + radial[0] + along[0], o + radial[1] + along[1]]
+            })),
+            &Surface::Torus {
+                ref frame,
+                major_radius,
+                minor_radius,
+            } => Some(axis_bounds(|k| {
+                let (o, x, y, z) = axes3(frame, k);
+                let tube = sinusoid_range(minor_radius, 0.0, v);
+                let rho = [major_radius + tube[0], major_radius + tube[1]];
+                let radial = product_range(rho, sinusoid_range(x, y, u));
+                let along = sinusoid_range(0.0, minor_radius * z, v);
+                [o + radial[0] + along[0], o + radial[1] + along[1]]
+            })),
+        }
+    }
+
     /// The surface normal `∂P/∂u × ∂P/∂v` normalised (plane `Z`; cylinder,
     /// cone and sphere radially outward; torus outward from the tube), or
     /// `None` where the parametrisation is singular: a cone's apex, a
@@ -456,6 +557,22 @@ fn axes(f: &Frame) -> (Point3, Vec3, Vec3, Vec3) {
 /// fallback is unreachable.
 fn latitude() -> Interval {
     Interval::new(-FRAC_PI_2, FRAC_PI_2).unwrap_or(Interval::UNIT)
+}
+
+/// The frame's origin and axes at coordinate `k`.
+fn axes3(frame: &Frame, k: usize) -> (f64, f64, f64, f64) {
+    (frame.origin()[k], frame.x()[k], frame.y()[k], frame.z()[k])
+}
+
+/// The box whose interval on axis `k` is `span(k)`.
+fn axis_bounds(span: impl Fn(usize) -> [f64; 2]) -> Aabb {
+    let mut min = [0.0; 3];
+    let mut max = [0.0; 3];
+    for (k, (lo, hi)) in min.iter_mut().zip(max.iter_mut()).enumerate() {
+        let [a, b] = span(k);
+        (*lo, *hi) = (a, b);
+    }
+    Aabb { min, max }
 }
 
 #[cfg(test)]

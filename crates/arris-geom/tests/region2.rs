@@ -1,14 +1,16 @@
 //! The (u, v) toolkit (`docs/plans/m2-topology.md` step 6): discretised
 //! loops have the areas, winding numbers and intersections their pcurves
 //! say, across the seam range too, and the region integral recovers areas
-//! and the sample cylinder's volume.
+//! and the sample cylinder's volume; `point_side` and `interior_point`
+//! answer for a region what a boolean's piece classification asks
+//! (`docs/plans/m4-booleans.md` step 3).
 
 use core::f64::consts::{PI, TAU};
 
 use arris_debug::prop::{DEFAULT_SCALE, check, finite_f64, radius};
 use arris_debug::sample;
 use arris_geom::integrate::{self, region_integral};
-use arris_geom::region2::{Piece, Polygon2, discretise};
+use arris_geom::region2::{Piece, Polygon2, Side, discretise, interior_point, point_side};
 use arris_geom::{Curve2, Surface};
 use arris_math::predicates::{Sign, orient2d};
 use arris_math::{Frame2, Handedness, Interval, Point2, Point3, UnitVec2, Vec2};
@@ -302,4 +304,167 @@ fn the_gauss_volume_integrand_over_the_sample_cylinder_gives_its_volume() {
         sample::cuboid_nurbs(&mut m, Point3::origin(), Point3::new(40.0, 30.0, 10.0)).unwrap();
     let volume = gauss_volume(&m, body);
     assert!((volume - 12000.0).abs() <= 1e-9 * 12000.0, "{volume}");
+}
+
+// --- point_side and interior_point ----------------------------------------
+
+/// A star-shaped ring around `centre`, counter-clockwise when `ccw`.
+fn star(centre: Point2, angles: &[f64], radii: &[f64], ccw: bool) -> Vec<Point2> {
+    let mut ring: Vec<Point2> = angles
+        .iter()
+        .zip(radii)
+        .map(|(a, r)| Point2::new(centre.x + r * a.cos(), centre.y + r * a.sin()))
+        .collect();
+    if !ccw {
+        ring.reverse();
+    }
+    ring
+}
+
+/// `n` angles around the turn, one per equal sector, each jittered inside
+/// the middle of its sector, so a star through them is star-shaped.
+fn angles(n: std::ops::RangeInclusive<usize>) -> impl Strategy<Value = Vec<f64>> {
+    n.prop_flat_map(|n| proptest::collection::vec(finite_f64(0.1..=0.9), n))
+        .prop_map(|jitter| {
+            let n = jitter.len();
+            jitter
+                .iter()
+                .enumerate()
+                .map(|(i, j)| TAU * (i as f64 + j) / n as f64)
+                .collect()
+        })
+}
+
+/// A star with up to four holes inside the disc it contains: the region
+/// `interior_point` has to find a point in.
+fn star_with_holes() -> impl Strategy<Value = Vec<Polygon2>> {
+    (
+        finite_f64(-DEFAULT_SCALE..=DEFAULT_SCALE),
+        finite_f64(-DEFAULT_SCALE..=DEFAULT_SCALE),
+        angles(8..=24),
+        proptest::collection::vec(radius(0.8..=1.0), 24),
+        radius(1.0..=DEFAULT_SCALE),
+        proptest::collection::vec(
+            (
+                angles(3..=10),
+                proptest::collection::vec(radius(0.3..=1.0), 10),
+            ),
+            0..=4,
+        ),
+    )
+        .prop_map(|(cx, cy, outer_angles, outer_radii, r, holes)| {
+            let centre = Point2::new(cx, cy);
+            let mut rings = vec![star(
+                centre,
+                &outer_angles,
+                &outer_radii.iter().map(|k| k * r).collect::<Vec<_>>(),
+                true,
+            )];
+            for (j, (hole_angles, hole_radii)) in holes.iter().enumerate() {
+                let d = 0.25 * r;
+                let (sx, sy) = match j {
+                    0 => (1.0, 1.0),
+                    1 => (-1.0, 1.0),
+                    2 => (-1.0, -1.0),
+                    _ => (1.0, -1.0),
+                };
+                let hole_centre = Point2::new(centre.x + sx * d, centre.y + sy * d);
+                let scale = 0.15 * r;
+                rings.push(star(
+                    hole_centre,
+                    hole_angles,
+                    &hole_radii.iter().map(|k| k * scale).collect::<Vec<_>>(),
+                    false,
+                ));
+            }
+            rings
+                .iter()
+                .map(|ring| Polygon2::from_points(ring.iter().copied()))
+                .collect()
+        })
+}
+
+#[test]
+fn an_interior_point_is_inside_and_clear_of_every_segment() {
+    check(
+        (star_with_holes(), radius(1e-6..=1e-3)),
+        |(polygons, clearance)| {
+            let Some(p) = interior_point(&polygons, clearance) else {
+                // A region the mid-height line misses has no point by this
+                // construction, and says so rather than guessing.
+                return Ok(());
+            };
+            let winding: i32 = polygons.iter().map(|q| q.winding_number(p)).sum();
+            prop_assert_ne!(winding, 0, "{:?} is not inside", p);
+            prop_assert_eq!(point_side(&polygons, p, clearance), Side::Inside);
+            prop_assert_eq!(
+                interior_point(&polygons, clearance),
+                Some(p),
+                "two runs differ"
+            );
+            Ok(())
+        },
+    );
+}
+
+#[test]
+fn every_face_of_every_sample_body_has_an_interior_point() {
+    let mut m = Model::default();
+    let bodies = [
+        sample::unit_box(&mut m).unwrap(),
+        sample::cylinder(&mut m, 4.0, 12.0).unwrap(),
+        sample::frame(
+            &mut m,
+            Point3::origin(),
+            Point3::new(40.0, 30.0, 10.0),
+            Point2::new(10.0, 10.0),
+            Point2::new(30.0, 20.0),
+        )
+        .unwrap(),
+        sample::sphere(&mut m, Point3::origin(), 3.0).unwrap(),
+        sample::torus(&mut m, Point3::origin(), 5.0, 2.0).unwrap(),
+    ];
+    for body in bodies {
+        for face in m.faces(body).unwrap() {
+            let entity = m.face(face.id).unwrap();
+            let polygons: Vec<Polygon2> = entity
+                .loops()
+                .iter()
+                .map(|l| discretise(&m.loop_pieces(l).unwrap(), 1e-4))
+                .collect();
+            let deviation = polygons
+                .iter()
+                .map(Polygon2::chord_deviation)
+                .fold(0.0, f64::max);
+            let p = interior_point(&polygons, deviation)
+                .unwrap_or_else(|| panic!("{face}: no interior point"));
+            assert_eq!(
+                point_side(&polygons, p, deviation),
+                Side::Inside,
+                "{face}: {p:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_point_on_a_loop_is_on_the_boundary_and_a_hole_is_outside() {
+    let q = |x: f64, y: f64| Point2::new(x, y);
+    let outer = Polygon2::from_points([q(0.0, 0.0), q(4.0, 0.0), q(4.0, 4.0), q(0.0, 4.0)]);
+    let hole = Polygon2::from_points([q(1.0, 1.0), q(1.0, 3.0), q(3.0, 3.0), q(3.0, 1.0)]);
+    let region = [outer, hole];
+    assert_eq!(point_side(&region, q(0.5, 2.0), 1e-9), Side::Inside);
+    assert_eq!(point_side(&region, q(2.0, 2.0), 1e-9), Side::Outside);
+    assert_eq!(point_side(&region, q(2.0, 0.0), 1e-9), Side::Boundary);
+    assert_eq!(point_side(&region, q(2.0, 1.0), 1e-9), Side::Boundary);
+    assert_eq!(point_side(&region, q(2.0, 0.5), 1e-9), Side::Inside);
+    // The band is a distance, not a rank: a point a hair off a segment is
+    // on the boundary at a loose tolerance and inside at a tight one.
+    assert_eq!(point_side(&region, q(2.0, 0.001), 0.01), Side::Boundary);
+    assert_eq!(point_side(&region, q(2.0, 0.001), 1e-9), Side::Inside);
+    assert_eq!(point_side(&[], q(0.0, 0.0), 1e-9), Side::Outside);
+    // The mid-height of this region runs through the hole: the two spans
+    // either side of it are equal, and the leftmost wins the tie.
+    assert_eq!(interior_point(&region, 0.0), Some(q(0.5, 2.0)));
+    assert_eq!(interior_point(&[], 0.0), None);
 }

@@ -254,7 +254,7 @@ or bound has to be established here.
   ellipse pairs and the oracle regenerated (`fixtures:` commit, body
   naming the recipe change), `crates/arris-geom/tests/oracle.rs` green
   on them.
-- [ ] Step 3 **[2]** — Bounds and the region toolkit. `Aabb` in
+- [x] Step 3 **[2]** — Bounds and the region toolkit. `Aabb` in
   `arris-math` with the new methods, `Curve::bounds`, `Surface::bounds`,
   `region2::{Side, point_side, interior_point}`, the checker's
   `face_side` over `point_side` (its tests unchanged). Tests (1000
@@ -463,6 +463,17 @@ deltas above, not a new decision.
   where `tol.linear` is not a distance, the pair is the conic against the
   plane that contains the line and stands perpendicular to the conic's:
   the same points, and the touch decided by `conic_plane`.
+- **Step 3 — `bounds` returns an `Option`.** A box has finite corners
+  ([`Aabb`]'s contract) and a line's range may be `Interval::REAL`, so
+  `Curve::bounds(range)` and `Surface::bounds([u, v])` are
+  `Option<Aabb>`, `None` for a range that is not finite — the same shape
+  as `Aabb::of_points`.
+- **Step 3 — `interior_point` takes the clearance.** The deltas write
+  `interior_point(polygons)` with the clearance being "the polygons'
+  chord deviation", but a polygon built by `Polygon2::from_points`
+  reports a deviation of zero while its caller may still want a margin,
+  and a piece's polygons may come from several loops with different
+  deviations. The clearance is the caller's argument.
 - **Step 1 — `sample::sphere` is not assemblable.** Its two degenerate
   pole edges are used once each, which `finish` has always refused (it is
   why the sample goes through the raw insert). The round trip runs over

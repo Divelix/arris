@@ -2,7 +2,7 @@
 
 use core::fmt;
 
-use arris_math::{Frame, Interval, Isometry, Point3, UnitVec3, Vec3};
+use arris_math::{Aabb, Frame, Interval, Isometry, Point3, UnitVec3, Vec3};
 
 use crate::NurbsCurve;
 
@@ -164,6 +164,54 @@ impl Curve {
         }
     }
 
+    /// The axis-aligned box the curve fills over `range`, or `None` when
+    /// the range is not finite — a box has finite corners, and an
+    /// unbounded line has no box.
+    ///
+    /// Exact for a line (its two endpoints) and for a conic (its extrema
+    /// per axis, which are the two parameters where each coordinate's
+    /// sinusoid turns, taken only when the range reaches them); an outer
+    /// bound for a NURBS, whose control hull over the spans the range
+    /// touches contains it.
+    ///
+    /// ```
+    /// use arris_geom::Curve;
+    /// use arris_math::{Frame, Interval};
+    /// use core::f64::consts::FRAC_PI_2;
+    ///
+    /// let c = Curve::Circle { frame: Frame::world(), radius: 2.0 };
+    /// // A quarter turn reaches neither extremum of x nor of y: the box
+    /// // is the two endpoints, to the rounding of `cos(π/2)`.
+    /// let quarter = c.bounds(Interval::new(0.0, FRAC_PI_2).unwrap()).unwrap();
+    /// assert!(quarter.min.iter().all(|x| x.abs() < 1e-15));
+    /// assert_eq!(quarter.max, [2.0, 2.0, 0.0]);
+    /// let whole = c.bounds(Interval::TURN).unwrap();
+    /// assert_eq!((whole.min, whole.max), ([-2.0, -2.0, 0.0], [2.0, 2.0, 0.0]));
+    /// ```
+    pub fn bounds(&self, range: Interval) -> Option<Aabb> {
+        if !(range.lo().is_finite() && range.hi().is_finite()) {
+            return None;
+        }
+        match self {
+            Curve::Line { .. } => Aabb::of_points(&[
+                coords(self.point(range.lo())),
+                coords(self.point(range.hi())),
+            ]),
+            &Curve::Circle { frame, radius } => Some(conic_bounds(&frame, [radius, radius], range)),
+            &Curve::Ellipse {
+                frame,
+                major_radius,
+                minor_radius,
+            } => Some(conic_bounds(&frame, [major_radius, minor_radius], range)),
+            Curve::Nurbs(c) => {
+                let hull: Vec<[f64; 3]> = active_points(c.knots(), c.degree(), range)
+                    .filter_map(|i| c.control_points().get(i).map(|p| coords(*p)))
+                    .collect();
+                Aabb::of_points(&hull)
+            }
+        }
+    }
+
     /// How many straight segments approximate the curve over `range`
     /// within `chord` in 3D: the twin of
     /// [`crate::region2::Piece::segment_count`] for a 3D curve, with the
@@ -254,6 +302,85 @@ impl Curve {
             Curve::Nurbs(c) => Curve::Nurbs(c.transformed(motion)),
         }
     }
+}
+
+/// A point as the array [`Aabb`] speaks in.
+pub(crate) fn coords(p: Point3) -> [f64; 3] {
+    [p.x, p.y, p.z]
+}
+
+/// The interval of `a cos t + b sin t = M cos(t − φ)` over `range`: the
+/// two ends, plus `±M` for each extremum the range reaches. Exact.
+pub(crate) fn sinusoid_range(a: f64, b: f64, range: Interval) -> [f64; 2] {
+    let at = |t: f64| a * t.cos() + b * t.sin();
+    let (mut lo, mut hi) = (
+        at(range.lo()).min(at(range.hi())),
+        at(range.lo()).max(at(range.hi())),
+    );
+    let magnitude = a.hypot(b);
+    let phase = b.atan2(a);
+    for (base, value) in [
+        (phase, magnitude),
+        (phase + core::f64::consts::PI, -magnitude),
+    ] {
+        // The first parameter at or above the range's start where the
+        // sinusoid turns.
+        let turns = ((range.lo() - base) / core::f64::consts::TAU).ceil();
+        if base + turns * core::f64::consts::TAU <= range.hi() {
+            lo = lo.min(value);
+            hi = hi.max(value);
+        }
+    }
+    [lo, hi]
+}
+
+/// The interval of `k · t` over `range`.
+pub(crate) fn linear_range(k: f64, range: Interval) -> [f64; 2] {
+    let (a, b) = (k * range.lo(), k * range.hi());
+    [a.min(b), a.max(b)]
+}
+
+/// The interval of a product of two intervals: the extremes of the four
+/// corner products, which is exact when the two vary independently and an
+/// outer bound when they do not.
+pub(crate) fn product_range(a: [f64; 2], b: [f64; 2]) -> [f64; 2] {
+    let corners = [a[0] * b[0], a[0] * b[1], a[1] * b[0], a[1] * b[1]];
+    [
+        corners.iter().copied().fold(f64::INFINITY, f64::min),
+        corners.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+    ]
+}
+
+/// The box of `origin + a cos t·X + b sin t·Y` over `range`, per axis.
+fn conic_bounds(frame: &Frame, radii: [f64; 2], range: Interval) -> Aabb {
+    let (o, x, y) = (
+        frame.origin(),
+        radii[0] * frame.x().into_inner(),
+        radii[1] * frame.y().into_inner(),
+    );
+    let mut min = [0.0; 3];
+    let mut max = [0.0; 3];
+    for k in 0..3 {
+        let span = sinusoid_range(x[k], y[k], range);
+        min[k] = o[k] + span[0];
+        max[k] = o[k] + span[1];
+    }
+    Aabb { min, max }
+}
+
+/// The control-point indices a B-spline's `range` can touch: every span
+/// the range overlaps contributes the `degree + 1` points that carry it,
+/// and the convex hull of those contains the curve there.
+pub(crate) fn active_points(
+    knots: &[f64],
+    degree: usize,
+    range: Interval,
+) -> impl Iterator<Item = usize> + '_ {
+    let count = knots.len().saturating_sub(degree + 1);
+    let (lo, hi) = (range.lo(), range.hi());
+    (0..knots.len().saturating_sub(1))
+        .filter(move |&k| knots[k] <= hi && knots[k + 1] >= lo && knots[k] < knots[k + 1])
+        .flat_map(move |k| k.saturating_sub(degree)..=k.min(count.saturating_sub(1)))
 }
 
 #[cfg(test)]

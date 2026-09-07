@@ -1,6 +1,6 @@
 //! Point chains: discretised edges and intersection curves.
 
-use crate::aabb::Aabb;
+use crate::Aabb;
 
 /// An ordered chain of points in 3D: a discretised edge, an intersection
 /// curve, a debugging line. Open unless its first and last points coincide

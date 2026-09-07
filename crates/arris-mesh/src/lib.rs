@@ -20,13 +20,14 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
-mod aabb;
 pub mod cdt;
 mod polyline;
 mod tessellate;
 mod trimesh;
 
-pub use aabb::Aabb;
+// `Aabb` lives in `arris-math` (01 §Crates); re-exported so a mesh
+// caller reaches it through this crate as it always has.
+pub use arris_topo::arris_math::Aabb;
 pub use polyline::Polyline;
 pub use tessellate::tessellate;
 pub use trimesh::{EdgeRange, FaceRange, MeshError, TriMesh};

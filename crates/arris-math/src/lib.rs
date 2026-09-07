@@ -16,6 +16,7 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+mod aabb;
 mod axis;
 mod frame;
 mod interval;
@@ -27,6 +28,7 @@ mod tolerance;
 
 pub use nalgebra;
 
+pub use aabb::Aabb;
 pub use axis::Axis;
 pub use frame::{Frame, Frame2, FrameError, Handedness};
 pub use interval::{Interval, IntervalError};

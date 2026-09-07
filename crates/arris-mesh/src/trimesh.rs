@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use arris_check::Report;
 use arris_topo::{Body, EdgeId, FaceId, NotFound};
 
-use crate::aabb::Aabb;
+use crate::Aabb;
 use crate::cdt::CdtError;
 
 /// The triangles of one B-Rep face: a contiguous run of a
