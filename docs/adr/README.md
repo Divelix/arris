@@ -14,3 +14,4 @@ here; the first ADR is the first decision taken *after* the seed.
 | [0001](0001-nalgebra-types-by-alias.md) | `arris-math` exposes `nalgebra`'s types by alias | accepted |
 | [0002](0002-euler-operators-explicit-pcurves-role-provenance.md) | Euler operators over a staging builder; explicit pcurves; provenance rooted in roles | accepted |
 | [0003](0003-tessellation-by-cdt-through-pcurves.md) | Tessellation: an own constrained Delaunay triangulation over `robust`, in (u, v), through the pcurves | accepted |
+| [0004](0004-booleans-by-general-fuse-over-coedges.md) | Booleans by a General Fuse over coedges: shared paves, faces split in (u, v), the result assembled with kept ids | accepted |

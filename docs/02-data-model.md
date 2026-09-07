@@ -526,6 +526,33 @@ does not resolve, and any kind but `Solid` — each a typed `BuildError`,
 and the model exactly as it was — and never evaluates geometry: the
 checker, above this crate, is where the finished body is proven.
 
+**Assembly, and kept ids.** An operation that computes its result's faces
+outright rather than reaching them by a sequence of edits — a boolean —
+enters the builder through `assemble(&Model, tolerance, Assembly) ->
+Result<Builder, BuildError>` instead (ADR-0004). An `Assembly` is a list
+of `VertexSpec`s, a list of `EdgeSpec`s and a list of `FaceSpec`s, each
+spec `Keep` (an entity the model already holds) or `New`, with
+`VertexKey`/`EdgeKey` naming either an arena id or a position in the
+list; a `New` face's loops are `UseSpec`s in effective orientation, as
+the operators take them. A `Keep` face is kept whole — its loops,
+pcurves, edges and vertices are the model's, and the edges and vertices
+are kept with it.
+
+A kept slot *is* the arena's entity: `finish` appends nothing for it and
+returns its id, so a face an operation did not touch keeps its `FaceId`
+and its provenance records nothing (§Provenance). Structural sharing and
+the kept/modified distinction are that one rule. Any operator applied to
+a kept slot drops the mark — `canonicalise` and `set_pcurve` clear it —
+and `finish` appends that slot instead, so the two entry points compose;
+`Builder::dump` writes ` kept f3` on a slot that still carries a mark.
+`assemble` proves what the operators would have kept true: every loop has
+coedges and closes through effective vertices, every edge is used exactly
+twice and in opposite directions, no arena entity is kept twice, the
+faces are one edge-connected component, and the Euler–Poincaré line
+closes at a whole genus, which becomes the builder's — each failure a
+typed `BuildError` (`LoopOpen`, `EdgeUses`, `SameDirection`, `Duplicate`,
+`Disconnected`, `NotClosed`, `NoSpec`), and the model is only read.
+
 ### Adjacency and iteration
 
 The arena keeps derived indices, maintained on every append because

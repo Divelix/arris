@@ -226,7 +226,7 @@ mechanical; **[2]** careful — a geometric or numeric case to get right
 within a given design; **[3]** unproven — an algorithm whose robustness
 or bound has to be established here.
 
-- [ ] Step 1 **[2]** — ADR-0004 and assembly in the builder.
+- [x] Step 1 **[2]** — ADR-0004 and assembly in the builder.
   `Builder::assemble`, the `Keep`/`New` specs, `finish` retaining kept
   ids, the new `BuildError` variants. Tests: every `sample` body and both
   primitives assembled from their own entities as all-`Keep` finish to
@@ -432,6 +432,32 @@ on `main`. Then tag `m4` (the human's).
   conic–conic curve intersection (C3) and one for multi-shell results
   (C2).
 - `AGENTS.md` current state — M4 done, next `/plan m5-sweeps`.
+
+## Findings
+
+Recorded by the step that met them; each is a departure from the design
+deltas above, not a new decision.
+
+- **Step 1 — `assemble` takes three lists, not one.** The deltas write
+  `assemble(model, tolerance, faces: Vec<FaceSpec>)`, but
+  `VertexKey::New(usize)` and `EdgeKey::New(usize)` index lists that have
+  to be passed: the signature is `assemble(&Model, tolerance, Assembly)`
+  with `Assembly { vertices, edges, faces }`.
+- **Step 1 — `FaceSpec::Keep` carries the orientation.** A face entity is
+  orientation-neutral; which side is material is the *shell's* use of it.
+  `Keep(handle::Face)` — an id and the orientation the new shell uses it
+  with — rather than `Keep(FaceId)`.
+- **Step 1 — "a kept face over a new edge" is not expressible.** A kept
+  face keeps every edge and vertex it names, by construction, so there is
+  no such spec to refuse. The error tests that replaced it are
+  `Duplicate` (one arena entity kept twice) and `NotFound` (a kept id that
+  does not resolve).
+- **Step 1 — `sample::sphere` is not assemblable.** Its two degenerate
+  pole edges are used once each, which `finish` has always refused (it is
+  why the sample goes through the raw insert). The round trip runs over
+  every other `sample` solid and both primitives; `assemble` inherits the
+  rule rather than widening it, and M4's operands are planes and
+  cylinders.
 
 ## Open questions
 

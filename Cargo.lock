@@ -180,6 +180,7 @@ dependencies = [
  "arris-debug",
  "arris-geom",
  "arris-math",
+ "arris-ops",
  "proptest",
  "serde",
  "serde_json",

@@ -33,14 +33,14 @@
 //! `docs/02-data-model.md` §Orientation says a stored loop is.
 
 use core::fmt;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use arris_math::Point3;
 
 use crate::entity::{self, BodyKind, Coedge, EdgeGeometry, Loop};
 use crate::error::NotFound;
 use crate::handle::{self, Body};
-use crate::id::{Curve2Id, EdgeId, FaceId, ShellId, SurfaceId, VertexId};
+use crate::id::{Curve2Id, EdgeId, EntityId, EntityKind, FaceId, ShellId, SurfaceId, VertexId};
 use crate::model::Model;
 use crate::orientation::Orientation;
 
@@ -175,6 +175,7 @@ impl fmt::Display for Use {
 pub struct StagedVertex {
     point: Point3,
     tolerance: f64,
+    kept: Option<VertexId>,
 }
 
 impl StagedVertex {
@@ -187,6 +188,14 @@ impl StagedVertex {
     pub const fn tolerance(&self) -> f64 {
         self.tolerance
     }
+
+    /// The arena vertex this slot *is*, when [`Builder::assemble`] took it
+    /// from the model and no operator has touched it since: [`Builder::finish`]
+    /// appends nothing for it and returns this id. `None` for a slot that
+    /// will be appended.
+    pub const fn kept(&self) -> Option<VertexId> {
+        self.kept
+    }
 }
 
 /// An edge under construction: its geometry and its two vertices, the
@@ -197,6 +206,7 @@ pub struct StagedEdge {
     start: VertexRef,
     end: VertexRef,
     tolerance: f64,
+    kept: Option<EdgeId>,
 }
 
 impl StagedEdge {
@@ -218,6 +228,11 @@ impl StagedEdge {
     /// The tolerance it will be stored with.
     pub const fn tolerance(&self) -> f64 {
         self.tolerance
+    }
+
+    /// The arena edge this slot *is*, as [`StagedVertex::kept`].
+    pub const fn kept(&self) -> Option<EdgeId> {
+        self.kept
     }
 }
 
@@ -267,6 +282,7 @@ pub struct StagedFace {
     orientation: Orientation,
     loops: Vec<StagedLoop>,
     tolerance: f64,
+    kept: Option<FaceId>,
 }
 
 impl StagedFace {
@@ -289,6 +305,13 @@ impl StagedFace {
     /// The tolerance it will be stored with.
     pub const fn tolerance(&self) -> f64 {
         self.tolerance
+    }
+
+    /// The arena face this slot *is*, as [`StagedVertex::kept`]. An
+    /// operator that changes the face drops the mark, and `finish` then
+    /// appends a new face carrying the change.
+    pub const fn kept(&self) -> Option<FaceId> {
+        self.kept
     }
 
     fn canonicalise(&mut self) {
@@ -627,6 +650,51 @@ pub enum BuildError {
     /// A geometry id a slot references does not resolve in the model.
     #[error(transparent)]
     NotFound(#[from] NotFound),
+    /// [`Builder::assemble`]: a key names a spec the assembly does not have.
+    #[error("the assembly has no {kind} spec at index {index}")]
+    NoSpec {
+        /// The kind of spec the key was for.
+        kind: EntityKind,
+        /// The index it named.
+        index: usize,
+    },
+    /// [`Builder::assemble`]: one arena entity is kept by two specs, which
+    /// would put it in the result twice.
+    #[error("{0} is kept twice")]
+    Duplicate(EntityId),
+    /// [`Builder::assemble`]: consecutive uses of a loop do not meet — the
+    /// use at `coedge_index` does not start where its predecessor ended.
+    #[error(
+        "loop {loop_index} of {face} is open at junction {coedge_index}: {ended} then {starts}"
+    )]
+    LoopOpen {
+        /// The face.
+        face: FaceRef,
+        /// The loop.
+        loop_index: usize,
+        /// The junction the two uses fail to share.
+        coedge_index: usize,
+        /// The vertex the previous use ends at.
+        ended: VertexRef,
+        /// The vertex this use starts at.
+        starts: VertexRef,
+    },
+    /// [`Builder::assemble`]: the faces are not one edge-connected
+    /// component, so they are not one shell.
+    #[error("{face} is not edge-connected to {from}")]
+    Disconnected {
+        /// A face of another component.
+        face: FaceRef,
+        /// The face the walk started from.
+        from: FaceRef,
+    },
+    /// [`Builder::assemble`]: the counts do not close the Euler–Poincaré
+    /// line at a whole genus, so the faces are not a closed surface.
+    #[error("{counts} is not a closed surface of whole genus")]
+    NotClosed {
+        /// The counts the specs make, with the genus reported as zero.
+        counts: Counts,
+    },
 }
 
 /// Tombstoned slots with a LIFO free list: a kill leaves a hole and the
@@ -689,6 +757,13 @@ impl<T> Slots<T> {
         self.items.iter().filter(|v| v.is_some()).count()
     }
 
+    /// The index the next `insert` will use.
+    fn next_slot(&self) -> u32 {
+        self.free.last().copied().unwrap_or_else(|| {
+            u32::try_from(self.items.len()).expect("the builder holds at most u32::MAX slots")
+        })
+    }
+
     fn clear(&mut self) {
         self.items.clear();
         self.free.clear();
@@ -710,6 +785,127 @@ fn around(uses: &[Use], from: usize, to: usize) -> Vec<Use> {
     } else {
         Vec::new()
     }
+}
+
+/// Which vertex an [`EdgeSpec`] is over: one already in the model, or the
+/// one the assembly's `index`-th [`VertexSpec`] stands for — whichever
+/// kind that spec is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VertexKey {
+    /// The vertex with this arena id, kept.
+    Kept(VertexId),
+    /// The assembly's `0`-based vertex spec at this index.
+    New(usize),
+}
+
+/// A vertex of an [`Assembly`]: one the model already holds, kept with its
+/// id, or one to append.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum VertexSpec {
+    /// The vertex with this arena id, kept: its point and tolerance are the
+    /// model's and [`Builder::finish`] appends nothing for it.
+    Keep(VertexId),
+    /// A vertex to append.
+    New {
+        /// Its point.
+        point: Point3,
+        /// The tolerance it is stored with.
+        tolerance: f64,
+    },
+}
+
+/// Which edge a [`UseSpec`] is over: one already in the model, or the one
+/// the assembly's `index`-th [`EdgeSpec`] stands for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EdgeKey {
+    /// The edge with this arena id, kept.
+    Kept(EdgeId),
+    /// The assembly's `0`-based edge spec at this index.
+    New(usize),
+}
+
+/// An edge of an [`Assembly`]: one the model already holds, kept with its
+/// id, or one to append.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum EdgeSpec {
+    /// The edge with this arena id, kept: its geometry, vertices and
+    /// tolerance are the model's, and its two vertices are kept with it.
+    Keep(EdgeId),
+    /// An edge to append.
+    New {
+        /// Its geometry.
+        geometry: EdgeGeometry,
+        /// The vertex at the lower end of the range.
+        start: VertexKey,
+        /// The vertex at the upper end.
+        end: VertexKey,
+        /// The tolerance it is stored with.
+        tolerance: f64,
+    },
+}
+
+/// One use of an edge by a loop of an assembled face, in the *effective*
+/// orientation the Euler operators take: the direction the loop is walked
+/// in as seen from outside the material, whatever the surface's own normal
+/// (`docs/02-data-model.md` §Orientation).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UseSpec {
+    /// The edge.
+    pub edge: EdgeKey,
+    /// Along (`Forward`) or against (`Reversed`) the edge's curve.
+    pub orientation: Orientation,
+    /// The pcurve of this use on the face's surface.
+    pub pcurve: Curve2Id,
+}
+
+/// A face of an [`Assembly`]: one the model already holds, kept whole with
+/// its id, or one to append.
+#[derive(Debug, Clone, PartialEq)]
+pub enum FaceSpec {
+    /// The face with this arena id, used by the new shell with this
+    /// orientation, kept: its surface, loops, pcurves and tolerance are the
+    /// model's, and every edge and vertex it names is kept with it.
+    Keep(handle::Face),
+    /// A face to append.
+    New {
+        /// Its surface.
+        surface: SurfaceId,
+        /// `Forward` when the surface's normal is the outward one.
+        orientation: Orientation,
+        /// Its loops, each a walk in effective orientation. The first is
+        /// no more the outer one than any other: a loop's role is the
+        /// pcurves' business, not the builder's.
+        loops: Vec<Vec<UseSpec>>,
+        /// The tolerance it is stored with.
+        tolerance: f64,
+    },
+}
+
+/// The faces of one body and the edges and vertices they are over, each
+/// kept from the model or new: what [`Builder::assemble`] takes.
+///
+/// The lists are addressed positionally by [`VertexKey::New`] and
+/// [`EdgeKey::New`], so a caller that has a slot per entity of its
+/// operands — which is what a boolean has — writes the table it already
+/// holds. A `Keep` spec and a `Kept` key that name one arena entity are
+/// one slot; naming an entity by two `Keep` specs is
+/// [`BuildError::Duplicate`].
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Assembly {
+    /// The vertices, addressed by [`VertexKey::New`].
+    pub vertices: Vec<VertexSpec>,
+    /// The edges, addressed by [`EdgeKey::New`].
+    pub edges: Vec<EdgeSpec>,
+    /// The faces of the body's one shell, in the order the shell uses
+    /// them.
+    pub faces: Vec<FaceSpec>,
+}
+
+/// ` kept f3` for a slot [`Builder::assemble`] took from the model and no
+/// operator has touched since, the empty string for one that will be
+/// appended: what tells two [`Builder::dump`]s of the same shape apart.
+fn kept(id: Option<impl fmt::Display>) -> String {
+    id.map_or_else(String::new, |id| format!(" kept {id}"))
 }
 
 /// One body under construction, edited by the Euler operators and frozen
@@ -978,9 +1174,14 @@ impl Builder {
             .position(|lp| lp.uses.is_empty() && lp.seed == seed)
     }
 
+    /// Puts `f`'s loops back in canonical rotation and order after an
+    /// operator changed them, and drops the face's `Keep` mark: a face an
+    /// operator has touched is no longer the arena's face, so `finish`
+    /// appends it (`docs/02-data-model.md` §Euler operators).
     fn canonicalise(&mut self, f: FaceRef) {
         if let Some(face) = self.faces.get_mut(f.0) {
             face.canonicalise();
+            face.kept = None;
         }
     }
 
@@ -1011,6 +1212,7 @@ impl Builder {
         let v = VertexRef(self.vertices.insert(StagedVertex {
             point: seed.point,
             tolerance: self.tolerance,
+            kept: None,
         }));
         let f = FaceRef(self.faces.insert(StagedFace {
             surface: seed.surface,
@@ -1020,6 +1222,7 @@ impl Builder {
                 seed: v,
             }],
             tolerance: self.tolerance,
+            kept: None,
         }));
         Ok((v, f))
     }
@@ -1065,12 +1268,14 @@ impl Builder {
         let v = VertexRef(self.vertices.insert(StagedVertex {
             point: strut.point,
             tolerance: self.tolerance,
+            kept: None,
         }));
         let e = EdgeRef(self.edges.insert(StagedEdge {
             geometry: strut.geometry,
             start,
             end: v,
             tolerance: self.tolerance,
+            kept: None,
         }));
         let lp = self.loop_mut(at.face, at.loop_index)?;
         let i = at.coedge_index.min(lp.uses.len());
@@ -1209,6 +1414,7 @@ impl Builder {
             start,
             end,
             tolerance: self.tolerance,
+            kept: None,
         }));
         let tolerance = self.tolerance;
         let lp = self.loop_mut(from.face, from.loop_index)?;
@@ -1245,6 +1451,7 @@ impl Builder {
                 seed: end,
             }],
             tolerance,
+            kept: None,
         }));
         self.canonicalise(from.face);
         self.canonicalise(f);
@@ -1343,6 +1550,7 @@ impl Builder {
             start,
             end,
             tolerance: self.tolerance,
+            kept: None,
         }));
         let face = self.face_mut(from.face)?;
         let ring = face.loops.remove(to.loop_index);
@@ -1486,6 +1694,7 @@ impl Builder {
             orientation: orientation.flipped(),
             loops: vec![lifted],
             tolerance,
+            kept: None,
         }));
         self.genus -= 1;
         self.canonicalise(face);
@@ -1508,7 +1717,11 @@ impl Builder {
                 len: n,
             });
         };
-        Ok(u.pcurve.replace(pcurve))
+        let previous = u.pcurve.replace(pcurve);
+        if let Some(face) = self.faces.get_mut(at.face.0) {
+            face.kept = None;
+        }
+        Ok(previous)
     }
 
     /// The builder's state as text: every live slot in order with its
@@ -1527,8 +1740,12 @@ impl Builder {
         for (i, v) in self.vertices.iter() {
             let _ = writeln!(
                 out,
-                "  v{i} ({}, {}, {}) tol {}",
-                v.point.x, v.point.y, v.point.z, v.tolerance
+                "  v{i} ({}, {}, {}) tol {}{}",
+                v.point.x,
+                v.point.y,
+                v.point.z,
+                v.tolerance,
+                kept(v.kept)
             );
         }
         let _ = writeln!(out, "edges");
@@ -1542,14 +1759,17 @@ impl Builder {
                     let _ = write!(out, "degenerate [{}, {}]", range.lo(), range.hi());
                 }
             }
-            let _ = writeln!(out, " tol {}", e.tolerance);
+            let _ = writeln!(out, " tol {}{}", e.tolerance, kept(e.kept));
         }
         let _ = writeln!(out, "faces");
         for (i, f) in self.faces.iter() {
             let _ = writeln!(
                 out,
-                "  f{i} {} {} tol {}",
-                f.surface, f.orientation, f.tolerance
+                "  f{i} {} {} tol {}{}",
+                f.surface,
+                f.orientation,
+                f.tolerance,
+                kept(f.kept)
             );
             for (li, lp) in f.loops.iter().enumerate() {
                 if lp.uses.is_empty() {
@@ -1567,8 +1787,10 @@ impl Builder {
     }
 
     /// Freezes the body into `model` as a `Solid`: every live vertex,
-    /// edge and face appended in slot order, then the shell and the body,
-    /// inside a transaction. A loop of a `Reversed` face is stored
+    /// edge and face appended in slot order — bar the slots
+    /// [`Builder::assemble`] marked `Keep` and no operator has touched,
+    /// which keep their arena id and append nothing — then the shell and
+    /// the body, inside a transaction. A loop of a `Reversed` face is stored
     /// backwards with every use flipped, so every stored loop is
     /// counter-clockwise about its surface's normal. Returns the body and
     /// the slot → id maps.
@@ -1579,8 +1801,8 @@ impl Builder {
     /// [`BuildError::Empty`]; an [`BuildError::EmptyLoop`]; a
     /// [`BuildError::MissingPcurve`]; an edge not used exactly twice
     /// ([`BuildError::EdgeUses`]) or used twice the same way
-    /// ([`BuildError::SameDirection`]); a curve, surface or pcurve id
-    /// that does not resolve ([`BuildError::NotFound`]).
+    /// ([`BuildError::SameDirection`]); a curve, surface, pcurve or kept
+    /// entity id that does not resolve ([`BuildError::NotFound`]).
     pub fn finish(self, model: &mut Model, kind: BodyKind) -> Result<Built, BuildError> {
         match kind {
             BodyKind::Solid => {}
@@ -1594,6 +1816,9 @@ impl Builder {
         let mut uses: BTreeMap<EdgeRef, Vec<Orientation>> = BTreeMap::new();
         for (fi, face) in self.faces.iter() {
             model.surface(face.surface)?;
+            if let Some(id) = face.kept {
+                model.face(id)?;
+            }
             for (li, lp) in face.loops.iter().enumerate() {
                 if lp.uses.is_empty() {
                     return Err(BuildError::EmptyLoop {
@@ -1628,51 +1853,68 @@ impl Builder {
             if let EdgeGeometry::Curve { curve, .. } = e.geometry {
                 model.curve(curve)?;
             }
+            if let Some(id) = e.kept {
+                model.edge(id)?;
+            }
             self.vertex(e.start)?;
             self.vertex(e.end)?;
+        }
+        for (_, v) in self.vertices.iter() {
+            if let Some(id) = v.kept {
+                model.vertex(id)?;
+            }
         }
         model.transaction(|m| {
             let mut vertices = BTreeMap::new();
             for (i, v) in self.vertices.iter() {
-                vertices.insert(
-                    VertexRef(i),
-                    m.push_vertex(entity::Vertex::new(v.point, v.tolerance)),
-                );
+                let id = match v.kept {
+                    Some(id) => id,
+                    None => m.push_vertex(entity::Vertex::new(v.point, v.tolerance)),
+                };
+                vertices.insert(VertexRef(i), id);
             }
             let mut edges = BTreeMap::new();
             for (i, e) in self.edges.iter() {
-                let start = *vertices
-                    .get(&e.start)
-                    .ok_or(BuildError::NoVertex(e.start))?;
-                let end = *vertices.get(&e.end).ok_or(BuildError::NoVertex(e.end))?;
-                edges.insert(
-                    EdgeRef(i),
-                    m.push_edge(entity::Edge::new(e.geometry, start, end, e.tolerance)),
-                );
+                let id = match e.kept {
+                    Some(id) => id,
+                    None => {
+                        let start = *vertices
+                            .get(&e.start)
+                            .ok_or(BuildError::NoVertex(e.start))?;
+                        let end = *vertices.get(&e.end).ok_or(BuildError::NoVertex(e.end))?;
+                        m.push_edge(entity::Edge::new(e.geometry, start, end, e.tolerance))
+                    }
+                };
+                edges.insert(EdgeRef(i), id);
             }
             let mut faces = BTreeMap::new();
             let mut shell = Vec::with_capacity(self.faces.len());
             for (i, f) in self.faces.iter() {
-                let mut loops = Vec::with_capacity(f.loops.len());
-                for (li, lp) in f.loops.iter().enumerate() {
-                    let mut coedges = Vec::with_capacity(lp.uses.len());
-                    for (ci, u) in lp.uses.iter().enumerate() {
-                        let edge = *edges.get(&u.edge).ok_or(BuildError::NoEdge(u.edge))?;
-                        let pcurve = u.pcurve.ok_or(BuildError::MissingPcurve {
-                            position: Position::new(FaceRef(i), li, ci),
-                        })?;
-                        coedges.push(Coedge::new(
-                            edge,
-                            f.orientation.compose(u.orientation),
-                            pcurve,
-                        ));
+                let id = match f.kept {
+                    Some(id) => id,
+                    None => {
+                        let mut loops = Vec::with_capacity(f.loops.len());
+                        for (li, lp) in f.loops.iter().enumerate() {
+                            let mut coedges = Vec::with_capacity(lp.uses.len());
+                            for (ci, u) in lp.uses.iter().enumerate() {
+                                let edge = *edges.get(&u.edge).ok_or(BuildError::NoEdge(u.edge))?;
+                                let pcurve = u.pcurve.ok_or(BuildError::MissingPcurve {
+                                    position: Position::new(FaceRef(i), li, ci),
+                                })?;
+                                coedges.push(Coedge::new(
+                                    edge,
+                                    f.orientation.compose(u.orientation),
+                                    pcurve,
+                                ));
+                            }
+                            if f.orientation.is_reversed() {
+                                coedges.reverse();
+                            }
+                            loops.push(Loop::new(coedges));
+                        }
+                        m.push_face(entity::Face::new(f.surface, loops, f.tolerance))
                     }
-                    if f.orientation.is_reversed() {
-                        coedges.reverse();
-                    }
-                    loops.push(Loop::new(coedges));
-                }
-                let id = m.push_face(entity::Face::new(f.surface, loops, f.tolerance));
+                };
                 faces.insert(FaceRef(i), id);
                 shell.push(handle::Face::new(id, f.orientation));
             }
@@ -1691,6 +1933,390 @@ impl Builder {
                 faces,
             })
         })
+    }
+}
+
+/// The tables [`Builder::assemble`] resolves keys through.
+#[derive(Default)]
+struct Assembled {
+    kept_vertices: BTreeMap<VertexId, VertexRef>,
+    kept_edges: BTreeMap<EdgeId, EdgeRef>,
+    kept_faces: BTreeMap<FaceId, FaceRef>,
+    vertex_of: Vec<VertexRef>,
+    edge_of: Vec<EdgeRef>,
+}
+
+impl Builder {
+    /// A builder holding the body `assembly` describes: the builder's
+    /// second entry point beside [`Builder::new`] and the operators, and
+    /// the one an operation that computes its result's faces outright —
+    /// a boolean — uses (`docs/02-data-model.md` §Euler operators,
+    /// ADR-0004).
+    ///
+    /// Every entity is `Keep` or `New`. A `Keep` slot *is* the arena's
+    /// entity: its geometry is read from `model`, [`Builder::finish`]
+    /// appends nothing for it and returns its id, so an operation that
+    /// leaves a face alone shares it with its input and its provenance
+    /// records nothing. A kept face is kept whole — its loops, pcurves,
+    /// edges and vertices come from the model, and the edges and vertices
+    /// are kept with it. Any operator applied to a kept slot drops the
+    /// mark, and `finish` appends that slot instead.
+    ///
+    /// What `assemble` proves, so that the result is a body the operators
+    /// could have built: every loop has coedges and closes through
+    /// effective vertices; every edge is used exactly twice and in
+    /// opposite directions; no arena entity is kept twice; the faces are
+    /// one edge-connected component; and the Euler–Poincaré line closes at
+    /// a whole genus, which becomes the builder's ([`Builder::counts`]).
+    ///
+    /// Errors, leaving nothing behind (the model is only read):
+    /// [`BuildError::NoSpec`] for a key past its list;
+    /// [`BuildError::NotFound`] for an id that does not resolve;
+    /// [`BuildError::Duplicate`], [`BuildError::EmptyLoop`],
+    /// [`BuildError::LoopOpen`], [`BuildError::EdgeUses`],
+    /// [`BuildError::SameDirection`], [`BuildError::Disconnected`],
+    /// [`BuildError::NotClosed`].
+    ///
+    /// ```
+    /// use arris_topo::builder::{Assembly, Builder, FaceSpec};
+    /// use arris_topo::entity::BodyKind;
+    /// use arris_topo::Model;
+    /// use arris_debug::{dump_text, sample};
+    ///
+    /// // Every face of a body kept: the same entities, a new shell.
+    /// let mut m = Model::default();
+    /// let body = sample::cylinder(&mut m, 4.0, 12.0)?;
+    /// let faces = m.faces(body)?.into_iter().map(FaceSpec::Keep).collect();
+    /// let assembly = Assembly { faces, ..Assembly::default() };
+    /// let b = Builder::assemble(&m, m.precision().default_tolerance, assembly)?;
+    /// assert_eq!(b.counts().to_string(), "2/3/3/3/1 g0 = 0");
+    /// let again = b.finish(&mut m, BodyKind::Solid)?;
+    /// assert_eq!(m.faces(again.body)?, m.faces(body)?, "the same faces, kept");
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    pub fn assemble(
+        model: &Model,
+        tolerance: f64,
+        assembly: Assembly,
+    ) -> Result<Builder, BuildError> {
+        let mut b = Builder::new(tolerance);
+        let mut at = Assembled::default();
+        for spec in &assembly.vertices {
+            let slot = match *spec {
+                VertexSpec::Keep(id) => b.keep_vertex(model, &mut at, id, true)?,
+                VertexSpec::New { point, tolerance } => {
+                    VertexRef(b.vertices.insert(StagedVertex {
+                        point,
+                        tolerance,
+                        kept: None,
+                    }))
+                }
+            };
+            at.vertex_of.push(slot);
+        }
+        for spec in &assembly.edges {
+            let slot = match *spec {
+                EdgeSpec::Keep(id) => b.keep_edge(model, &mut at, id, true)?,
+                EdgeSpec::New {
+                    geometry,
+                    start,
+                    end,
+                    tolerance,
+                } => {
+                    let start = b.vertex_key(model, &mut at, start)?;
+                    let end = b.vertex_key(model, &mut at, end)?;
+                    EdgeRef(b.edges.insert(StagedEdge {
+                        geometry,
+                        start,
+                        end,
+                        tolerance,
+                        kept: None,
+                    }))
+                }
+            };
+            at.edge_of.push(slot);
+        }
+        for spec in &assembly.faces {
+            match spec {
+                FaceSpec::Keep(face) => {
+                    b.keep_face(model, &mut at, *face)?;
+                }
+                FaceSpec::New {
+                    surface,
+                    orientation,
+                    loops,
+                    tolerance,
+                } => {
+                    model.surface(*surface)?;
+                    let mut staged = Vec::with_capacity(loops.len());
+                    for uses in loops {
+                        let mut walk = Vec::with_capacity(uses.len());
+                        for u in uses {
+                            model.curve2(u.pcurve)?;
+                            walk.push(Use {
+                                edge: b.edge_key(model, &mut at, u.edge)?,
+                                orientation: u.orientation,
+                                pcurve: Some(u.pcurve),
+                            });
+                        }
+                        staged.push(b.staged_loop(walk, staged.len())?);
+                    }
+                    let mut face = StagedFace {
+                        surface: *surface,
+                        orientation: *orientation,
+                        loops: staged,
+                        tolerance: *tolerance,
+                        kept: None,
+                    };
+                    face.canonicalise();
+                    b.faces.insert(face);
+                }
+            }
+        }
+        b.genus = b.assembled_genus()?;
+        Ok(b)
+    }
+
+    /// The slot of the kept vertex `id`, made on first mention. `named`
+    /// marks the mention that is a [`VertexSpec::Keep`] of its own, which
+    /// may not repeat one.
+    fn keep_vertex(
+        &mut self,
+        model: &Model,
+        at: &mut Assembled,
+        id: VertexId,
+        named: bool,
+    ) -> Result<VertexRef, BuildError> {
+        if let Some(&slot) = at.kept_vertices.get(&id) {
+            if named {
+                return Err(BuildError::Duplicate(id.into()));
+            }
+            return Ok(slot);
+        }
+        let v = model.vertex(id)?;
+        let slot = VertexRef(self.vertices.insert(StagedVertex {
+            point: v.point(),
+            tolerance: v.tolerance(),
+            kept: Some(id),
+        }));
+        at.kept_vertices.insert(id, slot);
+        Ok(slot)
+    }
+
+    /// The slot of the kept edge `id`, made on first mention together with
+    /// its two vertices.
+    fn keep_edge(
+        &mut self,
+        model: &Model,
+        at: &mut Assembled,
+        id: EdgeId,
+        named: bool,
+    ) -> Result<EdgeRef, BuildError> {
+        if let Some(&slot) = at.kept_edges.get(&id) {
+            if named {
+                return Err(BuildError::Duplicate(id.into()));
+            }
+            return Ok(slot);
+        }
+        let e = *model.edge(id)?;
+        let start = self.keep_vertex(model, at, e.start(), false)?;
+        let end = self.keep_vertex(model, at, e.end(), false)?;
+        let slot = EdgeRef(self.edges.insert(StagedEdge {
+            geometry: e.geometry(),
+            start,
+            end,
+            tolerance: e.tolerance(),
+            kept: Some(id),
+        }));
+        at.kept_edges.insert(id, slot);
+        Ok(slot)
+    }
+
+    /// The slot of the kept face `face`, with every edge and vertex it
+    /// names kept too. A stored loop of a `Reversed` face is walked
+    /// backwards with every use flipped — the inverse of what
+    /// [`Builder::finish`] stores.
+    fn keep_face(
+        &mut self,
+        model: &Model,
+        at: &mut Assembled,
+        face: handle::Face,
+    ) -> Result<FaceRef, BuildError> {
+        if at.kept_faces.contains_key(&face.id) {
+            return Err(BuildError::Duplicate(face.id.into()));
+        }
+        let entity = model.face(face.id)?.clone();
+        model.surface(entity.surface())?;
+        let mut loops = Vec::with_capacity(entity.loops().len());
+        for l in entity.loops() {
+            let mut walk = Vec::with_capacity(l.coedges().len());
+            for c in l.coedges() {
+                model.curve2(c.pcurve())?;
+                walk.push(Use {
+                    edge: self.keep_edge(model, at, c.edge(), false)?,
+                    orientation: face.orientation.compose(c.orientation()),
+                    pcurve: Some(c.pcurve()),
+                });
+            }
+            if face.orientation.is_reversed() {
+                walk.reverse();
+            }
+            let index = loops.len();
+            loops.push(self.staged_loop(walk, index)?);
+        }
+        let mut staged = StagedFace {
+            surface: entity.surface(),
+            orientation: face.orientation,
+            loops,
+            tolerance: entity.tolerance(),
+            kept: Some(face.id),
+        };
+        staged.canonicalise();
+        let slot = FaceRef(self.faces.insert(staged));
+        at.kept_faces.insert(face.id, slot);
+        Ok(slot)
+    }
+
+    /// The loop of `walk`, seeded at the effective start of its first use.
+    /// `loop_index` is only what an error names, the face being the one
+    /// about to be inserted. Errors: the walk is empty — an assembled loop
+    /// is a walk, never the bare vertex [`Builder::mvfs`] leaves behind.
+    fn staged_loop(&self, walk: Vec<Use>, loop_index: usize) -> Result<StagedLoop, BuildError> {
+        let first = walk.first().ok_or(BuildError::EmptyLoop {
+            face: FaceRef(self.faces.next_slot()),
+            loop_index,
+        })?;
+        let seed = self.use_start(first)?;
+        Ok(StagedLoop { uses: walk, seed })
+    }
+
+    fn vertex_key(
+        &mut self,
+        model: &Model,
+        at: &mut Assembled,
+        key: VertexKey,
+    ) -> Result<VertexRef, BuildError> {
+        match key {
+            VertexKey::Kept(id) => self.keep_vertex(model, at, id, false),
+            VertexKey::New(index) => at.vertex_of.get(index).copied().ok_or(BuildError::NoSpec {
+                kind: EntityKind::Vertex,
+                index,
+            }),
+        }
+    }
+
+    fn edge_key(
+        &mut self,
+        model: &Model,
+        at: &mut Assembled,
+        key: EdgeKey,
+    ) -> Result<EdgeRef, BuildError> {
+        match key {
+            EdgeKey::Kept(id) => self.keep_edge(model, at, id, false),
+            EdgeKey::New(index) => at.edge_of.get(index).copied().ok_or(BuildError::NoSpec {
+                kind: EntityKind::Edge,
+                index,
+            }),
+        }
+    }
+
+    /// The effective end vertex of `u`: the start of the same use walked
+    /// the other way.
+    fn use_end(&self, u: &Use) -> Result<VertexRef, BuildError> {
+        let e = self.edge(u.edge)?;
+        Ok(match u.orientation {
+            Orientation::Forward => e.end,
+            Orientation::Reversed => e.start,
+        })
+    }
+
+    /// Proves the assembled slots are a closed surface of whole genus and
+    /// returns that genus; the errors are [`Builder::assemble`]'s.
+    fn assembled_genus(&self) -> Result<usize, BuildError> {
+        let mut uses: BTreeMap<EdgeRef, Vec<(Orientation, FaceRef)>> = BTreeMap::new();
+        for (fi, face) in self.faces.iter() {
+            let face_ref = FaceRef(fi);
+            for (li, lp) in face.loops.iter().enumerate() {
+                if lp.uses.is_empty() {
+                    return Err(BuildError::EmptyLoop {
+                        face: face_ref,
+                        loop_index: li,
+                    });
+                }
+                let n = lp.uses.len();
+                for (ci, u) in lp.uses.iter().enumerate() {
+                    let previous = &lp.uses[(ci + n - 1) % n];
+                    let (ended, starts) = (self.use_end(previous)?, self.use_start(u)?);
+                    if ended != starts {
+                        return Err(BuildError::LoopOpen {
+                            face: face_ref,
+                            loop_index: li,
+                            coedge_index: ci,
+                            ended,
+                            starts,
+                        });
+                    }
+                    uses.entry(u.edge)
+                        .or_default()
+                        .push((u.orientation, face_ref));
+                }
+            }
+        }
+        for (ei, _) in self.edges.iter() {
+            let edge = EdgeRef(ei);
+            let list = uses.get(&edge).map_or(&[][..], Vec::as_slice);
+            if list.len() != 2 {
+                return Err(BuildError::EdgeUses {
+                    edge,
+                    uses: list.len(),
+                });
+            }
+            if list[0].0 == list[1].0 {
+                return Err(BuildError::SameDirection { edge });
+            }
+        }
+        let Some((first, _)) = self.faces.iter().next() else {
+            return Err(BuildError::Empty);
+        };
+        let from = FaceRef(first);
+        let mut reached: BTreeSet<FaceRef> = BTreeSet::new();
+        reached.insert(from);
+        let mut front = vec![from];
+        while let Some(f) = front.pop() {
+            let Some(face) = self.faces.get(f.0) else {
+                continue;
+            };
+            for u in face.loops.iter().flat_map(|lp| lp.uses.iter()) {
+                for &(_, other) in uses.get(&u.edge).map_or(&[][..], Vec::as_slice) {
+                    if reached.insert(other) {
+                        front.push(other);
+                    }
+                }
+            }
+        }
+        if let Some((fi, _)) = self
+            .faces
+            .iter()
+            .find(|(fi, _)| !reached.contains(&FaceRef(*fi)))
+        {
+            return Err(BuildError::Disconnected {
+                face: FaceRef(fi),
+                from,
+            });
+        }
+        let counts = self.counts();
+        let (v, e, f, l) = (
+            counts.vertices as i64,
+            counts.edges as i64,
+            counts.faces as i64,
+            counts.loops as i64,
+        );
+        // V − E + F − (L − F) − 2(S − G) = 0 at S = 1.
+        let twice_genus = 2 - (v - e + 2 * f - l);
+        if twice_genus < 0 || twice_genus % 2 != 0 {
+            return Err(BuildError::NotClosed { counts });
+        }
+        Ok((twice_genus / 2) as usize)
     }
 }
 

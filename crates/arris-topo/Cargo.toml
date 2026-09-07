@@ -24,8 +24,12 @@ serde = { workspace = true, optional = true }
 # `tests/` (docs/01-architecture.md §Formats and tools).
 [dev-dependencies]
 arris-debug.workspace = true
-# `import` and `retain` prove their survivors with the checker.
+# `import` and `retain` prove their survivors with the checker, and so does
+# every body `assemble` puts back together.
 arris-check.workspace = true
+# The two primitives are the bodies the corpus's `primitive/*` fixtures
+# describe: `assemble` is run over them beside the samples.
+arris-ops.workspace = true
 proptest.workspace = true
 serde_json.workspace = true
 
