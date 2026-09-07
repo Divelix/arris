@@ -1,10 +1,12 @@
-//! Line–plane, line–cylinder, circle–plane and circle–cylinder
-//! intersections follow the case table in any pose: the hit count is the
+//! Line–plane, line–cylinder, conic–plane and conic–cylinder
+//! intersections — *conic* being a circle or an ellipse —
+//! follow the case table in any pose: the hit count is the
 //! constructed case's, every hit lies on both operands, a hit is tangent
 //! when the case was built tangent, coincident when the curve was built
 //! on the surface, hits are sorted with `t` in the domain, two runs agree
 //! bit for bit, and every other pair is `Unsupported`
-//! (`docs/plans/m1-geometry.md` step 6).
+//! (`docs/plans/m1-geometry.md` step 6; the ellipse arms, which an
+//! oblique section edge needs, `docs/plans/m4-booleans.md` step 2).
 
 use core::f64::consts::{PI, TAU};
 
@@ -533,8 +535,10 @@ fn implicit_signed(s: &Surface, p: Point3) -> f64 {
 #[test]
 fn every_other_pair_is_unsupported() {
     check((curve(), surface()), |(c, s)| {
-        let closed_form = matches!(c.kind(), CurveKind::Line | CurveKind::Circle)
-            && matches!(s.kind(), SurfaceKind::Plane | SurfaceKind::Cylinder);
+        let closed_form = matches!(
+            c.kind(),
+            CurveKind::Line | CurveKind::Circle | CurveKind::Ellipse
+        ) && matches!(s.kind(), SurfaceKind::Plane | SurfaceKind::Cylinder);
         match intersect_curve_surface(&c, &s, tol()) {
             Ok(_) => prop_assert!(closed_form, "{c:?} vs {s:?} should be unsupported"),
             Err(GeomError::Unsupported { a, b }) => {
@@ -556,4 +560,177 @@ fn a_random_line_and_plane_or_cylinder_pass_the_common_properties() {
         common_properties(&l, &c)?;
         Ok(())
     });
+}
+
+// --- ellipse–plane and ellipse–cylinder -----------------------------------
+
+/// A cylinder, and a plane oblique enough to section it in an ellipse:
+/// the normal is `cos θ` along the axis and `sin θ` across it, with `θ`
+/// away from both `0` (a circle) and `π/2` (rulings).
+fn oblique_section() -> impl Strategy<Value = (Surface, Curve)> {
+    (
+        cylinder(),
+        finite_f64(0.2..=1.2),
+        finite_f64(0.0..=TAU),
+        finite_f64(-DEFAULT_SCALE..=DEFAULT_SCALE),
+    )
+        .prop_filter_map(
+            "the oblique plane sections the cylinder in an ellipse",
+            |(cyl, tilt, phase, along)| {
+                let frame = cyl.frame().unwrap();
+                let (across, _) = around(frame, phase);
+                let normal = tilt.cos() * frame.z().into_inner() + tilt.sin() * across;
+                let origin = frame.origin() + along * frame.z().into_inner();
+                let plane = Surface::Plane {
+                    frame: Frame::from_z(origin, normal).ok()?,
+                };
+                match arris_geom::intersect_surfaces(&plane, &cyl, tol()) {
+                    Ok(arris_geom::SurfaceIntersection::Transversal(curves)) => {
+                        match curves.first() {
+                            Some(e @ Curve::Ellipse { .. }) => Some((cyl, e.clone())),
+                            _ => None,
+                        }
+                    }
+                    _ => None,
+                }
+            },
+        )
+}
+
+#[test]
+fn an_oblique_section_ellipse_lies_on_its_cylinder() {
+    check(oblique_section(), |(cyl, section)| {
+        expect_coincident(&common_properties(&section, &cyl)?)
+    });
+}
+
+#[test]
+fn a_plane_through_a_sections_centre_cuts_it_at_the_minor_axis() {
+    check(oblique_section(), |(_, section)| {
+        let Curve::Ellipse { frame, .. } = section else {
+            return fail("not an ellipse".to_string());
+        };
+        // Normal to the major axis through the centre: the ellipse meets
+        // it where `a cos t = 0`, the two ends of the minor axis.
+        let cut = Surface::Plane {
+            frame: Frame::from_z(frame.origin(), frame.x().into_inner())
+                .map_err(|e| TestCaseError::fail(e.to_string()))?,
+        };
+        let r = common_properties(&section, &cut)?;
+        expect_hits(&section, &r, &[PI / 2.0, 3.0 * PI / 2.0], false)
+    });
+}
+
+/// An ellipse in a plane through a cylinder's axis, reaching `reach`
+/// across it and `1.0` along it: the radial distance is `|reach·cos t|`,
+/// so it crosses four times when `reach > R`, touches twice when
+/// `reach = R`, and misses when `reach < R`.
+fn meridional_ellipse() -> impl Strategy<Value = (Surface, Curve, f64)> {
+    (
+        cylinder(),
+        finite_f64(0.0..=TAU),
+        finite_f64(0.3..=2.5),
+        finite_f64(-DEFAULT_SCALE..=DEFAULT_SCALE),
+    )
+        .prop_filter_map(
+            "an ellipse in a plane through the axis",
+            |(cyl, phase, factor, along)| {
+                let radius = match cyl {
+                    Surface::Cylinder { radius, .. } => radius,
+                    _ => return None,
+                };
+                let frame = cyl.frame().unwrap();
+                let (across, tangential) = around(frame, phase);
+                let centre = frame.origin() + along * frame.z().into_inner();
+                let reach = factor * radius;
+                let ellipse = Curve::Ellipse {
+                    frame: Frame::new(centre, tangential, across).ok()?,
+                    major_radius: reach.max(radius / 2.0),
+                    minor_radius: reach.min(radius / 2.0),
+                };
+                // The frame's `X` is `across` only when it is the major
+                // axis; otherwise the reach across the axis is the minor
+                // one and the case is a different one.
+                (reach >= radius / 2.0).then_some((cyl, ellipse, reach))
+            },
+        )
+}
+
+#[test]
+fn a_meridional_ellipse_crosses_four_times_when_it_reaches_past_the_wall() {
+    check(meridional_ellipse(), |(cyl, ellipse, reach)| {
+        let radius = match cyl {
+            Surface::Cylinder { radius, .. } => radius,
+            _ => return fail("not a cylinder".to_string()),
+        };
+        let r = common_properties(&ellipse, &cyl)?;
+        let hits = hits_of(&r);
+        // `reach·|cos t| = R` has four roots when `reach > R` and none
+        // when `reach < R`; the tolerance band around equality is the
+        // touch, which the built cases avoid.
+        let expected = if reach > radius + tol().linear {
+            4
+        } else if reach < radius - tol().linear {
+            0
+        } else {
+            return Ok(());
+        };
+        prop_assert_eq!(
+            hits.len(),
+            expected,
+            "reach {} vs R {}: {:?}",
+            reach,
+            radius,
+            r
+        );
+        for h in hits {
+            prop_assert!(!h.tangent);
+            let local = cyl.frame().unwrap().to_local(h.point);
+            prop_assert!((local.x.hypot(local.y) - radius).abs() <= EXACT);
+        }
+        Ok(())
+    });
+}
+
+#[test]
+fn a_meridional_ellipse_that_just_reaches_the_wall_touches_twice() {
+    check(
+        (
+            cylinder(),
+            finite_f64(0.0..=TAU),
+            finite_f64(-DEFAULT_SCALE..=DEFAULT_SCALE),
+        ),
+        |(cyl, phase, along)| {
+            let radius = match cyl {
+                Surface::Cylinder { radius, .. } => radius,
+                _ => return fail("not a cylinder".to_string()),
+            };
+            let frame = cyl.frame().unwrap();
+            let (across, tangential) = around(frame, phase);
+            let centre = frame.origin() + along * frame.z().into_inner();
+            let ellipse = Curve::Ellipse {
+                frame: Frame::new(centre, tangential, across)
+                    .map_err(|e| TestCaseError::fail(e.to_string()))?,
+                major_radius: radius,
+                minor_radius: 0.5 * radius,
+            };
+            let r = common_properties(&ellipse, &cyl)?;
+            // The extrema of the radial distance are at `t = 0` and
+            // `t = π`, both on the wall: one touch each, never split into
+            // two crossings.
+            expect_hits(&ellipse, &r, &[0.0, PI], true)
+        },
+    );
+}
+
+#[test]
+fn a_random_ellipse_against_a_plane_or_a_cylinder_passes_the_common_properties() {
+    check(
+        (arris_debug::prop::geom::ellipse(), plane(), cylinder()),
+        |(e, p, c)| {
+            common_properties(&e, &p)?;
+            common_properties(&e, &c)?;
+            Ok(())
+        },
+    );
 }

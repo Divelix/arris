@@ -238,7 +238,7 @@ or bound has to be established here.
   face use inverted — each the named error and the model untouched;
   an operator applied after `assemble` on a kept slot drops the mark and
   `finish` appends it. ADR-0004 written and indexed.
-- [ ] Step 2 **[2]** — The intersections. `intersect_curves`, the
+- [x] Step 2 **[2]** — The intersections. `intersect_curves`, the
   ellipse–plane and ellipse–cylinder arms, the cylinder–cylinder
   coincident/coaxial arm, `wrap_angle` in `arris-math`. Tests (1000
   cases, `prop::geom` poses): every curve–curve hit on both curves to
@@ -452,6 +452,17 @@ deltas above, not a new decision.
   no such spec to refuse. The error tests that replaced it are
   `Duplicate` (one arena entity kept twice) and `NotFound` (a kept id that
   does not resolve).
+- **Step 2 — the ellipse arms are the conic arms.** The deltas call for
+  an "ellipse–plane closed form in `tan(t/2)`" and the "circle–cylinder
+  machinery generalised". Both already were: the signed distance to a
+  plane is `h + a(n·X) cos t + b(n·Y) sin t` and the radial distance to a
+  cylinder is `|p + cos t·X + sin t·Y|`, neither assuming `|X| = |Y|`. The
+  circle arms became conic arms taking `[a, b]`; no new solver.
+- **Step 2 — a coplanar line and conic go through a second plane.** Rather
+  than a 2D quadratic whose tangency would be decided in a scaled space
+  where `tol.linear` is not a distance, the pair is the conic against the
+  plane that contains the line and stands perpendicular to the conic's:
+  the same points, and the touch decided by `conic_plane`.
 - **Step 1 — `sample::sphere` is not assemblable.** Its two degenerate
   pole edges are used once each, which `finish` has always refused (it is
   why the sample goes through the raw insert). The round trip runs over

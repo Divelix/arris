@@ -1,9 +1,9 @@
 //! Point projection: the nearest point of a surface or a curve, with its
 //! parameters.
 
-use core::f64::consts::{FRAC_PI_2, TAU};
+use core::f64::consts::FRAC_PI_2;
 
-use arris_math::{Frame, Point2, Point3, is_negligible};
+use arris_math::{Frame, Point2, Point3, is_negligible, wrap_angle as wrap_turn};
 
 use crate::{AmbiguousLocus, Curve, CurveKind, GeomError, GeomKind, Surface};
 
@@ -36,14 +36,6 @@ pub struct CurveProjection {
     pub point: Point3,
     /// How far the query is from it, `≥ 0`.
     pub distance: f64,
-}
-
-/// An angle from `atan2` (in `(−π, π]`) moved into `[0, 2π)`. A negative
-/// angle whose sum with `2π` rounds up to `2π` becomes `0`: the same point
-/// on the circle, and inside the domain.
-pub(crate) fn wrap_turn(u: f64) -> f64 {
-    let u = if u < 0.0 { u + TAU } else { u };
-    if u >= TAU { 0.0 } else { u }
 }
 
 /// The magnitude at which a local coordinate of `p` in `frame` is rounding
@@ -376,15 +368,6 @@ const NEWTON_POLISH_STEPS: usize = 3;
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn wrap_turn_lands_in_the_half_open_turn() {
-        assert_eq!(wrap_turn(0.0), 0.0);
-        assert_eq!(wrap_turn(-1e-300), 0.0);
-        assert_eq!(wrap_turn(-1.0), TAU - 1.0);
-        assert_eq!(wrap_turn(core::f64::consts::PI), core::f64::consts::PI);
-        assert!(wrap_turn(-f64::EPSILON) < TAU);
-    }
 
     #[test]
     fn a_plane_projects_by_local_coordinates() {

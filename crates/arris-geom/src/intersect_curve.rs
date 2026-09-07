@@ -3,9 +3,10 @@
 use core::f64::consts::{PI, TAU};
 
 use arris_math::roots::{self, RootError};
-use arris_math::{Frame, Interval, Point2, Point3, Tolerance, Vec2, is_negligible};
+use arris_math::{
+    Frame, Interval, Point2, Point3, Tolerance, Vec2, is_negligible, wrap_angle as wrap_turn,
+};
 
-use crate::project::wrap_turn;
 use crate::{Curve, CurveKind, GeomError, GeomKind, Surface};
 
 /// One point where a curve meets a surface.
@@ -60,13 +61,17 @@ pub enum CurveSurfaceIntersection {
 ///
 /// The table: line–plane is one hit, none (parallel), or `Coincident`;
 /// line–cylinder is two hits, one tangent hit, none, or `Coincident` for
-/// a ruling; circle–plane is two hits, one tangent hit, none, or
-/// `Coincident`; circle–cylinder is up to four hits, found as the sign
+/// a ruling; conic–plane is two hits, one tangent hit, none, or
+/// `Coincident`; conic–cylinder is up to four hits, found as the sign
 /// changes of the radial distance between its extrema — the quartic of
 /// [`arris_math::roots`] in the half-angle `tan(t/2)` locates the
 /// extrema, bracketed Newton the crossings — with `Coincident` for a
-/// parallel of the cylinder. Read `IntAna_IntConicQuad` in the reference
-/// tree for the case analysis, reimplemented on our frames.
+/// parallel of the cylinder. *Conic* is a circle or an ellipse: the two
+/// differ only in the reach along the frame's two axes, and neither
+/// closed form assumes they are equal, so an oblique section ellipse is
+/// tested against a third face by the same arms. Read
+/// `IntAna_IntConicQuad` in the reference tree for the case analysis,
+/// reimplemented on our frames.
 ///
 /// ```
 /// use arris_geom::{Curve, CurveSurfaceIntersection, Surface, intersect_curve_surface};
@@ -103,11 +108,42 @@ pub fn intersect_curve_surface(
             tol,
         ),
         (Curve::Circle { frame: cf, radius }, Surface::Plane { frame }) => {
-            circle_plane(curve, surface, cf, *radius, frame, tol)
+            conic_plane(curve, surface, cf, [*radius, *radius], frame, tol)
         }
+        (
+            Curve::Ellipse {
+                frame: cf,
+                major_radius,
+                minor_radius,
+            },
+            Surface::Plane { frame },
+        ) => conic_plane(
+            curve,
+            surface,
+            cf,
+            [*major_radius, *minor_radius],
+            frame,
+            tol,
+        ),
         (Curve::Circle { frame: cf, radius }, Surface::Cylinder { frame, radius: big }) => {
-            circle_cylinder(curve, surface, cf, *radius, frame, *big, tol)
+            conic_cylinder(curve, surface, cf, [*radius, *radius], frame, *big, tol)
         }
+        (
+            Curve::Ellipse {
+                frame: cf,
+                major_radius,
+                minor_radius,
+            },
+            Surface::Cylinder { frame, radius: big },
+        ) => conic_cylinder(
+            curve,
+            surface,
+            cf,
+            [*major_radius, *minor_radius],
+            frame,
+            *big,
+            tol,
+        ),
         (
             Curve::Line { .. } | Curve::Circle { .. } | Curve::Ellipse { .. } | Curve::Nurbs(_),
             Surface::Plane { .. }
@@ -211,20 +247,26 @@ fn line_cylinder(
     ]))
 }
 
-fn circle_plane(
+/// A circle or an ellipse against a plane. `radii` is `[a, b]`, the reach
+/// of the conic along its frame's `X` and `Y` — the radius twice for a
+/// circle — which is the only way the two kinds differ here: the signed
+/// distance to the plane is `h + a(n·X) cos t + b(n·Y) sin t` for both,
+/// one sinusoid whose extrema are its two candidate touches.
+fn conic_plane(
     curve: &Curve,
     surface: &Surface,
-    circle: &Frame,
-    radius: f64,
+    conic: &Frame,
+    radii: [f64; 2],
     plane: &Frame,
     tol: Tolerance,
 ) -> Result<CurveSurfaceIntersection, GeomError> {
-    // The signed distance along the circle is `h + M cos(t − φ)`: `h` at
-    // the centre, `M` the reach of the circle out of the plane.
+    let circle = conic;
+    // The signed distance along the conic is `h + M cos(t − φ)`: `h` at
+    // the centre, `M` the reach of the conic out of the plane.
     let n = plane.z();
     let h = n.dot(&(circle.origin() - plane.origin()));
-    let a = radius * n.dot(&circle.x());
-    let b = radius * n.dot(&circle.y());
+    let a = radii[0] * n.dot(&circle.x());
+    let b = radii[1] * n.dot(&circle.y());
     let reach = a.hypot(b);
     let phase = b.atan2(a);
     // The extrema: `h + M` at `φ`, `h − M` at `φ + π`. Both within the
@@ -258,15 +300,19 @@ fn circle_plane(
     ]))
 }
 
-/// The radial reach of a circle in a cylinder's local frame: the squared
-/// distance from the axis along the circle is
+/// The radial reach of a circle or an ellipse in a cylinder's local
+/// frame: the squared distance from the axis along the conic is
 /// `ρ²(t) = |p + cos t·X + sin t·Y|²`, with `p` the centre across the
-/// axis and `X`, `Y` the radius-scaled axes across it.
+/// axis and `X`, `Y` the axis-scaled frame vectors across it — `a·X` and
+/// `b·Y`, which is the radius twice for a circle. Nothing below assumes
+/// `|X| = |Y|`, so the ellipse is the same case.
 struct Radial {
     p: Vec2,
     x: Vec2,
     y: Vec2,
     radius: f64,
+    /// Which conic, for the error an unsolvable extremum names.
+    kind: CurveKind,
 }
 
 impl Radial {
@@ -318,7 +364,7 @@ impl Radial {
             Err(RootError::Zero) => return Ok(None),
             Err(e) => {
                 return Err(GeomError::Degenerate {
-                    kind: GeomKind::Curve(CurveKind::Circle),
+                    kind: GeomKind::Curve(self.kind),
                     reason: format!("radial extrema: {e}"),
                 });
             }
@@ -371,23 +417,28 @@ impl Radial {
 /// taken only while it reduces the residual.
 const NEWTON_POLISH_STEPS: usize = 3;
 
-fn circle_cylinder(
+/// A circle or an ellipse against a cylinder. `radii` is `[a, b]` as in
+/// [`conic_plane`]; the extrema of the radial distance and the crossings
+/// between them are [`Radial`]'s, which never assumed a circle.
+fn conic_cylinder(
     curve: &Curve,
     surface: &Surface,
-    circle: &Frame,
-    small: f64,
+    conic: &Frame,
+    radii: [f64; 2],
     cyl: &Frame,
     radius: f64,
     tol: Tolerance,
 ) -> Result<CurveSurfaceIntersection, GeomError> {
+    let circle = conic;
     let centre = cyl.to_local(circle.origin());
-    let x = cyl.vec_to_local(small * circle.x().into_inner());
-    let y = cyl.vec_to_local(small * circle.y().into_inner());
+    let x = cyl.vec_to_local(radii[0] * circle.x().into_inner());
+    let y = cyl.vec_to_local(radii[1] * circle.y().into_inner());
     let radial = Radial {
         p: Vec2::new(centre.x, centre.y),
         x: Vec2::new(x.x, x.y),
         y: Vec2::new(y.x, y.y),
         radius,
+        kind: curve.kind(),
     };
     let Some(critical) = radial.critical_parameters()? else {
         // Constant distance from the axis: a parallel, on the cylinder
@@ -433,7 +484,7 @@ fn circle_cylinder(
         let t =
             roots::newton_in_interval(|t| radial.distance(t), |t| radial.slope(t), bracket, 0.0)
                 .map_err(|e| GeomError::Degenerate {
-                    kind: GeomKind::Curve(CurveKind::Circle),
+                    kind: GeomKind::Curve(radial.kind),
                     reason: format!("crossing in [{lo}, {hi}]: {e}"),
                 })?;
         // The last arc wraps past 2π; the root comes back with it.

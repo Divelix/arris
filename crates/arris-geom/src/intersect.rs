@@ -46,8 +46,10 @@ pub enum SurfaceIntersection {
 /// axis, an ellipse when oblique (`b = R`, `a = R / |n · Z|`, centred at
 /// the axis's piercing point), and when perpendicular two `Transversal`
 /// rulings, one `Tangent` ruling or `Empty` by the axis-to-plane distance
-/// against `R`. Read `IntAna_QuadQuadGeo` in the reference tree for the
-/// case analysis, reimplemented on our frames.
+/// against `R`; cylinder–cylinder is `Coincident` or `Empty` for two
+/// coaxial cylinders and `Unsupported` for every other pose, the quartic
+/// space curve being cycle 2's. Read `IntAna_QuadQuadGeo` in the
+/// reference tree for the case analysis, reimplemented on our frames.
 ///
 /// ```
 /// use arris_geom::{Curve, Surface, SurfaceIntersection, intersect_surfaces};
@@ -78,6 +80,16 @@ pub fn intersect_surfaces(
             plane_cylinder(plane, frame, *radius, tol)
         }
         (
+            Surface::Cylinder {
+                frame: ca,
+                radius: ra,
+            },
+            Surface::Cylinder {
+                frame: cb,
+                radius: rb,
+            },
+        ) => cylinder_cylinder(a, b, ca, *ra, cb, *rb, tol),
+        (
             Surface::Plane { .. }
             | Surface::Cylinder { .. }
             | Surface::Cone { .. }
@@ -95,6 +107,42 @@ pub fn intersect_surfaces(
             b: GeomKind::Surface(b.kind()),
         }),
     }
+}
+
+/// Two cylinders, as far as cycle 1 has a closed form: `Coincident` when
+/// the axes are the same line and the radii agree, `Empty` when they are
+/// the same line and the radii do not (two coaxial tubes never meet), and
+/// [`GeomError::Unsupported`] otherwise — the curve of two crossing
+/// cylinders is a quartic space curve with no conic form, and it is
+/// cycle 2's (`docs/02-data-model.md` §Curves, the open question). The
+/// unsupported case is written out, not a wildcard: a new surface kind
+/// still fails the match to compile.
+fn cylinder_cylinder(
+    a: &Surface,
+    b: &Surface,
+    ca: &Frame,
+    ra: f64,
+    cb: &Frame,
+    rb: f64,
+    tol: Tolerance,
+) -> Result<SurfaceIntersection, GeomError> {
+    let coaxial = line_angle(&ca.z(), &cb.z()) <= tol.angular && {
+        // The offset between the origins, across the axis: zero when the
+        // two axes are one line.
+        let offset = cb.origin() - ca.origin();
+        offset.cross(&ca.z()).norm() <= tol.linear
+    };
+    if !coaxial {
+        return Err(GeomError::Unsupported {
+            a: GeomKind::Surface(a.kind()),
+            b: GeomKind::Surface(b.kind()),
+        });
+    }
+    Ok(if (ra - rb).abs() <= tol.linear {
+        SurfaceIntersection::Coincident
+    } else {
+        SurfaceIntersection::Empty
+    })
 }
 
 /// The angle in `[0, π/2]` between the lines carried by two unit vectors:

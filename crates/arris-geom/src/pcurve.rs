@@ -7,9 +7,9 @@ use core::f64::consts::{FRAC_PI_2, TAU};
 
 use arris_math::{
     Frame, Frame2, Handedness, Interval, Point2, Tolerance, UnitVec2, Vec2, Vec3, is_negligible,
+    wrap_angle as wrap_turn,
 };
 
-use crate::project::wrap_turn;
 use crate::{Curve, Curve2, GeomError, GeomKind, NurbsCurve, NurbsCurve2, Surface, fit_curve2};
 
 /// How many parameters `pcurve_on` samples over the range to decide that

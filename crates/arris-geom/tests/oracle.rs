@@ -403,6 +403,14 @@ fn the_c1_intersection_cases_classify_as_built() {
         ("inside_touch", "cyl", Some((0, 1))),
         ("outside_miss", "cyl", Some((0, 0))),
         ("inside_miss", "cyl", Some((0, 0))),
+        ("section", "cyl", None),
+        ("section", "oblique", None),
+        ("section", "cut_minor", Some((2, 0))),
+        ("section", "touch_major", Some((0, 1))),
+        ("section", "clear_major", Some((0, 0))),
+        ("meridional_ellipse", "cyl", Some((4, 0))),
+        ("grazing_ellipse", "cyl", Some((0, 2))),
+        ("inner_ellipse", "cyl", Some((0, 0))),
     ];
     assert_eq!(
         surface_cases.len() + curve_cases.len(),

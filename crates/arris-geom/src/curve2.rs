@@ -4,9 +4,11 @@
 use core::f64::consts::TAU;
 use core::fmt;
 
-use arris_math::{Frame2, Interval, Point2, UnitVec2, Vec2, is_negligible};
+use arris_math::{
+    Frame2, Interval, Point2, UnitVec2, Vec2, is_negligible, wrap_angle as wrap_turn,
+};
 
-use crate::project::{ellipse_nearest, wrap_turn};
+use crate::project::ellipse_nearest;
 use crate::{AmbiguousLocus, GeomError, GeomKind, NurbsCurve2};
 
 /// A curve in a surface's (u, v) plane, with the parametrisation of

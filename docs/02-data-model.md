@@ -174,9 +174,12 @@ bound with the same floors and ceiling.
 `intersect_surfaces(a, b, tol)` returns `SurfaceIntersection::{Empty,
 Coincident, Transversal(Vec<Curve>), Tangent(Vec<Curve>)}` for the pairs
 with a closed form and `GeomError::Unsupported` naming the pair for every
-other — in cycle 1, plane–plane (a line) and plane–cylinder (a circle, an
-ellipse, two rulings, one tangent ruling, or nothing); every pair with a
-`Nurbs` operand is an explicit `Unsupported` arm. `tol.angular`
+other — in cycle 1, plane–plane (a line), plane–cylinder (a circle, an
+ellipse, two rulings, one tangent ruling, or nothing) and the *coaxial*
+half of cylinder–cylinder (`Coincident` when the radii agree within
+`tol.linear`, `Empty` when they do not, since two coaxial tubes never
+meet); every other cylinder pair, and every pair with a `Nurbs` operand,
+is an explicit `Unsupported` arm. `tol.angular`
 decides parallel and perpendicular, `tol.linear` decides coincident,
 tangent and empty. An intersection curve's frame is Arris's own
 deterministic choice, matching Open CASCADE only where the *surface's*
@@ -190,8 +193,9 @@ orientation.
 
 `intersect_curve_surface(c, s, tol)` returns `CurveSurfaceIntersection::{
 Points(Vec<CurveSurfaceHit>), Coincident}` for the pairs with a closed form
-— in cycle 1, line–plane, line–cylinder, circle–plane and circle–cylinder
-— and `GeomError::Unsupported` naming the pair for every other. A hit is
+— in cycle 1, line–plane, line–cylinder, conic–plane and conic–cylinder,
+*conic* being a circle or an ellipse — and `GeomError::Unsupported`
+naming the pair for every other. A hit is
 `CurveSurfaceHit { t, uv, point, tangent }`: `point` is the curve's point
 at `t`, `uv` the surface's own projection of it, hits ascending by `t`
 with a periodic `t` in `[0, 2π)`. A line is parallel to a plane or to a
@@ -201,9 +205,33 @@ of the surface everywhere, which the extrema of its distance decide. A
 hit is `tangent` where the distance along the curve has an extremum
 within `tol.linear` of zero — the two crossings such an extremum would
 split into are one touch — so a transversal hit is on both operands to
-rounding and a tangent one within `tol.linear`. Circle–cylinder finds the
+rounding and a tangent one within `tol.linear`. Conic–cylinder finds the
 extrema of the radial distance through the quartic in `tan(t/2)` and the
 crossings between them by bracketed Newton; the others are closed forms.
+An ellipse is not a separate case anywhere here: a conic reaches `a`
+along its frame's `X` and `b` along its `Y`, which is the radius twice
+for a circle, and neither closed form assumes the two are equal — so the
+oblique section edge a boolean puts on a cylinder wall is tested against
+a third face by the same arms.
+
+`intersect_curves(a, b, tol)` returns `CurveIntersection::{
+Points(Vec<CurveCurveHit>), Coincident}`, a hit being `CurveCurveHit {
+ta, tb, point, tangent }` with `point` the *first* curve's point at `ta`
+and the second's within `tol.linear` of it, hits ascending by `ta`, a
+periodic parameter in `[0, 2π)`. Two lines are the closed form —
+parallel within `tol.angular` gives `Coincident` or nothing by the
+distance between them, and otherwise the nearest approach is a hit when
+it is shorter than `tol.linear`. Every other supported pair has a conic
+operand and goes through *that conic's plane*: the other curve's hits on
+the plane are the candidates, and a candidate is a hit when the conic's
+own projection of it is within `tol.linear`, which gives `tb` with it. A
+curve the plane reports `Coincident` with is the coplanar case, where the
+plane decides nothing: a line against a coplanar conic is that conic
+against the plane through the line perpendicular to the conic's — the
+same points, the tangency decided in `tol.linear` by an arm that already
+exists — and two coplanar circles are the radical line. A coplanar
+circle–ellipse or ellipse–ellipse pair is `Unsupported`, as is any pair
+with a `Nurbs` operand.
 
 `⚠ OPEN:` the intersection curve of two cylinders (and of the other quadric
 pairs whose curves are not conics) has an exact parametrisation that is not

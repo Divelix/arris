@@ -58,6 +58,33 @@ pub fn is_negligible(x: f64, scale: f64) -> bool {
     x.abs() <= RELATIVE_ROUNDING * scale.abs()
 }
 
+/// An angle moved into `[0, 2π)`: what a periodic curve's or surface's
+/// parameter is reported in (`docs/02-data-model.md` §Conventions). A
+/// negative angle whose sum with `2π` rounds up to `2π` becomes `0` —
+/// the same point on the circle, and inside the domain. A non-finite
+/// angle comes back unchanged.
+///
+/// ```
+/// use arris_math::wrap_angle;
+/// use core::f64::consts::TAU;
+///
+/// assert_eq!(wrap_angle(0.0), 0.0);
+/// assert_eq!(wrap_angle(-1.0), TAU - 1.0);
+/// assert_eq!(wrap_angle(-1e-300), 0.0);
+/// assert_eq!(wrap_angle(TAU + 1.0), 1.0);
+/// ```
+pub fn wrap_angle(t: f64) -> f64 {
+    if !t.is_finite() {
+        return t;
+    }
+    let t = if (0.0..core::f64::consts::TAU).contains(&t) {
+        t
+    } else {
+        t.rem_euclid(core::f64::consts::TAU)
+    };
+    if t >= core::f64::consts::TAU { 0.0 } else { t }
+}
+
 /// A position in 3D. `nalgebra::Point3<f64>` (ADR-0001).
 pub type Point3 = nalgebra::Point3<f64>;
 /// A displacement or direction in 3D, of any length.
@@ -77,3 +104,22 @@ pub type UnitVec2 = nalgebra::Unit<Vec2>;
 /// A 3x3 matrix, column-major: a rotation, or a tensor such as the
 /// inertia of a body. `nalgebra::Matrix3<f64>` (ADR-0001).
 pub type Matrix3 = nalgebra::Matrix3<f64>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use core::f64::consts::{PI, TAU};
+
+    #[test]
+    fn wrap_angle_lands_in_the_half_open_turn() {
+        assert_eq!(wrap_angle(0.0), 0.0);
+        assert_eq!(wrap_angle(-1e-300), 0.0);
+        assert_eq!(wrap_angle(-1.0), TAU - 1.0);
+        assert_eq!(wrap_angle(PI), PI);
+        assert!(wrap_angle(-f64::EPSILON) < TAU);
+        assert_eq!(wrap_angle(3.0 * TAU + 1.0), 1.0);
+        assert_eq!(wrap_angle(-3.0 * TAU - 1.0), TAU - 1.0);
+        assert!(wrap_angle(f64::NAN).is_nan());
+        assert_eq!(wrap_angle(f64::INFINITY), f64::INFINITY);
+    }
+}

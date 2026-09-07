@@ -248,6 +248,12 @@ def c1_intersections():
     def circle(name, origin, normal, x_hint, radius):
         curves[name] = {"type": "circle", **Frame(origin, normal, x_hint).spec(radius=radius)}
 
+    def ellipse(name, origin, normal, x_hint, major, minor):
+        curves[name] = {
+            "type": "ellipse",
+            **Frame(origin, normal, x_hint).spec(major_radius=major, minor_radius=minor),
+        }
+
     def pair(a, b):
         pairs.append({"a": a, "b": b})
 
@@ -316,9 +322,41 @@ def c1_intersections():
         circle(name, add(high, mul(delta, c)), z, c, small)
     for name in ["parallel", "meridional", "two", "outside_touch", "inside_touch", "outside_miss", "inside_miss"]:
         pair(name, "cyl")
+    # Ellipse–plane and ellipse–cylinder, around the oblique section of
+    # the cylinder — the ellipse a boolean's section edge on a cylinder
+    # wall actually is. Its closed form is docs/02-data-model.md §Curves:
+    # centred at the piercing point of the axis, minor axis R across the
+    # axis, major axis R / |n·Z| along the axis's projection on the plane.
+    n = surfaces["oblique"]["z"]
+    cos = abs(dot(n, z))
+    piercing = add(f.origin, mul(dot(n, sub(surfaces["oblique"]["origin"], f.origin)) / dot(n, z), z))
+    ellipse("section", piercing, n, z, R / cos, R)
+    section = Frame(piercing, n, z)
+    pair("section", "cyl")
+    pair("section", "oblique")
+    # Three planes normal to the section's major axis: through the centre
+    # (the two ends of the minor axis), at the end of the major axis (one
+    # touch), and clear of it.
+    for name, along, x_hint in [
+        ("cut_minor", 0.0, section.z),
+        ("touch_major", R / cos, section.z),
+        ("clear_major", 1.5 * R / cos, section.z),
+    ]:
+        plane(name, add(piercing, mul(along, section.x)), section.x, x_hint)
+        pair("section", name)
+    # An ellipse in a plane through the axis: four crossings when its
+    # reach across the axis exceeds R, two touches when it equals R.
+    e, ecross = f.around(5.2)
+    mid = f.to_world([0.0, 0.0, -0.75])
+    ellipse("meridional_ellipse", mid, ecross, e, 1.6 * R, 1.2 * R)
+    ellipse("grazing_ellipse", mid, ecross, e, R, 0.6 * R)
+    # And one across the axis, entirely inside the wall.
+    ellipse("inner_ellipse", mid, z, e, 0.9 * R, 0.5 * R)
+    for name in ["meridional_ellipse", "grazing_ellipse", "inner_ellipse"]:
+        pair(name, "cyl")
     return {
         "kind": "geometry",
-        "description": "every case of the cycle-1 intersection table (plane–plane, plane–cylinder, line–plane, line–cylinder, circle–plane, circle–cylinder) around one cylinder in the tilt pose: circle, ellipse, two rulings, a tangent ruling and empty; crossing, parallel and coincident planes; one hit, parallel and coincident lines; two hits, a touch, a miss, a ruling; two, four, touches, misses, a parallel; written by generate.py",
+        "description": "every case of the cycle-1 intersection table (plane–plane, plane–cylinder, line–plane, line–cylinder, conic–plane, conic–cylinder) around one cylinder in the tilt pose: circle, ellipse, two rulings, a tangent ruling and empty; crossing, parallel and coincident planes; one hit, parallel and coincident lines; two hits, a touch, a miss, a ruling; two, four, touches, misses, a parallel; the oblique section ellipse against the cylinder and the plane it lies in, cut, touched and missed by three planes normal to its major axis, and ellipses across the axis with four crossings, two touches and none; written by generate.py",
         "surfaces": surfaces,
         "curves": curves,
         "samples": [],

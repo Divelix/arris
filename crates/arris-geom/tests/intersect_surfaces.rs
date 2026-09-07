@@ -381,9 +381,12 @@ fn parallel_planes_are_coincident_or_empty_by_the_gap() {
 fn every_other_pair_is_unsupported() {
     check((surface(), surface()), |(a, b)| {
         let closed_form = |k| matches!(k, SurfaceKind::Plane | SurfaceKind::Cylinder);
-        let plane_and_cylinder = closed_form(a.kind())
-            && closed_form(b.kind())
-            && !(a.kind() == SurfaceKind::Cylinder && b.kind() == SurfaceKind::Cylinder);
+        let two_cylinders = a.kind() == SurfaceKind::Cylinder && b.kind() == SurfaceKind::Cylinder;
+        // Two cylinders have a closed form only when they are coaxial;
+        // two in random poses never are, but the property says so rather
+        // than relying on it.
+        let plane_and_cylinder =
+            closed_form(a.kind()) && closed_form(b.kind()) && (!two_cylinders || coaxial(&a, &b));
         match intersect_surfaces(&a, &b, tol()) {
             Ok(_) => prop_assert!(plane_and_cylinder, "{a:?} vs {b:?} should be unsupported"),
             Err(GeomError::Unsupported { a: ka, b: kb }) => {
@@ -452,4 +455,93 @@ fn through_hole_faces_against_the_hole() {
         assert_eq!(frame.origin(), Point3::new(20.0, 15.0, z));
         assert_eq!(frame.z(), hole.frame().unwrap().z());
     }
+}
+
+// --- cylinder–cylinder ----------------------------------------------------
+
+/// The two surfaces' axes are one line within the tolerance.
+fn coaxial(a: &Surface, b: &Surface) -> bool {
+    let (fa, fb) = (a.frame().unwrap(), b.frame().unwrap());
+    let parallel = fa
+        .z()
+        .cross(&fb.z())
+        .norm()
+        .atan2(fa.z().dot(&fb.z()).abs())
+        <= tol().angular;
+    parallel && (fb.origin() - fa.origin()).cross(&fa.z()).norm() <= tol().linear
+}
+
+/// One cylinder, and a second on the same axis: the same radius, or a
+/// different one, at a random slide along the axis and a random phase.
+fn coaxial_pair() -> impl Strategy<Value = (Surface, Surface, bool)> {
+    (
+        cylinder(),
+        finite_f64(-DEFAULT_SCALE..=DEFAULT_SCALE),
+        finite_f64(0.0..=TAU),
+        finite_f64(0.2..=4.0),
+        any::<bool>(),
+    )
+        .prop_filter_map(
+            "a second cylinder on the same axis",
+            |(a, slide, phase, factor, same)| {
+                let (frame, radius) = match a {
+                    Surface::Cylinder { frame, radius } => (frame, radius),
+                    _ => return None,
+                };
+                let origin = frame.origin() + slide * frame.z().into_inner();
+                let x = phase.cos() * frame.x().into_inner() + phase.sin() * frame.y().into_inner();
+                let other = Surface::Cylinder {
+                    frame: Frame::new(origin, frame.z().into_inner(), x).ok()?,
+                    radius: if same { radius } else { factor * radius },
+                };
+                // A "different" radius within the tolerance is the same
+                // cylinder; the case is the one the radii say it is.
+                let agree = match other {
+                    Surface::Cylinder { radius: r, .. } => (r - radius).abs() <= tol().linear,
+                    _ => false,
+                };
+                Some((a, other, agree))
+            },
+        )
+}
+
+#[test]
+fn coaxial_cylinders_are_coincident_or_empty_by_their_radii() {
+    check(coaxial_pair(), |(a, b, agree)| {
+        let expected = if agree {
+            SurfaceIntersection::Coincident
+        } else {
+            SurfaceIntersection::Empty
+        };
+        prop_assert_eq!(
+            intersect_surfaces(&a, &b, tol()).map_err(|e| TestCaseError::fail(e.to_string()))?,
+            expected.clone(),
+            "{:?} vs {:?}",
+            a,
+            b
+        );
+        // Symmetric, and the same on a second run.
+        prop_assert_eq!(
+            intersect_surfaces(&b, &a, tol()).map_err(|e| TestCaseError::fail(e.to_string()))?,
+            expected
+        );
+        Ok(())
+    });
+}
+
+#[test]
+fn cylinders_that_are_not_coaxial_are_unsupported_naming_the_pair() {
+    check((cylinder(), cylinder()), |(a, b)| {
+        if coaxial(&a, &b) {
+            return Ok(());
+        }
+        match intersect_surfaces(&a, &b, tol()) {
+            Err(GeomError::Unsupported { a: ka, b: kb }) => {
+                prop_assert_eq!(ka, GeomKind::Surface(SurfaceKind::Cylinder));
+                prop_assert_eq!(kb, GeomKind::Surface(SurfaceKind::Cylinder));
+                Ok(())
+            }
+            other => Err(TestCaseError::fail(format!("{a:?} vs {b:?}: {other:?}"))),
+        }
+    });
 }

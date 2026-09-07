@@ -1,6 +1,6 @@
 {
   "kind": "geometry",
-  "description": "every case of the cycle-1 intersection table (plane\u2013plane, plane\u2013cylinder, line\u2013plane, line\u2013cylinder, circle\u2013plane, circle\u2013cylinder) around one cylinder in the tilt pose: circle, ellipse, two rulings, a tangent ruling and empty; crossing, parallel and coincident planes; one hit, parallel and coincident lines; two hits, a touch, a miss, a ruling; two, four, touches, misses, a parallel; written by generate.py",
+  "description": "every case of the cycle-1 intersection table (plane\u2013plane, plane\u2013cylinder, line\u2013plane, line\u2013cylinder, conic\u2013plane, conic\u2013cylinder) around one cylinder in the tilt pose: circle, ellipse, two rulings, a tangent ruling and empty; crossing, parallel and coincident planes; one hit, parallel and coincident lines; two hits, a touch, a miss, a ruling; two, four, touches, misses, a parallel; the oblique section ellipse against the cylinder and the plane it lies in, cut, touched and missed by three planes normal to its major axis, and ellipses across the axis with four crossings, two touches and none; written by generate.py",
   "surfaces": {
     "cyl": {
       "type": "cylinder",
@@ -145,6 +145,60 @@
         0.8376945264427496,
         -0.5461041060954285,
         -0.00617945576653564
+      ]
+    },
+    "cut_minor": {
+      "type": "plane",
+      "origin": [
+        -2.071428571428571,
+        2.3928571428571432,
+        1.7857142857142863
+      ],
+      "z": [
+        -0.5981673832816843,
+        0.684719528459308,
+        0.4163591585691441
+      ],
+      "x": [
+        0.6523500243514287,
+        0.11429055703996367,
+        0.7492510355683103
+      ]
+    },
+    "touch_major": {
+      "type": "plane",
+      "origin": [
+        -3.434644772974761,
+        3.9533246320569626,
+        2.7345917512652833
+      ],
+      "z": [
+        -0.5981673832816843,
+        0.684719528459308,
+        0.4163591585691441
+      ],
+      "x": [
+        0.6523500243514287,
+        0.11429055703996367,
+        0.7492510355683103
+      ]
+    },
+    "clear_major": {
+      "type": "plane",
+      "origin": [
+        -4.116252873747856,
+        4.733558376656873,
+        3.2090304840407815
+      ],
+      "z": [
+        -0.5981673832816843,
+        0.684719528459308,
+        0.4163591585691441
+      ],
+      "x": [
+        0.6523500243514287,
+        0.11429055703996367,
+        0.7492510355683103
       ]
     }
   },
@@ -480,6 +534,86 @@
         0.1375886063137944
       ],
       "radius": 1.2
+    },
+    "section": {
+      "type": "ellipse",
+      "origin": [
+        -2.071428571428571,
+        2.3928571428571432,
+        1.7857142857142863
+      ],
+      "z": [
+        0.6523500243514287,
+        0.11429055703996358,
+        0.7492510355683102
+      ],
+      "x": [
+        -0.5981673832816842,
+        0.6847195284593078,
+        0.416359158569144
+      ],
+      "major_radius": 2.2789878546490976,
+      "minor_radius": 2.0
+    },
+    "meridional_ellipse": {
+      "type": "ellipse",
+      "origin": [
+        -2.7142857142857144,
+        1.4285714285714284,
+        -0.14285714285714302
+      ],
+      "z": [
+        0.7802091421375318,
+        -0.6233849416743094,
+        0.05162275679131074
+      ],
+      "x": [
+        -0.5564539886313984,
+        -0.6540013341775099,
+        0.5124853299658877
+      ],
+      "major_radius": 3.2,
+      "minor_radius": 2.4
+    },
+    "grazing_ellipse": {
+      "type": "ellipse",
+      "origin": [
+        -2.7142857142857144,
+        1.4285714285714284,
+        -0.14285714285714302
+      ],
+      "z": [
+        0.7802091421375318,
+        -0.6233849416743094,
+        0.05162275679131074
+      ],
+      "x": [
+        -0.5564539886313984,
+        -0.6540013341775099,
+        0.5124853299658877
+      ],
+      "major_radius": 2.0,
+      "minor_radius": 1.2
+    },
+    "inner_ellipse": {
+      "type": "ellipse",
+      "origin": [
+        -2.7142857142857144,
+        1.4285714285714284,
+        -0.14285714285714302
+      ],
+      "z": [
+        0.2857142857142857,
+        0.42857142857142855,
+        0.8571428571428571
+      ],
+      "x": [
+        -0.5564539886313983,
+        -0.6540013341775099,
+        0.5124853299658877
+      ],
+      "major_radius": 1.8,
+      "minor_radius": 1.0
     }
   },
   "samples": [],
@@ -594,6 +728,38 @@
     },
     {
       "a": "inside_miss",
+      "b": "cyl"
+    },
+    {
+      "a": "section",
+      "b": "cyl"
+    },
+    {
+      "a": "section",
+      "b": "oblique"
+    },
+    {
+      "a": "section",
+      "b": "cut_minor"
+    },
+    {
+      "a": "section",
+      "b": "touch_major"
+    },
+    {
+      "a": "section",
+      "b": "clear_major"
+    },
+    {
+      "a": "meridional_ellipse",
+      "b": "cyl"
+    },
+    {
+      "a": "grazing_ellipse",
+      "b": "cyl"
+    },
+    {
+      "a": "inner_ellipse",
       "b": "cyl"
     }
   ]
