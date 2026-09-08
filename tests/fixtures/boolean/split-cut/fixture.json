@@ -1,0 +1,17 @@
+{
+  "description": "box [0,0,0]–[40,30,10] − a slab [18,−1,−1]–[22,31,11] through it: two boxes — Open CASCADE builds a compound of two solids, Arris refuses with OpError::Degenerate and Reason::MultiShell (a General body for it is cycle 2's; plan m4-booleans ⚠ OPEN 2)",
+  "steps": [
+    {"name": "plate", "op": "box", "min": [0, 0, 0], "max": [40, 30, 10]},
+    {"name": "slab", "op": "box", "min": [18, -1, -1], "max": [22, 31, 11]},
+    {"name": "result", "op": "cut", "target": "plate", "tool": "slab"}
+  ],
+  "result": "result",
+  "probes": [],
+  "analytic": {
+    "expect_error": "multi-shell",
+    "volume": "2 * 18 * 30 * 10",
+    "area": "2 * (2 * 18 * 30 + 2 * 18 * 10 + 2 * 30 * 10)",
+    "counts": {"vertices": 16, "edges": 24, "faces": 12, "loops": 12, "shells": 2, "solids": 2},
+    "genus": 0
+  }
+}

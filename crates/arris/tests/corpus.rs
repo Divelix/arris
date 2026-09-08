@@ -2,10 +2,11 @@
 //! (`docs/03-roadmap.md` §Fixtures, `docs/plans/m2-topology.md` step 13):
 //! the recipe built in Arris, the checker at `Full`, counts and genus
 //! against the oracle, STEP read back by the oracle, provenance
-//! accounting, the dump diffed against `dump.txt`. The `primitive/*`
-//! fixtures are live; every fixture that needs an operation of a later
-//! milestone is `#[ignore]`d naming it, and `--include-ignored` runs it
-//! anyway, so the day the operation lands the test says so.
+//! accounting, the dump diffed against `dump.txt`. The `primitive/*`,
+//! `transform/*` and `cut` fixtures are live; every fixture that needs
+//! an operation of a later step or milestone is `#[ignore]`d naming it,
+//! and `--include-ignored` runs it anyway, so the day the operation
+//! lands the test says so.
 
 use arris_debug::corpus::{self, CorpusError};
 use arris_debug::fixtures;
@@ -36,19 +37,16 @@ fn transform_posed_cylinder() {
 }
 
 #[test]
-#[ignore = "M4: needs ops::cut"]
 fn boolean_through_hole() {
     run("boolean/through-hole");
 }
 
 #[test]
-#[ignore = "M4: needs ops::cut"]
 fn boolean_blind_hole() {
     run("boolean/blind-hole");
 }
 
 #[test]
-#[ignore = "M4: needs ops::cut"]
 fn boolean_bolt_pattern_8() {
     run("boolean/bolt-pattern-8");
 }
@@ -72,7 +70,6 @@ fn boolean_corner_common() {
 }
 
 #[test]
-#[ignore = "M4: needs ops::cut"]
 fn boolean_corner_cut() {
     run("boolean/corner-cut");
 }
@@ -84,15 +81,27 @@ fn boolean_flush_common() {
 }
 
 #[test]
-#[ignore = "M4: needs ops::cut"]
 fn boolean_disjoint_cut() {
     run("boolean/disjoint-cut");
 }
 
 #[test]
-#[ignore = "M4: needs ops::cut; sample::frame is the hand-built twin"]
 fn boolean_frame_cut() {
     run("boolean/frame-cut");
+}
+
+/// The target inside the tool: nothing survives, and the oracle records
+/// no solid — the runner's degenerate path.
+#[test]
+fn boolean_swallow_cut() {
+    run("boolean/swallow-cut");
+}
+
+/// A slab through the plate: Open CASCADE builds two solids, Arris
+/// refuses with `Reason::MultiShell` — the runner's expected-error path.
+#[test]
+fn boolean_split_cut() {
+    run("boolean/split-cut");
 }
 
 #[test]
@@ -132,7 +141,7 @@ fn sweep_revolve_quarter() {
 }
 
 #[test]
-#[ignore = "M4: needs ops::cut and the origins chain across three variants"]
+#[ignore = "M4: the origins chain across three variants and dump.<variant>.txt (step 12)"]
 fn provenance_bolt_pattern_rebuild() {
     run("provenance/bolt-pattern-rebuild");
 }

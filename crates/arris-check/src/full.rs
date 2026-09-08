@@ -17,7 +17,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use arris_topo::arris_geom::integrate::{inner_step, region_integral};
 use arris_topo::arris_geom::region2::{Piece, Polygon2, Side, discretise, point_side};
 use arris_topo::arris_geom::{Curve, Surface, SurfaceIntersection, intersect_surfaces};
-use arris_topo::arris_math::{Interval, Point2, Point3};
+use arris_topo::arris_math::{Aabb, Interval, Point2, Point3};
 use arris_topo::entity::{BodyKind, Face};
 use arris_topo::{EdgeId, FaceId, Orientation, ShellId, VertexId};
 
@@ -195,12 +195,62 @@ impl<'m> Checker<'m> {
         (bounded && !pieces.is_empty()).then_some(pieces)
     }
 
+    /// The box of a face, grown by its tolerance: the union of its
+    /// edges' curve boxes, each grown by the edge's tolerance, and of
+    /// the surface's box over the (u, v) box of its discretised loops
+    /// grown by their chord deviation. `None` for a face reaching an
+    /// unbounded range or nothing that resolves — a face S5 never
+    /// rejects by its box.
+    fn face_bounds(&self, face_id: FaceId, face: &Face, surface: &Surface) -> Option<Aabb> {
+        let model = self.model;
+        let mut bounds: Option<Aabb> = None;
+        for (_, _, coedge) in coedges(face) {
+            let edge = model.edge(coedge.edge()).ok()?;
+            let Some((curve_id, range)) = edge.curve() else {
+                continue;
+            };
+            let b = model
+                .curve(curve_id)
+                .ok()?
+                .bounds(range)?
+                .inflated(edge.tolerance());
+            bounds = Some(bounds.map_or(b, |acc| acc.union(b)));
+        }
+        let polygons = self.faces_fine.get(&face_id)?;
+        let mut lo = Point2::new(f64::INFINITY, f64::INFINITY);
+        let mut hi = Point2::new(f64::NEG_INFINITY, f64::NEG_INFINITY);
+        for polygon in polygons {
+            let d = polygon.chord_deviation();
+            for p in polygon.points() {
+                lo = Point2::new(lo.x.min(p.x - d), lo.y.min(p.y - d));
+                hi = Point2::new(hi.x.max(p.x + d), hi.y.max(p.y + d));
+            }
+        }
+        let (u, v) = (
+            Interval::new(lo.x, hi.x).ok()?,
+            Interval::new(lo.y, hi.y).ok()?,
+        );
+        let b = surface.bounds([u, v])?;
+        bounds = Some(bounds.map_or(b, |acc| acc.union(b)));
+        bounds.map(|b| b.inflated(face.tolerance()))
+    }
+
     /// S5: two faces of a shell meet only along the edges and vertices
-    /// they share.
+    /// they share. A pair whose boxes ([`Checker::face_bounds`]) are
+    /// apart shares no point and is decided without an intersector; the
+    /// rest are intersected, and a pair with no closed form is unchecked.
     fn s5_face_pairs(&mut self) {
         let model = self.model;
         let mut found = Vec::new();
         let mut undecided = Vec::new();
+        let mut boxes: BTreeMap<FaceId, Option<Aabb>> = BTreeMap::new();
+        for &face_id in &self.closure.faces {
+            let b = model.face(face_id).ok().and_then(|face| {
+                let surface = model.surface(face.surface()).ok()?;
+                self.face_bounds(face_id, face, surface)
+            });
+            boxes.insert(face_id, b);
+        }
         for &shell_id in &self.closure.shells {
             let Ok(shell) = model.shell(shell_id) else {
                 continue;
@@ -222,6 +272,11 @@ impl<'m> Checker<'m> {
                     else {
                         continue;
                     };
+                    if let (Some(Some(ba)), Some(Some(bb))) = (boxes.get(&a), boxes.get(&b)) {
+                        if !ba.intersects(bb) {
+                            continue;
+                        }
+                    }
                     let meets = match intersect_surfaces(sa, sb, self.precision.tolerance()) {
                         Err(_) => {
                             undecided.push(Unchecked::FacePair {

@@ -306,7 +306,7 @@ or bound has to be established here.
   the section edge's tolerance, every pave on its edge within the
   vertex's, every section edge's two pcurves same-parameter; two runs
   identical.
-- [ ] Step 7 **[3]** — Split, classify, assemble: `cut`. Per face, the
+- [x] Step 7 **[3]** — Split, classify, assemble: `cut`. Per face, the
   arrangement of its loops' pieces and its section edges in (u, v):
   half-edges ordered around each vertex by the pcurves' tangent
   direction, ties by curvature, an unresolved tie a typed error; the
@@ -564,6 +564,58 @@ deltas above, not a new decision.
   `NurbsCurve2::translated` underneath, and `crate::verify_input` shared
   by `measure`, `transform` and `interferences` (the deltas placed it at
   step 7).
+- **Step 7 — the classifier let a surface's extension abandon a ray.**
+  `Classifier::contains` gave up a direction whenever the ray's origin
+  was on a face's *surface* (`t ≈ 0`), whether or not its (u, v) was on
+  the face; `corner-cut`'s bottom face is classified at (0, 0, −1),
+  which lies on the extension of two of the tool's planes, and all eight
+  directions were abandoned. A `t ≈ 0` hit whose (u, v) is `Outside` the
+  face is no crossing and is skipped; `Inside` or `Boundary` still
+  abandons the direction.
+- **Step 7 — `interior_point` chooses its height between vertex
+  heights.** The mid-height horizontal of `corner-cut`'s L-shaped tool
+  piece runs along one of its own segments and finds no span. The
+  height is now the midpoint between two consecutive distinct vertex
+  heights, nearest the mid-height first and outward when that level
+  holds no span at the clearance, so the line never runs along a segment
+  or through a vertex; the C-shaped doc example answers as before.
+- **Step 7 — S5 rejects face pairs by their boxes.** The checker's S5 row
+  asked the intersector for every face pair of a shell and reported
+  `bolt-pattern-8`'s eight hole walls as unchecked (cylinder–cylinder,
+  no closed form) although they are 26 units apart. A pair whose boxes
+  — the edges' curve boxes and the surface's box over the loops, grown by
+  the tolerances — are apart is decided empty first. The acceptance
+  corpus's "nothing unchecked" is met by this, not by a wildcard.
+- **Step 7 — the flush case is refused, not guessed.** A `Coincident`
+  pair in the pave model, or a piece whose interior point classifies
+  `On` the other operand, is `OpError::Unsupported` naming the two faces
+  (the pair the kernel has no recipe for) until step 10 wires the
+  normals rule; `flush-union` cut is the test.
+- **Step 7 — nothing of the tool is kept.** The deltas' "every entity of
+  the tool is `Deleted`" is taken literally: a tool face that survives
+  whole (the floor of `blind-hole`, the tool's bottom cap) is a *new*
+  face `Generated` from it with new edges and vertices, never the same
+  id used reversed by the result's shell, so an entity is never shared
+  between the tool body and the result and `Deleted` never names an
+  entity the output holds. The target's untouched entities are shared
+  by id as designed.
+- **Step 7 — a re-tolerated vertex cascades.** A section vertex that
+  coincides with an operand vertex and grows past its stored tolerance
+  makes a new vertex `Modified` from it, which makes every edge at it a
+  new edge `Modified` from the old and every face on those edges a new
+  face — the only way the loops still close through one vertex slot.
+  The cascade is built in; no cut fixture reaches it (the flush fixtures
+  of step 10 do).
+- **Step 7 — `swallow-cut` and `split-cut` are authored here.** Neither
+  existed; `swallow-cut` is box [10,10,2]–[30,20,8] minus the plate that
+  contains it (`degenerate: true`), `split-cut` the plate minus a slab
+  [18,−1,−1]–[22,31,11] (`expect_error: multi-shell`, the oracle's two
+  solids recorded: 10800, 4080, 16/24/12/12 in two shells).
+- **Step 7 — public additions beyond the deltas.** `Fault::Split(
+  SplitFault)` with `SplitFault::{EmptySubEdge, Dangling, Turn, Hole,
+  NoInterior}`; `fixtures::ExpectError` and `Analytic::expect_error`;
+  `CorpusError::Expectation` for a result step that built a body or
+  failed otherwise when a refusal was expected.
 - **Step 1 — `sample::sphere` is not assemblable.** Its two degenerate
   pole edges are used once each, which `finish` has always refused (it is
   why the sample goes through the raw insert). The round trip runs over

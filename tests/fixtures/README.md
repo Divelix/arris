@@ -37,10 +37,15 @@ oracle's class *exactly* — both sides have their own tolerance for "on",
 the fixture's `probe` for the oracle and the entities' own for Arris, and
 a probe is placed so the two agree, so a disagreement is a finding and
 never something a band is widened to cover — asserts every step's
-provenance accounting, and diffs the dump against `dump.txt`. A fixture whose recipe needs an
-operation of a later milestone is `#[ignore = "M4: needs ops::cut"]` and
-fails naming the op under `--include-ignored`, so the day the operation
-lands the test says so. `ARRIS_BLESS=1 cargo test -p arris --test corpus
+provenance accounting, and diffs the dump against `dump.txt`. A result
+the oracle recorded no solid for (`degenerate` in `expected.json`) must
+fail with `OpError::Degenerate` at its result step, and one whose recipe
+says `analytic.expect_error` must fail with that typed refusal; either
+ends the run there, nothing later compared, no `dump.txt`. A fixture
+whose recipe needs an operation of a later step or milestone is
+`#[ignore = "M4: needs ops::fuse (step 8)"]` and fails naming the op
+under `--include-ignored`, so the day the operation lands the test says
+so. `ARRIS_BLESS=1 cargo test -p arris --test corpus
 <name>` writes the dump instead of diffing it; commit the file as part
 of the step that made the fixture pass, and a later change to it is a
 `fixtures:` commit that says why the ids or the geometry moved.
@@ -97,8 +102,15 @@ of the step that made the fixture pass, and a later change to it is a
 - **`analytic`** is the author's closed form, the cross-check that catches a
   convention mismatch on either side (profile orientation, seam counting,
   which faces a fuse keeps). Every field is optional; `degenerate: true`
-  says the result has no volume (`boolean/flush-common`), and then nothing
-  else is compared. `genus` is what the Euler line is checked with:
+  says the result has no volume (`boolean/flush-common`,
+  `boolean/swallow-cut`), and then nothing else is compared.
+  `expect_error: "multi-shell" | "tangent-contact"` says Open CASCADE
+  builds a result Arris refuses by design (`boolean/split-cut`: two
+  solids, `Reason::MultiShell`; the tangent cases, `Reason::TangentContact`
+  — `docs/plans/m4-booleans.md` `⚠ OPEN` 1 and 2): the oracle's numbers
+  are recorded and the lint still cross-checks them against the other
+  `analytic` values, but the runner asserts the typed error and compares
+  nothing. `genus` is what the Euler line is checked with:
   `V − E + F − (L − F) − 2(S − G) = 0` with the oracle's counts.
 - **Tolerances** are the fixture's; absent ones take the defaults shown.
   Counts and classifications are always exact. Three keys are Arris's

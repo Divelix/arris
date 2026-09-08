@@ -12,7 +12,11 @@
 //! [`CorpusError`] saying which fixture, which stage and what differed;
 //! a recipe step the kernel has no operation for yet is
 //! [`CorpusError::Unsupported`] naming the op, which is what an
-//! `#[ignore]`d fixture reports until its milestone lands.
+//! `#[ignore]`d fixture reports until its milestone lands. A result the
+//! oracle recorded no solid for (`expected.degenerate`) must fail with
+//! `OpError::Degenerate`, and one the recipe marks `analytic.expect_error`
+//! must fail with that typed refusal; either ends the run there, the
+//! oracle's numbers recorded but not compared.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -27,11 +31,12 @@ use arris_io::arris_check::{Level, Report, check};
 use arris_io::step::{self, StepError};
 use arris_mesh::tessellate;
 use arris_ops::measure::mass_properties;
-use arris_ops::{OpError, primitive_box, primitive_cylinder, transform};
+use arris_ops::{OpError, Reason, cut, primitive_box, primitive_cylinder, transform};
 
 use crate::dump::dump_text;
 use crate::fixtures::{
-    self, Class, Counts, ExprError, Fixture, FixtureError, Measured, Num, Rotate, Step, Tolerances,
+    self, Class, Counts, ExpectError, ExprError, Fixture, FixtureError, Measured, Num, Rotate,
+    Step, Tolerances,
 };
 use crate::oracle::{self, OracleError};
 
@@ -92,6 +97,20 @@ pub enum CorpusError {
         step: String,
         /// The cause.
         source: FrameError,
+    },
+    /// The result step was expected to fail with a typed error —
+    /// `expected.degenerate`, or the recipe's `analytic.expect_error` —
+    /// and built a body, or failed with another error.
+    #[error("{fixture}: step {step:?}: expected {expected}, found {found}")]
+    Expectation {
+        /// The fixture.
+        fixture: String,
+        /// The step's name.
+        step: String,
+        /// The error expected.
+        expected: String,
+        /// What happened instead.
+        found: String,
     },
     /// An operation failed.
     #[error("{fixture}: step {step:?}: {source}")]
@@ -224,6 +243,64 @@ pub fn blessing() -> bool {
     std::env::var(BLESS_VAR).is_ok_and(|v| !(v.is_empty() || v == "0"))
 }
 
+/// How a result step is expected to fail.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Refusal {
+    /// `OpError::Degenerate`, any reason: the oracle recorded no solid.
+    Degenerate,
+    /// The recipe's `analytic.expect_error`.
+    Error(ExpectError),
+}
+
+impl Refusal {
+    fn expected(self) -> String {
+        match self {
+            Refusal::Degenerate => "OpError::Degenerate".into(),
+            Refusal::Error(ExpectError::MultiShell) => {
+                "OpError::Degenerate with Reason::MultiShell".into()
+            }
+            Refusal::Error(ExpectError::TangentContact) => {
+                "OpError::Degenerate with Reason::TangentContact".into()
+            }
+        }
+    }
+
+    /// `Ok` when `built` is the failure expected.
+    fn assert(
+        self,
+        fixture: &str,
+        step: &str,
+        built: Result<(), CorpusError>,
+    ) -> Result<(), CorpusError> {
+        let found = match built {
+            Ok(()) => "a body".to_string(),
+            Err(CorpusError::Op {
+                source: OpError::Degenerate { reason, .. },
+                ..
+            }) => {
+                let matches = match self {
+                    Refusal::Degenerate => true,
+                    Refusal::Error(ExpectError::MultiShell) => {
+                        matches!(reason, Reason::MultiShell { .. })
+                    }
+                    Refusal::Error(ExpectError::TangentContact) => reason == Reason::TangentContact,
+                };
+                if matches {
+                    return Ok(());
+                }
+                format!("OpError::Degenerate with {reason}")
+            }
+            Err(e) => e.to_string(),
+        };
+        Err(CorpusError::Expectation {
+            fixture: fixture.to_string(),
+            step: step.to_string(),
+            expected: self.expected(),
+            found,
+        })
+    }
+}
+
 /// What one step produced: the body, its record and the bodies it took.
 struct Made {
     body: Body,
@@ -257,11 +334,24 @@ pub fn run(dir: &Path, variant: &str) -> Result<(), CorpusError> {
             variant: variant.to_string(),
         });
     };
+    // A result the oracle records no solid for, or one the recipe says
+    // Arris refuses by design, must fail with its typed error at the
+    // result step; nothing after it is compared.
+    let refusal = if expected.degenerate {
+        Some(Refusal::Degenerate)
+    } else {
+        fixture.recipe.analytic.expect_error.map(Refusal::Error)
+    };
     let mut m = Model::default();
     let mut made: BTreeMap<String, Made> = BTreeMap::new();
     for step in &fixture.recipe.steps {
-        let out = build_step(&mut m, &fixture, step, &params, &made)?;
-        made.insert(step.name().to_string(), out);
+        let built = build_step(&mut m, &fixture, step, &params, &made);
+        if let Some(refusal) = refusal {
+            if step.name() == fixture.recipe.result {
+                return refusal.assert(&name, step.name(), built.map(|_| ()));
+            }
+        }
+        made.insert(step.name().to_string(), built?);
     }
     let Some(result) = made.get(&fixture.recipe.result) else {
         return Err(CorpusError::Reference {
@@ -672,9 +762,14 @@ fn build_step(
             Err(unsupported("common"))
         }
         Step::Cut { target, tool, .. } => {
-            reference(fixture, step, target, made)?;
-            reference(fixture, step, tool, made)?;
-            Err(unsupported("cut"))
+            let target = reference(fixture, step, target, made)?.body;
+            let tool = reference(fixture, step, tool, made)?.body;
+            let (body, provenance) = cut(m, target, tool).map_err(op)?;
+            Ok(Made {
+                body,
+                provenance,
+                inputs: vec![target, tool],
+            })
         }
     }
 }

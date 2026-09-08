@@ -325,11 +325,15 @@ checker passes the model's parametric tolerance scaled to the surface, a
 boolean the face's tolerance converted the same way; nothing in `region2`
 knows the model. `region2::interior_point(polygons, clearance)` is a
 point strictly inside the region and further than `clearance` from every
-segment: the horizontal through the middle of the polygons' bounding box
-is cut into spans, the spans whose midpoint has a non-zero winding number
-are the inside ones, and the widest of those that clears the segments
-gives its middle — deterministic, and `None` (never a guess) for a region
-the line misses or one too thin to hold a point at that clearance. A
+segment: a horizontal is cut by the segments into spans, the spans whose
+midpoint has a non-zero winding number are the inside ones, and the
+widest of those that clears the segments gives its middle. The height
+is the midpoint between two consecutive distinct vertex heights — never
+a vertex's own, so the line runs along no segment and through no vertex
+— the one nearest the polygons' mid-height first and the next ones
+outward when that holds no span at the clearance: deterministic, and
+`None` (never a guess) only for a region too thin to hold a point at
+that clearance at any of them. A
 caller passes the polygons' `chord_deviation` so the point is inside the
 *curved* region and not merely inside its polygon; a boolean classifies a
 piece there rather than at its centroid, which for a sliver rounds onto
@@ -748,7 +752,7 @@ reference tree) mapped onto this representation.
 | S2 | In a `Solid` body every non-degenerate edge of the shell is used by exactly two coedges, with opposite effective orientation (the two faces agree on which side the material is); in a `Sheet` by one or two; in `General` by any number. A degenerate edge is a singular point of a surface, not a boundary between two faces — a sphere's pole is used once by the one face that closes on it — so it is not counted here. The orientations pair up in every kind: as many forward uses as reversed, but for an odd count, where exactly one is left over. A `Wire` body's shell is not judged here — B3 says it should have none | Fast |
 | S3 | A shell is connected through its edges | Fast |
 | S4 | A shell of a `Solid` is closed: no non-degenerate edge with one coedge (S2's exemption) | Fast |
-| S5 | The faces of a shell intersect only along their shared edges and vertices: their surfaces' intersection is empty, or every point of it that is interior to both faces is within the tolerance of an edge or vertex they share; two coincident surfaces must not carry faces whose interiors overlap. A pair the intersector has no closed form for is **unchecked** — listed by `Report::unchecked`, never passed and never a violation | Full |
+| S5 | The faces of a shell intersect only along their shared edges and vertices: their surfaces' intersection is empty, or every point of it that is interior to both faces is within the tolerance of an edge or vertex they share; two coincident surfaces must not carry faces whose interiors overlap. A pair whose boxes — each face's edges' curve boxes and its surface's box over its loops, grown by the tolerances — are apart shares no point and is decided without an intersector; a pair the intersector has no closed form for is **unchecked** — listed by `Report::unchecked`, never passed and never a violation | Full |
 | B1 | A `Solid` body has at least one shell; exactly one shell encloses positive volume and is the outer one, and every other encloses negative volume — its effective normals turned into the void — and lies inside it, by the parity of a ray cast from one of its vertices. A shell no ray could be classified against is **unchecked**, as S5's undecided pairs are | Full |
 | B2 | A `Solid` body encloses positive volume: `∬ p · (r_u × r_v) / 3` over each face's region in (u, v), summed with the sign of each face use. The value is reported with the violation | Full |
 | B3 | A `Wire` body has no shells; `free_edges` form chains (each vertex used by at most two free edges) — `General` bodies exempt | Fast |
@@ -809,6 +813,25 @@ recorded — `Modified` into pieces, `Generated` from, `Deleted`, or both
 image is the hole's wall); never both `Deleted` and `Modified`, since a
 piece is an image. The ops tests assert that accounting on every fixture,
 and that the relations are the same on every run.
+
+A boolean writes its record from the pieces as it makes them
+(ADR-0004). An entity of an operand whose ids are reused is kept when
+nothing at it changed; a face whose loops changed at all — a split edge,
+a section edge, a re-tolerated vertex — is `Modified` into its
+surviving pieces, a split edge `Modified` into its surviving sub-edges,
+a vertex a section vertex re-tolerated `Modified` into the new one, and
+whatever has no piece left is `Deleted`. A section vertex that is no
+operand's vertex is `Generated` from the edge and the face of every hit
+it merges (from both faces of the pair for a closed section curve no
+hit paves); a section edge is `Generated` from both faces of its pair,
+so `generated_pair(wall, cap)` is the hole's rim. The tool of a `cut`
+keeps nothing: every entity of it is `Deleted`, and a piece of it that
+survives — the hole's wall from the tool's wall, the floor of a blind
+hole from the tool's cap, whole or not — is a new entity `Generated`
+from the tool entity it is a piece of, so no entity is shared between
+the tool body and the result. The result's shell and body are
+`Modified` from the target's in `cut`, from both operands' in `fuse`
+and `common`.
 
 Queries: `generated_from(origin) -> &[Shape]`, `modified_from(origin)`,
 `is_deleted(input)`, `origins(output) -> Vec<(Relation, Origin)>` (the

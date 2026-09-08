@@ -427,17 +427,21 @@ pub fn point_side(polygons: &[Polygon2], p: Point2, boundary_tolerance: f64) -> 
 /// `clearance` from every segment, or `None` when the construction below
 /// finds none.
 ///
-/// The construction, which is what makes it deterministic: the horizontal
-/// line through the middle of the polygons' bounding box is cut by the
-/// segments into spans; the spans whose midpoint has a non-zero winding
-/// number are the inside ones; the longest of them that clears every
-/// segment by more than `clearance` gives its middle. A caller passes the
+/// The construction, which is what makes it deterministic: a horizontal
+/// line is cut by the segments into spans; the spans whose midpoint has
+/// a non-zero winding number are the inside ones; the longest of them
+/// that clears every segment by more than `clearance` gives its middle.
+/// The line's height is the midpoint between two consecutive distinct
+/// vertex heights of the polygons — never a vertex's own height, so the
+/// line runs along no segment and through no vertex — the one nearest
+/// the middle of the polygons' height first, and the next ones outward
+/// when that one holds no span at the clearance. A caller passes the
 /// polygons' [`Polygon2::chord_deviation`] as the clearance, so the point
 /// is inside the *curved* region and not merely inside its polygon.
 ///
-/// `None` for a region the mid-height line misses — two pieces one above
-/// the other, say — and for one too thin to hold a point at that
-/// clearance. It is never a point the caller has to check again.
+/// `None` only for a region too thin to hold a point at that clearance at
+/// any of those heights, or one with a single vertex height. It is never
+/// a point the caller has to check again.
 ///
 /// ```
 /// use arris_geom::region2::{Polygon2, Side, interior_point, point_side};
@@ -449,23 +453,45 @@ pub fn point_side(polygons: &[Polygon2], p: Point2, boundary_tolerance: f64) -> 
 /// let inside = interior_point(&[c.clone()], 0.0).unwrap();
 /// assert_eq!(inside, p(0.5, 2.0), "the middle of the only inside span");
 /// assert_eq!(point_side(&[c], inside, 1e-9), Side::Inside);
+/// // An L whose middle height is one of its own segments: the line is
+/// // taken just below it instead.
+/// let l = Polygon2::from_points([p(1.0, 0.0), p(2.0, 0.0), p(2.0, 2.0), p(0.0, 2.0),
+///                                p(0.0, 1.0), p(1.0, 1.0)]);
+/// assert_eq!(interior_point(&[l], 0.0), Some(p(1.5, 0.5)));
 /// ```
 pub fn interior_point(polygons: &[Polygon2], clearance: f64) -> Option<Point2> {
     let segments: Vec<(Point2, Point2)> = polygons.iter().flat_map(Polygon2::segments).collect();
-    let (mut lo, mut hi) = (Point2::origin(), Point2::origin());
-    for (i, p) in segments.iter().map(|s| s.0).enumerate() {
-        if i == 0 {
-            (lo, hi) = (p, p);
-        }
-        lo = Point2::new(lo.x.min(p.x), lo.y.min(p.y));
-        hi = Point2::new(hi.x.max(p.x), hi.y.max(p.y));
-    }
     if segments.is_empty() {
         return None;
     }
-    let height = 0.5 * (lo.y + hi.y);
-    // Where the horizontal meets the boundary, by the half-open rule that
-    // counts a vertex once.
+    let mut levels: Vec<f64> = segments.iter().map(|s| s.0.y).collect();
+    levels.sort_by(f64::total_cmp);
+    levels.dedup();
+    let (lo, hi) = (levels[0], levels[levels.len() - 1]);
+    let middle = 0.5 * (lo + hi);
+    // The candidate heights, nearest the middle first; ties by height.
+    let mut heights: Vec<f64> = levels.windows(2).map(|w| 0.5 * (w[0] + w[1])).collect();
+    heights.sort_by(|a, b| {
+        (a - middle)
+            .abs()
+            .total_cmp(&(b - middle).abs())
+            .then(a.total_cmp(b))
+    });
+    heights
+        .into_iter()
+        .find_map(|height| span_middle(polygons, &segments, height, clearance))
+}
+
+/// The middle of the widest inside span of the horizontal at `height`
+/// that clears every segment by more than `clearance`, when there is
+/// one. `height` is no vertex's, so every segment either crosses it
+/// properly or not at all.
+fn span_middle(
+    polygons: &[Polygon2],
+    segments: &[(Point2, Point2)],
+    height: f64,
+    clearance: f64,
+) -> Option<Point2> {
     let mut crossings: Vec<f64> = segments
         .iter()
         .filter_map(|&(a, b)| {

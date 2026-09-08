@@ -12,13 +12,15 @@
 
 mod faces;
 mod pave;
+mod pieces;
+mod result;
 
 use core::fmt;
 use std::collections::BTreeMap;
 
 use arris_check::arris_topo::arris_geom::{Curve, Curve2, SurfaceIntersection};
 use arris_check::arris_topo::arris_math::{Interval, Point2, Point3};
-use arris_check::arris_topo::{Body, EdgeId, FaceId, Model, Shape, VertexId};
+use arris_check::arris_topo::{Body, EdgeId, FaceId, Model, Provenance, Shape, VertexId};
 
 use crate::error::OpError;
 
@@ -245,6 +247,74 @@ pub fn interferences(m: &Model, a: Body, b: Body) -> Result<Interferences, OpErr
     crate::verify_input(m, a)?;
     crate::verify_input(m, b)?;
     pave::build(m, a, b)
+}
+
+/// `target` minus `tool`: the boolean difference of two solids whose
+/// faces lie on planes and cylinders (`docs/01-architecture.md`
+/// §Operations, ADR-0004).
+///
+/// Guarantees. The result is a `Solid` that passes the checker; the
+/// decomposition is [`interferences`]'s, and the selection is the
+/// table's: a piece of the target is kept when it is outside the tool, a
+/// piece of the tool when it is inside the target, reversed. Every face
+/// is split in its own (u, v) through its pcurves and the section
+/// edges', each piece classified by `arris_check::classify_point` at a
+/// point strictly inside it. Every entity of the target the operation
+/// did not touch keeps its id — a face whose loops changed at all, even
+/// only by a split edge, is a new face `Modified` from the old, and so
+/// is a re-tolerated vertex and everything at it; a split edge is
+/// `Modified` into its surviving pieces; whatever has no piece left is
+/// `Deleted`. Every entity of the tool is `Deleted`, and a piece of it
+/// that survives is `Generated` from the tool entity it is a piece of —
+/// the hole's wall from the tool's wall (`docs/02-data-model.md`
+/// §Provenance). A section vertex is `Generated` from the edge and the
+/// face of every hit it merges, a section edge from both faces of its
+/// pair; the result's shell and body are `Modified` from the target's.
+/// Tolerances follow the growth rule: a section vertex's is the largest
+/// of what it merges plus their spread, a section edge's the larger of
+/// its faces' raised to the pcurves' residual, a piece keeps its
+/// parent's. The result is deterministic: the same ids on every run and
+/// every platform.
+///
+/// Errors, the model untouched on each: [`OpError::InvalidInput`] and
+/// [`OpError::NotFound`] as every operation; [`OpError::Unsupported`]
+/// naming the pair for a surface pair or an edge–face pair with no
+/// closed form, and — until plan step 10 — for a coincident face pair
+/// or a piece lying on the other operand's boundary, the flush case;
+/// [`OpError::Degenerate`] with [`crate::Reason::Empty`] when nothing
+/// survives (the target inside the tool), [`crate::Reason::MultiShell`]
+/// when the survivors make more than one shell (a tool that splits its
+/// target, an enclosed cavity), [`crate::Reason::TangentContact`] when
+/// a section edge is tangent to a loop edge at a vertex;
+/// [`OpError::Tolerance`] when a section vertex or edge would exceed the
+/// model's maximum; [`OpError::Internal`] for a kernel bug the operation
+/// caught — an arrangement that is not a subdivision, a point that
+/// could not be classified, the builder refusing the assembly.
+///
+/// ```
+/// use arris_ops::{cut, primitive_box, primitive_cylinder};
+/// use arris_ops::measure::mass_properties;
+/// use arris_ops::arris_check::arris_topo::Model;
+/// use arris_ops::arris_check::arris_topo::arris_math::{Axis, Point3};
+/// use core::f64::consts::PI;
+///
+/// let mut m = Model::default();
+/// let (plate, _) = primitive_box(&mut m, Point3::origin(), Point3::new(40.0, 30.0, 10.0))?;
+/// let axis = Axis::z_at(Point3::new(20.0, 15.0, -1.0));
+/// let (hole, _) = primitive_cylinder(&mut m, axis, 4.0, 12.0)?;
+/// let (plate_with_hole, provenance) = cut(&mut m, plate, hole)?;
+/// assert_eq!(m.faces(plate_with_hole)?.len(), 7);
+/// let volume = mass_properties(&m, plate_with_hole)?.volume;
+/// assert!((volume - (12000.0 - PI * 16.0 * 10.0)).abs() < 1e-9 * 12000.0);
+/// // The four side faces are kept: not a word about them in the record.
+/// assert_eq!(provenance.outputs().len(), 10);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+pub fn cut(m: &mut Model, target: Body, tool: Body) -> Result<(Body, Provenance), OpError> {
+    crate::verify_input(m, target)?;
+    crate::verify_input(m, tool)?;
+    let i = pave::build(m, target, tool)?;
+    result::boolean(m, &i, result::Op::Cut)
 }
 
 /// A number as the dump writes it: the shortest decimal that round-trips.

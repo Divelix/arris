@@ -24,7 +24,8 @@ mod transform;
 
 pub use arris_check;
 
-pub use error::{Fault, OpError, Reason};
+pub use boolean::cut;
+pub use error::{Fault, OpError, Reason, SplitFault};
 pub use primitive::{primitive_box, primitive_cylinder};
 pub use transform::transform;
 

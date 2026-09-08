@@ -1,7 +1,9 @@
 # ADR-0004 — Booleans by a General Fuse over coedges: shared paves, faces split in (u, v), the result assembled with kept ids
 
 - Status: accepted (2026-09-07)
-- Plan: `m4-booleans` — the assembly half at step 1, completed at step 7
+- Plan: `m4-booleans` — the assembly half at step 1 (2026-09-07); the
+  split in (u, v), the classification and the assembled result with kept
+  ids at step 7 (`ops::cut`, 2026-09-08)
 
 ## Context
 

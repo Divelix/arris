@@ -1,0 +1,13 @@
+{
+  "description": "box [10,10,2]–[30,20,8] − box [0,0,0]–[40,30,10] that contains it: nothing survives — Arris returns OpError::Degenerate with Reason::Empty, the oracle records no solid",
+  "steps": [
+    {"name": "target", "op": "box", "min": [10, 10, 2], "max": [30, 20, 8]},
+    {"name": "tool", "op": "box", "min": [0, 0, 0], "max": [40, 30, 10]},
+    {"name": "result", "op": "cut", "target": "target", "tool": "tool"}
+  ],
+  "result": "result",
+  "probes": [],
+  "analytic": {
+    "degenerate": true
+  }
+}

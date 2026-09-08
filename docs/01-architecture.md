@@ -200,6 +200,38 @@ skill reads when a boolean is wrong. The property tests build their
 operands through `arris_debug::prop::body` — a box and a cylinder whose
 axis passes through the box, both under one random motion.
 
+`ops::cut(m, target, tool)` is the first selection over that
+decomposition (ADR-0004; `fuse` and `common` are the other two). Every
+face of both operands is split in its own (u, v): the pieces of its
+loops between consecutive paves and the section edges on it make a
+planar arrangement — half-edges ordered around each node by the pcurves'
+tangent angle, a tie within the angular tolerance by the signed
+curvature, a tie of both `Reason::TangentContact` — whose regions are
+walked by taking the next half-edge clockwise from the direction one
+arrived from; a cycle turning once counter-clockwise bounds a piece, one
+turning clockwise is a hole, assigned by winding to the innermost piece
+around it. Each piece is classified at `region2::interior_point`
+carried to 3D by `classify_point` against the other operand, and the
+table decides:
+
+| Piece of | `fuse` | `common` | `cut` |
+|---|---|---|---|
+| A (the target) | kept when outside B | kept when inside B | kept when outside the tool |
+| B (the tool) | kept when outside A | kept when inside A | kept when inside the target, reversed |
+| a coincident face | once, from A, when the normals agree | once, from A, when they agree | once, from A, when they oppose |
+
+The coincident row and a piece classified `On` the other operand are
+plan step 10's and are `OpError::Unsupported` naming the pair until
+then. The survivors are grouped by shared edges — none is `Degenerate`
+with `Reason::Empty`, more than one group `Reason::MultiShell` — and
+assembled through `Builder::assemble` with every untouched entity of a
+kept-by-id operand `Keep`: a face whose loops changed at all, even only
+by a split edge or a re-tolerated vertex, is a new face `Modified` from
+the old; the tool of a `cut` keeps nothing, every entity of it `Deleted`
+and each surviving piece `Generated` from its parent (02-data-model
+§Provenance). Tolerances follow §Tolerances' growth rule and a piece
+keeps its parent's.
+
 Sweeps take a planar `Profile` — an outer loop and holes of lines and arcs
 in a plane's own (u, v) — and build the planar face themselves (`ops::
 planar_face`), so a consumer's sketch never has to become topology before
@@ -215,10 +247,10 @@ involved, so the message a consumer shows — or the agent reads — says
 |---|---|---|
 | `InvalidInput` | an input body fails the checker (checked in debug builds before the operation starts, and in release when the `paranoid` feature is on) | `Body`, the `Report` |
 | `Unsupported` | the exhaustive dispatch reached a surface or curve pair the kernel has no formula for yet | the two `GeomKind`s with their entities |
-| `Degenerate` | the requested result has no valid representation: a parameter that makes no geometry (`Reason::NonFinite`, `Reason::NotPositive` naming it — a zero radius, a box whose `min` is not below its `max`), a zero-thickness intersection, a profile crossing its revolve axis, a sweep of zero length | the entities (none for a primitive) and a `Reason` enum |
+| `Degenerate` | the requested result has no valid representation: a parameter that makes no geometry (`Reason::NonFinite`, `Reason::NotPositive` naming it — a zero radius, a box whose `min` is not below its `max`), a zero-thickness intersection, a profile crossing its revolve axis, a sweep of zero length; a boolean that selects no material (`Reason::Empty`: a target inside its tool, a `common` of disjoint operands), whose survivors make more than one shell (`Reason::MultiShell { shells }`: a split target, a disjoint fuse, a cavity), or whose faces touch along a curve interior to both result faces (`Reason::TangentContact`) | the entities (none for a primitive) and a `Reason` enum |
 | `Tolerance` | the result would need an entity tolerance above `Precision::max_tolerance` | the entity, the tolerance it wanted |
 | `NotFound` | a handle does not resolve in this model (wrong model, or compacted away) | the `Shape` |
-| `Internal` | a kernel bug the operation caught: the checker rejected its own output, the builder refused a step of its fixed sequence, a frame could not be placed from inputs it had validated, a point it had to classify could not be, a geometry query failed on validated input for a reason other than a missing closed form, a section edge crossed a seam the seam's own hit should have paved | a `Fault` — the `Report`, the `BuildError`, the `FrameError`, the `ClassifyError`, the `GeomError`, or the two faces of the seam crossing |
+| `Internal` | a kernel bug the operation caught: the checker rejected its own output, the builder refused a step of its fixed sequence, a frame could not be placed from inputs it had validated, a point it had to classify could not be, a geometry query failed on validated input for a reason other than a missing closed form, a section edge crossed a seam the seam's own hit should have paved, the (u, v) arrangement of a face was not the subdivision the pave model promised (`SplitFault`: a dangling section edge, a cycle not turning once, a hole inside no piece, a piece with no interior point, a pave at an edge's end) | a `Fault` — the `Report`, the `BuildError`, the `FrameError`, the `ClassifyError`, the `GeomError`, the two faces of the seam crossing, or the `SplitFault` naming the face |
 
 `Internal` is returned only in release builds with `paranoid` on; in debug
 builds the same condition panics (below). A degenerate *result* that the
@@ -442,7 +474,11 @@ mesh-based mass properties (`ops::measure` integrates the B-Rep).
   (`classify_point`, exactly: both sides have their own tolerance for
   "on" and a probe is placed so the two agree, so a disagreement is a
   finding and never something a band is widened to cover), provenance
-  accounting, the dump; `ARRIS_BLESS=1` writing `dump.txt`)
+  accounting, the dump; `ARRIS_BLESS=1` writing `dump.txt`; a result the
+  oracle recorded no solid for must fail with `OpError::Degenerate`, and
+  one the recipe marks `analytic.expect_error` with that typed refusal,
+  the run ending there with the oracle's numbers kept as the record of
+  what Open CASCADE builds)
   over the
   oracle seam (`oracle::compare`: STEP under `target/inspect/`, then
   `compare.py` through `uv`, a missing environment a loud error), and

@@ -368,12 +368,30 @@ fn one() -> usize {
     1
 }
 
+/// A result the oracle builds and Arris refuses by design: the typed
+/// error the corpus runner asserts instead of comparing the result
+/// (`docs/plans/m4-booleans.md` `⚠ OPEN` 1 and 2). The oracle's numbers
+/// are recorded in `expected.json` as the record of what Open CASCADE
+/// makes, and not compared.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ExpectError {
+    /// `OpError::Degenerate` with `Reason::MultiShell`: the survivors
+    /// make more than one shell.
+    MultiShell,
+    /// `OpError::Degenerate` with `Reason::TangentContact`: two faces
+    /// touch along a curve interior to both.
+    TangentContact,
+}
+
 /// The closed forms a fixture's author states, cross-checking the oracle.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Analytic {
     /// The result has no volume (Arris: `OpError::Degenerate`).
     pub degenerate: bool,
+    /// Arris refuses the result the oracle builds, with this error.
+    pub expect_error: Option<ExpectError>,
     /// Volume.
     pub volume: Option<Num>,
     /// Surface area.
@@ -665,6 +683,9 @@ pub fn lint(dir: &Path) -> Vec<String> {
             continue;
         };
         let a = &r.analytic;
+        if a.degenerate && a.expect_error.is_some() {
+            problem("analytic.degenerate and analytic.expect_error are both set".into());
+        }
         if a.degenerate != m.degenerate {
             problem(format!(
                 "[{variant}] analytic.degenerate {} but the oracle says {}",

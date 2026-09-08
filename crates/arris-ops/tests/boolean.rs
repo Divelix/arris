@@ -324,3 +324,265 @@ fn random_overlapping_pairs_pave_consistently() {
         Ok(())
     });
 }
+
+// ---- `ops::cut` (plan step 7): split, classify, assemble ----
+
+use arris_ops::arris_check::arris_topo::arris_math::Point2;
+use arris_ops::arris_check::arris_topo::{
+    EntityId, Face as FaceHandle, Orientation, Origin, Provenance, Shape,
+};
+use arris_ops::arris_check::{Level, check};
+use arris_ops::measure::mass_properties;
+use arris_ops::{Reason, cut};
+
+/// The fixture's operands cut, the model with them.
+fn cut_of(name: &str) -> (Model, Body, Body, Body, Provenance) {
+    let (mut m, a, b) = inputs(name);
+    let (body, p) = cut(&mut m, a, b).unwrap();
+    (m, a, b, body, p)
+}
+
+fn shape(id: impl Into<EntityId>) -> Shape {
+    Shape::new(id, Orientation::Forward)
+}
+
+/// The through-hole's provenance table, exactly: the plate's top and
+/// bottom faces `Modified` into one piece each with a hole loop, the four
+/// sides kept and unrecorded, the tool's wall `Deleted` and its piece
+/// `Generated` from it, the tool's caps, rims and vertices `Deleted`, the
+/// seam `Deleted` and its middle piece `Generated`, two section vertices
+/// `Generated` from the seam and each cap plane, two section edges the
+/// `generated_pair` of the wall and each cap.
+#[test]
+fn through_hole_provenance_is_the_designed_table() {
+    let (m, plate, hole, body, p) = cut_of("boolean/through-hole");
+    let report = check(&m, body, Level::Full);
+    assert!(report.is_ok() && report.unchecked().is_empty(), "{report}");
+    assert_eq!(m.faces(body).unwrap().len(), 7);
+
+    // The plate: which faces are the caps (z = 0 and z = 10).
+    let plate_faces = m.faces(plate).unwrap();
+    let is_cap = |f: &FaceHandle| {
+        let surface = m.surface(m.face(f.id).unwrap().surface()).unwrap();
+        matches!(surface, Surface::Plane { frame } if frame.z().z.abs() > 0.5)
+    };
+    let (caps, sides): (Vec<&FaceHandle>, Vec<&FaceHandle>) =
+        plate_faces.iter().partition(|f| is_cap(f));
+    assert_eq!((caps.len(), sides.len()), (2, 4));
+    for f in &caps {
+        let pieces = p.modified_from(shape(f.id));
+        assert_eq!(pieces.len(), 1, "{p}");
+        let piece: FaceHandle = pieces[0].try_into().unwrap();
+        assert_eq!(m.face(piece.id).unwrap().loops().len(), 2, "a hole loop");
+        assert!(!p.is_deleted(shape(f.id)));
+    }
+    let out = m.closure(body).unwrap();
+    for f in &sides {
+        assert!(p.is_kept(shape(f.id), &m, body), "{p}");
+        assert!(out.faces.contains(&f.id));
+    }
+    for e in m.edges(plate).unwrap() {
+        assert!(p.is_kept(shape(e.id), &m, body), "{e} {p}");
+    }
+    for v in m.vertices(plate).unwrap() {
+        assert!(p.is_kept(shape(v.id), &m, body), "{v} {p}");
+    }
+
+    // The tool: everything deleted; the wall and the seam with a piece
+    // generated from each, the rest with none.
+    let tool_faces = m.faces(hole).unwrap();
+    let wall = tool_faces
+        .iter()
+        .find(|f| {
+            matches!(
+                m.surface(m.face(f.id).unwrap().surface()).unwrap(),
+                Surface::Cylinder { .. }
+            )
+        })
+        .unwrap();
+    for f in &tool_faces {
+        assert!(p.is_deleted(shape(f.id)), "{p}");
+        let generated = p.generated_from(shape(f.id));
+        if f.id == wall.id {
+            let faces: Vec<_> = generated
+                .iter()
+                .filter(|s| matches!(s.id, EntityId::Face(_)))
+                .collect();
+            assert_eq!(faces.len(), 1, "the wall's piece\n{p}");
+        } else {
+            assert!(generated.is_empty(), "a cap generates nothing\n{p}");
+        }
+    }
+    let seam = line_edges(&m, hole);
+    assert_eq!(seam.len(), 1);
+    for e in m.edges(hole).unwrap() {
+        assert!(p.is_deleted(shape(e.id)), "{p}");
+        let generated = p.generated_from(shape(e.id));
+        if e.id == seam[0] {
+            let edges: Vec<_> = generated
+                .iter()
+                .filter(|s| matches!(s.id, EntityId::Edge(_)))
+                .collect();
+            assert_eq!(edges.len(), 1, "the seam's middle piece\n{p}");
+        } else {
+            assert!(generated.is_empty(), "a rim generates nothing\n{p}");
+        }
+    }
+    for v in m.vertices(hole).unwrap() {
+        assert!(p.is_deleted(shape(v.id)) && p.generated_from(shape(v.id)).is_empty());
+    }
+
+    // Section vertices and edges.
+    let section_vertices: Vec<Shape> = p
+        .generated_from(shape(seam[0]))
+        .iter()
+        .copied()
+        .filter(|s| matches!(s.id, EntityId::Vertex(_)))
+        .collect();
+    assert_eq!(section_vertices.len(), 2, "{p}");
+    for cap in &caps {
+        let from_cap = p.generated_from(shape(cap.id));
+        let vertices: Vec<_> = from_cap
+            .iter()
+            .filter(|s| section_vertices.contains(s))
+            .collect();
+        assert_eq!(vertices.len(), 1, "one section vertex per cap\n{p}");
+        let pair = p.generated_pair(shape(wall.id), shape(cap.id));
+        let edges: Vec<_> = pair
+            .iter()
+            .filter(|s| matches!(s.id, EntityId::Edge(_)))
+            .collect();
+        assert_eq!(edges.len(), 1, "one section edge per cap\n{p}");
+    }
+
+    // The shell and the body: modified from the plate's, the tool's
+    // deleted.
+    assert_eq!(p.modified_from(Origin::Entity(shape(plate.id))).len(), 1);
+    assert!(p.is_deleted(Shape::from(hole)));
+
+    // Nothing else: the record has exactly these outputs.
+    assert_eq!(p.outputs().len(), 10, "{p}");
+}
+
+/// `frame-cut` is `sample::frame` built the other way: the same counts,
+/// the same mass properties to 1e-12.
+#[test]
+fn frame_cut_is_the_hand_built_frame() {
+    let (m, _, _, body, _) = cut_of("boolean/frame-cut");
+    let mut twin = Model::default();
+    let frame = sample::frame(
+        &mut twin,
+        Point3::origin(),
+        Point3::new(40.0, 30.0, 10.0),
+        Point2::new(10.0, 10.0),
+        Point2::new(30.0, 20.0),
+    )
+    .unwrap();
+    let (a, b) = (
+        check(&m, body, Level::Full).euler().unwrap(),
+        check(&twin, frame, Level::Full).euler().unwrap(),
+    );
+    assert_eq!(a.to_string(), b.to_string());
+    let (x, y) = (
+        mass_properties(&m, body).unwrap(),
+        mass_properties(&twin, frame).unwrap(),
+    );
+    assert!((x.volume - y.volume).abs() <= 1e-12 * y.volume);
+    assert!((x.area - y.area).abs() <= 1e-12 * y.area);
+    assert!((x.centroid - y.centroid).norm() <= 1e-12 * 40.0);
+    for i in 0..3 {
+        for j in 0..3 {
+            assert!((x.inertia[(i, j)] - y.inertia[(i, j)]).abs() <= 1e-12 * y.inertia[(2, 2)]);
+        }
+    }
+}
+
+/// A tool clear of the target: the result is a new shell over the
+/// target's own faces, and the tool is entirely `Deleted`.
+#[test]
+fn a_disjoint_cut_keeps_every_face_of_the_target() {
+    let (m, plate, tool, body, p) = cut_of("boolean/disjoint-cut");
+    assert_eq!(m.faces(body).unwrap(), m.faces(plate).unwrap());
+    for f in m.faces(tool).unwrap() {
+        assert!(p.is_deleted(shape(f.id)) && p.generated_from(shape(f.id)).is_empty());
+    }
+    assert_eq!(p.outputs().len(), 2, "the shell and the body\n{p}");
+}
+
+/// The target inside the tool selects nothing; a tool that splits its
+/// target makes two shells. Each is the typed refusal, and the model is
+/// as it was.
+#[test]
+fn a_swallowed_target_and_a_split_target_are_typed_refusals() {
+    for (name, want) in [
+        ("boolean/swallow-cut", "empty"),
+        ("boolean/split-cut", "two"),
+    ] {
+        let (mut m, a, b) = inputs(name);
+        let before = arris_debug::dump_text(&m, a).unwrap();
+        let faces = m.faces(a).unwrap().len();
+        let err = cut(&mut m, a, b).unwrap_err();
+        match (want, &err) {
+            (
+                "empty",
+                OpError::Degenerate {
+                    reason: Reason::Empty,
+                    entities,
+                },
+            ) => {
+                assert_eq!(entities.as_slice(), [Shape::from(a), Shape::from(b)]);
+            }
+            (
+                "two",
+                OpError::Degenerate {
+                    reason: Reason::MultiShell { shells: 2 },
+                    ..
+                },
+            ) => {}
+            other => panic!("{name}: {other:?}"),
+        }
+        assert_eq!(arris_debug::dump_text(&m, a).unwrap(), before);
+        assert_eq!(m.faces(a).unwrap().len(), faces);
+    }
+}
+
+/// Two runs of every cut fixture give the same dump.
+#[test]
+fn two_cuts_are_identical() {
+    for name in [
+        "boolean/through-hole",
+        "boolean/blind-hole",
+        "boolean/frame-cut",
+        "boolean/corner-cut",
+        "boolean/disjoint-cut",
+    ] {
+        let (m1, _, _, b1, p1) = cut_of(name);
+        let (m2, _, _, b2, p2) = cut_of(name);
+        assert_eq!(
+            arris_debug::dump_text(&m1, b1).unwrap(),
+            arris_debug::dump_text(&m2, b2).unwrap(),
+            "{name}"
+        );
+        assert_eq!(p1, p2, "{name}");
+    }
+}
+
+/// Coincident faces are plan step 10's: a flush pair is refused, naming
+/// both faces, before anything is split.
+#[test]
+fn a_flush_pair_is_refused_naming_the_faces() {
+    let (mut m, a, b) = inputs("boolean/flush-union");
+    let err = cut(&mut m, a, b).unwrap_err();
+    match err {
+        OpError::Unsupported {
+            a: (ka, fa),
+            b: (kb, fb),
+        } => {
+            assert_eq!(ka, GeomKind::Surface(SurfaceKind::Plane));
+            assert_eq!(kb, GeomKind::Surface(SurfaceKind::Plane));
+            assert!(m.faces(a).unwrap().iter().any(|f| f.shape().id == fa.id));
+            assert!(m.faces(b).unwrap().iter().any(|f| f.shape().id == fb.id));
+        }
+        other => panic!("{other}"),
+    }
+}

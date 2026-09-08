@@ -299,8 +299,14 @@ impl<'m> Classifier<'m> {
                 };
                 for hit in hits {
                     if hit.t.abs() <= self.precision.default_tolerance {
-                        // The point is on this face: no parity to take.
-                        continue 'direction;
+                        // The ray starts on this surface. On the face
+                        // itself the point has no parity to take; off
+                        // it, the surface is merely passed through at
+                        // the origin, which is no crossing.
+                        match self.face_side(id, surface, hit.uv) {
+                            Side::Outside => continue,
+                            Side::Inside | Side::Boundary => continue 'direction,
+                        }
                     }
                     if hit.t < 0.0 {
                         continue;

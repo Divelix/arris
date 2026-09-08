@@ -153,8 +153,10 @@ fn the_sample_bodies_are_clean_at_full_and_decide_every_row() {
 }
 
 /// The B-spline probe box: the intersector has no closed form for a plane
-/// against a NURBS surface, so the five pairs its NURBS face is in are
-/// listed as undecided — not passed, and not a violation.
+/// against a NURBS surface, so the four pairs its NURBS face shares an
+/// edge with are listed as undecided — not passed, and not a violation.
+/// The fifth pair, with the opposite face, is decided by the boxes: they
+/// are apart, so the faces share no point and no intersector is asked.
 #[test]
 fn a_nurbs_face_pair_is_unchecked_and_not_a_violation() {
     let mut m = Model::default();
@@ -162,7 +164,7 @@ fn a_nurbs_face_pair_is_unchecked_and_not_a_violation() {
         sample::cuboid_nurbs(&mut m, Point3::origin(), Point3::new(40.0, 30.0, 10.0)).unwrap();
     let report = check(&m, body, Level::Full);
     assert!(report.is_ok(), "{report}");
-    assert_eq!(report.unchecked().len(), 5, "{report}");
+    assert_eq!(report.unchecked().len(), 4, "{report}");
     for u in report.unchecked() {
         assert_eq!(u.code(), "S5");
         let Unchecked::FacePair { kinds, .. } = *u else {
