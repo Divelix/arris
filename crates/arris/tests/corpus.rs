@@ -144,6 +144,14 @@ fn boolean_disjoint_common() {
     run("boolean/disjoint-common");
 }
 
+/// A sliver: the top and bottom faces are a D of one straight edge and
+/// one arc under an eighth of a turn, which the checker's minimum
+/// discretisation once flattened to a chord (plan step 9).
+#[test]
+fn boolean_sliver_common() {
+    run("boolean/sliver-common");
+}
+
 #[test]
 #[ignore = "M5: needs ops::planar_face and ops::extrude"]
 fn sweep_extrude_plate_with_hole() {

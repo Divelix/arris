@@ -198,7 +198,14 @@ plan steps 10 and 11 decide them. Every list is in a deterministic
 order and `Display` prints the whole model, which is what the `inspect`
 skill reads when a boolean is wrong. The property tests build their
 operands through `arris_debug::prop::body` — a box and a cylinder whose
-axis passes through the box, both under one random motion.
+axis passes through the box, both under one random motion — and, for
+the identities whose outcome has to be known in advance, its
+`piercing_pair`: the cylinder clears every edge of the box, so `fuse`,
+`common` and `box − cylinder` are one shell each and `cylinder − box` is
+exactly two, the designed `MultiShell` refusal. The other pairs — the
+wall crossing an edge, a corner sliced off — stay in `overlapping_pair`,
+where `cut` is held to the identity when it succeeds and to that refusal
+otherwise.
 
 `ops::fuse(m, a, b)`, `ops::common(m, a, b)` and `ops::cut(m, target,
 tool)` are three selections over that decomposition (ADR-0004), one

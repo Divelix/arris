@@ -1,0 +1,26 @@
+{
+  "description": "box [0,0,0]–[40,30,10] ∩ a cylinder r 4 whose axis stands just outside the face x = 40, so that the arc inside the box spans 2·18° — under an eighth of a turn — and the wall's seam (at +x of the axis) stays outside: a sliver whose top and bottom faces are a D of one straight edge and one short arc. Shrunk from a property-test failure: at the checker's minimum discretisation the short arc was one chord and the D had zero area (plans/m4-booleans step 9). mesh_volume_rel is this body's own inscribed-chord bound, wall area × chord over volume: 10 · r · 2h · 1e-3 / V ≈ 7.8e-3, where the default assumes a volume that scales with the radius cubed",
+  "params": {"r": 4, "half": 18},
+  "steps": [
+    {"name": "plate", "op": "box", "min": [0, 0, 0], "max": [40, 30, 10]},
+    {"name": "post", "op": "cylinder", "base": ["40 + r * cos(radians(half))", 15, -1], "axis": [0, 0, 1], "radius": "r", "height": 12},
+    {"name": "result", "op": "common", "a": "plate", "b": "post"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [39.9, 15, 5], "expect": "in"},
+    {"label": "outside_the_arc", "point": [39.9, 16.5, 5], "expect": "out"},
+    {"label": "outside_the_box", "point": [40.1, 15, 5], "expect": "out"},
+    {"label": "on_side", "point": [40, 15, 5], "expect": "on"},
+    {"label": "on_wall", "point": ["40 + r * (cos(radians(half)) - cos(radians(10)))", "15 + r * sin(radians(10))", 5], "expect": "on"},
+    {"label": "on_top", "point": [39.9, 15, 10], "expect": "on"}
+  ],
+  "tolerances": {"mesh_volume_rel": 8e-3},
+  "analytic": {
+    "volume": "10 * r^2 / 2 * (2 * radians(half) - sin(2 * radians(half)))",
+    "area": "r^2 * (2 * radians(half) - sin(2 * radians(half))) + 10 * 2 * r * sin(radians(half)) + 10 * r * 2 * radians(half)",
+    "centroid": ["40 + r * cos(radians(half)) - 4 * r * sin(radians(half))^3 / (3 * (2 * radians(half) - sin(2 * radians(half))))", 15, 5],
+    "counts": {"vertices": 4, "edges": 6, "faces": 4, "loops": 4, "shells": 1},
+    "genus": 0
+  }
+}

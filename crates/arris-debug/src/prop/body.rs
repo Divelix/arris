@@ -78,6 +78,49 @@ impl OverlappingPair {
         let b = self.cylinder.build(m)?;
         Ok((a, b))
     }
+
+    /// Whether the cylinder's wall clears every edge of the box: the
+    /// distance from each of the twelve edge segments to the axis line
+    /// exceeds the radius. Then the cylinder enters through the interior
+    /// of one face and leaves through the interior of another (every
+    /// ruling meets the box in one segment, so the wall's entry and exit
+    /// curves are closed curves that cross no edge), so `box − cylinder`
+    /// is one shell and `cylinder − box` exactly two. Decided before the
+    /// motion, which both operands share.
+    pub fn pierces(&self) -> bool {
+        let (lo, hi) = (self.cuboid.min, self.cuboid.max);
+        let corner = |i: usize| {
+            Point3::new(
+                if i & 1 == 0 { lo.x } else { hi.x },
+                if i & 2 == 0 { lo.y } else { hi.y },
+                if i & 4 == 0 { lo.z } else { hi.z },
+            )
+        };
+        let axis = &self.cylinder.axis;
+        let d = axis.direction.into_inner();
+        // The component of `v` perpendicular to the axis.
+        let across = |v: Vec3| v - d * v.dot(&d);
+        (0..8)
+            .flat_map(|i| {
+                [1usize, 2, 4]
+                    .into_iter()
+                    .filter(move |b| i & b == 0)
+                    .map(move |b| (i, i | b))
+            })
+            .all(|(i, j)| {
+                // The nearest point of the segment to the axis line, by
+                // minimising the perpendicular offset over the segment.
+                let a = across(corner(i) - axis.origin);
+                let b = across(corner(j) - corner(i));
+                let bb = b.dot(&b);
+                let s = if bb > 0.0 {
+                    (-a.dot(&b) / bb).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                (a + b * s).norm() > self.cylinder.radius
+            })
+    }
 }
 
 /// Box extents, each in `[MIN_EXTENT, MAX_EXTENT]`.
@@ -150,11 +193,55 @@ pub fn overlapping_pair() -> impl Strategy<Value = OverlappingPair> {
         })
 }
 
+/// [`overlapping_pair`]s whose cylinder [`OverlappingPair::pierces`] the
+/// box — clears every edge — so the outcome of every boolean is known by
+/// construction: `fuse` and `common` are one shell, `box − cylinder` is
+/// one shell and `cylinder − box` is two. The pairs that fail the test
+/// (the wall crossing an edge, slicing a corner off, or fat enough that
+/// the cylinder's two ends join around the box) are a large share of
+/// [`overlapping_pair`] and stay in it.
+pub fn piercing_pair() -> impl Strategy<Value = OverlappingPair> {
+    overlapping_pair().prop_filter(
+        "the cylinder clears every edge of the box",
+        OverlappingPair::pierces,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::prop::check;
     use arris_io::arris_check::{Level, check as check_body};
+    use arris_math::nalgebra::UnitQuaternion;
+
+    /// `pierces` is the wall clearing every edge: the through-hole does,
+    /// the same hole widened to reach the long edges does not, and a post
+    /// standing across a side face (`boolean/sliver-common`) does not.
+    #[test]
+    fn pierces_is_the_wall_clearing_every_edge() {
+        let still = Isometry::new(UnitQuaternion::identity(), Vec3::zeros());
+        let plate = Boxed {
+            min: Point3::origin(),
+            max: Point3::new(40.0, 30.0, 10.0),
+            pose: still,
+        };
+        let post = |x: f64, y: f64, radius: f64| OverlappingPair {
+            cuboid: plate,
+            cylinder: Cylindrical {
+                axis: Axis::z_at(Point3::new(x, y, -1.0)),
+                radius,
+                height: 12.0,
+                pose: still,
+            },
+        };
+        assert!(post(20.0, 15.0, 4.0).pierces());
+        // The edges y = 0 and y = 30 are 15 away from the axis.
+        assert!(post(20.0, 15.0, 14.5).pierces());
+        assert!(!post(20.0, 15.0, 15.5).pierces());
+        assert!(!post(43.8, 15.0, 4.0).pierces());
+        // Along an edge: the axis on the edge x = 0, y = 0 itself.
+        assert!(!post(0.0, 0.0, 1.0).pierces());
+    }
 
     #[test]
     fn the_pairs_build_clean_bodies_with_the_axis_through_the_box() {

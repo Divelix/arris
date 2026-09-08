@@ -300,7 +300,9 @@ tessellation and `measure` all ask once —
 and `discretise(pieces, chord_tolerance)` is its `Polygon2` — each piece
 sampled at the segment count its second derivative bounds the chord
 deviation by (`|d2| h² / 8`; a line is one segment, a conic never fewer
-than `MIN_SEGMENTS_PER_TURN` per turn, a NURBS never fewer than
+than `MIN_SEGMENTS_PER_TURN` per turn and never fewer than
+`MIN_SEGMENTS_PER_ARC` — two — however short the arc, so a loop of one
+arc and one line keeps the area of its bulge, a NURBS never fewer than
 `MIN_SEGMENTS_PER_SPAN` per knot span, and never more than
 `MAX_SEGMENTS_PER_PIECE`, the deviation achieved reported by
 `chord_deviation()`; `f64::INFINITY` asks for the minimum counts, enough

@@ -338,7 +338,7 @@ or bound has to be established here.
   a `cut` never does; `common` of the corner cubes is the unit cube's
   numbers; `posed-through-hole`'s dump equals `through-hole`'s up to
   the transformed numbers; disjoint operands refuse by name.
-- [ ] Step 9 **[3]** — Random poses. `prop::body` strategies and the
+- [x] Step 9 **[3]** — Random poses. `prop::body` strategies and the
   property tests at 200 poses of a box and a cylinder, both operand
   orders: volume additivity `V(A ∪ B) + V(A ∩ B) = V(A) + V(B)` and
   `V(A − B) + V(A ∩ B) = V(A)` to 1e-9 relative; `fuse` and `common`
@@ -673,6 +673,51 @@ deltas above, not a new decision.
   same height would put its caps coincident with the target's, which is
   step 10's. The tool runs z −2…2, giving the same tube — the coaxial
   pair is `Empty`, so nothing but the caps' section circles is decided.
+- **Step 9 — the outcome of `cut` is not always a solid, so the
+  identities are tested where it is known.** With the cylinder's axis
+  through the box and its length past the diagonal, `cylinder − box` is
+  two shells whenever the wall clears the box's edges, and `box −
+  cylinder` is two when the wall slices a corner off; both are
+  `Degenerate { MultiShell }` by `⚠ OPEN` 2, and the shrinker's first
+  minimal case was exactly that refusal. `OverlappingPair::pierces` (the
+  distance from each of the twelve edge segments to the axis line exceeds
+  the radius) and `prop::body::piercing_pair` — public additions beyond
+  the deltas — name the class where every outcome is fixed: `fuse`,
+  `common` and `box − cylinder` one shell each and the identities, and
+  `cylinder − box` `MultiShell { shells: 2 }` with the model untouched.
+  The unrestricted pairs keep the `fuse`/`common` additivity and
+  commutativity tests, and hold `cut` to the identity when it succeeds
+  and to the refusal otherwise.
+- **Step 9 — "dumps equal up to ids" is a multiset of lines.** The two
+  operand orders assemble the same pieces in a different order, give
+  them different ids and may run a section edge the other way, so the
+  comparison strips every number and the sign in front of every id and
+  sorts the lines; counts (the Euler line) and the mass properties to
+  1e-9 carry the geometry.
+- **Step 9 — the dev profile is `opt-level = 1`.** At `opt-level = 0` one
+  boolean at a random pose took about a second, its `measure` half of
+  one, and its `Full` check up to forty (the S5 coincident arm below), so
+  256 cases were hours; at 1 the same run is a minute — twenty to forty
+  times faster, debug assertions and the checker-after-every-operation
+  unchanged. `Cargo.toml` says why; the hook and CI need nothing else.
+- **Step 9 — the S5 coincident arm is the checker's visible cost.** A
+  fuse whose two wall pieces' boxes overlap spends up to a second in
+  `regions_overlap` even optimised: 529 grid points, each a `point_side`
+  over a polygon of tens of thousands of points. Left as it is — step 10
+  reviews the arm — and noted on the backlog's S5 line.
+- **Step 9 — an arc under an eighth of a turn was one chord.**
+  `per_turn` gave one segment to a conic arc shorter than a turn's eighth,
+  so at the minimum discretisation L4 reads (`f64::INFINITY`) a face
+  piece bounded by one straight edge and one short arc — the D a section
+  leaves on a face it barely crosses — was a two-point polygon with zero
+  area and the operation panicked as a kernel bug. The shrunk case is
+  `boolean/sliver-common` (a box ∩ a cylinder standing across a side
+  face, the arc 36°, the seam outside the sliver so nothing splits the
+  arc); `region2::MIN_SEGMENTS_PER_ARC = 2` is the fix, a public
+  constant beyond the deltas, 02 §Pcurves updated. Its `mesh_volume_rel`
+  is the body's own inscribed-chord bound, wall area × chord over
+  volume, since the default assumes a volume that scales with the cube
+  of the radius. Seed and count in the commit body.
 - **Step 1 — `sample::sphere` is not assemblable.** Its two degenerate
   pole edges are used once each, which `finish` has always refused (it is
   why the sample goes through the raw insert). The round trip runs over

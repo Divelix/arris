@@ -1,0 +1,99 @@
+{
+  "occt": "8.0.1.0.0",
+  "recipe_sha256": "fdbd68646183d903ec321ba0b7b6c8800bb0b7bdf5b080707d766480abbe1e9b",
+  "results": {
+    "default": {
+      "area": 50.50263323352311,
+      "centroid": [
+        39.92152380718675,
+        15.000000000000002,
+        5.0
+      ],
+      "counts": {
+        "edges": 6,
+        "faces": 4,
+        "loops": 4,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 4
+      },
+      "degenerate": false,
+      "euler_characteristic": 2,
+      "genus": 0,
+      "inertia": [
+        [
+          28.018755337689868,
+          2.2737367544323206e-13,
+          0.0
+        ],
+        [
+          2.2737367544323206e-13,
+          27.03071714466023,
+          2.842170943040401e-14
+        ],
+        [
+          0.0,
+          2.842170943040401e-14,
+          1.00510124837092
+        ]
+      ],
+      "probes": [
+        {
+          "class": "in",
+          "label": "inside",
+          "point": [
+            39.9,
+            15.0,
+            5.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "outside_the_arc",
+          "point": [
+            39.9,
+            16.5,
+            5.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "outside_the_box",
+          "point": [
+            40.1,
+            15.0,
+            5.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_side",
+          "point": [
+            40.0,
+            15.0,
+            5.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_wall",
+          "point": [
+            39.86499505313178,
+            15.694592710667722,
+            5.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_top",
+          "point": [
+            39.9,
+            15.0,
+            10.0
+          ]
+        }
+      ],
+      "volume": 3.242662274038832
+    }
+  }
+}

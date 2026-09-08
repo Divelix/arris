@@ -15,8 +15,17 @@ use crate::Curve2;
 /// The fewest segments a full turn of a conic pcurve is cut into,
 /// whatever the chord tolerance: eight, so that a circle's polygon has the
 /// circle's turn and sign (two segments would have zero area) and a
-/// quarter turn is never one straight chord.
+/// quarter turn is never one straight chord. An arc of any length takes
+/// at least [`MIN_SEGMENTS_PER_ARC`].
 pub const MIN_SEGMENTS_PER_TURN: usize = 8;
+
+/// The fewest segments any conic arc is cut into, however short: two, so
+/// the arc's midpoint is a point of the polygon and a loop of one arc and
+/// one straight edge — a D, the piece a section leaves on a face it
+/// barely crosses — has the area of its bulge instead of collapsing onto
+/// the chord. `boolean/sliver-common` is the arc under an eighth of a
+/// turn that one segment flattened.
+pub const MIN_SEGMENTS_PER_ARC: usize = 2;
 
 /// The fewest segments per knot span of a NURBS pcurve: two, so a span
 /// that bends back on itself still turns the polygon.
@@ -171,13 +180,13 @@ impl<'a> Piece<'a> {
     }
 }
 
-/// The minimum segments for `length` radians of a conic.
+/// The minimum segments for `length` radians of a conic: the per-turn
+/// minimum's share of the arc, never fewer than the quarter turns it
+/// spans, never fewer than [`MIN_SEGMENTS_PER_ARC`].
 pub(crate) fn per_turn(length: f64) -> usize {
     let quarter_turns = (length / FRAC_PI_2).ceil().max(1.0);
-    // Never below the per-turn minimum's share of the arc, and never
-    // fewer than the quarter turns it spans.
     let share = (length / core::f64::consts::TAU * MIN_SEGMENTS_PER_TURN as f64).ceil();
-    (share.max(quarter_turns)) as usize
+    (share.max(quarter_turns) as usize).max(MIN_SEGMENTS_PER_ARC)
 }
 
 /// A closed polygon in (u, v): the discretisation of a loop's pieces in
