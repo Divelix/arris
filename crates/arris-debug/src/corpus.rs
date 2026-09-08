@@ -31,7 +31,7 @@ use arris_io::arris_check::{Level, Report, check};
 use arris_io::step::{self, StepError};
 use arris_mesh::tessellate;
 use arris_ops::measure::mass_properties;
-use arris_ops::{OpError, Reason, cut, primitive_box, primitive_cylinder, transform};
+use arris_ops::{OpError, Reason, common, cut, fuse, primitive_box, primitive_cylinder, transform};
 
 use crate::dump::dump_text;
 use crate::fixtures::{
@@ -752,14 +752,24 @@ fn build_step(
             })
         }
         Step::Fuse { a, b, .. } => {
-            reference(fixture, step, a, made)?;
-            reference(fixture, step, b, made)?;
-            Err(unsupported("fuse"))
+            let a = reference(fixture, step, a, made)?.body;
+            let b = reference(fixture, step, b, made)?.body;
+            let (body, provenance) = fuse(m, a, b).map_err(op)?;
+            Ok(Made {
+                body,
+                provenance,
+                inputs: vec![a, b],
+            })
         }
         Step::Common { a, b, .. } => {
-            reference(fixture, step, a, made)?;
-            reference(fixture, step, b, made)?;
-            Err(unsupported("common"))
+            let a = reference(fixture, step, a, made)?.body;
+            let b = reference(fixture, step, b, made)?.body;
+            let (body, provenance) = common(m, a, b).map_err(op)?;
+            Ok(Made {
+                body,
+                provenance,
+                inputs: vec![a, b],
+            })
         }
         Step::Cut { target, tool, .. } => {
             let target = reference(fixture, step, target, made)?.body;

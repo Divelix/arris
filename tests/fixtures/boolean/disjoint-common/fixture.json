@@ -1,0 +1,13 @@
+{
+  "description": "box [0,0,0]–[40,30,10] ∩ a cylinder clear of it: no material — Arris returns OpError::Degenerate with Reason::Empty, the oracle records no solid",
+  "steps": [
+    {"name": "plate", "op": "box", "min": [0, 0, 0], "max": [40, 30, 10]},
+    {"name": "tool", "op": "cylinder", "base": [60, 15, -1], "axis": [0, 0, 1], "radius": 4, "height": 12},
+    {"name": "result", "op": "common", "a": "plate", "b": "tool"}
+  ],
+  "result": "result",
+  "probes": [],
+  "analytic": {
+    "degenerate": true
+  }
+}

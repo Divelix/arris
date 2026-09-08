@@ -333,7 +333,7 @@ use arris_ops::arris_check::arris_topo::{
 };
 use arris_ops::arris_check::{Level, check};
 use arris_ops::measure::mass_properties;
-use arris_ops::{Reason, cut};
+use arris_ops::{Reason, common, cut, fuse};
 
 /// The fixture's operands cut, the model with them.
 fn cut_of(name: &str) -> (Model, Body, Body, Body, Provenance) {
@@ -585,4 +585,175 @@ fn a_flush_pair_is_refused_naming_the_faces() {
         }
         other => panic!("{other}"),
     }
+}
+
+// -- `fuse` and `common` (plan step 8) --------------------------------
+
+/// A boolean of two bodies: `fuse`, `common` or `cut`.
+type Boolean = fn(&mut Model, Body, Body) -> Result<(Body, Provenance), OpError>;
+
+/// The fixture's operands fused or intersected, the model with them.
+fn boolean_of(name: &str, op: Boolean) -> (Model, Body, Body, Body, Provenance) {
+    let (mut m, a, b) = inputs(name);
+    let (body, p) = op(&mut m, a, b).unwrap();
+    (m, a, b, body, p)
+}
+
+/// A `fuse` reuses both operands: the boss's top cap is untouched and
+/// keeps its id, its wall is `Modified` into the piece above the plate,
+/// its bottom cap is swallowed and `Deleted`, the plate's top face is
+/// `Modified` into one piece with a hole loop, and the four sides and
+/// the bottom are kept and unrecorded.
+#[test]
+fn a_boss_keeps_what_neither_operand_touched() {
+    let (m, plate, boss, body, p) = boolean_of("boolean/boss", fuse);
+    let report = check(&m, body, Level::Full);
+    assert!(report.is_ok() && report.unchecked().is_empty(), "{report}");
+    let faces = m.faces(body).unwrap();
+    assert_eq!(faces.len(), 8);
+
+    // The tool's top cap survives whole, with its own id: the `cut`
+    // rule that nothing of the tool is kept is `cut`'s alone.
+    let cap = m
+        .faces(boss)
+        .unwrap()
+        .into_iter()
+        .find(|f| {
+            let e = m.face(f.id).unwrap();
+            matches!(m.surface(e.surface()).unwrap().kind(), SurfaceKind::Plane)
+                && p.origins(shape(f.id)).is_empty()
+                && !p.is_deleted(shape(f.id))
+        })
+        .expect("one cap of the boss is untouched");
+    assert!(faces.iter().any(|f| f.id == cap.id));
+
+    // The other cap is inside the plate: nothing of it survives.
+    let swallowed: Vec<FaceHandle> = m
+        .faces(boss)
+        .unwrap()
+        .into_iter()
+        .filter(|f| p.is_deleted(shape(f.id)))
+        .collect();
+    assert_eq!(swallowed.len(), 1, "{p}");
+
+    // The plate's top face becomes one piece with a hole in it; the
+    // wall becomes the piece above the plate.
+    let top = m
+        .faces(plate)
+        .unwrap()
+        .into_iter()
+        .find(|f| p.modified_from(Origin::Entity(shape(f.id))).len() == 1)
+        .expect("the plate's top face");
+    let image = p.modified_from(Origin::Entity(shape(top.id)))[0];
+    let EntityId::Face(image) = image.id else {
+        panic!("a face is modified into a face");
+    };
+    assert_eq!(m.face(image).unwrap().loops().len(), 2);
+
+    // Both operands' shells and bodies are `Modified` into the result's.
+    for b in [plate, boss] {
+        assert_eq!(p.modified_from(Origin::Entity(Shape::from(b))).len(), 1);
+    }
+}
+
+/// Two cubes overlapping at a corner: their common is the unit cube —
+/// six faces, volume 1, centroid at its middle.
+#[test]
+fn the_common_of_the_corner_cubes_is_the_unit_cube() {
+    let (m, _, _, body, _) = boolean_of("boolean/corner-common", common);
+    let report = check(&m, body, Level::Full);
+    assert!(report.is_ok() && report.unchecked().is_empty(), "{report}");
+    assert_eq!(m.faces(body).unwrap().len(), 6);
+    let p = mass_properties(&m, body).unwrap();
+    assert!((p.volume - 1.0).abs() <= 1e-12);
+    assert!((p.area - 6.0).abs() <= 1e-12);
+    assert!((p.centroid - Point3::new(0.5, 0.5, 0.5)).norm() <= 1e-12);
+}
+
+/// Operands that do not touch: their common holds no material and their
+/// fuse holds two shells. Each is the typed refusal, and the model is as
+/// it was.
+#[test]
+fn disjoint_operands_refuse_by_name() {
+    for (name, want) in [("common", "empty"), ("fuse", "two")] {
+        let (mut m, a, b) = inputs("boolean/disjoint-common");
+        let before = arris_debug::dump_text(&m, a).unwrap();
+        let err = match name {
+            "common" => common(&mut m, a, b).unwrap_err(),
+            _ => fuse(&mut m, a, b).unwrap_err(),
+        };
+        match (want, &err) {
+            (
+                "empty",
+                OpError::Degenerate {
+                    reason: Reason::Empty,
+                    entities,
+                },
+            ) => assert_eq!(entities.as_slice(), [Shape::from(a), Shape::from(b)]),
+            (
+                "two",
+                OpError::Degenerate {
+                    reason: Reason::MultiShell { shells: 2 },
+                    ..
+                },
+            ) => {}
+            other => panic!("{name}: {other:?}"),
+        }
+        assert_eq!(arris_debug::dump_text(&m, a).unwrap(), before);
+    }
+}
+
+/// Every number of a dump — an id's index included — replaced by `#`:
+/// what is left is its shape, the entities and their order with the
+/// orientation each is used in.
+fn without_numbers(dump: &str) -> String {
+    let c: Vec<char> = dump.chars().collect();
+    let mut out = String::with_capacity(dump.len());
+    let mut i = 0;
+    while i < c.len() {
+        let number = c[i].is_ascii_digit()
+            || (c[i] == '-' && c.get(i + 1).is_some_and(char::is_ascii_digit));
+        if !number {
+            out.push(c[i]);
+            i += 1;
+            continue;
+        }
+        out.push('#');
+        i += usize::from(c[i] == '-');
+        while c.get(i).is_some_and(|x| x.is_ascii_digit() || *x == '.') {
+            i += 1;
+        }
+        if c.get(i) == Some(&'e') {
+            let mut j = i + 1;
+            j += usize::from(c.get(j).is_some_and(|x| *x == '-' || *x == '+'));
+            if c.get(j).is_some_and(char::is_ascii_digit) {
+                i = j;
+                while c.get(i).is_some_and(char::is_ascii_digit) {
+                    i += 1;
+                }
+            }
+        }
+    }
+    out
+}
+
+/// A rigid motion of both operands moves the result and nothing else:
+/// `posed-through-hole`'s dump is `through-hole`'s with other numbers in
+/// it — the same entities with the same ids in the same order, the same
+/// provenance, and the same mass properties up to the motion.
+#[test]
+fn a_posed_through_hole_is_the_through_hole_moved() {
+    let (m, _, _, plain, plain_p) = cut_of("boolean/through-hole");
+    let (posed_m, _, _, posed, posed_p) = cut_of("boolean/posed-through-hole");
+    let plain_dump = arris_debug::dump_text(&m, plain).unwrap();
+    let posed_dump = arris_debug::dump_text(&posed_m, posed).unwrap();
+    assert_ne!(plain_dump, posed_dump);
+    assert_eq!(without_numbers(&plain_dump), without_numbers(&posed_dump));
+    assert_eq!(plain_p.outputs().len(), posed_p.outputs().len());
+    let (x, y) = (
+        mass_properties(&m, plain).unwrap(),
+        mass_properties(&posed_m, posed).unwrap(),
+    );
+    assert!((x.volume - y.volume).abs() <= 1e-9 * x.volume);
+    assert!((x.area - y.area).abs() <= 1e-9 * x.area);
 }

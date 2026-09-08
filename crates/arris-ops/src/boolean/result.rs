@@ -23,10 +23,9 @@ use super::pieces::{ERef, PieceUse, SectionOnFace, SubEdge, VRef, split_face};
 use super::{Interferences, VertexSource};
 use crate::error::{Fault, OpError, Reason, SplitFault};
 
-/// Which selection over the decomposition. `fuse` and `common` are
-/// plan step 8's; the table is written once.
+/// Which selection over the decomposition: one table, three
+/// operations (`docs/01-architecture.md` §Operations).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)]
 pub(super) enum Op {
     /// Keep what is outside the other operand.
     Fuse,

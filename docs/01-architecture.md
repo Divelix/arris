@@ -200,8 +200,9 @@ skill reads when a boolean is wrong. The property tests build their
 operands through `arris_debug::prop::body` — a box and a cylinder whose
 axis passes through the box, both under one random motion.
 
-`ops::cut(m, target, tool)` is the first selection over that
-decomposition (ADR-0004; `fuse` and `common` are the other two). Every
+`ops::fuse(m, a, b)`, `ops::common(m, a, b)` and `ops::cut(m, target,
+tool)` are three selections over that decomposition (ADR-0004), one
+algorithm and one table. Every
 face of both operands is split in its own (u, v): the pieces of its
 loops between consecutive paves and the section edges on it make a
 planar arrangement — half-edges ordered around each node by the pcurves'
@@ -229,8 +230,11 @@ kept-by-id operand `Keep`: a face whose loops changed at all, even only
 by a split edge or a re-tolerated vertex, is a new face `Modified` from
 the old; the tool of a `cut` keeps nothing, every entity of it `Deleted`
 and each surviving piece `Generated` from its parent (02-data-model
-§Provenance). Tolerances follow §Tolerances' growth rule and a piece
-keeps its parent's.
+§Provenance). A `fuse` and a `common` have no tool: both operands are
+kept by id, so an untouched face of either keeps it, and the result's
+shell and body are `Modified` from both operands' where a `cut`'s are
+`Modified` from the target's alone. Tolerances follow §Tolerances'
+growth rule and a piece keeps its parent's.
 
 Sweeps take a planar `Profile` — an outer loop and holes of lines and arcs
 in a plane's own (u, v) — and build the planar face themselves (`ops::

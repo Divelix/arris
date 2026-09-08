@@ -87,6 +87,37 @@ pub fn wrap_angle(t: f64) -> f64 {
     if t >= core::f64::consts::TAU { 0.0 } else { t }
 }
 
+/// The end of one whole period from `lo`: `lo + period`, stepped down to
+/// the representable value below when that sum rounds up, so that
+/// `end - lo <= period` holds exactly. A closed edge spans one period and
+/// no more (`docs/02-data-model.md` §Invariants, E1), and for a
+/// `lo` that is not a small multiple of the period the sum can round to
+/// one unit in the last place too far; this is the range's construction,
+/// not a tolerance. A non-finite argument, or a `period` that is not
+/// positive, comes back as `lo + period`.
+///
+/// ```
+/// use arris_math::period_end;
+/// use core::f64::consts::TAU;
+///
+/// assert_eq!(period_end(0.0, TAU), TAU);
+/// // A pave one unit in the last place below a full turn: the sum
+/// // rounds up, and the end is stepped back to keep the turn one turn.
+/// let lo = f64::from_bits(TAU.to_bits() - 1);
+/// assert!(lo + TAU - lo > TAU);
+/// assert!(period_end(lo, TAU) - lo <= TAU);
+/// ```
+pub fn period_end(lo: f64, period: f64) -> f64 {
+    let mut end = lo + period;
+    if !(end.is_finite() && period > 0.0) {
+        return end;
+    }
+    while end - lo > period {
+        end = f64::from_bits(end.to_bits() - 1);
+    }
+    end
+}
+
 /// A position in 3D. `nalgebra::Point3<f64>` (ADR-0001).
 pub type Point3 = nalgebra::Point3<f64>;
 /// A displacement or direction in 3D, of any length.

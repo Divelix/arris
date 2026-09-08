@@ -11,7 +11,7 @@ use arris_check::arris_topo::arris_geom::{
     intersect_curve_surface, intersect_surfaces, pcurve_on,
 };
 use arris_check::arris_topo::arris_math::{
-    Interval, Point2, Point3, Precision, Tolerance, Vec2, wrap_angle,
+    Interval, Point2, Point3, Precision, Tolerance, Vec2, period_end, wrap_angle,
 };
 use arris_check::arris_topo::{
     Body, EdgeId, FaceId, Model, NotFound, Shape, Vertex as VertexHandle, VertexId,
@@ -452,7 +452,13 @@ impl<'m> Build<'m> {
         if periodic {
             if let (Some(first), Some(last)) = (paves.first(), paves.last()) {
                 let period = curve.period().unwrap_or(0.0);
-                blocks.push((last.t, first.t + period, last.vertex, first.vertex));
+                // A block that wraps ends one period after the first
+                // pave, and never more than one period after the last —
+                // with a single pave the two are the same turn, and the
+                // sum can round one unit in the last place past it
+                // (the checker's E1).
+                let hi = (first.t + period).min(period_end(last.t, period));
+                blocks.push((last.t, hi, last.vertex, first.vertex));
             }
         }
         let mut edges = Vec::new();

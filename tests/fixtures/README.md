@@ -103,7 +103,8 @@ of the step that made the fixture pass, and a later change to it is a
   convention mismatch on either side (profile orientation, seam counting,
   which faces a fuse keeps). Every field is optional; `degenerate: true`
   says the result has no volume (`boolean/flush-common`,
-  `boolean/swallow-cut`), and then nothing else is compared.
+  `boolean/swallow-cut`, `boolean/disjoint-common`), and then nothing
+  else is compared.
   `expect_error: "multi-shell" | "tangent-contact"` says Open CASCADE
   builds a result Arris refuses by design (`boolean/split-cut`: two
   solids, `Reason::MultiShell`; the tangent cases, `Reason::TangentContact`

@@ -14,7 +14,7 @@
     {"label": "inside", "point": [5, 5, 5], "expect": "in"},
     {"label": "outside", "point": [50, 15, 5], "expect": "out"},
     {"label": "on_face", "point": [5, 5, 10], "expect": "on"},
-    {"label": "on_wall", "point": ["20 + r", 15, 5], "expect": "on"},
+    {"label": "on_wall", "point": [20, "15 + r * cos(radians(tilt))", "5 - r * sin(radians(tilt))"], "expect": "on"},
     {"label": "on_section", "point": ["20 + r", "15 + 5 * tan(radians(tilt))", 10], "expect": "on"},
     {"label": "on_axis", "point": [20, 15, 5], "expect": "out"}
   ],

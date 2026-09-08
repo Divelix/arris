@@ -1,6 +1,6 @@
 {
   "occt": "8.0.1.0.0",
-  "recipe_sha256": "7c64e2af7d0e894e2783e7b31e69bba49a6144cd12b15300bbf001a079fb95bb",
+  "recipe_sha256": "ca3ec2143fb5614be9242fae2ebcc92bb3a548bfacb1804443b9b18ec91af932",
   "results": {
     "default": {
       "area": 3952.359146595666,
@@ -69,9 +69,9 @@
           "class": "on",
           "label": "on_wall",
           "point": [
-            23.0,
-            15.0,
-            5.0
+            20.0,
+            17.598076211353316,
+            3.5
           ]
         },
         {

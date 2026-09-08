@@ -317,6 +317,95 @@ pub fn cut(m: &mut Model, target: Body, tool: Body) -> Result<(Body, Provenance)
     result::boolean(m, &i, result::Op::Cut)
 }
 
+/// `a` ∪ `b`: the boolean union of two solids whose faces lie on planes
+/// and cylinders (`docs/01-architecture.md` §Operations, ADR-0004).
+///
+/// Guarantees. The result is a `Solid` that passes the checker; the
+/// decomposition is [`interferences`]'s, and the selection is the
+/// table's: a piece of either operand is kept when it is outside the
+/// other, in the operand's own orientation. Every face is split in its
+/// own (u, v) through its pcurves and the section edges', each piece
+/// classified by `arris_check::classify_point` at a point strictly
+/// inside it. Entities are reused from both operands: whatever the
+/// operation did not touch keeps its id — a face whose loops changed at
+/// all, even only by a split edge, is a new face `Modified` from the
+/// old, and so is a re-tolerated vertex and everything at it; a split
+/// edge is `Modified` into its surviving pieces; whatever has no piece
+/// left is `Deleted`. A section vertex is `Generated` from the edge and
+/// the face of every hit it merges, a section edge from both faces of
+/// its pair; the result's shell and body are `Modified` from both
+/// operands' (`docs/02-data-model.md` §Provenance). Tolerances follow
+/// the growth rule, as [`cut`]. The result is deterministic: the same
+/// ids on every run and every platform.
+///
+/// Errors, the model untouched on each: as [`cut`]'s, with
+/// [`crate::Reason::MultiShell`] where a `cut` would rarely reach it —
+/// two operands that do not overlap make two shells, which is M4's
+/// "out" (`docs/plans/m4-booleans.md` `⚠ OPEN` 2).
+///
+/// ```
+/// use arris_ops::{fuse, primitive_box, primitive_cylinder};
+/// use arris_ops::measure::mass_properties;
+/// use arris_ops::arris_check::arris_topo::Model;
+/// use arris_ops::arris_check::arris_topo::arris_math::{Axis, Point3};
+/// use core::f64::consts::PI;
+///
+/// let mut m = Model::default();
+/// let (plate, _) = primitive_box(&mut m, Point3::origin(), Point3::new(40.0, 30.0, 10.0))?;
+/// let axis = Axis::z_at(Point3::new(20.0, 15.0, 5.0));
+/// let (boss, _) = primitive_cylinder(&mut m, axis, 4.0, 15.0)?;
+/// let (plate_with_boss, provenance) = fuse(&mut m, plate, boss)?;
+/// // The boss's wall crosses the top face; its bottom cap is swallowed.
+/// assert_eq!(m.faces(plate_with_boss)?.len(), 8);
+/// let volume = mass_properties(&m, plate_with_boss)?.volume;
+/// assert!((volume - (12000.0 + PI * 16.0 * 10.0)).abs() < 1e-9 * 12000.0);
+/// // The plate's four sides and bottom and the boss's top cap are kept:
+/// // not a word about them in the record.
+/// assert_eq!(provenance.outputs().len(), 7);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+pub fn fuse(m: &mut Model, a: Body, b: Body) -> Result<(Body, Provenance), OpError> {
+    crate::verify_input(m, a)?;
+    crate::verify_input(m, b)?;
+    let i = pave::build(m, a, b)?;
+    result::boolean(m, &i, result::Op::Fuse)
+}
+
+/// `a` ∩ `b`: the boolean intersection of two solids whose faces lie on
+/// planes and cylinders (`docs/01-architecture.md` §Operations,
+/// ADR-0004).
+///
+/// Guarantees. As [`fuse`], with the other selection: a piece of either
+/// operand is kept when it is inside the other, in the operand's own
+/// orientation. Entities are reused from both operands and the
+/// provenance is written the same way; the result's shell and body are
+/// `Modified` from both operands'.
+///
+/// Errors, the model untouched on each: as [`cut`]'s, with
+/// [`crate::Reason::Empty`] where two operands share no material — the
+/// common of disjoint solids.
+///
+/// ```
+/// use arris_ops::{common, primitive_box};
+/// use arris_ops::measure::mass_properties;
+/// use arris_ops::arris_check::arris_topo::Model;
+/// use arris_ops::arris_check::arris_topo::arris_math::Point3;
+///
+/// let mut m = Model::default();
+/// let (a, _) = primitive_box(&mut m, Point3::new(-1.0, -1.0, -1.0), Point3::new(1.0, 1.0, 1.0))?;
+/// let (b, _) = primitive_box(&mut m, Point3::origin(), Point3::new(2.0, 2.0, 2.0))?;
+/// let (unit_cube, _) = common(&mut m, a, b)?;
+/// assert_eq!(m.faces(unit_cube)?.len(), 6);
+/// assert!((mass_properties(&m, unit_cube)?.volume - 1.0).abs() < 1e-12);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+pub fn common(m: &mut Model, a: Body, b: Body) -> Result<(Body, Provenance), OpError> {
+    crate::verify_input(m, a)?;
+    crate::verify_input(m, b)?;
+    let i = pave::build(m, a, b)?;
+    result::boolean(m, &i, result::Op::Common)
+}
+
 /// A number as the dump writes it: the shortest decimal that round-trips.
 fn num(x: f64) -> String {
     format!("{x}")

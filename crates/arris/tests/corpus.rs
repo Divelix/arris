@@ -58,13 +58,11 @@ fn boolean_flush_union() {
 }
 
 #[test]
-#[ignore = "M4: needs ops::fuse"]
 fn boolean_corner_union() {
     run("boolean/corner-union");
 }
 
 #[test]
-#[ignore = "M4: needs ops::common"]
 fn boolean_corner_common() {
     run("boolean/corner-common");
 }
@@ -105,13 +103,16 @@ fn boolean_split_cut() {
 }
 
 #[test]
-#[ignore = "M4: needs ops::fuse (step 8)"]
 fn boolean_boss() {
     run("boolean/boss");
 }
 
+/// The wall's (u, v) region is a strip between two oblique sections, and
+/// the tessellator's rule that a ruled surface needs no interior points
+/// does not hold there (`docs/plans/m4-booleans.md` step 8's findings,
+/// `docs/BACKLOG.md`).
 #[test]
-#[ignore = "M4: needs ops::cut (step 8)"]
+#[ignore = "arris-mesh: a cylinder face bounded by an oblique section meshes with triangles that span the wall"]
 fn boolean_oblique_hole() {
     run("boolean/oblique-hole");
 }
@@ -120,6 +121,27 @@ fn boolean_oblique_hole() {
 #[ignore = "M4: needs ops::cut and the tangent case (step 11); the oracle splits the touched face along the ruling"]
 fn boolean_tangent_outside_cut() {
     run("boolean/tangent-outside-cut");
+}
+
+/// The same solid as `through-hole` in another pose: both operands moved
+/// by one rigid motion before the cut.
+#[test]
+fn boolean_posed_through_hole() {
+    run("boolean/posed-through-hole");
+}
+
+/// Two coaxial cylinders: the pair has no section curve, and the bore is
+/// the tool's wall reversed.
+#[test]
+fn boolean_coaxial_cut() {
+    run("boolean/coaxial-cut");
+}
+
+/// Operands that share no material: the runner's degenerate path through
+/// `common`.
+#[test]
+fn boolean_disjoint_common() {
+    run("boolean/disjoint-common");
 }
 
 #[test]

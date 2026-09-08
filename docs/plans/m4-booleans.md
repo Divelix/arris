@@ -329,14 +329,15 @@ or bound has to be established here.
   counts equal `sample::frame`'s and its mass properties match to 1e-12;
   the accounting on every step of every un-ignored fixture; two runs
   identical.
-- [ ] Step 8 **[2]** — `fuse` and `common`. The other two selections,
+- [x] Step 8 **[2]** — `fuse` and `common`. The other two selections,
   `Empty` for a disjoint `common`, `MultiShell` for a disjoint `fuse`.
   Fixtures un-ignored and blessed: `corner-union`, `corner-common`,
-  `boss`, `oblique-hole`, `posed-through-hole`, `coaxial-cut`,
-  `disjoint-common`. Tests: `fuse` of the through-hole result with its
-  tool restores the plate's volume and counts; `common` of the corner
-  cubes is the unit cube's numbers; `posed-through-hole`'s dump equals
-  `through-hole`'s up to the transformed numbers.
+  `boss`, `posed-through-hole`, `coaxial-cut`, `disjoint-common`
+  (`oblique-hole` stays ignored — step 14). Tests: a `fuse` keeps what
+  neither operand touched, including a whole face of the *tool*, which
+  a `cut` never does; `common` of the corner cubes is the unit cube's
+  numbers; `posed-through-hole`'s dump equals `through-hole`'s up to
+  the transformed numbers; disjoint operands refuse by name.
 - [ ] Step 9 **[3]** — Random poses. `prop::body` strategies and the
   property tests at 200 poses of a box and a cylinder, both operand
   orders: volume additivity `V(A ∪ B) + V(A ∩ B) = V(A) + V(B)` and
@@ -377,6 +378,19 @@ or bound has to be established here.
   `Modified` through the chain from `Role::Box(Face(Z, Max))` into one
   face of nine loops; the whole chain associative against the oracle's
   counts. 8 of 8 walls is the roadmap's number.
+- [ ] Step 14 **[2]** — A ruled face bounded by an oblique section.
+  `arris-mesh` gives a cylinder or cone no interior grid (ADR-0003,
+  "a plane, a cylinder and a cone are ruled and take none"), which holds
+  only while the region's two boundary chains run parallel in the ruled
+  direction; an oblique section's do not, and the CDT of that strip
+  joins boundary points across the whole face — 1.2 rad of the cylinder
+  in one triangle where the boundary is sampled every 0.048.
+  `boolean/oblique-hole`'s mesh volume is out by 5e-3 where the
+  inscribed prism bounds it at 4e-4. Interior points, a strip-aware
+  triangulation or a restated guarantee — an ADR if the rule changes.
+  Fixture un-ignored: `boolean/oblique-hole`; test un-ignored:
+  `an_oblique_hole_meshes_within_the_inscribed_bound` in
+  `crates/arris-mesh/tests/tessellate.rs`.
 - [ ] Step 13 **[1]** — `parallel` over face pairs. `rayon` behind
   `arris-ops`'s feature for the face-pair intersections of step 6 and
   the per-face splitting of step 7, collected in pair and face order.
@@ -393,7 +407,8 @@ stage — the checker at `Full` with nothing unchecked, counts and genus,
 the oracle's reading of the STEP, `measure` to 1e-9, the mesh closed
 within `mesh_volume_rel`, the probes classified as the oracle classifies
 them, the provenance accounting on every step, the dump — with only the
-three `sweep/*` fixtures still ignored; the property tests of steps 9
+three `sweep/*` fixtures still ignored (step 14 un-ignores
+`oblique-hole`); the property tests of steps 9
 and 10 at 200 poses in CI and at 1000 once; `crates/arris/tests/
 provenance.rs` reporting 8 of 8 walls under one chain in all three
 variants; `uv run --project tools/oracle tools/oracle/selftest.py` green
@@ -616,6 +631,48 @@ deltas above, not a new decision.
   NoInterior}`; `fixtures::ExpectError` and `Analytic::expect_error`;
   `CorpusError::Expectation` for a result step that built a body or
   failed otherwise when a refusal was expected.
+- **Step 8 — the cut-then-fuse test is step 10's.** The deltas put
+  "`fuse` of the through-hole result with its tool restores the plate's
+  volume and counts" at step 8, but the drilled plate's hole wall is
+  *coincident* with the tool's wall: the pair is the flush case, refused
+  by name until step 10 wires the normals rule. `⚠ OPEN` 4 already puts
+  the identity at step 10; step 8's fuse tests are `boss`'s reuse table
+  (a whole face of the tool kept by id, which a `cut` never does) and
+  the disjoint refusals instead.
+- **Step 8 — a whole turn can round one ulp past its period.** The
+  wrap-around block of a section curve with a single pave ends at
+  `t + period`, and for a `t` that is not a small multiple of the period
+  the sum rounds up, so the range is one unit in the last place longer
+  than a turn and the checker's E1 rejects the edge —
+  `posed-through-hole`, whose seam hit lands at `2π − 1 ulp` instead of
+  `0`. `arris_math::period_end(lo, period)` is the range's construction:
+  `lo + period` stepped down to the representable value that keeps
+  `end - lo <= period`. No tolerance is involved.
+- **Step 8 — `oblique-hole`'s probe sat on the wall's x-silhouette.**
+  The `on_wall` probe was at `(20 + r, 15, 5)`, the point where the
+  wall's normal is `+x`. Open CASCADE's `BRepClass3d_SolidClassifier`,
+  reading the STEP Arris writes, does not report `ON` there — nor on the
+  opposite ruling, at any tolerance up to 1e-2 — while it does on its
+  own build of the same solid and on the six other angles tested; the
+  two shapes' cylinders, radii and face boxes are identical, and Arris's
+  own `classify_point` says `On`. The ON detection is a ray cast whose
+  direction comes from the shape's first face, so it is sensitive to
+  face order, which the two builds do not share. The probe moved to
+  `(20, 15 + r cos(tilt), 5 − r sin(tilt))`, where the two agree, as
+  `tests/fixtures/README.md` asks; `expected.json` regenerated.
+- **Step 8 — `oblique-hole` meets an `arris-mesh` limit.** Its wall is
+  the first cylinder face whose (u, v) region is a strip between two
+  wavy chains, and ADR-0003's "a ruled surface takes no interior grid"
+  does not survive it: the mesh volume is out by 5e-3 where the
+  inscribed prism bounds it at 4e-4. The fixture stays `#[ignore]`d, the
+  shrunk case is `an_oblique_hole_meshes_within_the_inscribed_bound` in
+  `crates/arris-mesh/tests/tessellate.rs` with the desired assertion,
+  and step 14 (added here) is the fix. `docs/BACKLOG.md` holds the line.
+- **Step 8 — `coaxial-cut`'s tool is taller than its target.** The
+  deltas write "cylinder r 2 z −1…1 minus a coaxial r 1"; a tool of the
+  same height would put its caps coincident with the target's, which is
+  step 10's. The tool runs z −2…2, giving the same tube — the coaxial
+  pair is `Empty`, so nothing but the caps' section circles is decided.
 - **Step 1 — `sample::sphere` is not assemblable.** Its two degenerate
   pole edges are used once each, which `finish` has always refused (it is
   why the sample goes through the raw insert). The round trip runs over

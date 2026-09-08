@@ -614,3 +614,41 @@ fn the_nurbs_box_meshes_with_its_bilinear_face() {
     let volume = 40.0 * 30.0 * 10.0;
     assert!((mesh.signed_volume().unwrap() - volume).abs() <= EXACT * volume);
 }
+
+/// A cylinder face bounded by an oblique section: its (u, v) region is a
+/// strip between two sinusoids of the same height, and the constrained
+/// Delaunay triangulation of that strip joins boundary points across the
+/// whole face rather than column by column — up to 1.2 rad of the
+/// cylinder in one triangle, where the boundary is sampled every 0.048.
+/// ADR-0003's rule that a ruled surface needs no interior grid holds
+/// only while the region's two chains run parallel in the ruled
+/// direction, which an oblique section's do not, so the mesh volume is
+/// out by an order of magnitude more than the inscribed prism bounds it
+/// by. `tests/fixtures/boolean/oblique-hole` is the fixture and
+/// `docs/BACKLOG.md` holds the line.
+#[test]
+#[ignore = "arris-mesh: a ruled face bounded by an oblique section needs interior points"]
+fn an_oblique_hole_meshes_within_the_inscribed_bound() {
+    let mut m = Model::default();
+    let (plate, _) =
+        primitive_box(&mut m, Point3::origin(), Point3::new(40.0, 30.0, 10.0)).unwrap();
+    let (r, half, tilt) = (3.0, 8.0, PI / 6.0);
+    let axis = Axis::new(
+        Point3::new(20.0, 15.0 - half * tilt.sin(), 5.0 - half * tilt.cos()),
+        arris_topo::arris_math::Vec3::new(0.0, tilt.sin(), tilt.cos()),
+    )
+    .unwrap();
+    let (tool, _) = primitive_cylinder(&mut m, axis, r, 2.0 * half).unwrap();
+    let (body, _) = arris_ops::cut(&mut m, plate, tool).unwrap();
+
+    let chord = 1e-3;
+    let mesh = tessellate(&m, body, chord).unwrap();
+    let exact = 12000.0 - PI * r * r * 10.0 / tilt.cos();
+    let volume = mesh.signed_volume().unwrap();
+    assert!(
+        (volume - exact).abs() <= exact * prism_bound(chord, r),
+        "mesh volume {volume} vs {exact}: {} relative, above {}",
+        (volume - exact).abs() / exact,
+        prism_bound(chord, r)
+    );
+}

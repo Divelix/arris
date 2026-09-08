@@ -1,0 +1,27 @@
+{
+  "description": "through-hole with both operands moved by one rigid motion — rotated 30 deg about [1, 1, 0] through the origin, then translated: the same solid in another pose, so its numbers and its topology are through-hole's with the centroid moved",
+  "steps": [
+    {"name": "plate", "op": "box", "min": [0, 0, 0], "max": [40, 30, 10]},
+    {"name": "hole", "op": "cylinder", "base": [20, 15, -1], "axis": [0, 0, 1], "radius": 4, "height": 12},
+    {"name": "posed_plate", "op": "transform", "of": "plate",
+     "rotate": {"axis": [1, 1, 0], "angle_deg": 30}, "translate": [10, -5, 3]},
+    {"name": "posed_hole", "op": "transform", "of": "hole",
+     "rotate": {"axis": [1, 1, 0], "angle_deg": 30}, "translate": [10, -5, 3]},
+    {"name": "result", "op": "cut", "target": "posed_plate", "tool": "posed_hole"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [16.76776695296637, -1.7677669529663684, 7.330127018922194], "expect": "in"},
+    {"label": "outside", "point": [59.42321151919405, 10.576788480805952, -5.044241651842384], "expect": "out"},
+    {"label": "on_face", "point": [18.535533905932738, -3.535533905932737, 11.660254037844387], "expect": "on"},
+    {"label": "on_edge", "point": [36.93264822296271, 7.0673517770372865, 8.478273522504924], "expect": "on"},
+    {"label": "on_axis", "point": [31.432830462427464, 8.567169537572534, 5.562360065955825], "expect": "out"}
+  ],
+  "analytic": {
+    "volume": "12000 - pi * 16 * 10",
+    "area": "3800 - 2 * pi * 16 + 2 * pi * 4 * 10",
+    "centroid": [31.432830462427464, 8.567169537572534, 5.562360065955825],
+    "counts": {"vertices": 10, "edges": 15, "faces": 7, "loops": 9, "shells": 1},
+    "genus": 1
+  }
+}
