@@ -1,14 +1,15 @@
 //! The boolean's result (ADR-0004): every face of both operands split
 //! into pieces, each piece classified at a point inside it against the
-//! other operand and kept or dropped by the selection table, the
-//! survivors grouped into one shell and assembled through
+//! other operand and kept or dropped by the selection table — a piece
+//! lying on a coincident face of the other operand by the two normals —
+//! the survivors grouped into one shell and assembled through
 //! `Builder::assemble` with every untouched entity kept by id, and the
 //! provenance written from the pieces as they are made.
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use arris_check::arris_topo::arris_geom::{GeomKind, SurfaceIntersection};
-use arris_check::arris_topo::arris_math::{Interval, Precision};
+use arris_check::arris_topo::arris_geom::{GeomError, GeomKind, SurfaceIntersection};
+use arris_check::arris_topo::arris_math::{Interval, Point3, Precision};
 use arris_check::arris_topo::builder::{
     Assembly, Builder, EdgeKey, EdgeSpec, FaceSpec, UseSpec, VertexKey, VertexSpec,
 };
@@ -19,7 +20,7 @@ use arris_check::arris_topo::{
 };
 use arris_check::{Classification, classify_point};
 
-use super::pieces::{ERef, PieceUse, SectionOnFace, SubEdge, VRef, split_face};
+use super::pieces::{Alias, ERef, EdgeOnFace, PieceUse, SubEdge, VRef, split_face};
 use super::{Interferences, VertexSource};
 use crate::error::{Fault, OpError, Reason, SplitFault};
 
@@ -59,6 +60,19 @@ impl Op {
         }
     }
 
+    /// Whether a piece of operand `side` lying on a coincident face of
+    /// the other survives, given whether the two effective normals
+    /// agree: once, from the first operand, when they agree in `fuse`
+    /// and `common` and when they oppose in `cut`; never from the
+    /// second (the selection table's coincident row).
+    fn select_on(self, side: usize, agree: bool) -> bool {
+        side == 0
+            && match self {
+                Op::Fuse | Op::Common => agree,
+                Op::Cut => !agree,
+            }
+    }
+
     fn policy(self, side: usize) -> Policy {
         match (self, side) {
             (Op::Cut, 1) => Policy::Regenerate,
@@ -78,15 +92,19 @@ struct Kept {
     orientation: Orientation,
     /// In the stored sense.
     loops: Vec<Vec<PieceUse>>,
+    /// The coincident face of the other operand the piece lies on and
+    /// stands in for, when it does.
+    stands_for: Option<FaceId>,
 }
 
 fn forward(id: impl Into<EntityId>) -> Shape {
     Shape::new(id, Orientation::Forward)
 }
 
-/// A piece classified `On` the other operand, or a coincident face pair:
-/// the flush case, which plan step 10 decides by the normals. Until
-/// then it is the pair the kernel has no recipe for, named.
+/// A piece classified `On` a face of the other operand its own face is
+/// not coincident with, or on an edge or vertex: a tangent contact,
+/// which plan step 11 decides. Until then it is the pair the kernel has
+/// no recipe for, named.
 fn unsupported(m: &Model, face: FaceId, on: Shape) -> OpError {
     let kind = |s: Shape| -> GeomKind {
         match s.id {
@@ -126,6 +144,11 @@ struct Build<'m> {
     faces: [Vec<FaceHandle>; 2],
     curve_ids: Vec<CurveId>,
     section_pcurves: Vec<[Curve2Id; 2]>,
+    /// Per image, its pcurve on the face it lies in.
+    image_pcurves: Vec<Curve2Id>,
+    /// Per common block, the pcurve for each use of `b`'s piece, keyed
+    /// by the use's own pcurve.
+    block_pcurves: Vec<Vec<(Curve2Id, Curve2Id)>>,
     /// The vertex each section vertex is realised as.
     vref_of: Vec<VRef>,
     /// Operand vertices whose tolerance a section vertex raised.
@@ -135,10 +158,21 @@ struct Build<'m> {
     merged_into: BTreeMap<VertexId, usize>,
     sub_edges: BTreeMap<EdgeId, Vec<SubEdge>>,
     touched: BTreeSet<EdgeId>,
+    /// Every use of a piece of `b`'s edge that is a common block,
+    /// rewritten to `a`'s piece.
+    alias_uses: BTreeMap<(ERef, Curve2Id), Alias>,
+    /// The piece of `a` each common block of `b` stands for.
+    alias_of: BTreeMap<ERef, ERef>,
+    /// Edge pieces whose tolerance an image or a common block raised.
+    edge_tolerance: BTreeMap<ERef, f64>,
     kept: Vec<Kept>,
     /// Per operand face, whether it was untouched and which of `kept` are
     /// its pieces.
     face_pieces: BTreeMap<FaceId, (bool, Vec<usize>)>,
+    /// `true` once a piece lying on the other operand was dropped: what
+    /// distinguishes a result with no thickness from one with no
+    /// material.
+    dropped_on: bool,
 }
 
 impl<'m> Build<'m> {
@@ -153,14 +187,13 @@ impl<'m> Build<'m> {
         ))
     }
 
-    /// A `Coincident` pair is the flush case (plan step 10).
-    fn refuse_coincident(&self) -> Result<(), OpError> {
-        for p in &self.i.pairs {
-            if p.intersection == SurfaceIntersection::Coincident {
-                return Err(unsupported(self.m, p.a, forward(p.b)));
-            }
+    /// The vertex an operand vertex is realised as: itself, or the one
+    /// standing for the section vertex it was merged into.
+    fn vref_of_operand(&self, v: VertexId) -> VRef {
+        match self.merged_into.get(&v) {
+            Some(&k) => self.vref_of[k],
+            None => VRef::Existing(v),
         }
-        Ok(())
     }
 
     /// Every section vertex as a vertex of the result: its own, or the
@@ -199,15 +232,19 @@ impl<'m> Build<'m> {
         Ok(())
     }
 
-    /// Every operand edge cut at its paves; an edge with a pave or a
-    /// re-tolerated end is touched.
+    /// Every operand edge cut at its paves, its ends the vertices they
+    /// are realised as; an edge with a pave, a re-tolerated end or an end
+    /// merged into another operand's vertex is touched.
     fn sub_edges(&mut self) -> Result<(), OpError> {
         for side in 0..2 {
             for &e in &self.edges[side] {
                 let edge = *self.m.edge(e).map_err(|_| self.not_found(side))?;
+                let ends = [edge.start(), edge.end()].map(|v| self.vref_of_operand(v));
                 let mut params = vec![edge.range().lo()];
-                let mut vrefs = vec![VRef::Existing(edge.start())];
-                let mut touched = self.retolerated.contains_key(&edge.start())
+                let mut vrefs = vec![ends[0]];
+                let mut touched = ends
+                    != [VRef::Existing(edge.start()), VRef::Existing(edge.end())]
+                    || self.retolerated.contains_key(&edge.start())
                     || self.retolerated.contains_key(&edge.end());
                 if let Some(paves) = self.i.paves.get(&e) {
                     for p in paves {
@@ -217,7 +254,7 @@ impl<'m> Build<'m> {
                     }
                 }
                 params.push(edge.range().hi());
-                vrefs.push(VRef::Existing(edge.end()));
+                vrefs.push(ends[1]);
                 let mut subs = Vec::with_capacity(params.len() - 1);
                 for k in 0..params.len() - 1 {
                     let (lo, hi) = (params[k], params[k + 1]);
@@ -241,14 +278,112 @@ impl<'m> Build<'m> {
         Ok(())
     }
 
-    /// The section edges as each face sees them.
-    fn sections_by_face(&self) -> BTreeMap<FaceId, Vec<SectionOnFace>> {
-        let mut on: BTreeMap<FaceId, Vec<SectionOnFace>> = BTreeMap::new();
+    /// The common blocks as aliases: every use of `b`'s piece rewritten
+    /// to `a`'s, `b`'s edge touched, `a`'s piece raised to the block's
+    /// tolerance.
+    fn aliases(&mut self) {
+        for (k, b) in self.i.blocks.iter().enumerate() {
+            let source = ERef::Sub {
+                edge: b.b.0,
+                index: b.b.1,
+            };
+            let target = ERef::Sub {
+                edge: b.a.0,
+                index: b.a.1,
+            };
+            let Some(sub) = self.sub_edges.get(&b.a.0).and_then(|subs| subs.get(b.a.1)) else {
+                continue;
+            };
+            let (range, start, end) = (sub.range, sub.start, sub.end);
+            self.alias_of.insert(source, target);
+            self.touched.insert(b.b.0);
+            for &(own, pcurve) in &self.block_pcurves[k] {
+                self.alias_uses.insert(
+                    (source, own),
+                    Alias {
+                        edge: target,
+                        range,
+                        reversed: b.reversed,
+                        start,
+                        end,
+                        pcurve,
+                    },
+                );
+            }
+            let t = self.edge_tolerance.entry(target).or_insert(0.0);
+            *t = t.max(b.tolerance);
+        }
+    }
+
+    /// The images' and common blocks' tolerances applied: an edge piece
+    /// raised above its edge's stored tolerance touches the edge, and an
+    /// operand vertex at its end below it is re-tolerated, which touches
+    /// every edge at that vertex (every vertex ≥ its edges).
+    fn raise_tolerances(&mut self) -> Result<(), OpError> {
+        for im in &self.i.images {
+            let r = ERef::Sub {
+                edge: im.edge,
+                index: im.index,
+            };
+            let t = self.edge_tolerance.entry(r).or_insert(0.0);
+            *t = t.max(im.tolerance);
+        }
+        let raised: Vec<(ERef, f64)> = self.edge_tolerance.iter().map(|(r, t)| (*r, *t)).collect();
+        for (r, tolerance) in raised {
+            let ERef::Sub { edge, index } = r else {
+                continue;
+            };
+            let side = usize::from(!self.edges[0].contains(&edge));
+            let stored = self
+                .m
+                .edge(edge)
+                .map_err(|_| self.not_found(side))?
+                .tolerance();
+            if tolerance <= stored {
+                continue;
+            }
+            self.touched.insert(edge);
+            let Some(sub) = self.sub_edges.get(&edge).and_then(|s| s.get(index)) else {
+                continue;
+            };
+            for end in [sub.start, sub.end] {
+                let VRef::Existing(v) = end else {
+                    continue;
+                };
+                let stored = self
+                    .m
+                    .vertex(v)
+                    .map_err(|_| self.not_found(self.side_of_vertex(v)))?
+                    .tolerance();
+                let current = self.retolerated.get(&v).copied().unwrap_or(stored);
+                if tolerance > current {
+                    self.retolerated.insert(v, tolerance);
+                }
+            }
+        }
+        let mut touched = Vec::new();
+        for (e, subs) in &self.sub_edges {
+            let at_retolerated = subs.iter().any(|s| {
+                [s.start, s.end]
+                    .iter()
+                    .any(|v| matches!(v, VRef::Existing(id) if self.retolerated.contains_key(id)))
+            });
+            if at_retolerated {
+                touched.push(*e);
+            }
+        }
+        self.touched.extend(touched);
+        Ok(())
+    }
+
+    /// The section edges and the images as each face sees them.
+    fn edges_by_face(&self) -> BTreeMap<FaceId, Vec<EdgeOnFace>> {
+        let mut on: BTreeMap<FaceId, Vec<EdgeOnFace>> = BTreeMap::new();
         for (k, s) in self.i.sections.iter().enumerate() {
             let pair = &self.i.pairs[self.i.curves[s.curve].pair];
             for (side, face, other) in [(0, pair.a, pair.b), (1, pair.b, pair.a)] {
-                on.entry(face).or_default().push(SectionOnFace {
-                    index: k,
+                on.entry(face).or_default().push(EdgeOnFace {
+                    edge: ERef::Section(k),
                     range: s.range,
                     start: self.vref_of[s.start],
                     end: self.vref_of[s.end],
@@ -257,37 +392,128 @@ impl<'m> Build<'m> {
                 });
             }
         }
+        for (k, im) in self.i.images.iter().enumerate() {
+            let pair = &self.i.pairs[im.pair];
+            let (face, other) = if im.side == 0 {
+                (pair.b, pair.a)
+            } else {
+                (pair.a, pair.b)
+            };
+            let Some(sub) = self.sub_edges.get(&im.edge).and_then(|s| s.get(im.index)) else {
+                continue;
+            };
+            on.entry(face).or_default().push(EdgeOnFace {
+                edge: ERef::Sub {
+                    edge: im.edge,
+                    index: im.index,
+                },
+                range: sub.range,
+                start: sub.start,
+                end: sub.end,
+                pcurve: self.image_pcurves[k],
+                other,
+            });
+        }
         on
+    }
+
+    /// The face of the other operand that `on` names, when face `f` of
+    /// operand `side` is coincident with it.
+    fn coincident_partner(&self, side: usize, f: FaceId, on: Shape) -> Option<FaceHandle> {
+        let EntityId::Face(g) = on.id else {
+            return None;
+        };
+        let paired = self.i.pairs.iter().any(|p| {
+            p.intersection == SurfaceIntersection::Coincident
+                && if side == 0 {
+                    p.a == f && p.b == g
+                } else {
+                    p.a == g && p.b == f
+                }
+        });
+        if !paired {
+            return None;
+        }
+        self.faces[1 - side].iter().copied().find(|h| h.id == g)
+    }
+
+    /// `true` when the effective normals of `f` at its (u, v) `uv` and
+    /// of `g` at the same point agree.
+    fn normals_agree(
+        &self,
+        f: FaceHandle,
+        uv: arris_check::arris_topo::arris_math::Point2,
+        point: Point3,
+        g: FaceHandle,
+    ) -> Result<bool, OpError> {
+        let normal = |h: FaceHandle, uv: Option<_>| -> Result<_, OpError> {
+            let face = self.m.face(h.id).map_err(|_| self.not_found(0))?;
+            let surface = self
+                .m
+                .surface(face.surface())
+                .map_err(|_| self.not_found(0))?;
+            let uv = match uv {
+                Some(uv) => uv,
+                None => {
+                    surface
+                        .project(point)
+                        .map_err(|e| OpError::Internal(Fault::Geometry(e)))?
+                        .uv
+                }
+            };
+            let n = surface.normal(uv.x, uv.y).ok_or_else(|| {
+                OpError::Internal(Fault::Geometry(GeomError::Degenerate {
+                    kind: GeomKind::Surface(surface.kind()),
+                    reason: "no normal at a piece's interior point".into(),
+                }))
+            })?;
+            let n = n.into_inner();
+            Ok(if h.orientation.is_reversed() { -n } else { n })
+        };
+        Ok(normal(f, Some(uv))?.dot(&normal(g, None)?) > 0.0)
     }
 
     /// Every face of both operands split, each piece classified against
     /// the other operand and kept by the selection table.
     fn select(&mut self) -> Result<(), OpError> {
-        let on = self.sections_by_face();
+        let on = self.edges_by_face();
         for side in 0..2 {
             let other = self.bodies[1 - side];
             let policy = self.op.policy(side);
             for f in self.faces[side].clone() {
-                let sections = on.get(&f.id).map_or(&[][..], Vec::as_slice);
+                let edges = on.get(&f.id).map_or(&[][..], Vec::as_slice);
                 let split = split_face(
                     self.m,
                     &self.precision,
                     f.id,
                     &self.sub_edges,
                     &self.touched,
-                    sections,
+                    edges,
+                    &self.alias_uses,
                 )?;
                 let mut pieces = Vec::new();
                 for piece in split.pieces {
                     let class = classify_point(self.m, other, piece.interior)
                         .map_err(|e| OpError::Internal(Fault::Classify(e)))?;
-                    let inside = match class {
-                        Classification::Inside => true,
-                        Classification::Outside => false,
-                        Classification::On(shape) => return Err(unsupported(self.m, f.id, shape)),
-                    };
-                    let Some(flip) = self.op.select(side, inside) else {
-                        continue;
+                    let (flip, stands_for) = match class {
+                        Classification::Inside | Classification::Outside => {
+                            let inside = class == Classification::Inside;
+                            let Some(flip) = self.op.select(side, inside) else {
+                                continue;
+                            };
+                            (flip, None)
+                        }
+                        Classification::On(shape) => {
+                            let Some(g) = self.coincident_partner(side, f.id, shape) else {
+                                return Err(unsupported(self.m, f.id, shape));
+                            };
+                            let agree = self.normals_agree(f, piece.uv, piece.interior, g)?;
+                            if !self.op.select_on(side, agree) {
+                                self.dropped_on = true;
+                                continue;
+                            }
+                            (false, Some(g.id))
+                        }
                     };
                     pieces.push(self.kept.len());
                     self.kept.push(Kept {
@@ -300,6 +526,7 @@ impl<'m> Build<'m> {
                             f.orientation
                         },
                         loops: piece.loops,
+                        stands_for,
                     });
                 }
                 self.face_pieces.insert(f.id, (split.untouched, pieces));
@@ -320,7 +547,11 @@ impl<'m> Build<'m> {
         if self.kept.is_empty() {
             return Err(OpError::Degenerate {
                 entities: entities(),
-                reason: Reason::Empty,
+                reason: if self.dropped_on {
+                    Reason::ZeroThickness
+                } else {
+                    Reason::Empty
+                },
             });
         }
         let mut parent: Vec<usize> = (0..self.kept.len()).collect();
@@ -421,6 +652,21 @@ pub(super) fn boolean(
                 ]
             })
             .collect();
+        let image_pcurves: Vec<Curve2Id> = i
+            .images
+            .iter()
+            .map(|im| m.add_curve2(im.pcurve.clone()))
+            .collect();
+        let block_pcurves: Vec<Vec<(Curve2Id, Curve2Id)>> = i
+            .blocks
+            .iter()
+            .map(|b| {
+                b.pcurves
+                    .iter()
+                    .map(|(own, pc)| (*own, m.add_curve2(pc.clone())))
+                    .collect()
+            })
+            .collect();
 
         let mut b = Build {
             m: &*m,
@@ -433,17 +679,24 @@ pub(super) fn boolean(
             faces: faces.clone(),
             curve_ids,
             section_pcurves,
+            image_pcurves,
+            block_pcurves,
             vref_of: Vec::new(),
             retolerated: BTreeMap::new(),
             merged_into: BTreeMap::new(),
             sub_edges: BTreeMap::new(),
             touched: BTreeSet::new(),
+            alias_uses: BTreeMap::new(),
+            alias_of: BTreeMap::new(),
+            edge_tolerance: BTreeMap::new(),
             kept: Vec::new(),
             face_pieces: BTreeMap::new(),
+            dropped_on: false,
         };
-        b.refuse_coincident()?;
         b.realise_vertices()?;
         b.sub_edges()?;
+        b.aliases();
+        b.raise_tolerances()?;
         b.select()?;
         b.one_shell()?;
         let plan = b.assembly()?;
@@ -452,6 +705,8 @@ pub(super) fn boolean(
             vref_of,
             merged_into,
             sub_edges,
+            alias_of,
+            kept,
             ..
         } = b;
 
@@ -475,6 +730,7 @@ pub(super) fn boolean(
             }
         };
         let edge_id = |e: ERef| -> Option<EdgeId> {
+            let e = alias_of.get(&e).copied().unwrap_or(e);
             match e {
                 ERef::Sub { edge, index: 0 } if plan.kept_edges.contains(&edge) => Some(edge),
                 other => out_edge.get(&other).copied(),
@@ -511,10 +767,15 @@ pub(super) fn boolean(
             }
             for &e in &edges[side] {
                 let n = sub_edges.get(&e).map_or(0, Vec::len);
-                let images: Vec<Shape> = (0..n)
-                    .filter_map(|index| edge_id(ERef::Sub { edge: e, index }))
-                    .map(forward)
-                    .collect();
+                let mut images: Vec<Shape> = Vec::new();
+                for index in 0..n {
+                    if let Some(id) = edge_id(ERef::Sub { edge: e, index }) {
+                        let image = forward(id);
+                        if !images.contains(&image) {
+                            images.push(image);
+                        }
+                    }
+                }
                 record(&mut p, forward(e), images);
             }
             for f in &faces[side] {
@@ -536,6 +797,13 @@ pub(super) fn boolean(
                 Policy::Regenerate => p.add_deleted(forward(body.id)),
             }
         }
+        // A piece kept once from a coincident pair stands for the other
+        // operand's face too.
+        for (k, piece) in kept.iter().enumerate() {
+            if let Some(g) = piece.stands_for {
+                p.add_generated(forward(g), forward(out_faces[k]));
+            }
+        }
         for (k, v) in i.vertices.iter().enumerate() {
             let VRef::Section(_) = vref_of[k] else {
                 continue;
@@ -548,6 +816,10 @@ pub(super) fn boolean(
                     for &h in &v.hits {
                         p.add_generated(forward(i.hits[h].edge), forward(*id));
                         p.add_generated(forward(i.hits[h].face), forward(*id));
+                    }
+                    for &x in &v.crossings {
+                        p.add_generated(forward(i.crossings[x].a), forward(*id));
+                        p.add_generated(forward(i.crossings[x].b), forward(*id));
                     }
                 }
                 VertexSource::CurveStart { pair, .. } => {
@@ -678,11 +950,17 @@ impl Build<'_> {
                             EdgeGeometry::Degenerate { range: s.range }
                         }
                     };
+                    let tolerance = self
+                        .edge_tolerance
+                        .get(&r)
+                        .copied()
+                        .unwrap_or(0.0)
+                        .max(edge.tolerance());
                     assembly.edges.push(EdgeSpec::New {
                         geometry,
                         start: vkey[&s.start],
                         end: vkey[&s.end],
-                        tolerance: edge.tolerance(),
+                        tolerance,
                     });
                     ekey.insert(r, EdgeKey::New(new_edges.len()));
                     new_edges.push(r);

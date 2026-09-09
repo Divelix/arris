@@ -63,9 +63,12 @@ pub enum CurveIntersection {
 /// against the plane through the line perpendicular to the conic's — the
 /// same points, and the tangency decided in the linear tolerance by an
 /// arm that already exists — and two coplanar circles are the radical
-/// line. A coplanar circle–ellipse or ellipse–ellipse pair is
-/// `Unsupported`: no operation of cycle 1 makes one, and the quartic that
-/// solves it is cycle 3's. Any NURBS operand is `Unsupported`.
+/// line. A coplanar pair with an ellipse in it is `Coincident` when the
+/// two are the same conic — the centres, the radii and the major axes
+/// agreeing within the tolerance, which is what two booleans in a row
+/// make — and otherwise `Unsupported`: the quartic that finds where two
+/// distinct such conics meet is cycle 3's. Any NURBS operand is
+/// `Unsupported`.
 ///
 /// ```
 /// use arris_geom::{Curve, CurveIntersection, intersect_curves};
@@ -248,14 +251,57 @@ fn coplanar(a: &Curve, b: &Curve, tol: Tolerance) -> Result<CurveIntersection, G
                 radius: rb,
             },
         ) => circle_circle_coplanar(a, b, &fa, ra, &fb, rb, tol),
-        // A coplanar pair with an ellipse in it: the quartic is cycle 3's.
-        (Curve::Circle { .. } | Curve::Ellipse { .. } | Curve::Nurbs(_), _) => {
+        // A coplanar pair with an ellipse in it: the same conic twice is
+        // decided by its closed form — the centres, the radii and the
+        // axes — and anything else they might share is the quartic,
+        // cycle 3's.
+        (
+            Curve::Circle { .. } | Curve::Ellipse { .. },
+            Curve::Circle { .. } | Curve::Ellipse { .. },
+        ) => {
+            if let (Some((fa, ra)), Some((fb, rb))) = (conic_frame(a), conic_frame(b)) {
+                if conics_coincide(fa, ra, fb, rb, tol) {
+                    return Ok(CurveIntersection::Coincident);
+                }
+            }
+            Err(GeomError::Unsupported {
+                a: GeomKind::Curve(a.kind()),
+                b: GeomKind::Curve(b.kind()),
+            })
+        }
+        (Curve::Nurbs(_), _)
+        | (Curve::Circle { .. } | Curve::Ellipse { .. }, Curve::Line { .. } | Curve::Nurbs(_)) => {
             Err(GeomError::Unsupported {
                 a: GeomKind::Curve(a.kind()),
                 b: GeomKind::Curve(b.kind()),
             })
         }
     }
+}
+
+/// `true` when two coplanar conics are the same point set: the centres
+/// within `tol.linear`, and either both are circles of one radius, or
+/// both are ellipses of the same two radii with their major axes
+/// parallel within `tol.angular` (either way along), the radii swapped
+/// with the axes when the frames name them the other way round. A
+/// circle and an ellipse of two distinct radii are never the same.
+fn conics_coincide(fa: &Frame, ra: [f64; 2], fb: &Frame, rb: [f64; 2], tol: Tolerance) -> bool {
+    if (fa.origin() - fb.origin()).norm() > tol.linear {
+        return false;
+    }
+    let same = |x: f64, y: f64| (x - y).abs() <= tol.linear;
+    let round = |r: [f64; 2]| same(r[0], r[1]);
+    if round(ra) || round(rb) {
+        return round(ra) && round(rb) && same(ra[0], rb[0]);
+    }
+    let parallel = |x: Vec3, y: Vec3| x.cross(&y).norm() <= tol.angular;
+    let (xa, xb, yb) = (
+        fa.x().into_inner(),
+        fb.x().into_inner(),
+        fb.y().into_inner(),
+    );
+    (same(ra[0], rb[0]) && same(ra[1], rb[1]) && parallel(xa, xb))
+        || (same(ra[0], rb[1]) && same(ra[1], rb[0]) && parallel(xa, yb))
 }
 
 /// A line in the conic's own plane: the points the two share are the

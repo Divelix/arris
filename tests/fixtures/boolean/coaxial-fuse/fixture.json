@@ -1,0 +1,29 @@
+{
+  "description": "the tube of coaxial-cut ∪ a cylinder r 1 from z −1 to 1 filling its bore: the coincident walls vanish and the discs sit beside the annuli unmerged, sharing the inner circles (as Open CASCADE) — a full cylinder r 2 in five faces",
+  "steps": [
+    {"name": "outer", "op": "cylinder", "base": [0, 0, -1], "axis": [0, 0, 1], "radius": 2, "height": 2},
+    {"name": "bore", "op": "cylinder", "base": [0, 0, -2], "axis": [0, 0, 1], "radius": 1, "height": 4},
+    {"name": "tube", "op": "cut", "target": "outer", "tool": "bore"},
+    {"name": "rod", "op": "cylinder", "base": [0, 0, -1], "axis": [0, 0, 1], "radius": 1, "height": 2},
+    {"name": "result", "op": "fuse", "a": "tube", "b": "rod"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside_tube", "point": [1.5, 0, 0], "expect": "in"},
+    {"label": "inside_rod", "point": [0.5, 0, 0], "expect": "in"},
+    {"label": "on_axis", "point": [0, 0, 0], "expect": "in"},
+    {"label": "across_the_vanished_wall", "point": [1, 0, 0], "expect": "in"},
+    {"label": "outside", "point": [2.5, 0, 0], "expect": "out"},
+    {"label": "on_annulus", "point": [0, 1.5, 1], "expect": "on"},
+    {"label": "on_disc", "point": [0, 0.5, 1], "expect": "on"},
+    {"label": "on_inner_circle", "point": [0, 1, 1], "expect": "on"},
+    {"label": "on_edge", "point": [0, 2, 1], "expect": "on"}
+  ],
+  "analytic": {
+    "volume": "pi * 4 * 2",
+    "area": "2 * pi * 2 * 2 + 2 * pi * 4",
+    "centroid": [0, 0, 0],
+    "counts": {"vertices": 4, "edges": 5, "faces": 5, "loops": 7, "shells": 1},
+    "genus": 0
+  }
+}

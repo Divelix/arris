@@ -1,14 +1,18 @@
 //! Building the pave model (ADR-0004): face pairs, edge-on-face hits,
 //! the hits merged into section vertices, paves, section curves cut into
-//! blocks and the blocks kept as section edges with their pcurves.
+//! blocks and the blocks kept as section edges with their pcurves; and,
+//! for the coincident pairs, the edge–edge crossings, the paves every
+//! section vertex puts on the pairs' edges, and each edge piece placed
+//! on the other face as an image or matched to a piece of its boundary
+//! as a common block.
 
 use core::f64::consts::PI;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use arris_check::arris_topo::arris_geom::region2::Side;
 use arris_check::arris_topo::arris_geom::{
-    Curve, Curve2, CurveSurfaceIntersection, GeomError, SurfaceIntersection,
-    intersect_curve_surface, intersect_surfaces, pcurve_on,
+    Curve, Curve2, CurveIntersection, CurveSurfaceIntersection, GeomError, SurfaceIntersection,
+    intersect_curve_surface, intersect_curves, intersect_surfaces, pcurve_on,
 };
 use arris_check::arris_topo::arris_math::{
     Interval, Point2, Point3, Precision, Tolerance, Vec2, period_end, wrap_angle,
@@ -19,8 +23,8 @@ use arris_check::arris_topo::{
 
 use super::faces::{EdgeInfo, FaceInfo, band};
 use super::{
-    EdgeFaceHit, FacePair, Interferences, Landing, Pave, SectionCurve, SectionEdge, SectionVertex,
-    VertexSource,
+    CommonBlock, EdgeEdgeHit, EdgeFaceHit, EdgeImage, FacePair, Interferences, Landing, Pave,
+    SectionCurve, SectionEdge, SectionVertex, VertexSource,
 };
 use crate::error::{Fault, OpError};
 
@@ -34,6 +38,7 @@ struct VertexBuild {
     /// its edges.
     floor: f64,
     hits: Vec<usize>,
+    crossings: Vec<usize>,
     existing: Vec<VertexId>,
     source: VertexSource,
 }
@@ -65,10 +70,28 @@ impl VertexBuild {
             point: self.point(m),
             tolerance: self.tolerance(m),
             hits: self.hits.clone(),
+            crossings: self.crossings.clone(),
             existing: self.existing.clone(),
             source: self.source,
         }
     }
+}
+
+/// An end of an edge piece: the edge's own vertex, or the section vertex
+/// of a pave.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum End {
+    Operand(VertexId),
+    Section(usize),
+}
+
+/// A piece of an operand edge between consecutive paves, as the result
+/// will cut it: the same enumeration `result::Build::sub_edges` makes.
+struct Block {
+    index: usize,
+    range: Interval,
+    start: End,
+    end: End,
 }
 
 /// The whole build, over the two operands read once.
@@ -85,11 +108,18 @@ struct Build<'m> {
     hits: Vec<EdgeFaceHit>,
     /// Per hit, the tolerance of the entities that made it.
     hit_tolerance: Vec<f64>,
+    crossings: Vec<EdgeEdgeHit>,
+    crossing_tolerance: Vec<f64>,
+    /// Edge pairs of the coincident face pairs whose curves are the same
+    /// curve, `a`'s edge first.
+    same_curve: BTreeSet<(EdgeId, EdgeId)>,
     vertices: Vec<VertexBuild>,
     paves: BTreeMap<EdgeId, Vec<Pave>>,
     curves: Vec<SectionCurve>,
     sections: Vec<SectionEdge>,
     coincident: Vec<(EdgeId, FaceId)>,
+    images: Vec<EdgeImage>,
+    blocks: Vec<CommonBlock>,
 }
 
 pub(super) fn build(m: &Model, a: Body, b: Body) -> Result<Interferences, OpError> {
@@ -113,17 +143,25 @@ pub(super) fn build(m: &Model, a: Body, b: Body) -> Result<Interferences, OpErro
         pair_faces: Vec::new(),
         hits: Vec::new(),
         hit_tolerance: Vec::new(),
+        crossings: Vec::new(),
+        crossing_tolerance: Vec::new(),
+        same_curve: BTreeSet::new(),
         vertices: Vec::new(),
         paves: BTreeMap::new(),
         curves: Vec::new(),
         sections: Vec::new(),
         coincident: Vec::new(),
+        images: Vec::new(),
+        blocks: Vec::new(),
     };
     build.face_pairs()?;
     build.hits()?;
+    build.crossings()?;
     build.merge()?;
     build.pave_edges();
+    build.pave_coincident_edges();
     build.sections()?;
+    build.coincident()?;
     Ok(build.finish())
 }
 
@@ -160,6 +198,11 @@ fn samples(range: Interval, n: usize) -> Vec<f64> {
 impl<'m> Build<'m> {
     fn not_found(&self, side: usize) -> OpError {
         OpError::NotFound(shape_of(if side == 0 { self.a } else { self.b }))
+    }
+
+    /// The edge of operand `side` with this id, when it has a curve.
+    fn edge_info(&self, side: usize, id: EdgeId) -> Option<&EdgeInfo<'m>> {
+        self.edges[side].iter().find(|e| e.id == id)
     }
 
     /// Every face pair whose boxes overlap, intersected.
@@ -271,12 +314,134 @@ impl<'m> Build<'m> {
         Ok(())
     }
 
-    /// Hits merged into section vertices: a hit joins the first vertex
-    /// (in creation order) that shares an operand vertex with it or whose
-    /// point is within the larger of the two tolerances; otherwise it
-    /// starts one. A touch joins nothing.
-    fn merge(&mut self) -> Result<(), OpError> {
+    /// The edges of the two faces of every `Coincident` pair against one
+    /// another: a crossing in both ranges is recorded, sorted by
+    /// `(a's edge, ta, b's edge, tb)` and made once per edge pair and
+    /// point; a pair on the same curve is remembered for the common
+    /// blocks.
+    fn crossings(&mut self) -> Result<(), OpError> {
+        let mut found: Vec<(EdgeEdgeHit, f64)> = Vec::new();
+        let mut same_curve = BTreeSet::new();
+        for (pi, pair) in self.pairs.iter().enumerate() {
+            if pair.intersection != SurfaceIntersection::Coincident {
+                continue;
+            }
+            let (ia, ib) = self.pair_faces[pi];
+            let (fa, fb) = (&self.faces[0][ia], &self.faces[1][ib]);
+            for &ea in &fa.edges {
+                let Some(ea) = self.edge_info(0, ea) else {
+                    continue;
+                };
+                for &eb in &fb.edges {
+                    let Some(eb) = self.edge_info(1, eb) else {
+                        continue;
+                    };
+                    if !ea.bounds.intersects(&eb.bounds) {
+                        continue;
+                    }
+                    let tol = tolerance_of(&self.precision, ea.tolerance, eb.tolerance);
+                    let hits = match intersect_curves(ea.curve, eb.curve, tol)
+                        .map_err(|e| geometry(e, ea.shape(), eb.shape()))?
+                    {
+                        CurveIntersection::Coincident => {
+                            same_curve.insert((ea.id, eb.id));
+                            continue;
+                        }
+                        CurveIntersection::Points(hits) => hits,
+                    };
+                    for h in hits {
+                        let (Some(ta), Some(tb)) = (ea.in_range(h.ta), eb.in_range(h.tb)) else {
+                            continue;
+                        };
+                        let seen = found.iter().any(|(x, t)| {
+                            x.a == ea.id
+                                && x.b == eb.id
+                                && (x.point - h.point).norm() <= t.max(tol.linear)
+                        });
+                        if seen {
+                            continue;
+                        }
+                        found.push((
+                            EdgeEdgeHit {
+                                pair: pi,
+                                a: ea.id,
+                                ta,
+                                b: eb.id,
+                                tb,
+                                point: h.point,
+                                tangent: h.tangent,
+                                vertex: None,
+                            },
+                            tol.linear,
+                        ));
+                    }
+                }
+            }
+        }
+        found.sort_by(|x, y| {
+            x.0.a
+                .cmp(&y.0.a)
+                .then_with(|| x.0.ta.total_cmp(&y.0.ta))
+                .then_with(|| x.0.b.cmp(&y.0.b))
+                .then_with(|| x.0.tb.total_cmp(&y.0.tb))
+        });
+        for (hit, tolerance) in found {
+            self.crossings.push(hit);
+            self.crossing_tolerance.push(tolerance);
+        }
+        self.same_curve = same_curve;
+        Ok(())
+    }
+
+    /// `point` merged into the first vertex (in creation order) that
+    /// shares an operand vertex with `existing` or whose point is within
+    /// the larger of the two tolerances; otherwise a new one. The index.
+    fn merge_point(
+        &mut self,
+        point: Point3,
+        tolerance: f64,
+        existing: Vec<VertexId>,
+    ) -> Result<usize, OpError> {
         let m = self.m;
+        let mut base = tolerance;
+        for &v in &existing {
+            base = base.max(m.vertex(v).map_err(|_| self.not_found(0))?.tolerance());
+        }
+        let found = self.vertices.iter().position(|v| {
+            v.existing.iter().any(|x| existing.contains(x))
+                || (v.point(m) - point).norm() <= v.tolerance(m).max(tolerance)
+        });
+        Ok(match found {
+            Some(k) => {
+                let v = &mut self.vertices[k];
+                v.points.push(point);
+                v.base = v.base.max(base);
+                for x in existing {
+                    if !v.existing.contains(&x) {
+                        v.existing.push(x);
+                    }
+                }
+                v.existing.sort();
+                k
+            }
+            None => {
+                self.vertices.push(VertexBuild {
+                    points: vec![point],
+                    base,
+                    floor: 0.0,
+                    hits: Vec::new(),
+                    crossings: Vec::new(),
+                    existing,
+                    source: VertexSource::Hits,
+                });
+                self.vertices.len() - 1
+            }
+        })
+    }
+
+    /// Hits, then crossings, merged into section vertices; a touch joins
+    /// nothing.
+    fn merge(&mut self) -> Result<(), OpError> {
         for i in 0..self.hits.len() {
             if self.hits[i].tangent {
                 continue;
@@ -294,42 +459,29 @@ impl<'m> Build<'m> {
                     }
                 }
             }
-            let mut base = hit_tol;
-            for &v in &existing {
-                base = base.max(m.vertex(v).map_err(|_| self.not_found(0))?.tolerance());
-            }
-            let found = self.vertices.iter().position(|v| {
-                v.existing.iter().any(|x| existing.contains(x))
-                    || (v.point(m) - point).norm() <= v.tolerance(m).max(hit_tol)
-            });
-            let k = match found {
-                Some(k) => {
-                    let v = &mut self.vertices[k];
-                    v.points.push(point);
-                    v.base = v.base.max(base);
-                    v.hits.push(i);
-                    for x in existing {
-                        if !v.existing.contains(&x) {
-                            v.existing.push(x);
-                        }
-                    }
-                    v.existing.sort();
-                    k
-                }
-                None => {
-                    self.vertices.push(VertexBuild {
-                        points: vec![point],
-                        base,
-                        floor: 0.0,
-                        hits: vec![i],
-                        existing,
-                        source: VertexSource::Hits,
-                    });
-                    self.vertices.len() - 1
-                }
-            };
+            let k = self.merge_point(point, hit_tol, existing)?;
+            self.vertices[k].hits.push(i);
             self.hits[i].vertex = Some(k);
         }
+        for i in 0..self.crossings.len() {
+            if self.crossings[i].tangent {
+                continue;
+            }
+            let tol = self.crossing_tolerance[i];
+            let point = self.crossings[i].point;
+            let mut existing: Vec<VertexId> = Vec::new();
+            for (side, id) in [(0, self.crossings[i].a), (1, self.crossings[i].b)] {
+                if let Some(v) = self.edge_info(side, id).and_then(|e| e.vertex_at(point)) {
+                    if !existing.contains(&v) {
+                        existing.push(v);
+                    }
+                }
+            }
+            let k = self.merge_point(point, tol, existing)?;
+            self.vertices[k].crossings.push(i);
+            self.crossings[i].vertex = Some(k);
+        }
+        let m = self.m;
         for v in &self.vertices {
             let wanted = v.tolerance(m);
             if wanted > self.precision.max_tolerance {
@@ -337,6 +489,11 @@ impl<'m> Build<'m> {
                     .hits
                     .first()
                     .map(|&h| Shape::new(self.hits[h].edge, self.a.orientation))
+                    .or_else(|| {
+                        v.crossings
+                            .first()
+                            .map(|&x| Shape::new(self.crossings[x].a, self.a.orientation))
+                    })
                     .unwrap_or_else(|| shape_of(self.a));
                 return Err(OpError::Tolerance { entity, wanted });
             }
@@ -345,23 +502,88 @@ impl<'m> Build<'m> {
     }
 
     /// The paves on the operand edges: each hit's vertex at its `t`,
-    /// unless the hit is at the edge's own end; one pave per vertex per
-    /// edge, ascending by `t`.
+    /// unless the hit is at the edge's own end; each crossing's vertex
+    /// on both edges likewise; one pave per vertex per edge, ascending
+    /// by `t`.
     fn pave_edges(&mut self) {
+        let mut wanted: Vec<(EdgeId, f64, usize)> = Vec::new();
         for h in &self.hits {
-            let Some(vertex) = h.vertex else {
+            if let (Some(vertex), None) = (h.vertex, h.at_vertex) {
+                wanted.push((h.edge, h.t, vertex));
+            }
+        }
+        for x in &self.crossings {
+            let Some(vertex) = x.vertex else {
                 continue;
             };
-            if h.at_vertex.is_some() {
-                continue;
+            for (side, id, t) in [(0, x.a, x.ta), (1, x.b, x.tb)] {
+                let at_end = self
+                    .edge_info(side, id)
+                    .is_some_and(|e| e.vertex_at(x.point).is_some());
+                if !at_end {
+                    wanted.push((id, t, vertex));
+                }
             }
-            let list = self.paves.entry(h.edge).or_default();
+        }
+        for (edge, t, vertex) in wanted {
+            let list = self.paves.entry(edge).or_default();
             if list.iter().all(|p| p.vertex != vertex) {
-                list.push(Pave { t: h.t, vertex });
+                list.push(Pave { t, vertex });
             }
         }
         for list in self.paves.values_mut() {
             list.sort_by(|x, y| x.t.total_cmp(&y.t));
+        }
+    }
+
+    /// Every edge of a face of a `Coincident` pair paved by every section
+    /// vertex that lies on it within the vertex's tolerance and is not
+    /// one of its ends: the vertices the other operand's edges made on
+    /// neighbouring faces, which the pieces along the shared surface
+    /// have to meet at (ADR-0004).
+    fn pave_coincident_edges(&mut self) {
+        let m = self.m;
+        let mut edges: BTreeSet<(usize, EdgeId)> = BTreeSet::new();
+        for (pi, pair) in self.pairs.iter().enumerate() {
+            if pair.intersection != SurfaceIntersection::Coincident {
+                continue;
+            }
+            let (ia, ib) = self.pair_faces[pi];
+            edges.extend(self.faces[0][ia].edges.iter().map(|&e| (0, e)));
+            edges.extend(self.faces[1][ib].edges.iter().map(|&e| (1, e)));
+        }
+        let mut wanted: Vec<(EdgeId, f64, usize)> = Vec::new();
+        for (side, id) in edges {
+            let Some(e) = self.edge_info(side, id) else {
+                continue;
+            };
+            for (k, v) in self.vertices.iter().enumerate() {
+                let point = v.point(m);
+                if e.vertex_at(point).is_some() || e.ends.iter().any(|x| v.existing.contains(&x.0))
+                {
+                    continue;
+                }
+                let Ok(projection) = e.curve.project(point) else {
+                    continue;
+                };
+                if projection.distance > v.tolerance(m) {
+                    continue;
+                }
+                let Some(t) = e.in_range(projection.t) else {
+                    continue;
+                };
+                if t == e.range.lo() || t == e.range.hi() {
+                    continue;
+                }
+                wanted.push((id, t, k));
+            }
+        }
+        for (edge, t, vertex) in wanted {
+            let list = self.paves.entry(edge).or_default();
+            if list.iter().all(|p| p.vertex != vertex) {
+                list.push(Pave { t, vertex });
+                list.sort_by(|x, y| x.t.total_cmp(&y.t));
+            }
         }
     }
 
@@ -431,6 +653,7 @@ impl<'m> Build<'m> {
                     base: fa.tolerance.max(fb.tolerance),
                     floor: 0.0,
                     hits: Vec::new(),
+                    crossings: Vec::new(),
                     existing: Vec::new(),
                     source: VertexSource::CurveStart {
                         pair: pi,
@@ -461,8 +684,44 @@ impl<'m> Build<'m> {
                 blocks.push((last.t, hi, last.vertex, first.vertex));
             }
         }
+        // The operand edges of the two faces that lie on this curve: a
+        // block that is a piece of one of them is that edge, not a section
+        // edge, whatever the polygons' band says of its midpoint — its
+        // split of the other face, where one is needed, is the edge's
+        // image through the coincident neighbour (ADR-0004).
+        let mut along: Vec<&EdgeInfo<'m>> = Vec::new();
+        for (side, f) in [(0, fa), (1, fb)] {
+            for &eid in &f.edges {
+                let Some(e) = self.edge_info(side, eid) else {
+                    continue;
+                };
+                let tol =
+                    tolerance_of(&self.precision, e.tolerance, fa.tolerance.max(fb.tolerance));
+                if intersect_curves(curve, e.curve, tol)
+                    .map_err(|err| geometry(err, fa.shape(), e.shape()))?
+                    == CurveIntersection::Coincident
+                {
+                    along.push(e);
+                }
+            }
+        }
+        let is_an_edge: Vec<bool> = blocks
+            .iter()
+            .map(|&(lo, hi, _, _)| {
+                let mid = curve.point(0.5 * (lo + hi));
+                along.iter().any(|e| {
+                    e.curve
+                        .project(mid)
+                        .is_ok_and(|on| Self::strictly_inside(e, e.range, on.t))
+                })
+            })
+            .collect();
+        drop(along);
         let mut edges = Vec::new();
-        for (lo, hi, start, end) in blocks {
+        for (k, (lo, hi, start, end)) in blocks.into_iter().enumerate() {
+            if is_an_edge[k] {
+                continue;
+            }
             let Ok(range) = Interval::new(lo, hi) else {
                 continue;
             };
@@ -528,9 +787,9 @@ impl<'m> Build<'m> {
         })
     }
 
-    /// The pcurve of a section block on one face of its pair, placed,
-    /// with the largest deviation of its image from the curve at the
-    /// model's check parameters.
+    /// The pcurve of a curve block on one face, placed, with the largest
+    /// deviation of its image from the curve at the model's check
+    /// parameters. `base` is the tolerance the fit is asked for.
     fn pcurve_of(
         &self,
         f: &FaceInfo<'m>,
@@ -596,6 +855,292 @@ impl<'m> Build<'m> {
         Ok(pc)
     }
 
+    // -- the coincident pairs ------------------------------------------
+
+    /// The pieces of an edge between consecutive paves, as the result
+    /// cuts it.
+    fn blocks_of(&self, e: &EdgeInfo<'m>) -> Vec<Block> {
+        let mut stops: Vec<(f64, End)> = vec![(e.range.lo(), End::Operand(e.ends[0].0))];
+        if let Some(paves) = self.paves.get(&e.id) {
+            stops.extend(paves.iter().map(|p| (p.t, End::Section(p.vertex))));
+        }
+        stops.push((e.range.hi(), End::Operand(e.ends[1].0)));
+        stops
+            .windows(2)
+            .enumerate()
+            .filter_map(|(index, w)| {
+                let range = Interval::new(w[0].0, w[1].0).ok()?;
+                (range.length() > 0.0).then_some(Block {
+                    index,
+                    range,
+                    start: w[0].1,
+                    end: w[1].1,
+                })
+            })
+            .collect()
+    }
+
+    /// An end as the section vertex it is merged into, when it is.
+    fn canonical(&self, end: End) -> End {
+        match end {
+            End::Section(_) => end,
+            End::Operand(v) => self
+                .vertices
+                .iter()
+                .position(|x| x.existing.contains(&v))
+                .map_or(end, End::Section),
+        }
+    }
+
+    /// `t`, placed in `e`'s range, strictly inside `range` by more than
+    /// the edge's tolerance converted to the parameter there.
+    fn strictly_inside(e: &EdgeInfo<'m>, range: Interval, t: f64) -> bool {
+        let Some(t) = e.in_range(t) else {
+            return false;
+        };
+        let speed = e.curve.eval(t).d1.norm();
+        let slack = if speed > 0.0 {
+            e.tolerance / speed
+        } else {
+            0.0
+        };
+        t > range.lo() + slack && t < range.hi() - slack
+    }
+
+    /// The piece of an edge of `other` that `block` of `e` is a piece
+    /// of: an edge on the same curve (the curve–curve `Coincident`
+    /// verdict, never the polygon band) whose piece overlaps it — either
+    /// midpoint strictly inside the other's range — and then the same
+    /// piece: both midpoints inside, the same ends. `None` when no piece
+    /// of `other` overlaps; the fault when one overlaps without being the
+    /// same piece, since every vertex the two edges share should have
+    /// paved both.
+    fn matching_block(
+        &self,
+        side: usize,
+        e: &EdgeInfo<'m>,
+        block: &Block,
+        other: &FaceInfo<'m>,
+    ) -> Result<Option<(EdgeId, Block, bool)>, OpError> {
+        let fault = || {
+            OpError::Internal(Fault::CommonBlock {
+                edge: e.id,
+                face: other.id,
+            })
+        };
+        let mid = e.curve.point(block.range.midpoint());
+        for &gid in &other.edges {
+            let same = if side == 0 {
+                self.same_curve.contains(&(e.id, gid))
+            } else {
+                self.same_curve.contains(&(gid, e.id))
+            };
+            if !same {
+                continue;
+            }
+            let Some(g) = self.edge_info(1 - side, gid) else {
+                continue;
+            };
+            let Ok(on_g) = g.curve.project(mid) else {
+                continue;
+            };
+            for gb in self.blocks_of(g) {
+                let g_mid = g.curve.point(gb.range.midpoint());
+                let Ok(on_e) = e.curve.project(g_mid) else {
+                    continue;
+                };
+                let e_in_g = Self::strictly_inside(g, gb.range, on_g.t);
+                let g_in_e = Self::strictly_inside(e, block.range, on_e.t);
+                if !(e_in_g || g_in_e) {
+                    continue;
+                }
+                if !(e_in_g && g_in_e) {
+                    return Err(fault());
+                }
+                let reversed = e.curve.eval(block.range.midpoint()).d1.dot(
+                    &g.curve
+                        .eval(g.in_range(on_g.t).unwrap_or(gb.range.midpoint()))
+                        .d1,
+                ) < 0.0;
+                let (es, ee) = (self.canonical(block.start), self.canonical(block.end));
+                let (gs, ge) = (self.canonical(gb.start), self.canonical(gb.end));
+                let ends_match = if reversed {
+                    es == ge && ee == gs
+                } else {
+                    es == gs && ee == ge
+                };
+                if !ends_match {
+                    return Err(fault());
+                }
+                return Ok(Some((gid, gb, reversed)));
+            }
+        }
+        Ok(None)
+    }
+
+    /// Every piece of every edge of both faces of each `Coincident` pair
+    /// decided against the other face: inside it, an image with its
+    /// pcurve there; along its boundary, a common block with the piece
+    /// of the other face's edge it coincides with, recorded once — from
+    /// `b`'s side, under the first pair it is met in — with a pcurve for
+    /// each use of `b`'s piece; outside it, nothing.
+    fn coincident(&mut self) -> Result<(), OpError> {
+        let mut images = Vec::new();
+        let mut blocks = Vec::new();
+        let mut floors: Vec<(End, f64)> = Vec::new();
+        for pi in 0..self.pairs.len() {
+            if self.pairs[pi].intersection != SurfaceIntersection::Coincident {
+                continue;
+            }
+            let (ia, ib) = self.pair_faces[pi];
+            for side in 0..2 {
+                let (f, other) = if side == 0 {
+                    (&self.faces[0][ia], &self.faces[1][ib])
+                } else {
+                    (&self.faces[1][ib], &self.faces[0][ia])
+                };
+                for &eid in &f.edges {
+                    let Some(e) = self.edge_info(side, eid) else {
+                        continue;
+                    };
+                    for block in self.blocks_of(e) {
+                        // Along the other face's boundary, by the curves: a
+                        // common block, recorded once, from `b`'s side and
+                        // under the first pair it is met in.
+                        if let Some((gid, gb, reversed)) =
+                            self.matching_block(side, e, &block, other)?
+                        {
+                            let seen = blocks
+                                .iter()
+                                .any(|x: &CommonBlock| x.b == (e.id, block.index));
+                            if side == 1 && !seen {
+                                let (b, raised) =
+                                    self.common_block(pi, e, &block, gid, &gb, reversed)?;
+                                floors.extend(
+                                    [block.start, block.end, gb.start, gb.end]
+                                        .into_iter()
+                                        .map(|end| (end, raised)),
+                                );
+                                blocks.push(b);
+                            }
+                            continue;
+                        }
+                        // Otherwise inside or outside the other face by its
+                        // polygons; within the band of a loop without being
+                        // on any edge of it, the winding number decides.
+                        let mid = e.curve.point(block.range.midpoint());
+                        let projection = other
+                            .surface
+                            .project(mid)
+                            .map_err(|err| geometry(err, e.shape(), other.shape()))?;
+                        let (s, shift) = other.side(projection.uv);
+                        let uv_mid = projection.uv + shift;
+                        let inside = match s {
+                            Side::Outside => false,
+                            Side::Inside => true,
+                            Side::Boundary => other.winds_around(projection.uv),
+                        };
+                        if !inside {
+                            continue;
+                        }
+                        let fit = e.tolerance + f.tolerance.max(other.tolerance);
+                        let (pcurve, residual) =
+                            self.pcurve_of(other, f, e.curve, block.range, uv_mid, fit)?;
+                        let tolerance = e.tolerance.max(residual);
+                        if tolerance > self.precision.max_tolerance {
+                            return Err(OpError::Tolerance {
+                                entity: e.shape(),
+                                wanted: tolerance,
+                            });
+                        }
+                        floors.push((block.start, tolerance));
+                        floors.push((block.end, tolerance));
+                        images.push(EdgeImage {
+                            pair: pi,
+                            side,
+                            edge: e.id,
+                            index: block.index,
+                            range: block.range,
+                            pcurve,
+                            tolerance,
+                        });
+                    }
+                }
+            }
+        }
+        for (end, tolerance) in floors {
+            if let End::Section(k) = self.canonical(end) {
+                let v = &mut self.vertices[k];
+                v.floor = v.floor.max(tolerance);
+            }
+        }
+        self.images = images;
+        self.blocks = blocks;
+        Ok(())
+    }
+
+    /// A common block: `b`'s piece `block` of `e` is `a`'s piece `gb` of
+    /// `gid`, with the pcurve of `a`'s piece for every use of `b`'s by a
+    /// face of `b`, and the tolerance the two edges' raised to the
+    /// residuals.
+    fn common_block(
+        &self,
+        pi: usize,
+        e: &EdgeInfo<'m>,
+        block: &Block,
+        gid: EdgeId,
+        gb: &Block,
+        reversed: bool,
+    ) -> Result<(CommonBlock, f64), OpError> {
+        let m = self.m;
+        let g = self.edge_info(0, gid).ok_or_else(|| self.not_found(0))?;
+        let g_mid = g.curve.point(gb.range.midpoint());
+        // `b`'s parameter of `a`'s midpoint: where each use's own pcurve
+        // gives the (u, v) the fitted one has to be placed at.
+        let on_e = e
+            .curve
+            .project(g_mid)
+            .map_err(|err| geometry(err, g.shape(), e.shape()))?;
+        let t_e = e.in_range(on_e.t).unwrap_or(block.range.midpoint());
+        let mut tolerance = g.tolerance.max(e.tolerance);
+        let mut pcurves = Vec::new();
+        for fb in &self.faces[1] {
+            if !fb.edges.contains(&e.id) {
+                continue;
+            }
+            let face = m.face(fb.id).map_err(|_| self.not_found(1))?;
+            for c in face.loops().iter().flat_map(|l| l.coedges()) {
+                if c.edge() != e.id {
+                    continue;
+                }
+                let own = m.curve2(c.pcurve()).map_err(|_| self.not_found(1))?;
+                let uv_mid = own.point(t_e);
+                let fit = g.tolerance.max(e.tolerance) + fb.tolerance;
+                let (pc, residual) =
+                    self.pcurve_of(fb, g_face_of(self, gid), g.curve, gb.range, uv_mid, fit)?;
+                tolerance = tolerance.max(residual);
+                pcurves.push((c.pcurve(), pc));
+            }
+        }
+        if tolerance > self.precision.max_tolerance {
+            return Err(OpError::Tolerance {
+                entity: e.shape(),
+                wanted: tolerance,
+            });
+        }
+        Ok((
+            CommonBlock {
+                pair: pi,
+                a: (gid, gb.index),
+                b: (e.id, block.index),
+                reversed,
+                pcurves,
+                tolerance,
+            },
+            tolerance,
+        ))
+    }
+
     fn finish(self) -> Interferences {
         let m = self.m;
         let vertices = self.vertices.iter().map(|v| v.finish(m)).collect();
@@ -609,6 +1154,18 @@ impl<'m> Build<'m> {
             curves: self.curves,
             sections: self.sections,
             coincident: self.coincident,
+            crossings: self.crossings,
+            images: self.images,
+            blocks: self.blocks,
         }
     }
+}
+
+/// A face of `a` that uses edge `gid`, for naming in an error; the first
+/// face of `a` when none does.
+fn g_face_of<'b, 'm>(build: &'b Build<'m>, gid: EdgeId) -> &'b FaceInfo<'m> {
+    build.faces[0]
+        .iter()
+        .find(|f| f.edges.contains(&gid))
+        .unwrap_or(&build.faces[0][0])
 }

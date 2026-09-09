@@ -229,9 +229,11 @@ curve the plane reports `Coincident` with is the coplanar case, where the
 plane decides nothing: a line against a coplanar conic is that conic
 against the plane through the line perpendicular to the conic's — the
 same points, the tangency decided in `tol.linear` by an arm that already
-exists — and two coplanar circles are the radical line. A coplanar
-circle–ellipse or ellipse–ellipse pair is `Unsupported`, as is any pair
-with a `Nurbs` operand.
+exists — and two coplanar circles are the radical line. A coplanar pair
+with an ellipse in it is `Coincident` when the two are the same conic
+(centres, radii and major axes agreeing within the tolerance — the edge
+a boolean made and the edge a second boolean meets it with) and
+`Unsupported` otherwise, as is any pair with a `Nurbs` operand.
 
 `⚠ OPEN:` the intersection curve of two cylinders (and of the other quadric
 pairs whose curves are not conics) has an exact parametrisation that is not
@@ -822,18 +824,25 @@ nothing at it changed; a face whose loops changed at all — a split edge,
 a section edge, a re-tolerated vertex — is `Modified` into its
 surviving pieces, a split edge `Modified` into its surviving sub-edges,
 a vertex a section vertex re-tolerated `Modified` into the new one, and
-whatever has no piece left is `Deleted`. A section vertex that is no
+whatever has no piece left is `Deleted`. Where the two operands share
+an entity within tolerance the result holds it once, from the first
+operand: a vertex of B merged into a section vertex that a vertex of A
+stands for is `Modified` into A's, and a piece of an edge of B that is
+a piece of an edge of A (a common block of a coincident face pair) is
+`Modified` into A's piece; a piece of a face of A lying on a coincident
+face of B and kept by the normals is `Modified` from A's face and
+`Generated` from B's, B's face `Deleted`. A section vertex that is no
 operand's vertex is `Generated` from the edge and the face of every hit
-it merges (from both faces of the pair for a closed section curve no
-hit paves); a section edge is `Generated` from both faces of its pair,
-so `generated_pair(wall, cap)` is the hole's rim. The tool of a `cut`
-keeps nothing: every entity of it is `Deleted`, and a piece of it that
-survives — the hole's wall from the tool's wall, the floor of a blind
-hole from the tool's cap, whole or not — is a new entity `Generated`
-from the tool entity it is a piece of, so no entity is shared between
-the tool body and the result. The result's shell and body are
-`Modified` from the target's in `cut`, from both operands' in `fuse`
-and `common`.
+it merges, and from both edges of every crossing (from both faces of
+the pair for a closed section curve no hit paves); a section edge is
+`Generated` from both faces of its pair, so `generated_pair(wall, cap)`
+is the hole's rim. The tool of a `cut` keeps nothing: every entity of it
+is `Deleted`, and a piece of it that survives — the hole's wall from the
+tool's wall, the floor of a blind hole from the tool's cap, whole or not
+— is a new entity `Generated` from the tool entity it is a piece of, so
+no entity is shared between the tool body and the result. The result's
+shell and body are `Modified` from the target's in `cut`, from both
+operands' in `fuse` and `common`.
 
 Queries: `generated_from(origin) -> &[Shape]`, `modified_from(origin)`,
 `is_deleted(input)`, `origins(output) -> Vec<(Relation, Origin)>` (the

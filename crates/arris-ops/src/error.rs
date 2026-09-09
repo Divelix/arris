@@ -106,6 +106,17 @@ pub enum Fault {
     /// the planar subdivision the pave model promised (ADR-0004): see
     /// [`SplitFault`].
     Split(SplitFault),
+    /// A piece of `edge`, of one face of a coincident pair, lies along
+    /// the boundary of `face`, the other, on the same curve as one of
+    /// its edges, but matches no piece of that edge between its paves:
+    /// the two edges were paved differently by the vertices they share
+    /// (ADR-0004).
+    CommonBlock {
+        /// The edge whose piece has no match.
+        edge: EdgeId,
+        /// The face whose boundary it lies along.
+        face: FaceId,
+    },
 }
 
 /// How the arrangement a boolean splits a face by failed to be a planar
@@ -185,6 +196,10 @@ impl core::fmt::Display for Fault {
                 "a section edge of {face} and {other} crosses a seam of {face} without a pave there"
             ),
             Fault::Split(e) => write!(f, "the face arrangement is not a subdivision: {e}"),
+            Fault::CommonBlock { edge, face } => write!(
+                f,
+                "a piece of {edge} lies along the boundary of {face} but matches no piece of it"
+            ),
         }
     }
 }

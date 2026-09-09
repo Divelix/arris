@@ -567,24 +567,200 @@ fn two_cuts_are_identical() {
     }
 }
 
-/// Coincident faces are plan step 10's: a flush pair is refused, naming
-/// both faces, before anything is split.
+// -- coincident faces (plan step 10) ----------------------------------
+
+/// The pave model of two flush boxes: every face pair on the shared
+/// plane is `Coincident`, the four edges around the shared face are
+/// common blocks of the pair, nothing is a section edge, and no image
+/// splits anything — the two faces are the same region.
 #[test]
-fn a_flush_pair_is_refused_naming_the_faces() {
-    let (mut m, a, b) = inputs("boolean/flush-union");
-    let err = cut(&mut m, a, b).unwrap_err();
-    match err {
-        OpError::Unsupported {
-            a: (ka, fa),
-            b: (kb, fb),
-        } => {
-            assert_eq!(ka, GeomKind::Surface(SurfaceKind::Plane));
-            assert_eq!(kb, GeomKind::Surface(SurfaceKind::Plane));
-            assert!(m.faces(a).unwrap().iter().any(|f| f.shape().id == fa.id));
-            assert!(m.faces(b).unwrap().iter().any(|f| f.shape().id == fb.id));
-        }
-        other => panic!("{other}"),
+fn flush_boxes_share_their_rim_as_common_blocks() {
+    let (m, a, b, i) = interferences_of("boolean/flush-union");
+    let coincident: Vec<_> = i
+        .pairs
+        .iter()
+        .filter(|p| p.intersection == SurfaceIntersection::Coincident)
+        .collect();
+    // x = 40 with x = 40, and the four side faces of A with the four
+    // coplanar side faces of B.
+    assert_eq!(coincident.len(), 5, "{i}");
+    assert!(i.sections.is_empty(), "{i}");
+    assert!(i.images.is_empty(), "{i}");
+    assert_eq!(i.blocks.len(), 4, "{i}");
+    for block in &i.blocks {
+        assert!(m.edges(a).unwrap().iter().any(|e| e.id == block.a.0));
+        assert!(m.edges(b).unwrap().iter().any(|e| e.id == block.b.0));
+        assert_eq!(block.a.1, 0);
+        assert_eq!(block.b.1, 0);
+        // Each of B's rim edges is used by two faces of B.
+        assert_eq!(block.pcurves.len(), 2, "{i}");
     }
+    // Every corner of the shared face is one section vertex that merges
+    // a vertex of each operand.
+    assert_eq!(i.vertices.len(), 4, "{i}");
+    for v in &i.vertices {
+        assert_eq!(v.existing.len(), 2, "{i}");
+    }
+}
+
+/// The flush union holds the shared face's rim once: 12 vertices, 20
+/// edges and 10 faces, every edge used twice, and the provenance names
+/// each of B's rim edges `Modified` into A's.
+#[test]
+fn a_flush_union_holds_the_rim_once() {
+    let (m, a, b, body, p) = boolean_of("boolean/flush-union", fuse);
+    assert_eq!(m.faces(body).unwrap().len(), 10);
+    assert_eq!(m.edges(body).unwrap().len(), 20);
+    let a_edges: Vec<EdgeId> = m.edges(a).unwrap().iter().map(|e| e.id).collect();
+    let b_edges: Vec<EdgeId> = m.edges(b).unwrap().iter().map(|e| e.id).collect();
+    let mut merged = 0;
+    for &e in &b_edges {
+        let images = p.modified_from(Shape::new(e, Orientation::Forward));
+        if let [image] = images {
+            if let EntityId::Edge(target) = image.id {
+                if a_edges.contains(&target) {
+                    merged += 1;
+                }
+            }
+        }
+    }
+    assert_eq!(merged, 4, "{p:?}");
+    // The shared faces are gone, one from each operand.
+    let deleted = |body: Body| {
+        m.faces(body)
+            .unwrap()
+            .iter()
+            .filter(|f| p.is_deleted(Shape::new(f.id, Orientation::Forward)))
+            .count()
+    };
+    assert_eq!((deleted(a), deleted(b)), (1, 1));
+}
+
+/// The common of two solids that share only a face has no thickness:
+/// the typed refusal, by name, and the model untouched.
+#[test]
+fn a_flush_common_has_no_thickness() {
+    let (mut m, a, b) = inputs("boolean/flush-common");
+    let before = arris_debug::dump_text(&m, a).unwrap();
+    match common(&mut m, a, b) {
+        Err(OpError::Degenerate {
+            reason: Reason::ZeroThickness,
+            entities,
+        }) => assert_eq!(entities.len(), 2),
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(arris_debug::dump_text(&m, a).unwrap(), before);
+}
+
+/// The boss whose bottom cap lies on the plate's top: the plate's top
+/// is split by the rim into the disc, `On` the cap and dropped, and the
+/// rest, kept; the cap is `Deleted`; the rim is the wall's own edge,
+/// used by the wall (kept by id) and by the new top face.
+#[test]
+fn a_flush_boss_keeps_the_rim_as_the_walls_edge() {
+    let (m, a, b, body, p) = boolean_of("boolean/boss-flush", fuse);
+    assert_eq!(m.faces(body).unwrap().len(), 8);
+    let top = m
+        .faces(a)
+        .unwrap()
+        .into_iter()
+        .find(|f| {
+            let face = m.face(f.id).unwrap();
+            let Surface::Plane { frame } = m.surface(face.surface()).unwrap() else {
+                return false;
+            };
+            frame.origin().z == 10.0
+        })
+        .unwrap();
+    let images = p.modified_from(Shape::new(top.id, Orientation::Forward));
+    assert_eq!(images.len(), 1, "the top face is one piece: {p:?}");
+    let EntityId::Face(new_top) = images[0].id else {
+        panic!()
+    };
+    assert_eq!(m.face(new_top).unwrap().loops().len(), 2);
+    let b_faces = m.faces(b).unwrap();
+    let cap = b_faces
+        .iter()
+        .find(|f| p.is_deleted(Shape::new(f.id, Orientation::Forward)))
+        .expect("the cap is deleted");
+    assert!(
+        p.generated_from(Shape::new(cap.id, Orientation::Forward))
+            .is_empty()
+    );
+    // The wall and the top cap are kept by id: 8 faces, 7 of them named
+    // in no record.
+    let kept = b_faces
+        .iter()
+        .filter(|f| !p.is_deleted(Shape::new(f.id, Orientation::Forward)))
+        .count();
+    assert_eq!(kept, 2);
+    // The rim edge of the result is B's own.
+    let rim = m
+        .edges(body)
+        .unwrap()
+        .into_iter()
+        .filter(|e| {
+            let edge = m.edge(e.id).unwrap();
+            edge.curve().is_some_and(|(c, _)| {
+                matches!(m.curve(c).unwrap(), Curve::Circle { frame, .. } if frame.origin().z == 10.0)
+            })
+        })
+        .count();
+    assert_eq!(rim, 1);
+    // The new top face, the shell and the body: nothing else is named.
+    assert_eq!(p.outputs().len(), 3, "{p:?}");
+}
+
+/// The tool touching the target along a face from outside: `cut` keeps
+/// the target's piece under the tool (the normals oppose) and the rest,
+/// so the target is whole, its top split in two along the tool's rim —
+/// a new edge `Generated` from the tool's.
+#[test]
+fn a_cut_by_a_flush_tool_splits_the_touched_face() {
+    let (m, a, _, body, p) = boolean_of("boolean/boss-flush", cut);
+    assert_eq!(m.faces(body).unwrap().len(), 7);
+    let volume = mass_properties(&m, body).unwrap().volume;
+    assert!((volume - 12000.0).abs() < 1e-9 * 12000.0, "{volume}");
+    let top = m
+        .faces(a)
+        .unwrap()
+        .into_iter()
+        .find(|f| {
+            let face = m.face(f.id).unwrap();
+            let Surface::Plane { frame } = m.surface(face.surface()).unwrap() else {
+                return false;
+            };
+            frame.origin().z == 10.0
+        })
+        .unwrap();
+    let images = p.modified_from(Shape::new(top.id, Orientation::Forward));
+    assert_eq!(images.len(), 2, "{p:?}");
+    let report = check(&m, body, Level::Full);
+    assert!(report.is_ok() && report.unchecked().is_empty(), "{report}");
+}
+
+/// The rod in the tube: the two walls vanish, the inner circles are
+/// common blocks of a periodic edge — the tube's section circles and
+/// the rod's own rims, held once — as is the seam the two walls share,
+/// and the result is five faces.
+#[test]
+fn a_rod_in_a_tube_holds_the_inner_circles_once() {
+    let (m, _, b, i) = interferences_of("boolean/coaxial-fuse");
+    let walls: Vec<_> = i
+        .pairs
+        .iter()
+        .filter(|p| p.intersection == SurfaceIntersection::Coincident)
+        .collect();
+    // The bore wall with the rod's wall, and each annulus with a disc.
+    assert_eq!(walls.len(), 3, "{i}");
+    assert_eq!(i.blocks.len(), 3, "{i}");
+    for block in &i.blocks {
+        assert!(m.edges(b).unwrap().iter().any(|e| e.id == block.b.0));
+        assert!(!block.reversed, "{i}");
+    }
+    let (m, _, _, body, _) = boolean_of("boolean/coaxial-fuse", fuse);
+    assert_eq!(m.faces(body).unwrap().len(), 5);
+    assert_eq!(m.edges(body).unwrap().len(), 5);
 }
 
 // -- `fuse` and `common` (plan step 8) --------------------------------

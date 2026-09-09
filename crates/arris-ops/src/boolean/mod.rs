@@ -20,7 +20,7 @@ use std::collections::BTreeMap;
 
 use arris_check::arris_topo::arris_geom::{Curve, Curve2, SurfaceIntersection};
 use arris_check::arris_topo::arris_math::{Interval, Point2, Point3};
-use arris_check::arris_topo::{Body, EdgeId, FaceId, Model, Provenance, Shape, VertexId};
+use arris_check::arris_topo::{Body, Curve2Id, EdgeId, FaceId, Model, Provenance, Shape, VertexId};
 
 use crate::error::OpError;
 
@@ -34,9 +34,10 @@ pub struct FacePair {
     pub b: FaceId,
     /// Their surfaces' intersection. A `Transversal` pair carries the
     /// section curves; a `Coincident` pair is decided by the arrangement
-    /// of the two faces on one surface (plan step 10) and a `Tangent`
-    /// one by the touch (step 11) — neither contributes a section edge
-    /// here.
+    /// of the two faces on one surface — its [`Interferences::crossings`],
+    /// [`Interferences::images`] and [`Interferences::blocks`] — and a
+    /// `Tangent` one by the touch (plan step 11); neither contributes a
+    /// section edge.
     pub intersection: SurfaceIntersection,
 }
 
@@ -111,6 +112,9 @@ pub struct SectionVertex {
     /// The hits merged into it, ascending indices into
     /// [`Interferences::hits`].
     pub hits: Vec<usize>,
+    /// The edge–edge crossings merged into it, ascending indices into
+    /// [`Interferences::crossings`].
+    pub crossings: Vec<usize>,
     /// The operand vertices it coincides with — a hit at an edge's end,
     /// or one landing on a vertex of the face — ascending. Usually none.
     pub existing: Vec<VertexId>,
@@ -166,6 +170,86 @@ pub struct SectionEdge {
     pub pcurves: [Curve2; 2],
 }
 
+/// One point where an edge of one face of a `Coincident` pair crosses an
+/// edge of the other face on their shared surface: the two curves
+/// intersected, kept when both parameters are in range. Such a point is
+/// usually also an edge-on-face hit of a neighbouring face and merges
+/// into the same section vertex; the pass exists so that a pair whose
+/// neighbours are coincident too still gets its vertex.
+#[derive(Debug, Clone, PartialEq)]
+pub struct EdgeEdgeHit {
+    /// The pair, an index into [`Interferences::pairs`].
+    pub pair: usize,
+    /// The edge of `a`'s face.
+    pub a: EdgeId,
+    /// Its parameter, in its range.
+    pub ta: f64,
+    /// The edge of `b`'s face.
+    pub b: EdgeId,
+    /// Its parameter, in its range.
+    pub tb: f64,
+    /// The point, on `a`'s edge.
+    pub point: Point3,
+    /// `true` when the curves touch here without crossing. A touch makes
+    /// no vertex and no pave.
+    pub tangent: bool,
+    /// The section vertex it was merged into; `None` for a touch.
+    pub vertex: Option<usize>,
+}
+
+/// A piece of an edge of one face of a `Coincident` pair lying strictly
+/// inside the other face: what splits that face where the two overlap,
+/// with its pcurve there (ADR-0004). The piece is the edge's own — the
+/// result uses one edge for both faces — and the pcurve is what the
+/// other face's loop uses it with.
+#[derive(Debug, Clone, PartialEq)]
+pub struct EdgeImage {
+    /// The pair, an index into [`Interferences::pairs`].
+    pub pair: usize,
+    /// Which face of the pair the edge belongs to: `0` for `a`'s, placed
+    /// on `b`'s face; `1` for `b`'s, placed on `a`'s.
+    pub side: usize,
+    /// The edge.
+    pub edge: EdgeId,
+    /// Which piece of the edge between consecutive paves, ascending along
+    /// its parameter; `0` is the whole edge when it has none.
+    pub index: usize,
+    /// The piece's parameter range on the edge's curve.
+    pub range: Interval,
+    /// The pcurve on the other face, same-parameter with the edge's
+    /// curve, in the translate of the domain that face's loops are
+    /// written in.
+    pub pcurve: Curve2,
+    /// The edge's tolerance raised to the pcurve's residual.
+    pub tolerance: f64,
+}
+
+/// A piece of an edge of `b`'s face that is a piece of an edge of `a`'s
+/// face: the same curve within the tolerances, between the same section
+/// vertices, on the boundary of both faces of a `Coincident` pair. The
+/// result holds it once, as `a`'s piece, and every use of `b`'s piece by
+/// a face of `b` is rewritten to `a`'s with a pcurve fitted to `a`'s
+/// curve (Open CASCADE's common block, on this representation).
+#[derive(Debug, Clone, PartialEq)]
+pub struct CommonBlock {
+    /// The pair, an index into [`Interferences::pairs`].
+    pub pair: usize,
+    /// `a`'s edge and the index of its piece.
+    pub a: (EdgeId, usize),
+    /// `b`'s edge and the index of its piece.
+    pub b: (EdgeId, usize),
+    /// `true` when `b`'s piece runs against `a`'s parameter.
+    pub reversed: bool,
+    /// The pcurve of `a`'s piece for every use of `b`'s piece by a face of
+    /// `b`, keyed by that use's own pcurve id (a seam's two uses have
+    /// two), same-parameter with `a`'s curve and placed in the translate
+    /// the use is written in.
+    pub pcurves: Vec<(Curve2Id, Curve2)>,
+    /// The larger of the two edges' tolerances raised to the pcurves'
+    /// residuals.
+    pub tolerance: f64,
+}
+
 /// The pave model of two bodies (ADR-0004): what [`interferences`]
 /// returns. Every list is in a deterministic order — pairs in the
 /// operands' face iteration order, hits by `(edge id, t)`, vertices in
@@ -192,9 +276,18 @@ pub struct Interferences {
     /// The section edges, in curve order and then along each curve.
     pub sections: Vec<SectionEdge>,
     /// Edges of one operand lying in the surface of a face of the other
-    /// within their tolerances: the coincident case, decided at plan
-    /// step 10; no hit is recorded for them here.
+    /// within their tolerances; no hit is recorded for them. Where the
+    /// face is one of a `Coincident` pair the edge's pieces appear below
+    /// as images or common blocks.
     pub coincident: Vec<(EdgeId, FaceId)>,
+    /// Every edge–edge crossing of a `Coincident` pair, ascending by
+    /// `(a's edge, ta, b's edge, tb)`.
+    pub crossings: Vec<EdgeEdgeHit>,
+    /// The pieces of each `Coincident` pair's edges that lie inside the
+    /// other face, in pair order, `a`'s edges first.
+    pub images: Vec<EdgeImage>,
+    /// The pieces of `b`'s edges that are pieces of `a`'s, in pair order.
+    pub blocks: Vec<CommonBlock>,
 }
 
 /// The pave model of `a` and `b`: the decomposition every boolean of the
@@ -212,8 +305,16 @@ pub struct Interferences {
 /// their midpoint is inside both faces, and each kept block carries a
 /// pcurve on each face that is same-parameter with the curve within the
 /// edge's tolerance, translated into the copy of the domain the face's
-/// loops are written in. The result is deterministic: the same value on
-/// every platform.
+/// loops are written in. For a `Coincident` pair, the two faces' edges
+/// have been intersected with one another and every crossing is a
+/// section vertex; every edge of either face is paved by every section
+/// vertex on it; and each piece of each edge between consecutive paves
+/// is an image on the other face when it lies inside it, with a pcurve
+/// there, or a common block when it lies along the other face's
+/// boundary, with the piece of the other face's edge it coincides with —
+/// a piece along the boundary that matches no piece there is
+/// [`crate::Fault::CommonBlock`], a kernel bug. The result is
+/// deterministic: the same value on every platform.
 ///
 /// Errors: [`OpError::InvalidInput`] when an operand fails the checker
 /// (debug builds, and release with `paranoid`); [`OpError::NotFound`]
@@ -276,13 +377,24 @@ pub fn interferences(m: &Model, a: Body, b: Body) -> Result<Interferences, OpErr
 /// parent's. The result is deterministic: the same ids on every run and
 /// every platform.
 ///
+/// A face of the target coincident with a face of the tool is the
+/// flush case, a named one: the two faces' edges split each other on
+/// their shared surface, and a piece of the target's face lying on the
+/// tool's is kept exactly when the two effective normals oppose — the
+/// tool touching from outside — and dropped when they agree, while the
+/// tool's piece is always dropped; a piece of the tool's edge that is
+/// a piece of the target's is one edge of the result, the target's
+/// (`docs/01-architecture.md` §Operations, the selection table).
+///
 /// Errors, the model untouched on each: [`OpError::InvalidInput`] and
 /// [`OpError::NotFound`] as every operation; [`OpError::Unsupported`]
 /// naming the pair for a surface pair or an edge–face pair with no
-/// closed form, and — until plan step 10 — for a coincident face pair
-/// or a piece lying on the other operand's boundary, the flush case;
+/// closed form, and — until plan step 11 — for a piece lying on a face
+/// of the other operand it is not coincident with, a tangent contact;
 /// [`OpError::Degenerate`] with [`crate::Reason::Empty`] when nothing
-/// survives (the target inside the tool), [`crate::Reason::MultiShell`]
+/// survives (the target inside the tool), [`crate::Reason::ZeroThickness`]
+/// when nothing survives and what was dropped lay on the other operand
+/// (two solids touching along a face), [`crate::Reason::MultiShell`]
 /// when the survivors make more than one shell (a tool that splits its
 /// target, an enclosed cavity), [`crate::Reason::TangentContact`] when
 /// a section edge is tangent to a loop edge at a vertex;
@@ -335,8 +447,14 @@ pub fn cut(m: &mut Model, target: Body, tool: Body) -> Result<(Body, Provenance)
 /// the face of every hit it merges, a section edge from both faces of
 /// its pair; the result's shell and body are `Modified` from both
 /// operands' (`docs/02-data-model.md` §Provenance). Tolerances follow
-/// the growth rule, as [`cut`]. The result is deterministic: the same
-/// ids on every run and every platform.
+/// the growth rule, as [`cut`]. Two faces on one surface are the flush
+/// case: a piece of `a`'s face lying on `b`'s is kept, once and in `a`'s
+/// orientation, exactly when the two effective normals agree, and
+/// `Modified` from `a`'s face and `Generated` from `b`'s; when they
+/// oppose — the operands touching along the face — both pieces vanish;
+/// an edge piece the two operands share is one edge of the result,
+/// `a`'s. The result is deterministic: the same ids on every run and
+/// every platform.
 ///
 /// Errors, the model untouched on each: as [`cut`]'s, with
 /// [`crate::Reason::MultiShell`] where a `cut` would rarely reach it —
@@ -377,13 +495,15 @@ pub fn fuse(m: &mut Model, a: Body, b: Body) -> Result<(Body, Provenance), OpErr
 ///
 /// Guarantees. As [`fuse`], with the other selection: a piece of either
 /// operand is kept when it is inside the other, in the operand's own
-/// orientation. Entities are reused from both operands and the
-/// provenance is written the same way; the result's shell and body are
-/// `Modified` from both operands'.
+/// orientation, and a piece of `a`'s face lying on a coincident face of
+/// `b` is kept once, from `a`, when the normals agree. Entities are
+/// reused from both operands and the provenance is written the same
+/// way; the result's shell and body are `Modified` from both operands'.
 ///
 /// Errors, the model untouched on each: as [`cut`]'s, with
 /// [`crate::Reason::Empty`] where two operands share no material — the
-/// common of disjoint solids.
+/// common of disjoint solids — and [`crate::Reason::ZeroThickness`]
+/// where they share only a face.
 ///
 /// ```
 /// use arris_ops::{common, primitive_box};
@@ -498,7 +618,8 @@ impl fmt::Display for Interferences {
     /// The whole model, one entity per line: the pairs with their
     /// intersection kind and curves, the hits, the vertices, the paves
     /// per edge, the section curves with their paves, the section edges
-    /// with their pcurves, the coincident edges. Deterministic, so two
+    /// with their pcurves, the coincident edges, the crossings, images
+    /// and common blocks of the coincident pairs. Deterministic, so two
     /// runs are compared by their text.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "interferences {} vs {}", self.a, self.b)?;
@@ -611,6 +732,61 @@ impl fmt::Display for Interferences {
         writeln!(f, "coincident {}", self.coincident.len())?;
         for (e, face) in &self.coincident {
             writeln!(f, "  {e} in {face}")?;
+        }
+        writeln!(f, "crossings {}", self.crossings.len())?;
+        for (i, x) in self.crossings.iter().enumerate() {
+            let vertex = match x.vertex {
+                Some(v) => format!("v{v}"),
+                None => "-".to_string(),
+            };
+            writeln!(
+                f,
+                "  x{i} p{} {} t {} x {} t {} at {}{} -> {vertex}",
+                x.pair,
+                x.a,
+                num(x.ta),
+                x.b,
+                num(x.tb),
+                point3(x.point),
+                if x.tangent { " tangent" } else { "" }
+            )?;
+        }
+        writeln!(f, "images {}", self.images.len())?;
+        for (i, im) in self.images.iter().enumerate() {
+            let on = if im.side == 0 {
+                self.pairs[im.pair].b
+            } else {
+                self.pairs[im.pair].a
+            };
+            writeln!(
+                f,
+                "  i{i} p{} {}#{} [{}, {}] on {} tol {}: {}",
+                im.pair,
+                im.edge,
+                im.index,
+                num(im.range.lo()),
+                num(im.range.hi()),
+                on,
+                num(im.tolerance),
+                curve2(&im.pcurve)
+            )?;
+        }
+        writeln!(f, "common blocks {}", self.blocks.len())?;
+        for (i, b) in self.blocks.iter().enumerate() {
+            writeln!(
+                f,
+                "  b{i} p{} {}#{} = {}#{}{} tol {}",
+                b.pair,
+                b.b.0,
+                b.b.1,
+                b.a.0,
+                b.a.1,
+                if b.reversed { " reversed" } else { "" },
+                num(b.tolerance)
+            )?;
+            for (id, pc) in &b.pcurves {
+                writeln!(f, "    for {id}: {}", curve2(pc))?;
+            }
         }
         Ok(())
     }

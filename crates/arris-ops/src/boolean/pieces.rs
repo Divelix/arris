@@ -67,12 +67,14 @@ pub(super) struct SubEdge {
     pub end: VRef,
 }
 
-/// A section edge as one face sees it.
+/// An edge that splits a face without being part of its loops, as that
+/// face sees it: a section edge of one of its pairs, or a piece of an
+/// edge of a coincident face lying inside it (its image).
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(super) struct SectionOnFace {
-    /// Its index into `Interferences::sections`.
-    pub index: usize,
-    /// Its parameter range on the section curve.
+pub(super) struct EdgeOnFace {
+    /// The edge piece.
+    pub edge: ERef,
+    /// Its parameter range on its curve.
     pub range: Interval,
     /// The vertex at `range.lo()`.
     pub start: VRef,
@@ -82,6 +84,26 @@ pub(super) struct SectionOnFace {
     pub pcurve: Curve2Id,
     /// The other face of the pair, for an error.
     pub other: FaceId,
+}
+
+/// A piece of an operand edge that the result holds as a piece of
+/// another edge — a common block of a coincident pair — as one use of
+/// it by a loop sees it: what replaces the use.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) struct Alias {
+    /// The piece the result holds.
+    pub edge: ERef,
+    /// Its parameter range on its own curve.
+    pub range: Interval,
+    /// `true` when the replaced piece runs against it.
+    pub reversed: bool,
+    /// The vertex at `range.lo()`.
+    pub start: VRef,
+    /// The vertex at `range.hi()`.
+    pub end: VRef,
+    /// The pcurve of the held piece on this face, in this use's
+    /// translate of the domain, same-parameter with `range`.
+    pub pcurve: Curve2Id,
 }
 
 /// One use of an edge piece by a piece's loop, in the *stored* sense:
@@ -104,6 +126,8 @@ pub(super) struct FacePiece {
     pub loops: Vec<Vec<PieceUse>>,
     /// A point strictly inside the piece, on the surface.
     pub interior: Point3,
+    /// Its (u, v).
+    pub uv: Point2,
 }
 
 /// A face split into its pieces.
@@ -297,8 +321,13 @@ impl<'m> Arrangement<'m> {
     }
 
     /// The loops of the face as one-sided half-edges, each coedge cut at
-    /// its paves; consecutive pieces share a node by construction.
-    fn loops(&mut self, sub_edges: &BTreeMap<EdgeId, Vec<SubEdge>>) -> Result<(), OpError> {
+    /// its paves, a piece with an alias replaced by the piece it stands
+    /// for; consecutive pieces share a node by construction.
+    fn loops(
+        &mut self,
+        sub_edges: &BTreeMap<EdgeId, Vec<SubEdge>>,
+        alias: &BTreeMap<(ERef, Curve2Id), Alias>,
+    ) -> Result<(), OpError> {
         let face = self
             .m
             .face(self.face)
@@ -312,41 +341,46 @@ impl<'m> Arrangement<'m> {
                     .get(&c.edge())
                     .ok_or_else(|| OpError::NotFound(Shape::new(c.edge(), Orientation::Forward)))?;
                 let named = Shape::new(c.edge(), Orientation::Forward);
-                match c.orientation() {
-                    Orientation::Forward => {
-                        for (i, s) in subs.iter().enumerate() {
-                            let e = ERef::Sub {
-                                edge: c.edge(),
-                                index: i,
-                            };
-                            steps.push((
-                                s.start,
-                                c.pcurve(),
-                                s.range,
-                                false,
-                                e,
-                                c.orientation(),
+                let reversed = c.orientation().is_reversed();
+                let indices: Vec<usize> = if reversed {
+                    (0..subs.len()).rev().collect()
+                } else {
+                    (0..subs.len()).collect()
+                };
+                for i in indices {
+                    let s = &subs[i];
+                    let e = ERef::Sub {
+                        edge: c.edge(),
+                        index: i,
+                    };
+                    let step = match alias.get(&(e, c.pcurve())) {
+                        None => (
+                            if reversed { s.end } else { s.start },
+                            c.pcurve(),
+                            s.range,
+                            reversed,
+                            e,
+                            c.orientation(),
+                            named,
+                        ),
+                        Some(al) => {
+                            let against = reversed != al.reversed;
+                            (
+                                if against { al.end } else { al.start },
+                                al.pcurve,
+                                al.range,
+                                against,
+                                al.edge,
+                                if against {
+                                    Orientation::Reversed
+                                } else {
+                                    Orientation::Forward
+                                },
                                 named,
-                            ));
+                            )
                         }
-                    }
-                    Orientation::Reversed => {
-                        for (i, s) in subs.iter().enumerate().rev() {
-                            let e = ERef::Sub {
-                                edge: c.edge(),
-                                index: i,
-                            };
-                            steps.push((
-                                s.end,
-                                c.pcurve(),
-                                s.range,
-                                true,
-                                e,
-                                c.orientation(),
-                                named,
-                            ));
-                        }
-                    }
+                    };
+                    steps.push(step);
                 }
             }
             let n = steps.len();
@@ -370,16 +404,17 @@ impl<'m> Arrangement<'m> {
         Ok(())
     }
 
-    /// The section edges as pairs of half-edges, their ends at the
-    /// vertex images nearest the pcurve's ends, or at new interior nodes.
-    fn sections(&mut self, sections: &[SectionOnFace]) -> Result<(), OpError> {
+    /// The section edges and images as pairs of half-edges, their ends
+    /// at the vertex images nearest the pcurve's ends, or at new interior
+    /// nodes.
+    fn sections(&mut self, sections: &[EdgeOnFace]) -> Result<(), OpError> {
         for s in sections {
             let uv_start = self.uv(s.pcurve, s.range.lo())?;
             let uv_end = self.uv(s.pcurve, s.range.hi())?;
             let start = self.image_near(s.start, uv_start);
             let end = self.image_near(s.end, uv_end);
             let named = Shape::new(s.other, Orientation::Forward);
-            let edge = ERef::Section(s.index);
+            let edge = s.edge;
             let along = self.half(
                 start,
                 end,
@@ -655,6 +690,7 @@ impl<'m> Arrangement<'m> {
             pieces.push(FacePiece {
                 loops,
                 interior: self.surface.point(uv.x, uv.y),
+                uv,
             });
         }
         Ok(pieces)
@@ -670,9 +706,11 @@ fn a_key(e: Entry) -> (usize, usize) {
 }
 
 /// The pieces of `face`: the regions of the arrangement of its loops,
-/// cut at their paves into `sub_edges`, and of `sections`. A face with
-/// no section edge and none of its edges in `touched` is untouched and
-/// has one piece, itself, still with its interior point.
+/// cut at their paves into `sub_edges` with the pieces in `alias`
+/// replaced, and of `sections` — the section edges and images on it. A
+/// face with no section edge or image and none of its edges in
+/// `touched` is untouched and has one piece, itself, still with its
+/// interior point.
 ///
 /// Errors: [`OpError::Degenerate`] with [`Reason::TangentContact`] for a
 /// tie at a node; [`OpError::Internal`] with a [`SplitFault`] for an
@@ -684,7 +722,8 @@ pub(super) fn split_face(
     face: FaceId,
     sub_edges: &BTreeMap<EdgeId, Vec<SubEdge>>,
     touched: &BTreeSet<EdgeId>,
-    sections: &[SectionOnFace],
+    sections: &[EdgeOnFace],
+    alias: &BTreeMap<(ERef, Curve2Id), Alias>,
 ) -> Result<SplitFace, OpError> {
     let not_found = |_: NotFound| OpError::NotFound(Shape::new(face, Orientation::Forward));
     let entity = m.face(face).map_err(not_found)?;
@@ -712,7 +751,7 @@ pub(super) fn split_face(
         images: BTreeMap::new(),
         order: Vec::new(),
     };
-    a.loops(sub_edges)?;
+    a.loops(sub_edges, alias)?;
     a.sections(sections)?;
     a.order()?;
     let pieces = a.regions()?;

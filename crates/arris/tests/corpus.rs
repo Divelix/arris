@@ -51,8 +51,9 @@ fn boolean_bolt_pattern_8() {
     run("boolean/bolt-pattern-8");
 }
 
+/// Two boxes sharing a face: the flush case. The shared face vanishes
+/// and the four edges around it are held once, from the first operand.
 #[test]
-#[ignore = "M4: needs ops::fuse"]
 fn boolean_flush_union() {
     run("boolean/flush-union");
 }
@@ -72,8 +73,9 @@ fn boolean_corner_cut() {
     run("boolean/corner-cut");
 }
 
+/// The two flush boxes' common is the shared face alone: nothing with
+/// thickness, the runner's degenerate path.
 #[test]
-#[ignore = "M4: needs ops::common, and the degenerate result"]
 fn boolean_flush_common() {
     run("boolean/flush-common");
 }
@@ -105,6 +107,23 @@ fn boolean_split_cut() {
 #[test]
 fn boolean_boss() {
     run("boolean/boss");
+}
+
+/// The boss's bottom cap coincident with the plate's top: the cap
+/// vanishes, the plate's top is split by the cap's rim and keeps the
+/// outside, and the rim is the wall's own edge.
+#[test]
+fn boolean_boss_flush() {
+    run("boolean/boss-flush");
+}
+
+/// A rod filling a tube's bore: the coincident cylinder walls vanish,
+/// the rod's discs sit beside the tube's annuli sharing the inner
+/// circles — the cylinder–cylinder coincident arm, and the common
+/// blocks of a periodic edge.
+#[test]
+fn boolean_coaxial_fuse() {
+    run("boolean/coaxial-fuse");
 }
 
 /// The wall's (u, v) region is a strip between two oblique sections, and

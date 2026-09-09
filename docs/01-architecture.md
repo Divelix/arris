@@ -192,9 +192,23 @@ inside both faces, a closed curve with no pave seeded at its parameter
 zero when it is interior to both — each with a pcurve on each face by
 `pcurve_on`, translated by whole periods into the copy of the domain the
 face's loops are written in, its tolerance the larger of the faces'
-raised to the pcurves' residual. A `Tangent` or `Coincident` pair and a
-touching or coincident edge are recorded and contribute nothing here:
-plan steps 10 and 11 decide them. Every list is in a deterministic
+raised to the pcurves' residual. A `Coincident` pair — two faces on one
+surface, the flush case — is decided by the same arrangement (ADR-0004):
+the two faces' edges are intersected with one another and every
+crossing is a section vertex; every edge of either face is paved by
+every section vertex on it; and each piece of each edge between its
+paves is matched to the piece of that face's edge it coincides with
+as a *common block* when an edge of that face is `Coincident` with its
+curve and the two pieces overlap (the same piece then, with the same
+ends, or `Fault::CommonBlock`, a kernel bug: the vertices the edges
+share paved them differently), placed on the other face as an *image*
+with a pcurve there when it lies inside that face by its polygons, and
+dropped when it lies outside — the coincidence is the curves' verdict,
+never the polygon band's, which two fitted pcurves of one curve can
+straddle. For the same reason a block of a section curve that is a
+piece of an operand edge of either face is that edge and not a section
+edge. A `Tangent` pair and a touching edge are recorded and contribute
+nothing: plan step 11 decides them. Every list is in a deterministic
 order and `Display` prints the whole model, which is what the `inspect`
 skill reads when a boolean is wrong. The property tests build their
 operands through `arris_debug::prop::body` — a box and a cylinder whose
@@ -228,20 +242,32 @@ table decides:
 | B (the tool) | kept when outside A | kept when inside A | kept when inside the target, reversed |
 | a coincident face | once, from A, when the normals agree | once, from A, when they agree | once, from A, when they oppose |
 
-The coincident row and a piece classified `On` the other operand are
-plan step 10's and are `OpError::Unsupported` naming the pair until
+The coincident row is read at a piece classified `On` a face of the
+other operand that its own face is coincident with: the two effective
+normals at the piece's interior point agree or oppose, and the piece is
+kept from A alone, in A's orientation, `Modified` from A's face and
+`Generated` from B's, or dropped by both. The images of B's edges split
+A's face along B's boundary and B's images split A's, so the piece is
+exactly the overlap; a common block is one edge of the result, A's
+piece, and every use of B's piece is rewritten to it with a pcurve
+fitted to A's curve in that use's translate of the domain (a seam's two
+uses get two), B's piece `Modified` into A's. A piece classified `On` a
+face it is not coincident with, or on an edge or a vertex, is a tangent
+contact — plan step 11's, `OpError::Unsupported` naming the pair until
 then. The survivors are grouped by shared edges — none is `Degenerate`
-with `Reason::Empty`, more than one group `Reason::MultiShell` — and
-assembled through `Builder::assemble` with every untouched entity of a
-kept-by-id operand `Keep`: a face whose loops changed at all, even only
-by a split edge or a re-tolerated vertex, is a new face `Modified` from
-the old; the tool of a `cut` keeps nothing, every entity of it `Deleted`
-and each surviving piece `Generated` from its parent (02-data-model
-§Provenance). A `fuse` and a `common` have no tool: both operands are
-kept by id, so an untouched face of either keeps it, and the result's
-shell and body are `Modified` from both operands' where a `cut`'s are
-`Modified` from the target's alone. Tolerances follow §Tolerances'
-growth rule and a piece keeps its parent's.
+with `Reason::Empty`, or with `Reason::ZeroThickness` when what was
+dropped lay on the other operand (two solids sharing only a face), more
+than one group `Reason::MultiShell` — and assembled through
+`Builder::assemble` with every untouched entity of a kept-by-id operand
+`Keep`: a face whose loops changed at all, even only by a split edge or
+a re-tolerated vertex, is a new face `Modified` from the old; the tool
+of a `cut` keeps nothing, every entity of it `Deleted` and each
+surviving piece `Generated` from its parent (02-data-model §Provenance).
+A `fuse` and a `common` have no tool: both operands are kept by id, so
+an untouched face of either keeps it, and the result's shell and body
+are `Modified` from both operands' where a `cut`'s are `Modified` from
+the target's alone. Tolerances follow §Tolerances' growth rule and a
+piece keeps its parent's.
 
 Sweeps take a planar `Profile` — an outer loop and holes of lines and arcs
 in a plane's own (u, v) — and build the planar face themselves (`ops::

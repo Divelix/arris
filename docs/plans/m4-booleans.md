@@ -347,7 +347,7 @@ or bound has to be established here.
   is shrunk to a fixture under `boolean/` with an oracle value and fixed
   within the step or left `#[ignore]`d with its reason. Runs at
   `ARRIS_PROPTEST_CASES=1000` once before the step closes.
-- [ ] Step 10 **[3]** — Coincident faces. A `Coincident` pair puts the
+- [x] Step 10 **[3]** — Coincident faces. A `Coincident` pair puts the
   other face's edges on this face through `pcurve_on` (exact on a
   plane; a circle or ruling on a cylinder), paved by `intersect_curves`
   against this face's own edges and by the vertices already merged;
@@ -718,6 +718,105 @@ deltas above, not a new decision.
   is the body's own inscribed-chord bound, wall area × chord over
   volume, since the default assumes a volume that scales with the cube
   of the radius. Seed and count in the commit body.
+- **Step 10 — the pave model gains three lists.** The deltas describe
+  the coincident case as "the other face's edges on this face through
+  `pcurve_on`, paved by `intersect_curves` against this face's own
+  edges and by the vertices already merged"; as a value that is
+  `Interferences::{crossings, images, blocks}` (public additions beyond
+  the deltas: `EdgeEdgeHit`, `EdgeImage`, `CommonBlock`,
+  `SectionVertex::crossings`, `Fault::CommonBlock`). A *crossing* is an
+  edge–edge hit of a coincident pair, merged like an edge–face hit; an
+  *image* is a piece of one face's edge between its paves that lies
+  inside the other face, with its pcurve there, and is that face's
+  extra two-sided arrangement edge; a *common block* is a piece of `b`'s
+  edge that lies along `a`'s boundary on the same curve as one of `a`'s
+  edges, matched to `a`'s piece by mutual midpoint containment and the
+  same ends. The crossings turned out to be found already by the
+  edge-on-face hits with the neighbouring faces on every fixture (a
+  vertex on the shared surface has an edge transversal to some face of
+  the other operand through it); the pass stays because the argument
+  needs the neighbour to be transversal, which two nested flush boxes
+  do not promise.
+- **Step 10 — common blocks are aliases, always toward `a`.** The
+  result holds a shared edge piece once, `a`'s, and every use of `b`'s
+  piece by a face of `b` is rewritten before that face's arrangement is
+  built: the target's range and ends, the orientation composed, and a
+  pcurve fitted to `a`'s curve on `b`'s face placed in *that use's*
+  translate of the domain (a seam's two coedges get two, keyed by their
+  own pcurve id — `CommonBlock::pcurves`). In `cut` the target is `a`,
+  so nothing of the tool is ever shared. `b`'s piece is `Modified`
+  into `a`'s; an operand vertex merged into a section vertex another
+  operand's vertex stands for is likewise `Modified` into it, and
+  `Build::sub_edges` now reads every edge's ends through that merge —
+  before this step the two vertices of a merged pair would both have
+  reached the assembly.
+- **Step 10 — every edge of a coincident pair is paved by every section
+  vertex on it.** The hit-based paves put a vertex only on the edge that
+  pierced, not on the edge it landed on, so a vertex of `a` on an edge
+  of `b`'s coincident face (the taller flush box) left `b`'s edge whole
+  and the common block unmatched. The projection pass over the pairs'
+  edges is the deltas' "by the vertices already merged"; it paves
+  nothing that is not already a section vertex.
+- **Step 10 — "along the boundary" is decided by the curves, never by
+  the polygon band.** The first draft asked the other face's polygons
+  whether an edge piece's midpoint was `Boundary` and only then looked
+  for a common block, and the 1000-pose cut-then-fuse run found the
+  hole: the section ellipse of `A − B` and of `A ∩ B` is one 3D curve,
+  but its pcurve on the cylinder is a NURBS fitted twice, once per
+  operand, each within the tolerance in 3D, so the two differ by up to
+  twice the tolerance in (u, v) while the boundary band is one — the
+  midpoint came back `Inside`, the piece became an image over the
+  face's own boundary and the arrangement reported a tangent contact.
+  Now a piece is a common block whenever an edge of the other face is
+  `Coincident` with its curve and their pieces overlap (either midpoint
+  strictly inside the other's range) — the same piece, or the fault —
+  and the polygons decide only what is left; and a block of a section
+  curve that is a piece of an operand edge of either face is that edge,
+  never a section edge (the split it would have made is that edge's
+  image through the coincident neighbour, or nothing). The shrunk case
+  is `cut_then_fuse_of_an_oblique_cylinder_through_a_box` beside the
+  property, seed and count in the commit body.
+- **Step 10 — `ZeroThickness` is `Empty` with a dropped `On` piece.**
+  `flush-common` drops both shared faces by the normals and keeps
+  nothing; the runner's degenerate path accepts any `Degenerate`, and
+  the unit test holds it to `Reason::ZeroThickness`, which the result
+  reports exactly when nothing survives and some piece lay on the other
+  operand.
+- **Step 10 — the same ellipse twice is `Coincident`.** `V((A − B) ∪
+  (A ∩ B)) = V(A)` (`⚠ OPEN` 4's second identity, one more test) meets
+  the section ellipse of the first cut as an edge of both operands of
+  the fuse, and `intersect_curves`'s coplanar arm refused the pair as
+  the cycle-3 quartic. Two coplanar conics that are the *same* conic —
+  centres, radii and major axes within the tolerance, the radii swapped
+  with the axes when the frames name them the other way round — have a
+  closed form and are now `Coincident` there; two distinct conics with
+  an ellipse in them stay `Unsupported`. A behaviour change of a public
+  `arris-geom` function, named in the commit; 02 §Curves updated.
+- **Step 10 — `boss-flush` and `coaxial-fuse` are authored here.**
+  Neither existed; `coaxial-fuse` chains `coaxial-cut`'s tube with a rod
+  r 1, z −1…1 (the plan's "the tube ∪ the inner cylinder" read as the
+  cylinder of the tube's own height, which is what gives 8π and
+  4/5/5/7). Open CASCADE agrees with the plan's counts on both, and the
+  rod's seam is a common block of the tube's bore seam although both
+  walls vanish. The S5 backlog line is left, with the review: the exact
+  overlap test lives in `arris-ops`, above the checker.
+- **Step 10 — an identity between two fittings holds to the model's
+  tolerance, not to `REL`.** The 1000-pose run of
+  `cut_then_fuse_restores_the_union_at_random_poses` failed a second
+  time, on the volumes alone: `V((A − B) ∪ B)` and `V(A ∪ B)` differing
+  by 1.02e-9 relative against the tests' 1e-9. Every count matched, both
+  bodies were clean at `Full`, and additivity and the cut identity held
+  to 1e-15 — the section curve's pcurve on the cylinder is a NURBS
+  fitted once for the union and again for the cut the union is restored
+  from, each within the edge's tolerance, so the two (u, v) regions
+  differ by up to that. The difference scales linearly with the model's
+  tolerance (7.4e-9 in a volume of 7.2 at 1e-7, 8.3e-11 at 1e-9), which
+  is the kernel's own rule: a bare `REL` is a literal, and the fix is
+  the model's tolerance over the body's size — `fitted_rel` is `REL +
+  tol / √A`, used by this identity alone; the identities whose two sides
+  share one fitting keep `REL`. `cut_then_fuse_of_a_cylinder_across_a_
+  small_box` is the shrunk case beside the property, and asserts that it
+  still needs the wider bound. Seed and count in the commit body.
 - **Step 1 — `sample::sphere` is not assemblable.** Its two degenerate
   pole edges are used once each, which `finish` has always refused (it is
   why the sample goes through the raw insert). The round trip runs over
@@ -746,7 +845,9 @@ kept here so a step can cite the decision.
   key, with the oracle's counts kept as information (step 7).
 - `⚠ OPEN` 4 — **The cut-then-fuse identity.** **Decided:** `V((A − B) ∪
   B) = V(A ∪ B)` at step 10, and `V((A − B) ∪ (A ∩ B)) = V(A)` too if it
-  costs one more test.
+  costs one more test. Both are in
+  `cut_then_fuse_restores_the_union_at_random_poses` (step 10), the
+  second at the cost of the coincident-ellipse arm above.
 - `⚠ OPEN` 5 — **Where `classify_point` lives.** **Decided:**
   `arris-check` (it is B1's ray cast, and `ops` already depends on
   `check`); the facade re-exports it.

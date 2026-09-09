@@ -424,6 +424,69 @@ fn a_nurbs_operand_is_unsupported_naming_the_pair() {
     });
 }
 
+/// The same ellipse twice — in its own frame, in the frame turned half
+/// a turn about its normal, and with the two radii and axes swapped —
+/// is `Coincident`; a circle of its major radius in its plane is not.
+#[test]
+fn the_same_coplanar_ellipse_is_coincident() {
+    check(ellipse(), |e| {
+        let Curve::Ellipse {
+            frame,
+            major_radius,
+            minor_radius,
+        } = e
+        else {
+            return fail("not an ellipse".to_string());
+        };
+        let turned = Frame::new(
+            frame.origin(),
+            frame.z().into_inner(),
+            -frame.x().into_inner(),
+        )
+        .map_err(|e| TestCaseError::fail(e.to_string()))?;
+        let swapped = Frame::new(
+            frame.origin(),
+            frame.z().into_inner(),
+            frame.y().into_inner(),
+        )
+        .map_err(|e| TestCaseError::fail(e.to_string()))?;
+        let twins = [
+            e.clone(),
+            Curve::Ellipse {
+                frame: turned,
+                major_radius,
+                minor_radius,
+            },
+            Curve::Ellipse {
+                frame: swapped,
+                major_radius: minor_radius,
+                minor_radius: major_radius,
+            },
+        ];
+        for twin in &twins {
+            prop_assert_eq!(
+                intersect_curves(&e, twin, tol())
+                    .map_err(|e| TestCaseError::fail(e.to_string()))?,
+                CurveIntersection::Coincident,
+                "{:?} vs {:?}",
+                e,
+                twin
+            );
+        }
+        let circle = Curve::Circle {
+            frame,
+            radius: major_radius,
+        };
+        let against_circle = intersect_curves(&e, &circle, tol());
+        prop_assert!(
+            matches!(against_circle, Err(GeomError::Unsupported { .. })),
+            "{:?}",
+            against_circle
+        );
+        Ok(())
+    });
+}
+
 #[test]
 fn a_coplanar_pair_with_an_ellipse_is_unsupported() {
     check((ellipse(), finite_f64(0.1..=2.0)), |(e, factor)| {

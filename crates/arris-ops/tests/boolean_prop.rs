@@ -7,8 +7,10 @@
 //! `tests/fixtures/boolean/` (`tests/fixtures/README.md` §Property-test
 //! failures).
 
-use arris_debug::prop::body::OverlappingPair;
+use arris_debug::prop::body::{Boxed, Cylindrical, OverlappingPair};
 use arris_debug::{dump_text, prop};
+use arris_ops::arris_check::arris_topo::arris_math::nalgebra::{Quaternion, UnitQuaternion};
+use arris_ops::arris_check::arris_topo::arris_math::{Axis, Isometry, Point3, Vec3};
 use arris_ops::arris_check::arris_topo::{Body, Model, Provenance};
 use arris_ops::arris_check::{Level, check};
 use arris_ops::measure::{MassProperties, mass_properties};
@@ -25,9 +27,29 @@ fn fail(what: impl core::fmt::Display) -> TestCaseError {
     TestCaseError::fail(what.to_string())
 }
 
+/// `|a − b| ≤ rel · max(|a|, |b|, floor)`.
+fn close_to(a: f64, b: f64, floor: f64, rel: f64) -> bool {
+    (a - b).abs() <= rel * a.abs().max(b.abs()).max(floor)
+}
+
 /// `|a − b| ≤ REL · max(|a|, |b|, floor)`.
 fn close(a: f64, b: f64, floor: f64) -> bool {
-    (a - b).abs() <= REL * a.abs().max(b.abs()).max(floor)
+    close_to(a, b, floor, REL)
+}
+
+/// The relative bound an identity holds to when its two sides are built
+/// from different fittings of the same curve: `REL` plus what the
+/// model's own tolerance permits over the body's size. A pcurve is
+/// fitted to within its edge's tolerance, so a face's (u, v) region is
+/// bounded to within `tol` in 3D and every mass property — each an
+/// integral over that boundary — carries a relative error of order
+/// `tol` over a length of the body, taken as `√A`. Measured on the case
+/// below: the difference scales linearly with the model's tolerance,
+/// 7.4e-9 in a volume of 7.2 at `tol` 1e-7 and 8.3e-11 at 1e-9
+/// (`docs/plans/m4-booleans.md` step 10). `REL` alone is a literal, and
+/// the kernel's rule is that the tolerance is the model's.
+fn fitted_rel(m: &Model, p: &MassProperties) -> f64 {
+    REL + m.precision().default_tolerance / p.area.sqrt()
 }
 
 /// `op(a, b)`, its result clean at `Full` with nothing unchecked, and its
@@ -223,28 +245,39 @@ fn assert_same_properties(
     y: &MassProperties,
     what: &str,
 ) -> Result<(), TestCaseError> {
+    assert_same_properties_to(x, y, what, REL)
+}
+
+/// The same to `rel`: [`fitted_rel`] where the two bodies were built
+/// from different fittings of the same curves.
+fn assert_same_properties_to(
+    x: &MassProperties,
+    y: &MassProperties,
+    what: &str,
+    rel: f64,
+) -> Result<(), TestCaseError> {
     prop_assert!(
-        close(x.volume, y.volume, 1.0),
+        close_to(x.volume, y.volume, 1.0, rel),
         "{what}: volumes {} and {}",
         x.volume,
         y.volume
     );
     prop_assert!(
-        close(x.area, y.area, 1.0),
+        close_to(x.area, y.area, 1.0, rel),
         "{what}: areas {} and {}",
         x.area,
         y.area
     );
     let scale = x.centroid.coords.abs().max().max(1.0);
     prop_assert!(
-        (x.centroid - y.centroid).norm() <= REL * scale,
+        (x.centroid - y.centroid).norm() <= rel * scale,
         "{what}: centroids {} and {}",
         x.centroid,
         y.centroid
     );
     let scale = x.inertia.abs().max().max(1.0);
     prop_assert!(
-        (x.inertia - y.inertia).abs().max() <= REL * scale,
+        (x.inertia - y.inertia).abs().max() <= rel * scale,
         "{what}: inertia {} and {}",
         x.inertia,
         y.inertia
@@ -283,4 +316,165 @@ fn fuse_and_common_commute_at_random_poses() {
         }
         Ok(())
     });
+}
+
+// -- coincident faces (plan step 10, `⚠ OPEN` 4) -----------------------
+
+/// `V((A − B) ∪ B) = V(A ∪ B)` and `V((A − B) ∪ (A ∩ B)) = V(A)`: every
+/// face of `A − B` that came from the tool is coincident with a face of
+/// `B` with the normals opposed, every face of `A ∩ B` is coincident
+/// with one of `A − B`, and the section edges of the first cut are
+/// common blocks of the fuse — the flush case at every pose the cut
+/// succeeds at. Both fuses are clean at `Full` and hold the union's
+/// counts where they are known.
+#[test]
+fn cut_then_fuse_restores_the_union_at_random_poses() {
+    prop::check(prop::body::overlapping_pair(), |pair| {
+        let (mut m, a, b, pa, _) = operands(&pair)?;
+        let diff = match cut(&mut m, a, b) {
+            Ok((body, _)) => body,
+            Err(OpError::Degenerate {
+                reason: Reason::MultiShell { .. },
+                ..
+            }) => return Ok(()),
+            Err(e) => return Err(fail(format!("cut(a, b): {e}"))),
+        };
+        let (union, punion) = run(&mut m, "fuse(a, b)", fuse, a, b)?;
+        let (inter, _) = run(&mut m, "common(a, b)", common, a, b)?;
+        let (restored, prestored) = run(&mut m, "fuse(a − b, b)", fuse, diff, b)?;
+        let rel = fitted_rel(&m, &punion);
+        assert_same_properties_to(&prestored, &punion, "(a − b) ∪ b against a ∪ b", rel)?;
+        prop_assert_eq!(
+            arris_debug::dump::euler_line(&m, restored).map_err(fail)?,
+            arris_debug::dump::euler_line(&m, union).map_err(fail)?,
+            "(a − b) ∪ b: counts"
+        );
+        let (_, pwhole) = run(&mut m, "fuse(a − b, a ∩ b)", fuse, diff, inter)?;
+        let rel = fitted_rel(&m, &pa);
+        prop_assert!(
+            close_to(pwhole.volume, pa.volume, pa.volume, rel),
+            "V((a − b) ∪ (a ∩ b)) = {}, V(a) = {}",
+            pwhole.volume,
+            pa.volume
+        );
+        prop_assert!(
+            close_to(pwhole.area, pa.area, pa.area, rel),
+            "A((a − b) ∪ (a ∩ b)) = {}, A(a) = {}",
+            pwhole.area,
+            pa.area
+        );
+        Ok(())
+    });
+}
+
+/// The first shrunk failure of the test above (seed and count in the
+/// commit body): an oblique cylinder through an axis-aligned box. The
+/// section ellipse of the cut is an edge of both `A − B` and `A ∩ B`,
+/// and the two faces of `A − B` and `A ∩ B` on the box's face meet along
+/// it as a common block; the fitted pcurves of that ellipse on the
+/// cylinder differ between the two operands by more than the polygon
+/// band, so the coincidence has to be decided by the curves.
+#[test]
+fn cut_then_fuse_of_an_oblique_cylinder_through_a_box() {
+    let pair = OverlappingPair {
+        cuboid: Boxed {
+            min: Point3::new(-5.111718902382138, -9.737641865616778, -8.27137327424838),
+            max: Point3::new(5.111718902382138, 9.737641865616778, 8.27137327424838),
+            pose: Isometry::identity(),
+        },
+        cylinder: Cylindrical {
+            axis: Axis::new(
+                Point3::new(19.799757631166585, 37.59109796609268, 13.164435039577995),
+                Vec3::new(
+                    -0.5661663057675169,
+                    -0.7883157354119573,
+                    -0.2408609879483756,
+                ),
+            )
+            .unwrap(),
+            radius: 5.84425050754312,
+            height: 82.56639984248808,
+            pose: Isometry::identity(),
+        },
+    };
+    let (mut m, a, b, pa, _) = operands(&pair).unwrap();
+    let (diff, _) = cut(&mut m, a, b).unwrap();
+    let (union, punion) = run(&mut m, "fuse(a, b)", fuse, a, b).unwrap();
+    let (inter, _) = run(&mut m, "common(a, b)", common, a, b).unwrap();
+    let (restored, prestored) = run(&mut m, "fuse(a − b, b)", fuse, diff, b).unwrap();
+    let rel = fitted_rel(&m, &punion);
+    assert_same_properties_to(&prestored, &punion, "(a − b) ∪ b against a ∪ b", rel).unwrap();
+    assert_eq!(
+        arris_debug::dump::euler_line(&m, restored).unwrap(),
+        arris_debug::dump::euler_line(&m, union).unwrap()
+    );
+    let (_, pwhole) = run(&mut m, "fuse(a − b, a ∩ b)", fuse, diff, inter).unwrap();
+    let rel = fitted_rel(&m, &pa);
+    assert!(
+        close_to(pwhole.volume, pa.volume, pa.volume, rel),
+        "{} vs {}",
+        pwhole.volume,
+        pa.volume
+    );
+    assert!(
+        close_to(pwhole.area, pa.area, pa.area, rel),
+        "{} vs {}",
+        pwhole.area,
+        pa.area
+    );
+}
+
+/// The second shrunk failure of the property above, the one that fixed
+/// its bound (seed and count in the commit body): a cylinder across a
+/// box a tenth of its length, at a pose 38 units from the origin. Every
+/// count matches and the additivity identities hold to 1e-15, but
+/// `V((A − B) ∪ B)` and `V(A ∪ B)` differ by 1.02e-9 relative — the
+/// section curve's pcurve on the cylinder is a NURBS fitted once for
+/// the union and again for the cut it is restored from, each within the
+/// edge's tolerance, so the two (u, v) regions differ by that. The
+/// difference scales linearly with the model's tolerance, which is what
+/// [`fitted_rel`] states.
+#[test]
+fn cut_then_fuse_of_a_cylinder_across_a_small_box() {
+    let pose = Isometry::new(
+        UnitQuaternion::from_quaternion(Quaternion::new(0.0, 0.0, 1.0, 0.0)),
+        Vec3::new(0.0, 0.0, -38.41144480853464),
+    );
+    let pair = OverlappingPair {
+        cuboid: Boxed {
+            min: Point3::new(-0.7606671317062929, -0.5, -0.5),
+            max: Point3::new(0.7606671317062929, 0.5, 0.5),
+            pose,
+        },
+        cylinder: Cylindrical {
+            axis: Axis::new(
+                Point3::new(2.4979061392527404, -1.3037770040355285, 0.959678290952288),
+                Vec3::new(
+                    -0.7701744682418742,
+                    0.46517622691348676,
+                    -0.4363970283845648,
+                ),
+            )
+            .unwrap(),
+            radius: 0.5775556717543766,
+            height: 6.231381987111529,
+            pose,
+        },
+    };
+    let (mut m, a, b, _, _) = operands(&pair).unwrap();
+    let (diff, _) = cut(&mut m, a, b).unwrap();
+    let (union, punion) = run(&mut m, "fuse(a, b)", fuse, a, b).unwrap();
+    let (restored, prestored) = run(&mut m, "fuse(a − b, b)", fuse, diff, b).unwrap();
+    assert_eq!(
+        arris_debug::dump::euler_line(&m, restored).unwrap(),
+        arris_debug::dump::euler_line(&m, union).unwrap()
+    );
+    assert!(
+        !close(prestored.volume, punion.volume, 1.0),
+        "the case no longer needs the fitted bound: {} vs {}",
+        prestored.volume,
+        punion.volume
+    );
+    let rel = fitted_rel(&m, &punion);
+    assert_same_properties_to(&prestored, &punion, "(a − b) ∪ b against a ∪ b", rel).unwrap();
 }

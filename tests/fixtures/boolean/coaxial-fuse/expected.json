@@ -1,0 +1,126 @@
+{
+  "occt": "8.0.1.0.0",
+  "recipe_sha256": "1f74fd3232bb9189efede9e7bc30fd0a1c8faf509fe9a5461aa52bbf4da7c232",
+  "results": {
+    "default": {
+      "area": 50.265482457436676,
+      "centroid": [
+        -4.682483281043511e-16,
+        1.0745053552495104e-17,
+        1.3252311172764656e-17
+      ],
+      "counts": {
+        "edges": 5,
+        "faces": 5,
+        "loops": 7,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 4
+      },
+      "degenerate": false,
+      "euler_characteristic": 2,
+      "genus": 0,
+      "inertia": [
+        [
+          33.51032163829152,
+          3.112377655019885e-15,
+          1.0547118733938985e-15
+        ],
+        [
+          3.112377655019885e-15,
+          33.51032163829097,
+          9.537140424241978e-18
+        ],
+        [
+          1.0547118733938985e-15,
+          9.537140424241978e-18,
+          50.26548245743694
+        ]
+      ],
+      "probes": [
+        {
+          "class": "in",
+          "label": "inside_tube",
+          "point": [
+            1.5,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "class": "in",
+          "label": "inside_rod",
+          "point": [
+            0.5,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "class": "in",
+          "label": "on_axis",
+          "point": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "class": "in",
+          "label": "across_the_vanished_wall",
+          "point": [
+            1.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "outside",
+          "point": [
+            2.5,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_annulus",
+          "point": [
+            0.0,
+            1.5,
+            1.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_disc",
+          "point": [
+            0.0,
+            0.5,
+            1.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_inner_circle",
+          "point": [
+            0.0,
+            1.0,
+            1.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_edge",
+          "point": [
+            0.0,
+            2.0,
+            1.0
+          ]
+        }
+      ],
+      "volume": 25.13274122871834
+    }
+  }
+}

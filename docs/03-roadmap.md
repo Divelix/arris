@@ -277,6 +277,8 @@ edges (a seam counted once), faces, loops. `χ` is the Euler line
 | `boolean/corner-common` | same, ∩ | 1 | 6 | 8/12/6/6 | 0 |
 | `boolean/corner-cut` | same, − | 7 | 24 | 14/21/9/9 | 0 |
 | `boolean/flush-common` | the two flush boxes, ∩ | — | — | `OpError::Degenerate` (zero-thickness result) | — |
+| `boolean/boss-flush` | the plate ∪ the boss of `boss` raised to z 10…20, its bottom cap coincident with the plate's top: the cap vanishes, the rim is the wall's own edge — `boss`'s numbers | 12502.6548 | 4051.3274 | 10/15/8/9 | 0 |
+| `boolean/coaxial-fuse` | the tube of `coaxial-cut` ∪ a cylinder r 1, z −1…1 filling its bore: the coincident walls vanish, the discs sit beside the annuli sharing the inner circles (as Open CASCADE) | 25.1327 | 50.2655 | 4/5/5/7 | 0 |
 | `boolean/disjoint-cut` | box − a cylinder clear of it | 12000 | 3800 | 8/12/6/6, provenance: every tool entity `Deleted`, target kept | 0 |
 | `boolean/frame-cut` | box [0,0,0]–[40,30,10] − box [10,10,−1]–[30,20,11]: a rectangular frame; M2 builds it by hand through the Euler operators (`sample::frame`), M4 by this recipe — the cross-check between the two paths, as `extrude-plate-with-hole` is for `through-hole` | 10000 | 4000 | 16/24/10/12 | 1 |
 | `sweep/extrude-plate-with-hole` | rectangle 40×30 with a hole r 4 at (20,15), extruded 10 | 11497.3452 | 3950.7964 | 10/15/7/9 (same numbers as `through-hole`: the cross-check between the two paths) | 1 |

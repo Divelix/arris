@@ -38,6 +38,8 @@ fn every_row_of_the_roadmap_table_has_a_fixture() {
         "boolean/flush-common",
         "boolean/disjoint-cut",
         "boolean/frame-cut",
+        "boolean/boss-flush",
+        "boolean/coaxial-fuse",
         "sweep/extrude-plate-with-hole",
         "sweep/revolve-tube",
         "sweep/revolve-quarter",
