@@ -6,7 +6,7 @@ use crate::Precision;
 /// a length and an angle. Derived from the model's [`Precision`] by
 /// [`Precision::tolerance`] or from an entity's own tolerance by the
 /// operation that owns it — never a literal in an algorithm
-/// (`docs/02-data-model.md` §Tolerances).
+/// (`docs/DATA-MODEL.md` §Tolerances).
 ///
 /// ```
 /// use arris_math::{Precision, Tolerance};

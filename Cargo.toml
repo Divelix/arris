@@ -1,5 +1,5 @@
 # Virtual workspace manifest. The crates and their dependency edges are the
-# table in docs/01-architecture.md §Crates; tools/check-layers.sh enforces
+# table in docs/ARCHITECTURE.md §Crates; tools/check-layers.sh enforces
 # that no crate depends on one above it.
 [workspace]
 resolver = "3"
@@ -31,7 +31,7 @@ serde = { version = "1.0", features = ["derive"] }
 # float_roundtrip: a fixture's 17-digit coordinates must parse to the same f64
 # the oracle read, or the recipe hash and the geometry comparison drift by an ulp.
 serde_json = { version = "1.0", features = ["float_roundtrip"] }
-# The native format's byte encoding (docs/02-data-model.md §Native format):
+# The native format's byte encoding (docs/DATA-MODEL.md §Native format):
 # pure Rust, deterministic, builds for wasm32.
 postcard = { version = "1.1", default-features = false, features = ["alloc"] }
 sha2 = "0.10"

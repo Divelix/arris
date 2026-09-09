@@ -1,10 +1,10 @@
-//! One variant per invariant of `docs/02-data-model.md` §Invariants.
+//! One variant per invariant of `docs/DATA-MODEL.md` §Invariants.
 
 use core::fmt;
 
 use arris_topo::{BodyId, EdgeId, EntityId, FaceId, GeometryId, ShellId, VertexId};
 
-/// When an invariant runs (`docs/01-architecture.md` §The checker).
+/// When an invariant runs (`docs/ARCHITECTURE.md` §The checker).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Level {
     /// Combinatorial and local geometric checks, linear in the body: what
@@ -232,7 +232,7 @@ pub enum WireFault {
 }
 
 /// One broken invariant on one entity. The variants are the rows of
-/// `docs/02-data-model.md` §Invariants, in the same order and with the row's
+/// `docs/DATA-MODEL.md` §Invariants, in the same order and with the row's
 /// number at the head of each doc comment; a doc-drift test asserts the two
 /// lists are the same set, so a row cannot be added or renamed on one side
 /// only. Every variant names the entity that violates it and, where the row
@@ -502,7 +502,7 @@ pub enum Violation {
 }
 
 impl Violation {
-    /// The row number in `docs/02-data-model.md` §Invariants: `"M1"`,
+    /// The row number in `docs/DATA-MODEL.md` §Invariants: `"M1"`,
     /// `"E4"`, … Stable; what a report sorts and prints by.
     pub const fn code(&self) -> &'static str {
         match self {

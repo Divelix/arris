@@ -24,7 +24,7 @@ arris-ops.workspace = true
 arris-mesh.workspace = true
 arris-io.workspace = true
 
-# Dev-facing only: never reaches a consumer (docs/01-architecture.md §Formats
+# Dev-facing only: never reaches a consumer (docs/ARCHITECTURE.md §Formats
 # and tools), so it is a dev-dependency of the facade, not a dependency.
 [dev-dependencies]
 serde_json.workspace = true

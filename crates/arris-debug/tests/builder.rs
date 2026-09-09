@@ -17,7 +17,7 @@ use arris_topo::builder::{Builder, Position, Seed, Split, Strut};
 use arris_topo::entity::{BodyKind, EdgeGeometry};
 use arris_topo::{Body, Model, Orientation};
 
-/// The cylinder of `docs/02-data-model.md` §Seams through the builder.
+/// The cylinder of `docs/DATA-MODEL.md` §Seams through the builder.
 fn cylinder(m: &mut Model, r: f64, h: f64) -> Body {
     let base = Frame::world();
     let top = base.with_origin(Point3::new(0.0, 0.0, h));

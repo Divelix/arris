@@ -3,7 +3,7 @@
 //! decomposition as a value), and `measure` for mass properties.
 //!
 //! Guarantees: every operation has the shape `op(&mut Model, inputs…) ->
-//! Result<(Body, Provenance), OpError>` (`docs/01-architecture.md`
+//! Result<(Body, Provenance), OpError>` (`docs/ARCHITECTURE.md`
 //! §Operations); it never mutates its inputs, never panics on geometry,
 //! returns provenance for every entity it touched, and leaves the model as
 //! it was on `Err`. In debug builds its output passes `arris-check` at

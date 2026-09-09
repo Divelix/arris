@@ -1,4 +1,4 @@
-//! `Builder::assemble` (ADR-0004, `docs/02-data-model.md` §Euler
+//! `Builder::assemble` (ADR-0004, `docs/DATA-MODEL.md` §Euler
 //! operators): a body described as `Keep`/`New` specs rather than built by
 //! an operator sequence. A body assembled from its own entities is the
 //! same body — the same ids when every spec is `Keep`, the same dump up to

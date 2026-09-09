@@ -4,7 +4,7 @@
 //! lies on, whether four points are cocircular — *exactly* on the stored
 //! coordinates, with no tolerance: a predicate is never softened by a
 //! tolerance and a tolerance comparison never pretends to be exact
-//! (`docs/02-data-model.md` §Tolerances). The arithmetic is Shewchuk's
+//! (`docs/DATA-MODEL.md` §Tolerances). The arithmetic is Shewchuk's
 //! adaptive-precision scheme as implemented by the `robust` crate.
 //!
 //! ```

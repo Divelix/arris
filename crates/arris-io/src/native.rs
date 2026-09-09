@@ -1,4 +1,4 @@
-//! The native format (`docs/02-data-model.md` §Native format): `serde` of
+//! The native format (`docs/DATA-MODEL.md` §Native format): `serde` of
 //! the model under a version header, as JSON for diffs or as `postcard`
 //! bytes for size. Both are deterministic byte for byte for the same
 //! model — the encoders visit the arenas in slot order and every map in

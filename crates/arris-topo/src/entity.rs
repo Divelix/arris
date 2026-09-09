@@ -1,4 +1,4 @@
-//! The entity structs of `docs/02-data-model.md` §Entities: what a
+//! The entity structs of `docs/DATA-MODEL.md` §Entities: what a
 //! `Model` stores under each id. Immutable once inserted — a field is read
 //! through its getter and never written — and built through the
 //! constructors below, which check nothing: the checker (`arris-check`)
@@ -65,7 +65,7 @@ pub enum EdgeGeometry {
 }
 
 /// A bounded piece of a 3D curve between two vertices, or a degenerate
-/// edge at a singularity (`docs/02-data-model.md` §Entities).
+/// edge at a singularity (`docs/DATA-MODEL.md` §Entities).
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Edge {
@@ -257,7 +257,7 @@ impl Shell {
     }
 }
 
-/// What structure a body has (`docs/02-data-model.md` §Entities).
+/// What structure a body has (`docs/DATA-MODEL.md` §Entities).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum BodyKind {

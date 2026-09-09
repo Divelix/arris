@@ -7,7 +7,7 @@ use crate::{Frame, Point3, UnitVec3, Vec3};
 /// A rigid motion: a rotation followed by a translation, `p ↦ R p + t`.
 /// Lengths and angles are preserved, so a `Frame` moved by one is still a
 /// frame and geometry moved by one is the same geometry in another place
-/// (`docs/02-data-model.md` §Conventions: a transform is a frame change).
+/// (`docs/DATA-MODEL.md` §Conventions: a transform is a frame change).
 ///
 /// ```
 /// use arris_math::{Isometry, Point3, Vec3, nalgebra::UnitQuaternion};

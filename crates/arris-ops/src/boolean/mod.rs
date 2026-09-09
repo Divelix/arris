@@ -107,7 +107,7 @@ pub struct SectionVertex {
     pub point: Point3,
     /// The largest tolerance of the entities whose hits it merges, plus
     /// the spread of the merged points about `point`
-    /// (`docs/02-data-model.md` §Tolerances).
+    /// (`docs/DATA-MODEL.md` §Tolerances).
     pub tolerance: f64,
     /// The hits merged into it, ascending indices into
     /// [`Interferences::hits`].
@@ -351,7 +351,7 @@ pub fn interferences(m: &Model, a: Body, b: Body) -> Result<Interferences, OpErr
 }
 
 /// `target` minus `tool`: the boolean difference of two solids whose
-/// faces lie on planes and cylinders (`docs/01-architecture.md`
+/// faces lie on planes and cylinders (`docs/ARCHITECTURE.md`
 /// §Operations, ADR-0004).
 ///
 /// Guarantees. The result is a `Solid` that passes the checker; the
@@ -367,7 +367,7 @@ pub fn interferences(m: &Model, a: Body, b: Body) -> Result<Interferences, OpErr
 /// `Modified` into its surviving pieces; whatever has no piece left is
 /// `Deleted`. Every entity of the tool is `Deleted`, and a piece of it
 /// that survives is `Generated` from the tool entity it is a piece of —
-/// the hole's wall from the tool's wall (`docs/02-data-model.md`
+/// the hole's wall from the tool's wall (`docs/DATA-MODEL.md`
 /// §Provenance). A section vertex is `Generated` from the edge and the
 /// face of every hit it merges, a section edge from both faces of its
 /// pair; the result's shell and body are `Modified` from the target's.
@@ -384,7 +384,7 @@ pub fn interferences(m: &Model, a: Body, b: Body) -> Result<Interferences, OpErr
 /// tool touching from outside — and dropped when they agree, while the
 /// tool's piece is always dropped; a piece of the tool's edge that is
 /// a piece of the target's is one edge of the result, the target's
-/// (`docs/01-architecture.md` §Operations, the selection table).
+/// (`docs/ARCHITECTURE.md` §Operations, the selection table).
 ///
 /// Errors, the model untouched on each: [`OpError::InvalidInput`] and
 /// [`OpError::NotFound`] as every operation; [`OpError::Unsupported`]
@@ -430,7 +430,7 @@ pub fn cut(m: &mut Model, target: Body, tool: Body) -> Result<(Body, Provenance)
 }
 
 /// `a` ∪ `b`: the boolean union of two solids whose faces lie on planes
-/// and cylinders (`docs/01-architecture.md` §Operations, ADR-0004).
+/// and cylinders (`docs/ARCHITECTURE.md` §Operations, ADR-0004).
 ///
 /// Guarantees. The result is a `Solid` that passes the checker; the
 /// decomposition is [`interferences`]'s, and the selection is the
@@ -446,7 +446,7 @@ pub fn cut(m: &mut Model, target: Body, tool: Body) -> Result<(Body, Provenance)
 /// left is `Deleted`. A section vertex is `Generated` from the edge and
 /// the face of every hit it merges, a section edge from both faces of
 /// its pair; the result's shell and body are `Modified` from both
-/// operands' (`docs/02-data-model.md` §Provenance). Tolerances follow
+/// operands' (`docs/DATA-MODEL.md` §Provenance). Tolerances follow
 /// the growth rule, as [`cut`]. Two faces on one surface are the flush
 /// case: a piece of `a`'s face lying on `b`'s is kept, once and in `a`'s
 /// orientation, exactly when the two effective normals agree, and
@@ -490,7 +490,7 @@ pub fn fuse(m: &mut Model, a: Body, b: Body) -> Result<(Body, Provenance), OpErr
 }
 
 /// `a` ∩ `b`: the boolean intersection of two solids whose faces lie on
-/// planes and cylinders (`docs/01-architecture.md` §Operations,
+/// planes and cylinders (`docs/ARCHITECTURE.md` §Operations,
 /// ADR-0004).
 ///
 /// Guarantees. As [`fuse`], with the other selection: a piece of either

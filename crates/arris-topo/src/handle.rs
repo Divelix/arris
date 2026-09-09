@@ -6,7 +6,7 @@ use crate::id::{BodyId, EdgeId, EntityId, EntityKind, FaceId, ShellId, VertexId}
 use crate::orientation::Orientation;
 
 /// The uniform handle: any topological entity, with the orientation
-/// composed down the path it was reached by (`docs/01-architecture.md`
+/// composed down the path it was reached by (`docs/ARCHITECTURE.md`
 /// §The model). Provenance records, iteration and errors speak in `Shape`;
 /// the typed handles below are the same pair with the kind fixed and
 /// convert to it for free.

@@ -1,5 +1,5 @@
 //! Regions of a surface's (u, v) plane bounded by pcurve pieces
-//! (`docs/02-data-model.md` §Pcurves): a loop discretised to a polygon,
+//! (`docs/DATA-MODEL.md` §Pcurves): a loop discretised to a polygon,
 //! its signed area and winding number, and segment intersections over
 //! exact predicates. Shared by the checker's loop rows, tessellation and
 //! classification; nothing here knows about tolerances of the model
@@ -395,7 +395,7 @@ pub enum Side {
 /// `boundary_tolerance` of any segment is [`Side::Boundary`], and
 /// otherwise the sum of the polygons' winding numbers decides — non-zero
 /// is [`Side::Inside`] (an outer ring counter-clockwise and its holes
-/// clockwise, as a stored loop is: `docs/02-data-model.md` §Orientation).
+/// clockwise, as a stored loop is: `docs/DATA-MODEL.md` §Orientation).
 /// No polygons is [`Side::Outside`].
 ///
 /// The tolerance is a distance in the *parameter* plane and is the

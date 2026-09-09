@@ -1,5 +1,5 @@
 //! The `Model`: the arena every entity and geometry value of a document
-//! lives in (`docs/01-architecture.md` §The model).
+//! lives in (`docs/ARCHITECTURE.md` §The model).
 
 use core::fmt;
 use std::sync::Arc;
@@ -37,7 +37,7 @@ impl fmt::Display for CoedgeRef {
 }
 
 /// The derived adjacency, keyed by slot index and maintained on every
-/// append (`docs/02-data-model.md` §Adjacency and iteration). Shared by
+/// append (`docs/DATA-MODEL.md` §Adjacency and iteration). Shared by
 /// clones and copied whole on the first append after a clone.
 #[derive(Debug, Clone, Default)]
 struct Indices {
@@ -236,7 +236,7 @@ impl Model {
     /// `Forward` use and against it for a `Reversed` one — what the
     /// (u, v) toolkit of `arris_geom::region2` and `integrate` takes, so
     /// the checker's loop rows, tessellation and `measure` all ask this
-    /// once (`docs/02-data-model.md` §Pcurves). Ranges are taken as
+    /// once (`docs/DATA-MODEL.md` §Pcurves). Ranges are taken as
     /// stored; whether they are bounded and positive is the checker's E1
     /// to say. Errors: [`NotFound`] for the first edge or pcurve that
     /// does not resolve.
@@ -269,7 +269,7 @@ impl Model {
     /// Runs `f` on the model and, if it returns `Err`, drops every entity
     /// and geometry value it appended — arenas, indices and the next id
     /// all return to what they were at entry — so a failed operation
-    /// leaves the model as it was (`docs/01-architecture.md` §The model).
+    /// leaves the model as it was (`docs/ARCHITECTURE.md` §The model).
     /// On `Ok` everything stays. Transactions nest: an inner `Err` undoes
     /// the inner appends only.
     ///
@@ -519,7 +519,7 @@ impl Model {
     /// filled by a later append, lowest index first, at the new
     /// generation — ids stay deterministic and a long-lived model does
     /// not grow without bound. Slots are never renumbered (the `⚠ OPEN`
-    /// of `docs/01-architecture.md` §The model). The adjacency indices
+    /// of `docs/ARCHITECTURE.md` §The model). The adjacency indices
     /// are rebuilt. Returns how many slots were freed. Not undone by an
     /// enclosing transaction that fails. Errors: a body in `keep` does
     /// not resolve, and then nothing is freed.
@@ -664,7 +664,7 @@ struct SlotRepr<T> {
     value: Option<T>,
 }
 
-/// The wire form of a [`Model`] (`docs/02-data-model.md` §Native format):
+/// The wire form of a [`Model`] (`docs/DATA-MODEL.md` §Native format):
 /// the precision, then every arena's slots in index order, freed ones
 /// included, so the model read back has the same ids and mints the same
 /// next one. The adjacency indices are derived and rebuilt on the way in.

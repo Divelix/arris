@@ -4,7 +4,7 @@ this directory: `analytic-eval` (every analytic variant in three poses,
 parameters on and off the seam, projections from both sides) and
 `c1-intersections` (every case of the cycle-1 intersection table in one
 committed general pose). Plain Python, no Open CASCADE: the coordinates
-are the closed forms of `docs/02-data-model.md` §Geometry written out in
+are the closed forms of `docs/DATA-MODEL.md` §Geometry written out in
 world space at full precision, so both sides read identical numbers.
 Rerun after editing, then `tools/oracle/expected.py` on each directory.
 
@@ -85,7 +85,7 @@ POSES = {
 }
 
 
-# --- closed forms (docs/02-data-model.md §Geometry) -----------------------------
+# --- closed forms (docs/DATA-MODEL.md §Geometry) -----------------------------
 
 
 def surface_point(kind, f, dims, u, v):
@@ -324,7 +324,7 @@ def c1_intersections():
         pair(name, "cyl")
     # Ellipse–plane and ellipse–cylinder, around the oblique section of
     # the cylinder — the ellipse a boolean's section edge on a cylinder
-    # wall actually is. Its closed form is docs/02-data-model.md §Curves:
+    # wall actually is. Its closed form is docs/DATA-MODEL.md §Curves:
     # centred at the piercing point of the axis, minor axis R across the
     # axis, major axis R / |n·Z| along the axis's projection on the plane.
     n = surfaces["oblique"]["z"]

@@ -2,7 +2,7 @@
 //! area and closedness, and the tessellation of bodies into them with
 //! per-face and per-edge ranges.
 //!
-//! Guarantees (`docs/01-architecture.md` §Tessellation, ADR-0003):
+//! Guarantees (`docs/ARCHITECTURE.md` §Tessellation, ADR-0003):
 //! positions are `f64` and exact evaluations of the geometry — a topo
 //! vertex's point, an edge's curve at a sampled parameter, later a
 //! surface at an interior grid point; a topo vertex is one mesh vertex

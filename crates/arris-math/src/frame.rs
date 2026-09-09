@@ -37,7 +37,7 @@ impl std::error::Error for FrameError {}
 /// A right-handed orthonormal frame: an origin and axes `x`, `y`, `z` with
 /// `x × y = z`, each unit to within rounding, whatever the constructor was
 /// given. Every analytic surface and curve is placed by one, so a
-/// transform is a frame change and nothing else (`docs/02-data-model.md`
+/// transform is a frame change and nothing else (`docs/DATA-MODEL.md`
 /// §Conventions).
 ///
 /// Only the validating constructors build one; there is no way to hold a
@@ -309,7 +309,7 @@ pub enum Handedness {
 /// An orthonormal frame in a surface's (u, v) plane, of either handedness.
 /// A pcurve placed by a left-handed `Frame2` is traversed clockwise in
 /// (u, v) — the case of a circle shared by a cap and a wall whose normal
-/// opposes the circle's `Z` (`docs/02-data-model.md` §Pcurves).
+/// opposes the circle's `Z` (`docs/DATA-MODEL.md` §Pcurves).
 ///
 /// ```
 /// use arris_math::{Frame2, Handedness, Point2, Vec2};

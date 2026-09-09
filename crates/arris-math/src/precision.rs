@@ -1,7 +1,7 @@
 //! Model-wide tolerance configuration.
 
 /// The tolerance configuration of one model, set when the model is created
-/// (`docs/02-data-model.md` §Tolerances).
+/// (`docs/DATA-MODEL.md` §Tolerances).
 ///
 /// Arris carries no unit; `Precision` is what makes a model's numbers
 /// meaningful. Every tolerance an algorithm uses is an entity's own or a
@@ -10,7 +10,7 @@
 /// `default_tolerance` at the micrometre scale.
 ///
 /// The fields are public: a `Precision` is plain configuration data, and
-/// the checker's V1/F2 rows (`docs/02-data-model.md` §Invariants) hold every
+/// the checker's V1/F2 rows (`docs/DATA-MODEL.md` §Invariants) hold every
 /// entity to the bounds it states.
 ///
 /// ```

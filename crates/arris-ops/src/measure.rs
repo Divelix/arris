@@ -1,5 +1,5 @@
 //! `measure`: the mass properties of a body, integrated exactly over the
-//! B-Rep (`docs/01-architecture.md` §Operations). A query, not an
+//! B-Rep (`docs/ARCHITECTURE.md` §Operations). A query, not an
 //! operation: it makes no body, records no provenance and opens no
 //! transaction.
 //!
@@ -22,7 +22,7 @@ use arris_check::arris_topo::{Body, FaceId, Model, Orientation, Shape};
 use crate::error::{OpError, Reason};
 
 /// The mass properties of a body of unit density
-/// (`docs/01-architecture.md` §Operations): what
+/// (`docs/ARCHITECTURE.md` §Operations): what
 /// [`mass_properties`] returns.
 ///
 /// The mass is the volume, since the density is one. The inertia tensor

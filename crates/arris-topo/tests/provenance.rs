@@ -1,4 +1,4 @@
-//! The provenance record (`docs/02-data-model.md` §Provenance, step 10):
+//! The provenance record (`docs/DATA-MODEL.md` §Provenance, step 10):
 //! `origins` inverts `generated_from` and `modified_from`, `then` is
 //! associative on random small records and reports against the first
 //! inputs, `mapped` translates through an `IdMap`, and `is_kept` is the

@@ -13,7 +13,7 @@ pub enum GeomKind {
     Surface(SurfaceKind),
     /// A [`crate::Curve`] variant.
     Curve(CurveKind),
-    /// A `Curve2` variant (`docs/02-data-model.md` §Pcurves).
+    /// A `Curve2` variant (`docs/DATA-MODEL.md` §Pcurves).
     Curve2(Curve2Kind),
     /// A point, the first operand of a projection.
     Point,

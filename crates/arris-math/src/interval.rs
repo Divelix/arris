@@ -5,7 +5,7 @@ use core::fmt;
 /// A closed interval `[lo, hi]` with `lo ≤ hi`, neither end NaN. Either end
 /// may be infinite: a line's domain is [`Interval::REAL`]. An interval may
 /// be longer than a curve's period — an edge range on a periodic curve may
-/// cross the period (`docs/02-data-model.md` §Topology).
+/// cross the period (`docs/DATA-MODEL.md` §Topology).
 ///
 /// ```
 /// use arris_math::Interval;

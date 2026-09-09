@@ -1,4 +1,4 @@
-//! The arena's contract (`docs/01-architecture.md` §The model): sequential,
+//! The arena's contract (`docs/ARCHITECTURE.md` §The model): sequential,
 //! reproducible ids; a stale id never resolves; a raw insert checks nothing.
 
 use arris_geom::{Curve, Curve2, Surface};

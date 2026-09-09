@@ -4,7 +4,7 @@ What lives in a `Model`: the geometry enums and their parametrisations, the
 topology entities and how orientation composes over them, what a pcurve and
 a tolerance mean, the invariants the checker enforces, the provenance record
 an operation returns, and the native format. The crate boundaries and the
-operation contract are in [01-architecture](01-architecture.md).
+operation contract are in [architecture](ARCHITECTURE.md).
 
 ## Conventions
 
@@ -373,7 +373,7 @@ quadrics, a knot span on a NURBS, `f64::INFINITY` (one interval, exact
 for a polynomial `f`) on a plane.
 
 `project_to_plane(curve, plane)` is the orthogonal projection onto a plane
-for a consumer's sketch (01-architecture §Facade): a point-set projection
+for a consumer's sketch (architecture §Facade): a point-set projection
 whose parameter is the variant's own — a line stays a `Line`, a circle
 becomes a `Circle` when parallel and an `Ellipse` otherwise (its
 semi-axes the singular values of the projected axes, its parameter the
@@ -425,7 +425,7 @@ them, because nothing outside a face refers to them: provenance, iteration
 and a consumer's topological references name vertices, edges and faces.
 The entity structs below live in `arris_topo::entity`; the crate root
 holds the *handles* of the same five names (`Body`, `Shell`, `Face`,
-`Edge`, `Vertex`: id plus orientation, 01-architecture §The model), since
+`Edge`, `Vertex`: id plus orientation, architecture §The model), since
 a consumer holds handles far more often than it reads an entity.
 
 ```rust
@@ -527,7 +527,7 @@ a seam. This is the representation truck lacks and every seam-crossing
 algorithm quietly needs: tessellation samples the seam once and the wall's
 loop polygon carries the two copies a period apart, so the wall's
 triangles use the one run of indices twice and the mesh closes across the
-seam by construction (01-architecture §Tessellation).
+seam by construction (architecture §Tessellation).
 
 ### Euler operators
 
@@ -703,7 +703,7 @@ comparison never pretends to be exact.
 The list `arris-check` enforces. Each item is a `Violation` variant carrying
 the entity (and, where relevant, the parameter or the second entity) and has
 a test that constructs the violation through the raw insert API and sees it
-reported. The level says when it runs (01-architecture §The checker). The
+reported. The level says when it runs (architecture §The checker). The
 list at least covers Open CASCADE's `BRepCheck` statuses (read in the
 reference tree) mapped onto this representation.
 
@@ -872,7 +872,7 @@ roadmap's acceptance corpus asserts that function is constant across
 parameter changes.
 
 `⚠ OPEN:` how a consumer's persistent topological references map onto
-provenance ids — 01-architecture §Facade.
+provenance ids — architecture §Facade.
 
 ## Native format
 
@@ -917,4 +917,4 @@ skipped, so the dump of an invalid body says where.
 - `⚠ OPEN:` quadric–quadric intersection curves, exact variant or fitted
   NURBS (§Curves).
 - `⚠ OPEN:` consumer references onto provenance (§Provenance,
-  01-architecture §Facade).
+  architecture §Facade).

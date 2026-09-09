@@ -19,7 +19,7 @@ Deletion is the "done" signal. Anything worth keeping was moved first.
 3. **Drift check** on every design doc the plan touched: read it against the
    code and fix every sentence that is no longer true. List what you fixed
    in the reply.
-4. `docs/03-roadmap.md`: update the milestone's status line. If this plan
+4. `docs/ROADMAP.md`: update the milestone's status line. If this plan
    completes a milestone, say so and remind the human to tag `mN`.
 5. `AGENTS.md` "Current state": one milestone-level sentence, keep the block
    under ~15 lines.

@@ -1,5 +1,5 @@
 //! The primitives: a box and a cylinder, built from numbers through the
-//! Euler operators (`docs/02-data-model.md` §Euler operators) with every
+//! Euler operators (`docs/DATA-MODEL.md` §Euler operators) with every
 //! entity recorded under its [`Role`].
 
 use core::f64::consts::TAU;

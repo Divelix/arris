@@ -25,7 +25,7 @@ use super::{Interferences, VertexSource};
 use crate::error::{Fault, OpError, Reason, SplitFault};
 
 /// Which selection over the decomposition: one table, three
-/// operations (`docs/01-architecture.md` §Operations).
+/// operations (`docs/ARCHITECTURE.md` §Operations).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Op {
     /// Keep what is outside the other operand.
@@ -51,7 +51,7 @@ enum Policy {
 impl Op {
     /// Whether a piece of operand `side` that is inside (`true`) or
     /// outside the other survives, and whether reversed
-    /// (`docs/01-architecture.md` §Operations, the selection table).
+    /// (`docs/ARCHITECTURE.md` §Operations, the selection table).
     fn select(self, side: usize, inside: bool) -> Option<bool> {
         match (self, side, inside) {
             (Op::Fuse, _, false) | (Op::Common, _, true) | (Op::Cut, 0, false) => Some(false),

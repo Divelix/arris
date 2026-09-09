@@ -1,10 +1,10 @@
-//! The invariant tables of `docs/02-data-model.md` and the `Violation` enum
+//! The invariant tables of `docs/DATA-MODEL.md` and the `Violation` enum
 //! list the same set of numbers, in the same order. A row added, removed or
 //! renumbered on one side fails here.
 
 use std::collections::BTreeSet;
 
-const DOC: &str = include_str!("../../../docs/02-data-model.md");
+const DOC: &str = include_str!("../../../docs/DATA-MODEL.md");
 const SOURCE: &str = include_str!("../src/violation.rs");
 
 fn is_code(s: &str) -> bool {
@@ -20,7 +20,7 @@ fn doc_codes() -> Vec<String> {
         .split_once("## Invariants")
         .map(|(_, rest)| rest)
         .and_then(|rest| rest.split_once("## Provenance").map(|(s, _)| s))
-        .expect("02-data-model.md has an Invariants section before Provenance");
+        .expect("DATA-MODEL.md has an Invariants section before Provenance");
     section
         .lines()
         .filter_map(|line| {

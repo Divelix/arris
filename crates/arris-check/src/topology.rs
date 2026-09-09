@@ -1,5 +1,5 @@
 //! The loop, face, shell and body rows of `Level::Fast` — L1–L4, F1–F2,
-//! S1–S4 and B3 of `docs/02-data-model.md` §Invariants — and the
+//! S1–S4 and B3 of `docs/DATA-MODEL.md` §Invariants — and the
 //! Euler–Poincaré line every report carries.
 //!
 //! Every row here reads the face's own loops and the shell's own face
@@ -449,7 +449,7 @@ impl<'m> Checker<'m> {
             // A degenerate edge is a singular point of the surface, not a
             // boundary between two faces: a sphere's pole is used once by
             // the one face that closes on it, and counting it would call
-            // every sphere open (E6, `docs/02-data-model.md` §Invariants).
+            // every sphere open (E6, `docs/DATA-MODEL.md` §Invariants).
             if self.model.edge(edge).is_ok_and(|e| e.is_degenerate()) {
                 continue;
             }

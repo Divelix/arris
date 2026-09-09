@@ -1,7 +1,7 @@
 # Plan: <slug>
 
 - Started: YYYY-MM-DD
-- Milestone: M? (cycle C?, docs/03-roadmap.md)
+- Milestone: M? (cycle C?, docs/ROADMAP.md)
 - Idea (verbatim from the human): "…"
 
 ## Goal

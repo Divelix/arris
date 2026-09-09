@@ -1,4 +1,4 @@
-//! Point classification against a body (`docs/01-architecture.md` §The
+//! Point classification against a body (`docs/ARCHITECTURE.md` §The
 //! checker, ADR-0004): inside, outside, or on a named entity.
 //!
 //! This is B1's ray cast, made public and complete. The row that proves a
@@ -101,7 +101,7 @@ impl From<GeomError> for ClassifyError {
 /// `Outside` by the parity of the crossings of a ray from it.
 ///
 /// The boundary test comes first and is by the entities' *own*
-/// tolerances (`docs/02-data-model.md` §Tolerances): a vertex within its
+/// tolerances (`docs/DATA-MODEL.md` §Tolerances): a vertex within its
 /// tolerance, then an edge within its, then a face within its. Only a
 /// point that is on nothing is cast for, and a direction whose ray grazes
 /// a face's boundary, touches a surface tangentially or lies in one is

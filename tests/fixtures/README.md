@@ -1,6 +1,6 @@
 # The fixture corpus
 
-The unit of acceptance (`docs/03-roadmap.md` §Fixtures). One directory per
+The unit of acceptance (`docs/ROADMAP.md` §Fixtures). One directory per
 fixture, `<area>/<slug>/`, of one of two kinds — a **solid** (the default:
 a recipe built and measured) or **geometry** (`"kind": "geometry"`, under
 `geom/`: analytic surfaces and curves evaluated, projected onto and
@@ -215,7 +215,7 @@ strategy changes (`.agents/rules/kernel.md` §Testing, `inspect` skill).
 
 ## Conventions the numbers assume
 
-Open CASCADE's, which Arris matches (`docs/02-data-model.md`
+Open CASCADE's, which Arris matches (`docs/DATA-MODEL.md`
 §Conventions): a full revolve or a cylinder has one seam edge, counted
 once; a fuse of flush boxes drops the shared face and does not merge the
 coplanar neighbours; a common with no volume is degenerate.

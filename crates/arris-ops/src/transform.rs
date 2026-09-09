@@ -1,4 +1,4 @@
-//! `transform`: a rigid motion of a body (`docs/01-architecture.md`
+//! `transform`: a rigid motion of a body (`docs/ARCHITECTURE.md`
 //! §Operations).
 
 use std::collections::BTreeMap;

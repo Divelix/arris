@@ -31,7 +31,7 @@ fn params() -> impl Strategy<Value = (f64, f64)> {
     )
 }
 
-/// The closed forms of `docs/02-data-model.md` §Surfaces written out in
+/// The closed forms of `docs/DATA-MODEL.md` §Surfaces written out in
 /// the world frame, independently of `Surface::eval`.
 fn local_surface(s: &Surface, u: f64, v: f64) -> Point3 {
     let (su, cu) = u.sin_cos();

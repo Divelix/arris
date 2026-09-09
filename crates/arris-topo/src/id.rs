@@ -10,7 +10,7 @@ macro_rules! ids {
         /// `(index, generation)`, which is creation order for a model that
         /// has never been compacted, and compare equal only when both agree —
         /// a stale handle into a compacted slot never aliases the new
-        /// occupant (`docs/01-architecture.md` §The model).
+        /// occupant (`docs/ARCHITECTURE.md` §The model).
         #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
         #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
         pub struct $name {

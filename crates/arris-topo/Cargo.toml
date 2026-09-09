@@ -10,7 +10,7 @@ license.workspace = true
 [features]
 default = ["serde"]
 # Derives on ids, handles and the model: the native format is serde of the
-# model (docs/02-data-model.md §Native format).
+# model (docs/DATA-MODEL.md §Native format).
 serde = ["dep:serde", "arris-math/serde", "arris-geom/serde"]
 
 [dependencies]
@@ -21,7 +21,7 @@ serde = { workspace = true, optional = true }
 
 # The seeded property-test runner lives in `arris-debug`; the dev-dependency
 # cycle it makes is why the property tests are integration tests under
-# `tests/` (docs/01-architecture.md §Formats and tools).
+# `tests/` (docs/ARCHITECTURE.md §Formats and tools).
 [dev-dependencies]
 arris-debug.workspace = true
 # `import` and `retain` prove their survivors with the checker, and so does

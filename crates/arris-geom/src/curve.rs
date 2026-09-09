@@ -6,7 +6,7 @@ use arris_math::{Aabb, Frame, Interval, Isometry, Point3, UnitVec3, Vec3};
 
 use crate::NurbsCurve;
 
-/// A 3D curve with the parametrisation of `docs/02-data-model.md` §Curves
+/// A 3D curve with the parametrisation of `docs/DATA-MODEL.md` §Curves
 /// (Open CASCADE's, so STEP round-trips without re-parametrising).
 ///
 /// The fields are plain data: a `Curve` is a value the arena stores once

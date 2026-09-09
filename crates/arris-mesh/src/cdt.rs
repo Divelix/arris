@@ -191,7 +191,7 @@ impl Triangulation2 {
 ///
 /// The region is where the winding number of the polygons is not zero: a
 /// counter-clockwise outer polygon with clockwise holes gives its interior
-/// minus the holes, as a face's loops are written (`docs/02-data-model.md`
+/// minus the holes, as a face's loops are written (`docs/DATA-MODEL.md`
 /// §Entities). Every polygon segment becomes a triangle edge; every other
 /// edge is locally Delaunay; the triangles are counter-clockwise. An
 /// interior point outside the region is triangulated and its triangles

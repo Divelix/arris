@@ -61,7 +61,7 @@ pub fn is_negligible(x: f64, scale: f64) -> bool {
 }
 
 /// An angle moved into `[0, 2π)`: what a periodic curve's or surface's
-/// parameter is reported in (`docs/02-data-model.md` §Conventions). A
+/// parameter is reported in (`docs/DATA-MODEL.md` §Conventions). A
 /// negative angle whose sum with `2π` rounds up to `2π` becomes `0` —
 /// the same point on the circle, and inside the domain. A non-finite
 /// angle comes back unchanged.
@@ -90,7 +90,7 @@ pub fn wrap_angle(t: f64) -> f64 {
 /// The end of one whole period from `lo`: `lo + period`, stepped down to
 /// the representable value below when that sum rounds up, so that
 /// `end - lo <= period` holds exactly. A closed edge spans one period and
-/// no more (`docs/02-data-model.md` §Invariants, E1), and for a
+/// no more (`docs/DATA-MODEL.md` §Invariants, E1), and for a
 /// `lo` that is not a small multiple of the period the sum can round to
 /// one unit in the last place too far; this is the range's construction,
 /// not a tolerance. A non-finite argument, or a `period` that is not

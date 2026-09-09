@@ -1,5 +1,5 @@
 //! Curves in a surface's (u, v) plane: the pcurves of
-//! `docs/02-data-model.md` §Pcurves.
+//! `docs/DATA-MODEL.md` §Pcurves.
 
 use core::f64::consts::TAU;
 use core::fmt;
@@ -12,7 +12,7 @@ use crate::project::ellipse_nearest;
 use crate::{AmbiguousLocus, GeomError, GeomKind, NurbsCurve2};
 
 /// A curve in a surface's (u, v) plane, with the parametrisation of
-/// `docs/02-data-model.md` §Pcurves. A circle or an ellipse is placed by a
+/// `docs/DATA-MODEL.md` §Pcurves. A circle or an ellipse is placed by a
 /// [`Frame2`] of either handedness: a left-handed frame traverses it
 /// clockwise in (u, v), which is how the pcurve of a 3D circle whose `Z`
 /// opposes the plane's normal is written without reversing the curve.
@@ -237,7 +237,7 @@ impl Curve2 {
     /// rounding. What a boolean does to a section edge's pcurve on a
     /// periodic surface — a whole number of periods along `u` — so the
     /// pcurve lies in the translate of the fundamental domain the face's
-    /// loops are written in (`docs/02-data-model.md` §Seams).
+    /// loops are written in (`docs/DATA-MODEL.md` §Seams).
     ///
     /// ```
     /// use arris_geom::Curve2;

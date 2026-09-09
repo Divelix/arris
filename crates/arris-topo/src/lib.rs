@@ -1,6 +1,6 @@
 //! Topology of the Arris kernel: the `Model` arena, typed generational ids,
 //! `Shape` handles as id plus orientation, the entities of
-//! `docs/02-data-model.md` §Topology, pcurves, per-entity tolerances, Euler
+//! `docs/DATA-MODEL.md` §Topology, pcurves, per-entity tolerances, Euler
 //! operators, deterministic adjacency and iteration, and `Provenance`.
 //!
 //! Guarantees: entities are immutable and the arena is append-only; ids are

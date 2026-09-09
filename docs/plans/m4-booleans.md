@@ -1,7 +1,7 @@
 # Plan: m4-booleans
 
 - Started: 2026-09-07
-- Milestone: M4 (cycle C1, docs/03-roadmap.md)
+- Milestone: M4 (cycle C1, docs/ROADMAP.md)
 - Idea (verbatim from the human): "/plan m4" — the roadmap's M4 section is
   the brief; no idea file.
 
@@ -417,12 +417,12 @@ on `main`. Then tag `m4` (the human's).
 
 ## Docs to update on completion
 
-- `docs/03-roadmap.md` §M4 — status line: date, what was retired (the
+- `docs/ROADMAP.md` §M4 — status line: date, what was retired (the
   pave model over coedges, splitting through the pcurves, assembly with
   kept ids, coincident and tangent faces as named cases), ADR-0004, the
   numbers; §Fixtures — the probe stage, the degenerate and
   expected-error paths; §C1 acceptance corpus — the new rows.
-- `docs/01-architecture.md` §Crates — `arris-math` (`Aabb`,
+- `docs/ARCHITECTURE.md` §Crates — `arris-math` (`Aabb`,
   `wrap_angle`), `arris-ops` (`rayon`, `boolean`), `arris-check`
   (`classify`); §Operations — the booleans' decomposition and selection
   table, `transform`, `interferences` as a query; §Errors — `Empty`,
@@ -432,7 +432,7 @@ on `main`. Then tag `m4` (the human's).
   §Formats and tools — the runner's new stages, `prop::body`, the
   `inspect` additions; §Facade — the boolean and transform rows now
   real.
-- `docs/02-data-model.md` §Curves — `intersect_curves`, the ellipse
+- `docs/DATA-MODEL.md` §Curves — `intersect_curves`, the ellipse
   arms, the cylinder–cylinder arm with the `⚠ OPEN` restated; §Pcurves —
   `region2::{Side, point_side, interior_point}`, the bounds; §Euler
   operators — `assemble` and kept ids; §Tolerances — the boolean's growth

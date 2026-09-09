@@ -49,7 +49,7 @@ impl Surface {
     /// The nearest point of the surface to `p` with its `(u, v)`, by the
     /// closed form of each variant: the point is exact to rounding, never
     /// the result of an iteration, and the parameters are the
-    /// parametrisation's own (`docs/02-data-model.md` §Surfaces).
+    /// parametrisation's own (`docs/DATA-MODEL.md` §Surfaces).
     ///
     /// The whole parametric surface is the target — both nappes of a
     /// cone, the full plane — not a face's trimmed part of it.
@@ -172,7 +172,7 @@ impl Surface {
 impl Curve {
     /// The nearest point of the curve to `p` with its parameter, by the
     /// closed form of each variant: the point is exact to rounding and the
-    /// parameter is the parametrisation's own (`docs/02-data-model.md`
+    /// parameter is the parametrisation's own (`docs/DATA-MODEL.md`
     /// §Curves).
     ///
     /// Errors: [`GeomError::Ambiguous`] where the nearest point is not

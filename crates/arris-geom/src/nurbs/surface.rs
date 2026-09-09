@@ -6,7 +6,7 @@ use arris_math::{Interval, Isometry, Point3, UnitVec3, Vec3, is_negligible};
 use super::basis::{self, MAX_DEGREE, ORDERS};
 use crate::{GeomError, GeomKind, SurfaceEval, SurfaceKind};
 
-/// A rational B-spline surface (`docs/02-data-model.md` §NURBS): degrees
+/// A rational B-spline surface (`docs/DATA-MODEL.md` §NURBS): degrees
 /// `(p, q)`, knot vectors of `n + p + 1` and `m + q + 1` knots, an `n × m`
 /// net of control points with positive weights, valid by construction.
 ///

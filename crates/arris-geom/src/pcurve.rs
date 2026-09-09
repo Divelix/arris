@@ -1,6 +1,6 @@
 //! Pcurves: the (u, v) image of a 3D curve on a plane or a cylinder at
 //! the curve's own parameter, exact where a `Curve2` variant exists and a
-//! fitted NURBS otherwise (`docs/02-data-model.md` §Pcurves), and the
+//! fitted NURBS otherwise (`docs/DATA-MODEL.md` §Pcurves), and the
 //! projection of a curve onto a plane for a consumer's sketch.
 
 use core::f64::consts::{FRAC_PI_2, TAU};
@@ -55,7 +55,7 @@ fn degenerate(kind: GeomKind, reason: impl Into<String>) -> GeomError {
 /// The pcurve of `curve` over `range` on `surface`: a `Curve2` whose image
 /// under the surface is the curve *at the same parameter*
 /// (`surface.point(pcurve(t)) == curve.point(t)`), which is invariant E4
-/// of `docs/02-data-model.md` before the checker exists.
+/// of `docs/DATA-MODEL.md` before the checker exists.
 ///
 /// The table is exhaustive over (curve, surface). On a plane every
 /// variant is exact: a line is a `Line`, a circle a `Circle` and an
@@ -314,7 +314,7 @@ fn fitted_on_cylinder(
 }
 
 /// The orthogonal projection of `curve` onto `plane` as a `Curve2` in the
-/// plane's (u, v), for a consumer's sketch (`docs/01-architecture.md`
+/// plane's (u, v), for a consumer's sketch (`docs/ARCHITECTURE.md`
 /// §Facade): a line stays a `Line`, a circle becomes a `Circle` when its
 /// plane is parallel and an `Ellipse` otherwise, an ellipse an `Ellipse`,
 /// a NURBS a `Nurbs` with its control points projected. This is a

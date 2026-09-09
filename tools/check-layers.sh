@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The layer rule (docs/01-architecture.md §Crates and the layer rule): a
+# The layer rule (docs/ARCHITECTURE.md §Crates and the layer rule): a
 # crate depends only on crates in a strictly lower layer. Walks `cargo
 # metadata --no-deps` — declared edges, no resolution, no network — and fails
 # on the first upper→lower or sibling edge. Dev-dependencies are exempt:
@@ -10,7 +10,7 @@
 #                                      add a forbidden edge, expect failure
 #
 # A crate not in the table below is an error: a new crate is placed in a
-# layer in 01-architecture first, then here.
+# layer in architecture first, then here.
 set -euo pipefail
 
 layer() {
@@ -23,7 +23,7 @@ layer() {
     arris-debug) echo 5 ;;
     arris) echo 6 ;;
     *)
-      echo "check-layers: '$1' is not in the layer table; add it to docs/01-architecture.md and to $0" >&2
+      echo "check-layers: '$1' is not in the layer table; add it to docs/ARCHITECTURE.md and to $0" >&2
       exit 2
       ;;
   esac
@@ -77,7 +77,7 @@ while read -r from to kind; do
 done <<<"$edges"
 
 if [ "$bad" -ne 0 ]; then
-  echo "check-layers: $bad forbidden edge(s); see docs/01-architecture.md §Crates" >&2
+  echo "check-layers: $bad forbidden edge(s); see docs/ARCHITECTURE.md §Crates" >&2
   exit 1
 fi
 echo "check-layers: ok ($checked workspace edges checked)"

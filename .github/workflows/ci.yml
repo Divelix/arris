@@ -29,7 +29,7 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
 
   # The roadmap's acceptance count for property tests is 1000 cases each
-  # (docs/03-roadmap.md §M1); the pre-commit hook keeps the 256 default.
+  # (docs/ROADMAP.md §M1); the pre-commit hook keeps the 256 default.
   # The STEP tests run the oracle's compare.py on Arris's output, so the
   # oracle environment is synced first (tools/oracle/README.md).
   test:
@@ -60,7 +60,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
-  # The layer rule of docs/01-architecture.md §Crates: no crate depends on
+  # The layer rule of docs/ARCHITECTURE.md §Crates: no crate depends on
   # one above it. The self-test proves the script still detects a violation.
   layers:
     runs-on: ubuntu-latest

@@ -5,7 +5,7 @@
 
 ## Context
 
-M3 turns a body into a closed triangle mesh (`docs/03-roadmap.md` §M3).
+M3 turns a body into a closed triangle mesh (`docs/ROADMAP.md` §M3).
 Three decisions were open in the plan: whether to write the constrained
 Delaunay triangulation (CDT) or take it from a crate (`spade`, `cdt`),
 how a face on a periodic surface — a cylinder wall with its seam, later a
@@ -75,7 +75,7 @@ and a mesh of a solid is closed by construction, never by welding. A seam
 edge is one run whose indices the wall's triangles use twice, once from
 each copy of the pcurve; a degenerate edge's (u, v) segment maps every
 vertex to the one pole index and the triangles that collapse are dropped.
-The mesh guarantees are `docs/01-architecture.md` §Tessellation.
+The mesh guarantees are `docs/ARCHITECTURE.md` §Tessellation.
 
 **No adaptive refinement.** Where a face's boundary alone leaves a
 triangle whose chord deviation would exceed the bound — a doubly curved

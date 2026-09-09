@@ -1,4 +1,4 @@
-//! The builder and the Euler operators (`docs/02-data-model.md` §Euler
+//! The builder and the Euler operators (`docs/DATA-MODEL.md` §Euler
 //! operators, ADR-0002): the only way an operation makes topology.
 //!
 //! Entities in the arena are immutable and Euler operators mutate, so the
@@ -30,7 +30,7 @@
 //! whatever the surface's own normal, and each [`StagedFace`] carries the
 //! orientation the shell will use it with. `finish` stores a loop of a
 //! `Reversed` face backwards with every use flipped, which is what
-//! `docs/02-data-model.md` §Orientation says a stored loop is.
+//! `docs/DATA-MODEL.md` §Orientation says a stored loop is.
 
 use core::fmt;
 use std::collections::{BTreeMap, BTreeSet};
@@ -847,7 +847,7 @@ pub enum EdgeSpec {
 /// One use of an edge by a loop of an assembled face, in the *effective*
 /// orientation the Euler operators take: the direction the loop is walked
 /// in as seen from outside the material, whatever the surface's own normal
-/// (`docs/02-data-model.md` §Orientation).
+/// (`docs/DATA-MODEL.md` §Orientation).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UseSpec {
     /// The edge.
@@ -912,7 +912,7 @@ fn kept(id: Option<impl fmt::Display>) -> String {
 /// into a [`Model`] by [`Builder::finish`]. Module docs for the
 /// guarantees.
 ///
-/// The cylinder of `docs/02-data-model.md` §Seams, as the primitive
+/// The cylinder of `docs/DATA-MODEL.md` §Seams, as the primitive
 /// builds it: a seed vertex on the bottom cap, the bottom circle as a
 /// closed edge splitting off the wall, the seam as a strut whose two
 /// pcurves differ by the period, the top circle splitting off the top
@@ -1177,7 +1177,7 @@ impl Builder {
     /// Puts `f`'s loops back in canonical rotation and order after an
     /// operator changed them, and drops the face's `Keep` mark: a face an
     /// operator has touched is no longer the arena's face, so `finish`
-    /// appends it (`docs/02-data-model.md` §Euler operators).
+    /// appends it (`docs/DATA-MODEL.md` §Euler operators).
     fn canonicalise(&mut self, f: FaceRef) {
         if let Some(face) = self.faces.get_mut(f.0) {
             face.canonicalise();
@@ -1950,7 +1950,7 @@ impl Builder {
     /// A builder holding the body `assembly` describes: the builder's
     /// second entry point beside [`Builder::new`] and the operators, and
     /// the one an operation that computes its result's faces outright —
-    /// a boolean — uses (`docs/02-data-model.md` §Euler operators,
+    /// a boolean — uses (`docs/DATA-MODEL.md` §Euler operators,
     /// ADR-0004).
     ///
     /// Every entity is `Keep` or `New`. A `Keep` slot *is* the arena's

@@ -1,4 +1,4 @@
-//! Iteration over a body and its closure (`docs/02-data-model.md`
+//! Iteration over a body and its closure (`docs/DATA-MODEL.md`
 //! §Adjacency and iteration).
 
 use std::collections::BTreeSet;

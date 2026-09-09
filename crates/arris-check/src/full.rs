@@ -1,4 +1,4 @@
-//! The `Full` rows — E8, L5, S5, B1 and B2 of `docs/02-data-model.md`
+//! The `Full` rows — E8, L5, S5, B1 and B2 of `docs/DATA-MODEL.md`
 //! §Invariants — and the Gauss volume they share.
 //!
 //! These rows are not linear in the body: L5 sweeps every loop of a face

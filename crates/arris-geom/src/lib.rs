@@ -1,5 +1,5 @@
 //! Geometry of the Arris kernel: analytic and NURBS surfaces and curves with
-//! the parametrisations of `docs/02-data-model.md` §Geometry, their
+//! the parametrisations of `docs/DATA-MODEL.md` §Geometry, their
 //! evaluation and derivatives, point projection, the curve/surface and
 //! surface/surface intersections, the pcurves of curves on planes and
 //! cylinders, and the (u, v) toolkit — regions bounded by pcurve pieces

@@ -6,7 +6,7 @@
 //!
 //! Guarantees: this is the only crate in the workspace that writes files,
 //! and it is a dependency of the workspace's tests, never of a consumer
-//! (`docs/01-architecture.md` §Formats and tools). The `rerun` feature
+//! (`docs/ARCHITECTURE.md` §Formats and tools). The `rerun` feature
 //! streams a body to a Rerun viewer for the human.
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]

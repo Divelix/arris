@@ -9,7 +9,7 @@ use crate::NurbsSurface;
 use crate::curve::{active_points, coords, linear_range, product_range, sinusoid_range};
 
 /// A surface, placed by its frame, with the parametrisation of
-/// `docs/02-data-model.md` §Surfaces (the one Open CASCADE's `Geom`
+/// `docs/DATA-MODEL.md` §Surfaces (the one Open CASCADE's `Geom`
 /// classes use, so STEP round-trips without re-parametrising).
 ///
 /// The fields are plain data: a `Surface` is a value the arena stores once

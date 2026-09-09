@@ -1,4 +1,4 @@
-//! The deterministic text dump of a body (`docs/02-data-model.md` §Native
+//! The deterministic text dump of a body (`docs/DATA-MODEL.md` §Native
 //! format, last paragraph): what a fixture stores as `dump.txt` and what
 //! the tests diff. Not a format — it has no reader.
 
@@ -172,7 +172,7 @@ pub fn dump_text(model: &Model, body: Body) -> Result<String, NotFound> {
 /// genus the counts imply through `V − E + F − (L − F) − 2(S − G) = 0`
 /// and the residual what is left once `G` is rounded down to an integer —
 /// `0` for a line that closes, `1` for one that does not
-/// (`docs/02-data-model.md` §Euler–Poincaré). Errors: the body does not
+/// (`docs/DATA-MODEL.md` §Euler–Poincaré). Errors: the body does not
 /// resolve.
 pub fn euler_line(model: &Model, body: Body) -> Result<String, NotFound> {
     let c = model.closure(body)?;

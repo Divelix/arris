@@ -306,7 +306,7 @@ fn cuboid_with(
 /// the origin, as a solid: two vertices on the seam, a bottom circle, the
 /// seam line, a top circle; one wall face on the cylinder surface whose
 /// one loop is bottom circle, seam up, top circle, seam down — the two
-/// seam pcurves at `u = 2π` and `u = 0` (`docs/02-data-model.md` §Seams);
+/// seam pcurves at `u = 2π` and `u = 0` (`docs/DATA-MODEL.md` §Seams);
 /// two cap faces on planes whose `Z` is the axis, the bottom cap used
 /// `Reversed`, as the reference tree's one-axis primitive builds it, so
 /// both caps' circle pcurves are right-handed (the circle's `Z` is along
@@ -450,7 +450,7 @@ pub fn cylinder(m: &mut Model, radius: f64, height: f64) -> Result<Body, SampleE
 /// `max` with the window `[window_min, window_max]` in (x, y) cut through
 /// its full height — sixteen vertices, twenty-four line edges, ten planar
 /// faces of which the top and the bottom have two loops each, genus 1.
-/// Built through the Euler operators (`docs/02-data-model.md` §Euler
+/// Built through the Euler operators (`docs/DATA-MODEL.md` §Euler
 /// operators): Mäntylä's box recipe, then a bridge strut into the top, the
 /// window's rim as struts closed by `mef` into a plug on the *bottom's*
 /// plane, `kemr` on the bridge to make the rim a ring, struts down from
@@ -695,7 +695,7 @@ pub fn frame(
 /// `[0, 2π] × [−π/2, π/2]` counter-clockwise — the south pole's
 /// degenerate edge along `v = −π/2`, the seam meridian up at `u = 2π`,
 /// the north pole's degenerate edge along `v = π/2`, the seam meridian
-/// down at `u = 0` (`docs/02-data-model.md` §Seams) — two vertices at the
+/// down at `u = 0` (`docs/DATA-MODEL.md` §Seams) — two vertices at the
 /// poles, one meridian edge used twice and one degenerate edge per pole,
 /// the first sample body with E6 edges. The meridian is parametrised by
 /// `t = v + π/2`, so it runs from the south pole at `t = 0` to the north

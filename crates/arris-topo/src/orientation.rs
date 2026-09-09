@@ -6,7 +6,7 @@ use core::ops::{BitXor, BitXorAssign, Not};
 /// The sense in which one entity uses another: a shell's use of a face, a
 /// coedge's use of an edge, a handle's view of a body.
 ///
-/// Composes by XOR down the hierarchy (`docs/02-data-model.md`
+/// Composes by XOR down the hierarchy (`docs/DATA-MODEL.md`
 /// §Orientation): `Forward ∘ o = o`, `Reversed ∘ o = !o`. Composition is
 /// associative and commutative, `Forward` is the identity and every
 /// orientation is its own inverse. Entities are never oriented themselves;

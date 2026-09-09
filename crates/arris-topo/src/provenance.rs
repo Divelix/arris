@@ -1,5 +1,5 @@
 //! What an operation returns beside its body: which output entity came
-//! from which input, and how (`docs/02-data-model.md` §Provenance,
+//! from which input, and how (`docs/DATA-MODEL.md` §Provenance,
 //! ADR-0002).
 //!
 //! Three relations in Open CASCADE's `BRepTools_History` vocabulary —

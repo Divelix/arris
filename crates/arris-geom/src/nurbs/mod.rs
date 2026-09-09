@@ -1,5 +1,5 @@
 //! Rational B-splines: `NurbsCurve`, `NurbsCurve2` and `NurbsSurface` per
-//! `docs/02-data-model.md` §NURBS — degree, knots, Cartesian control
+//! `docs/DATA-MODEL.md` §NURBS — degree, knots, Cartesian control
 //! points with positive weights kept apart, validating constructors,
 //! evaluation with derivatives to second order into stack buffers (so it
 //! never allocates), the period unclamped knots imply, and knot insertion

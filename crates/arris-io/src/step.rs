@@ -1,4 +1,4 @@
-//! The STEP AP214 Part 21 writer (`docs/01-architecture.md` §Formats and
+//! The STEP AP214 Part 21 writer (`docs/ARCHITECTURE.md` §Formats and
 //! tools): the B-Rep entity subset with every pcurve written out, so a
 //! reader takes the model's own trimming instead of recomputing it. The
 //! Open CASCADE oracle reads the result (`tools/oracle/compare.py`).
@@ -42,7 +42,7 @@
 //!   only the direction of traversal is lost — a reader that trusts
 //!   pcurves reprojects one whose sense disagrees with the edge, and Open
 //!   CASCADE ignores pcurves on planes altogether, where every
-//!   left-handed conic of cycle 1 lives (`docs/02-data-model.md`
+//!   left-handed conic of cycle 1 lives (`docs/DATA-MODEL.md`
 //!   §Pcurves). The native format is the lossless one.
 
 use core::fmt::Write as _;

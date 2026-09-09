@@ -2,7 +2,7 @@
 //!
 //! The chunks sit behind `Arc`, so cloning an arena copies a list of
 //! pointers and the first append after a clone copies only the tail chunk
-//! (`docs/01-architecture.md` §The model). Every slot carries a generation;
+//! (`docs/ARCHITECTURE.md` §The model). Every slot carries a generation;
 //! a lookup resolves only when the id's generation is the slot's, so a
 //! stale id never aliases a later occupant. A slot `retain` frees keeps
 //! its place with its generation bumped and joins an ordered free set;

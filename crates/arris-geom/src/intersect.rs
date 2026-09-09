@@ -10,7 +10,7 @@ use crate::{Curve, GeomError, GeomKind, Surface};
 ///
 /// Every curve is an exact analytic curve lying on both surfaces to
 /// rounding, with a frame that is Arris's own deterministic choice
-/// (`docs/02-data-model.md` §Curves): a circle on a cylinder takes the
+/// (`docs/DATA-MODEL.md` §Curves): a circle on a cylinder takes the
 /// cylinder's `X`, an ellipse's `X` is its major axis in the direction of
 /// increasing `v`, a ruling on a cylinder runs along its `Z` from the
 /// point nearest the cylinder's origin, and the line of two planes starts
@@ -114,7 +114,7 @@ pub fn intersect_surfaces(
 /// the same line and the radii do not (two coaxial tubes never meet), and
 /// [`GeomError::Unsupported`] otherwise — the curve of two crossing
 /// cylinders is a quartic space curve with no conic form, and it is
-/// cycle 2's (`docs/02-data-model.md` §Curves, the open question). The
+/// cycle 2's (`docs/DATA-MODEL.md` §Curves, the open question). The
 /// unsupported case is written out, not a wildcard: a new surface kind
 /// still fails the match to compile.
 fn cylinder_cylinder(

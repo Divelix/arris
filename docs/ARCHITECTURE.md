@@ -8,7 +8,7 @@ got back. There is no session object, no builder with hidden state, no
 global. This document holds the crate layout, the arena and handle model,
 the operation and error contract, where the checker runs, the threading and
 wasm rules, and how a consumer's kernel facade maps onto the API. The
-entities and geometry themselves are in [02-data-model](02-data-model.md).
+entities and geometry themselves are in [data-model](DATA-MODEL.md).
 
 ## Crates and the layer rule
 
@@ -20,7 +20,7 @@ re-exports the public API. Lower crates never name types from upper ones.
 | `arris-math` | `Point3`/`Vec3`/`UnitVec3` (over `nalgebra`, ADR-0001), `Frame`, `Frame2`, `Isometry`, `Interval`, `Aabb`, `wrap_angle`, exact orientation predicates (over `robust`), polynomial and interval-guarded Newton root finding, `Precision` and `Tolerance` | `nalgebra`, `robust`, `serde` (feature) | 0 — representation |
 | `arris-geom` | `Surface`, `Curve`, `Curve2` (analytic + NURBS): evaluation, derivatives, point projection, curve/curve, curve/surface and surface/surface intersection, bounding boxes over a parameter range, pcurves and the NURBS fit behind them; the (u, v) toolkit `region2` and `integrate` shared by the checker, tessellation, mass properties and classification; `GeomError` | `arris-math`, `thiserror`, `serde` (feature) | 0 — representation |
 | `arris-topo` | `Model` (the arena), typed ids, `Shape`/`Body`/`Face`/… handles, orientation, entities, pcurves, per-entity tolerances, Euler operators, adjacency and iteration, `Provenance`; re-exports `arris-geom` and `arris-math` | `arris-geom`, `arris-math`, `thiserror`, `serde` (feature) | 0 — representation |
-| `arris-check` | The invariant checker: `check(&Model, Body, Level) -> Report` and the `Violation` list of 02-data-model §Invariants; re-exports `arris-topo` | `arris-topo` | 1 |
+| `arris-check` | The invariant checker: `check(&Model, Body, Level) -> Report` and the `Violation` list of data-model §Invariants; re-exports `arris-topo` | `arris-topo` | 1 |
 | `arris-ops` | Primitives, planar profiles, extrude, revolve, transform, booleans, later blends; `measure` (mass properties); each returns `Provenance` | `arris-check`, `thiserror`, `rayon` (feature) | 2 — algorithms |
 | `arris-mesh` | `TriMesh`, `Polyline`, the constrained Delaunay triangulation in (u, v) (`cdt`, ADR-0003), tessellation of faces and edges with shared edge discretisation; re-exports `arris-math`'s `Aabb` | `arris-check`, `arris-topo`, `thiserror` | 2 — algorithms |
 | `arris-io` | STEP AP214 Part 21 writer (later reader), the native format (`native`); re-exports `arris-check` | `arris-check`, `thiserror`, `serde`, `serde_json`, `postcard` (the last three behind the `serde` feature) | 2 — algorithms |
@@ -90,7 +90,7 @@ orientation: Orientation }` is the uniform handle used by provenance,
 iteration and errors; `Body`, `Shell`, `Face`, `Edge`, `Vertex` are typed
 newtypes over the same pair and convert to `Shape` for free. Copying a
 handle is copying two integers. Orientation composes down the hierarchy
-(02-data-model §Orientation); a handle never carries geometry.
+(data-model §Orientation); a handle never carries geometry.
 
 **Failed operations leave the model as it was.** Because the arena only
 grows and refills slots `retain` freed, an operation runs inside
@@ -136,7 +136,7 @@ pub fn cut(m: &mut Model, target: Body, tool: Body) -> Result<(Body, Provenance)
 ```
 
 - Inputs are handles into `m`. The operation reads them, appends, and
-  returns a new handle plus the provenance record (02-data-model
+  returns a new handle plus the provenance record (data-model
   §Provenance) that says which output entity came from which input entity
   and how. An operation without a provenance record is unfinished.
 - The operation never mutates its inputs, never panics on geometry, never
@@ -150,7 +150,7 @@ pub fn cut(m: &mut Model, target: Body, tool: Body) -> Result<(Body, Provenance)
   axis, radius, height)` places its frame by `Frame::from_z` of it, so it
   seams where the oracle's cylinder does, and `primitive_box(m, min,
   max)` takes two corners. Both build through the Euler operators
-  (02-data-model §Euler operators) and return every entity `Generated`
+  (data-model §Euler operators) and return every entity `Generated`
   from a `Role`.
 - Same input, same output, same ids, on every platform. The tests assert
   this by dumping twice and diffing.
@@ -184,7 +184,7 @@ the edge's own end vertex when the hit is within its ball); those hits
 merged into section vertices — a hit joins the first vertex whose point
 is within the larger of the two tolerances or that shares an operand
 vertex with it, and the vertex's tolerance is the largest of the
-entities merged plus the spread of the points (02-data-model
+entities merged plus the spread of the points (data-model
 §Tolerances); the paves each vertex puts on the edge that hit it and on
 every section curve it projects onto within its tolerance; and the
 section edges — the blocks between consecutive paves whose midpoint is
@@ -262,7 +262,7 @@ than one group `Reason::MultiShell` — and assembled through
 `Keep`: a face whose loops changed at all, even only by a split edge or
 a re-tolerated vertex, is a new face `Modified` from the old; the tool
 of a `cut` keeps nothing, every entity of it `Deleted` and each
-surviving piece `Generated` from its parent (02-data-model §Provenance).
+surviving piece `Generated` from its parent (data-model §Provenance).
 A `fuse` and a `common` have no tool: both operands are kept by id, so
 an untouched face of either keeps it, and the result's shell and body
 are `Modified` from both operands' where a `cut`'s are `Modified` from
@@ -310,7 +310,7 @@ that does not resolve is reported under M1 and skipped by every other
 row; adjacency is read off the body's own entities, so every row stands
 without the arena's indices and M2 alone speaks for them. Every report also carries the body's Euler–Poincaré line,
 `Report::euler()`, which is a line and not a violation. The invariants are
-listed in 02-data-model §Invariants; each has a `Violation` variant, a test
+listed in data-model §Invariants; each has a `Violation` variant, a test
 that constructs it and sees it reported, and a level:
 
 - `Level::Fast` — combinatorial and local geometric checks (ids resolve,
@@ -385,7 +385,7 @@ analytic pairs never route through it.
 `arris_mesh::tessellate(&Model, Body, chord) -> Result<TriMesh,
 MeshError>` turns a body into a triangle mesh with a `FaceRange` per
 face and an `EdgeRange` per edge, both in the body's iteration order
-(02-data-model §Adjacency and iteration). The chord tolerance is the
+(data-model §Adjacency and iteration). The chord tolerance is the
 consumer's request — a number like a render's resolution, not a model
 tolerance — validated finite and positive (`MeshError::Chord`); in debug
 builds the body passes the checker at `Level::Fast` first, as every
@@ -476,7 +476,7 @@ mesh-based mass properties (`ops::measure` integrates the B-Rep).
   produces them.
 - **Native format** (`arris_io::native::{to_json, from_json, to_bytes,
   from_bytes}`): `serde` of the model under a version header, JSON for
-  diffs and `postcard` bytes for storage; 02-data-model §Native format.
+  diffs and `postcard` bytes for storage; data-model §Native format.
 - **Text dump** (`arris-debug::dump_text`): the deterministic, diffable
   rendering of a body that fixtures store and tests compare. Not a format:
   it has no reader.
@@ -491,7 +491,7 @@ mesh-based mass properties (`ops::measure` integrates the B-Rep).
   `crates/arris-geom/tests/oracle.rs` compares Arris against — the
   parametrisation's ground truth. It is run, never linked; no crate
   depends on it. The fixture format is `tests/fixtures/README.md`; its
-  role is 03-roadmap §Fixtures.
+  role is roadmap §Fixtures.
 - **`arris-debug`** is dev-facing: the text dump (`dump_text`), the
   sample bodies built by hand through the raw insert with explicit
   pcurves (`sample::{cuboid, cuboid_nurbs, unit_box, cylinder, sphere,
@@ -504,7 +504,7 @@ mesh-based mass properties (`ops::measure` integrates the B-Rep).
   that feed it a curve or a surface without a body (`polyline_of`,
   `wireframe_of`), the Rerun stream, the fixture loader and corpus lint
   (`fixtures`), the corpus runner (`corpus::run`, the fixture test of
-  03-roadmap §Fixtures — checker, counts and genus, the oracle's reading
+  roadmap §Fixtures — checker, counts and genus, the oracle's reading
   of the STEP, the mass properties against the oracle's within the
   fixture's tolerances, the mesh closed and within `mesh_volume_rel`,
   every probe classified as the oracle classifies it

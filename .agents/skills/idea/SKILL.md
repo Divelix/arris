@@ -15,7 +15,7 @@ becomes a plan; a clear "no, because…" is a successful outcome.
    extend it rather than duplicating.
 2. Read what constrains the idea before forming an opinion: `SEED.md`
    (non-goals, differentiators), the design doc(s) it touches, every ADR
-   whose decision it might bend, `docs/03-roadmap.md` for which milestone it
+   whose decision it might bend, `docs/ROADMAP.md` for which milestone it
    would belong to, and the code if it exists. Cite paths and ADR numbers.
 3. Write `docs/ideas/<slug>.md` from `docs/ideas/TEMPLATE.md`. Options are
    real alternatives with honest trade-offs, including "do nothing". Cost is

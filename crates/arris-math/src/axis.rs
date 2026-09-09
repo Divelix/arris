@@ -1,5 +1,5 @@
 //! An axis: a point and a unit direction, the plain value a primitive or a
-//! revolve is placed by (`docs/01-architecture.md` §Operations).
+//! revolve is placed by (`docs/ARCHITECTURE.md` §Operations).
 
 use crate::frame::FrameError;
 use crate::{Point3, UnitVec3, Vec3};

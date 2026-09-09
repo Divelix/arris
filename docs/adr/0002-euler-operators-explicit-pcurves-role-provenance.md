@@ -5,7 +5,7 @@
 
 ## Context
 
-01-architecture makes entities immutable: an operation appends and
+architecture makes entities immutable: an operation appends and
 returns a handle to a new body that shares every untouched entity. Euler
 operators — the classical way a solid modeller makes topology one valid
 step at a time — mutate: `mev` inserts two coedges into a loop that
@@ -24,7 +24,7 @@ TKBRep/BRep`), which is not Euler-based — it makes bare vertices, edges,
 faces and adds sub-shapes to shapes with no invariant kept between calls,
 leaving `BRepCheck` to find out afterwards — and `BRepTools_History`
 (`ModelingData/TKBRep/BRepTools`), whose three relations Generated /
-Modified / Removed 02-data-model's provenance took its vocabulary from,
+Modified / Removed data-model's provenance took its vocabulary from,
 and whose records are keyed by input shapes only, so a shape with no
 input has no record. Mäntylä, *An Introduction to Solid Modeling*, ch. 9,
 for the operator set and its half-edge formulation.
@@ -90,7 +90,7 @@ which is what a consumer's persistent name is a function of.
 
 - **Operators directly on the arena** (a mutable model): every entity
   written in place, undo and structural sharing gone, exactly what
-  01-architecture rejected.
+  architecture rejected.
 - **`BRep_Builder`'s approach** — bare makes and adds, validity found
   afterwards: the checker becomes the only line of defence and a boolean
   can assemble anything. Rejected for the same reason Fornjot's

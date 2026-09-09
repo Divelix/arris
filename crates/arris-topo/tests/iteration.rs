@@ -1,6 +1,6 @@
 //! Adjacency, iteration order, closure and transactions
-//! (`docs/02-data-model.md` §Adjacency and iteration,
-//! `docs/01-architecture.md` §The model). The box here is topology only:
+//! (`docs/DATA-MODEL.md` §Adjacency and iteration,
+//! `docs/ARCHITECTURE.md` §The model). The box here is topology only:
 //! every entity shares one dummy curve, surface and pcurve, since none of
 //! this reads geometry.
 
@@ -25,7 +25,7 @@ struct Box3 {
     pcurve: Curve2Id,
 }
 
-/// The box of `docs/02-data-model.md`: vertex `i` at the corner with bits
+/// The box of `docs/DATA-MODEL.md`: vertex `i` at the corner with bits
 /// (x, y, z) of `i`; twelve edges, x-parallel first; six faces whose
 /// loops walk the corners so that every edge is used twice in opposite
 /// directions and every normal points out.

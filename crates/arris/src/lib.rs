@@ -4,7 +4,7 @@
 //! (`arris::math` through `arris::io`) so a consumer depends on one name
 //! and reaches everything through it. Nothing lives here that does not
 //! live in a lower crate; the guarantees are each crate's
-//! (`docs/01-architecture.md`).
+//! (`docs/ARCHITECTURE.md`).
 //!
 //! ```
 //! use arris::math::{Axis, Point3};

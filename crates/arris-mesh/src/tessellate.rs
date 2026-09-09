@@ -1,6 +1,6 @@
 //! A body to a [`TriMesh`]: edges discretised once, faces triangulated in
 //! their own (u, v) through the same-parameter pcurves (ADR-0003,
-//! `docs/01-architecture.md` §Tessellation).
+//! `docs/ARCHITECTURE.md` §Tessellation).
 
 use std::collections::BTreeMap;
 
@@ -21,7 +21,7 @@ struct EdgeSamples {
 }
 
 /// The triangle mesh of `body` at `chord`: every position within `chord`
-/// of the geometry, as ADR-0003 and `docs/01-architecture.md`
+/// of the geometry, as ADR-0003 and `docs/ARCHITECTURE.md`
 /// §Tessellation guarantee.
 ///
 /// Every topo vertex of the body is one mesh vertex. Every edge is

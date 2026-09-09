@@ -1,4 +1,4 @@
-//! The corpus runner: the fixture test of `docs/03-roadmap.md` §Fixtures,
+//! The corpus runner: the fixture test of `docs/ROADMAP.md` §Fixtures,
 //! one call per fixture and variant. [`run`] builds the recipe in Arris,
 //! runs the checker at `Full`, compares counts and genus against the
 //! oracle's `expected.json`, writes STEP and has the oracle read it back
@@ -800,7 +800,7 @@ fn reference<'a>(
 /// Every entity of the output body (the body itself included) is kept
 /// from an input or has an origin; every entity of every input body is
 /// kept or recorded; nothing is both deleted and modified
-/// (`docs/02-data-model.md` §Provenance).
+/// (`docs/DATA-MODEL.md` §Provenance).
 fn account(m: &Model, made: &Made) -> Result<(), String> {
     let entities = |body: Body| -> Result<BTreeSet<Shape>, String> {
         let c = m.closure(body).map_err(|e| e.to_string())?;

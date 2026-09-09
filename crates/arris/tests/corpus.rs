@@ -1,5 +1,5 @@
 //! The fixture corpus, one test per fixture and every variant of it
-//! (`docs/03-roadmap.md` §Fixtures, `docs/plans/m2-topology.md` step 13):
+//! (`docs/ROADMAP.md` §Fixtures, `docs/plans/m2-topology.md` step 13):
 //! the recipe built in Arris, the checker at `Full`, counts and genus
 //! against the oracle, STEP read back by the oracle, provenance
 //! accounting, the dump diffed against `dump.txt`. The `primitive/*`,

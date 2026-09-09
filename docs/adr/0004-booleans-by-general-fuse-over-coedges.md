@@ -8,7 +8,7 @@
 ## Context
 
 M4 gives the kernel `fuse`, `common` and `cut` over bodies whose faces lie
-on planes and cylinders (`docs/03-roadmap.md` §M4). Everything below the
+on planes and cylinders (`docs/ROADMAP.md` §M4). Everything below the
 operation exists: M1's intersection table, M2's tolerance-carrying
 topology and Euler operators, the checker, `Provenance`. What M4 has to
 decide is the *shape* of the algorithm on this representation — where the
@@ -62,7 +62,7 @@ result.
 
 **Paves are shared, not matched.** A point where an edge of one operand
 pierces a face of the other becomes one section vertex, tolerance grown by
-the rule in `docs/02-data-model.md` §Tolerances, and that one vertex is a
+the rule in `docs/DATA-MODEL.md` §Tolerances, and that one vertex is a
 pave on the piercing edge *and* on the section curve of the face pair.
 Nothing downstream ever compares two independently computed points to
 decide whether they are the same point: they are the same vertex because

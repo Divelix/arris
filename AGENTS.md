@@ -7,8 +7,8 @@ consumer swaps it in behind a kernel facade once it passes that
 application's probe corpus.
 
 Read in this order: `SEED.md` (charter, competition, stack, the decisions
-taken at kickoff), `docs/01-architecture.md`, `docs/02-data-model.md`,
-`docs/03-roadmap.md`, `docs/adr/`, then the rules in `.agents/rules/*.md`
+taken at kickoff), `docs/ARCHITECTURE.md`, `docs/DATA-MODEL.md`,
+`docs/ROADMAP.md`, `docs/adr/`, then the rules in `.agents/rules/*.md`
 (git, docs lifecycle, kernel) — Claude Code loads them automatically via
 `.claude/rules`; any other agent reads them here. Skills for the idea →
 plan → work → retire → close-cycle pipeline, and `inspect` for seeing

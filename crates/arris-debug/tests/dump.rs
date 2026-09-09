@@ -1,4 +1,4 @@
-//! The text dump and the sample bodies (`docs/02-data-model.md` §Native
+//! The text dump and the sample bodies (`docs/DATA-MODEL.md` §Native
 //! format, last paragraph; §Seams).
 
 use arris_debug::{dump_text, euler_line, sample};

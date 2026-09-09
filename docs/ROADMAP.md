@@ -43,7 +43,7 @@ the fixture's `mesh_chord` and holds the mesh closed with its signed
 volume within `mesh_volume_rel` of the oracle's, measures it over the
 B-Rep (`ops::measure::mass_properties`) and holds volume, area, centroid
 and inertia to the oracle's within `inertia_rel`, asserts the provenance
-accounting (02-data-model §Provenance), and diffs the dump — written
+accounting (data-model §Provenance), and diffs the dump — written
 instead under `ARRIS_BLESS=1`.
 Tolerances are the fixture's: relative 1e-9 on volume and area for
 analytic results, exact on counts and classifications. The oracle is run,
@@ -74,12 +74,12 @@ C1 recipes' oracle values match their closed forms, counts and genus).
 No ADRs; the recipes-not-STEP and `cadquery-ocp==8.0.1.*` questions
 closed as assumed.
 
-- The workspace of 01-architecture, with the layer rule checked by CI and
+- The workspace of architecture, with the layer rule checked by CI and
   the hook.
 - Ids, handles, `Orientation` and `Precision` (the bookkeeping types of
-  02-data-model, no entities yet).
+  data-model, no entities yet).
 - `arris-check`'s skeleton: `Level`, `Report`, and a `Violation` variant per
-  invariant in 02-data-model §Invariants, with a test that the doc and the
+  invariant in data-model §Invariants, with a test that the doc and the
   enum list the same set.
 - `TriMesh` and `Polyline` in `arris-mesh`, with signed volume, area and
   closedness.
@@ -118,7 +118,7 @@ and the wasm build green.
   `Interval`; exact 2D orientation and in-circle predicates over `robust`;
   polynomial roots to quartic and interval-guarded Newton; tolerance types.
 - `arris-geom`: `Surface` and `Curve` with the parametrisations of
-  02-data-model; evaluation and first/second derivatives; point projection
+  data-model; evaluation and first/second derivatives; point projection
   onto every variant; `Curve2` and the pcurve of every analytic curve on
   the plane and the cylinder; NURBS evaluation, knot insertion and
   least-squares fitting of a `Curve2::Nurbs` to a sampled curve.

@@ -1,6 +1,6 @@
 //! `check`: the closure walk and the rows it evaluates.
 //!
-//! Rows implemented here: M1–M3, V1–V3 and E1–E7 (`docs/02-data-model.md`
+//! Rows implemented here: M1–M3, V1–V3 and E1–E7 (`docs/DATA-MODEL.md`
 //! §Invariants); the loop, face, shell and body rows are in
 //! `crate::topology` and the `Full` rows follow in
 //! `docs/plans/m2-topology.md` step 8, so `level` selects nothing yet
@@ -24,7 +24,7 @@ use crate::violation::{
     DegenerateFault, EndMismatch, Level, Quantity, Reference, SeamFault, ToleranceBound, Violation,
 };
 
-/// Every violation of `docs/02-data-model.md` §Invariants that `body`
+/// Every violation of `docs/DATA-MODEL.md` §Invariants that `body`
 /// exhibits in `model`, at `level` — `Fast` after every operation, `Full`
 /// on demand — as a [`Report`] sorted by entity then row. A body handle
 /// that does not resolve is one `M1` line naming the body. Never panics

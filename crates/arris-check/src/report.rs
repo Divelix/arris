@@ -5,7 +5,7 @@ use core::fmt;
 use crate::unchecked::Unchecked;
 use crate::violation::{Level, Violation};
 
-/// The Euler–Poincaré line of a body (`docs/02-data-model.md`
+/// The Euler–Poincaré line of a body (`docs/DATA-MODEL.md`
 /// §Euler–Poincaré): the five counts of its closure and the genus they
 /// imply through `V − E + F − (L − F) − 2(S − G) = 0`. The genus is
 /// *derived*, as the oracle derives it, so the line is not a violation on

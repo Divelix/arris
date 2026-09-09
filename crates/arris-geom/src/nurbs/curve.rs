@@ -5,7 +5,7 @@ use arris_math::{Interval, Isometry, Point2, Point3, Vec2};
 use super::spline::Spline;
 use crate::{Curve2Eval, Curve2Kind, CurveEval, CurveKind, GeomError, GeomKind};
 
-/// A rational B-spline curve in 3D (`docs/02-data-model.md` §NURBS):
+/// A rational B-spline curve in 3D (`docs/DATA-MODEL.md` §NURBS):
 /// degree `p`, `n + p + 1` non-decreasing knots, `n` control points and
 /// as many positive weights, valid by construction.
 ///

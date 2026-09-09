@@ -1,4 +1,4 @@
-//! The corpus lint (`docs/03-roadmap.md` §Fixtures): every fixture directory
+//! The corpus lint (`docs/ROADMAP.md` §Fixtures): every fixture directory
 //! has a recipe and the oracle's answer, the answer is not stale, the Euler
 //! line is zero, and the closed forms agree with the oracle.
 

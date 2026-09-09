@@ -12,7 +12,7 @@ use arris_topo::{BodyId, EntityId, FaceId, ShellId};
 ///
 /// Every variant names the row it belongs to and the entities it is
 /// about; [`Unchecked::code`] gives the row's number in
-/// `docs/02-data-model.md` §Invariants.
+/// `docs/DATA-MODEL.md` §Invariants.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[non_exhaustive]
 pub enum Unchecked {
@@ -41,7 +41,7 @@ pub enum Unchecked {
 }
 
 impl Unchecked {
-    /// The row number in `docs/02-data-model.md` §Invariants.
+    /// The row number in `docs/DATA-MODEL.md` §Invariants.
     pub const fn code(&self) -> &'static str {
         match self {
             Unchecked::FacePair { .. } => "S5",

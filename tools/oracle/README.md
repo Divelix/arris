@@ -1,6 +1,6 @@
 # The Open CASCADE oracle
 
-Ground truth for the fixture corpus (`SEED.md` §7, `docs/03-roadmap.md`
+Ground truth for the fixture corpus (`SEED.md` §7, `docs/ROADMAP.md`
 §Fixtures). Open CASCADE is **run** here through the `cadquery-ocp` wheels;
 no crate links it. Every number in a `tests/fixtures/**/expected.json` was
 written by `expected.py` in this directory, never by hand.
@@ -117,7 +117,7 @@ intersector reported a point that lies on neither operand.
 
 ## Conventions the interpreter mirrors
 
-Open CASCADE's, which Arris follows too (`docs/02-data-model.md`
+Open CASCADE's, which Arris follows too (`docs/DATA-MODEL.md`
 §Conventions): a full revolve and a cylinder have one seam edge; a fuse of
 flush boxes drops the shared face and keeps coplanar neighbours unmerged;
 a common with no volume is an empty result. A fixture's `analytic` block

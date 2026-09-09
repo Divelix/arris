@@ -16,7 +16,7 @@ use arris_check::arris_topo::{
 /// `uv`, in the tighter of the two directions: the tolerance divided by
 /// the surface's speed there, the raw tolerance where a speed is zero or
 /// negligible beside the other. The same conversion the checker applies
-/// to the model's parametric tolerance (`docs/02-data-model.md`
+/// to the model's parametric tolerance (`docs/DATA-MODEL.md`
 /// §Pcurves), here to an entity's own.
 pub(crate) fn band(surface: &Surface, uv: Point2, tolerance: f64) -> f64 {
     let e = surface.eval(uv.x, uv.y);

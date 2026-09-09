@@ -15,5 +15,5 @@ on; it re-exports the layered crates beneath it — `arris-math`, `arris-geom`,
 (dev-facing: rasteriser, fixtures, property-test strategies). A crate never
 depends on one above it; `tools/check-layers.sh` enforces that in CI and in
 the pre-commit hook. The layout and the reasons are in
-`docs/01-architecture.md`; `tools/oracle/` is the Open CASCADE test oracle,
+`docs/ARCHITECTURE.md`; `tools/oracle/` is the Open CASCADE test oracle,
 run through Python and never linked.

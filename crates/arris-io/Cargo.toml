@@ -10,7 +10,7 @@ license.workspace = true
 [features]
 default = ["serde"]
 # The native format: serde of the model, `postcard` for bytes and
-# `serde_json` for diffs (docs/02-data-model.md §Native format). Needs
+# `serde_json` for diffs (docs/DATA-MODEL.md §Native format). Needs
 # `arris-topo/serde`, which is on by default there.
 serde = ["dep:serde", "dep:serde_json", "dep:postcard"]
 

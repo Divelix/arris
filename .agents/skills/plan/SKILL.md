@@ -13,7 +13,7 @@ and the human can read in two minutes.
 
 1. **Check the limit.** `ls docs/plans/` — two active plans (excluding
    `TEMPLATE.md`) means stop and ask which to retire first.
-2. **Gather.** Read `docs/03-roadmap.md` for the milestone's in/out/accept
+2. **Gather.** Read `docs/ROADMAP.md` for the milestone's in/out/accept
    lists, the design docs the work touches, the relevant ADRs,
    `.agents/rules/kernel.md`, and `docs/ideas/<slug>.md` if the plan comes
    from an idea. If it does, the plan's *Goal* and *Design deltas* absorb

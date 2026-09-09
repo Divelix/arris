@@ -1,4 +1,4 @@
-//! The typed errors of the operations (`docs/01-architecture.md` §Errors):
+//! The typed errors of the operations (`docs/ARCHITECTURE.md` §Errors):
 //! every variant names the entities involved.
 
 use arris_check::arris_topo::arris_geom::{GeomError, GeomKind};
