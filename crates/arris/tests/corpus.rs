@@ -135,12 +135,11 @@ fn boolean_coaxial_fuse() {
     run("boolean/coaxial-fuse");
 }
 
-/// The wall's (u, v) region is a strip between two oblique sections, and
-/// the tessellator's rule that a ruled surface needs no interior points
-/// does not hold there (`docs/plans/m4-booleans.md` step 8's findings,
-/// `docs/BACKLOG.md`).
+/// A hole drilled at 30°: two ellipse sections, NURBS pcurves on the
+/// wall, and a wall whose (u, v) region is a strip oblique to the
+/// ruling — the case the tessellator flattens the ruled direction for
+/// (ADR-0005).
 #[test]
-#[ignore = "arris-mesh: a cylinder face bounded by an oblique section meshes with triangles that span the wall"]
 fn boolean_oblique_hole() {
     run("boolean/oblique-hole");
 }

@@ -381,7 +381,7 @@ or bound has to be established here.
   `Modified` through the chain from `Role::Box(Face(Z, Max))` into one
   face of nine loops; the whole chain associative against the oracle's
   counts. 8 of 8 walls is the roadmap's number.
-- [ ] Step 14 **[2]** — A ruled face bounded by an oblique section.
+- [x] Step 14 **[2]** — A ruled face bounded by an oblique section.
   `arris-mesh` gives a cylinder or cone no interior grid (ADR-0003,
   "a plane, a cylinder and a cone are ruled and take none"), which holds
   only while the region's two boundary chains run parallel in the ruled
@@ -914,6 +914,43 @@ deltas above, not a new decision.
   definition. `crates/arris/tests/corpus.rs` gains `run_variant(name,
   variant)` beside `run`, since a test per variant is what makes a
   variant that drifts say which.
+- **Step 14 — the chains are parallel; the strip is sheared.** The step
+  reads the failure as two boundary chains that "do not run parallel in
+  the ruled direction". They do: two parallel cutting planes give two
+  sections a constant `H` apart in `v`, sampled at the same `u` — the
+  wall's ring is a parallelogram grid. What breaks ADR-0003's rule is
+  that the chains run *oblique to the ruling*: Delaunay joins each
+  boundary point to the one nearest it on the other chain, and a shear
+  `s` offsets that one along the ruling by `sH / (1 + s²)` — 1.39 rad of
+  the cylinder where the boundary is sampled every 0.048. Straight
+  chains at the same spacing triangulate column by column at any
+  thickness, which an independent Delaunay of the same points confirms,
+  so the CDT was right about the point set and the point set was the
+  wrong question.
+- **Step 14 — the fix is a flattening, not interior points.** ADR-0005:
+  a ruled direction is scaled so the region's extent along it is an
+  eighth of a chord step in the curved one, which leaves the criterion
+  to the parameter the chord bound is written in. `oblique-hole`'s wall
+  keeps its 262 triangles and its mesh volume goes from 5.1·10⁻³ of the
+  closed form to 1.1·10⁻⁵, against the prism's 4.4·10⁻⁴. The interior
+  lattice the step also offers would have cost 35 rows — 4 600 points
+  and 9 000 triangles for one bolt hole. The guarantee is now stated in
+  the curved parameter and tested there: no triangle of a face on a
+  cylinder travels more than one chord step of the turn, at the
+  fixture's tilt and at 1 000 random radii, tilts and chords.
+- **Step 14 — the closed form needs a tool that pierces.** `12000 −
+  πr²·10 / cos α` is the plate less a slanted hole only while the tool's
+  own caps clear the slab; past `8 cos α − r sin α = 5` a cap cuts into
+  it and the solid has a slanted floor. The fixture's 30° is inside
+  that, the property test derives the tool's length from the tilt, and
+  the test asserts the B-Rep's own `mass_properties` against the closed
+  form before it holds the mesh to it — so a case where the formula
+  stops describing the solid fails as itself, not as a mesh error.
+- **Step 14 — `assert_structure` reads an edge's range at the
+  parametric tolerance.** The seam line's end vertex projects two ulps
+  past its range's end, which the helper asserted exactly; every body
+  before this one happened to round the other way. The check is now
+  `|t − range.clamp(t)| ≤ parametric_tolerance`.
 - **Step 1 — `sample::sphere` is not assemblable.** Its two degenerate
   pole edges are used once each, which `finish` has always refused (it is
   why the sample goes through the raw insert). The round trip runs over

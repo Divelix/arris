@@ -45,7 +45,10 @@ struct EdgeSamples {
 /// its `chord_steps`, those the loops wind around, so a triangle in the
 /// middle of the face is within `chord` of the surface as one standing
 /// on an edge is; a plane, a cylinder and a cone are ruled and take
-/// none. Ranges are in the body's iteration order (`Model::faces`,
+/// none, and on a cylinder or a cone the ruled direction is flattened
+/// before the triangulation so no triangle travels more than one chord
+/// step in the curved one, however oblique to the ruling the face's
+/// region runs (ADR-0005). Ranges are in the body's iteration order (`Model::faces`,
 /// `Model::edges`). The output is the same on every platform for the
 /// same body and chord.
 ///
@@ -236,10 +239,10 @@ pub fn tessellate(m: &Model, body: Body, chord: f64) -> Result<TriMesh, MeshErro
             interior_indices.push(mesh.push_position([p.x, p.y, p.z])?);
         }
         // The triangulation is taken in a (u, v) scaled to the
-        // surface's own lengths, so Delaunay's criterion means distance
-        // on the surface and not in the parameters: the indices it
-        // returns are the same either way.
-        let scale = uv_scale(surface, bounds);
+        // surface's own lengths, and flattened along a ruled direction,
+        // so Delaunay's criterion measures what the chord bound is made
+        // of: the indices it returns are the same either way.
+        let scale = uv_scale(surface, bounds, steps);
         let scaled: Vec<Polygon2> = polygons
             .iter()
             .map(|p| Polygon2::from_points(p.points().iter().map(|q| scaled_point(*q, scale))))
@@ -356,8 +359,10 @@ fn triangulate_faces(works: &[FaceWork]) -> Result<Vec<Vec<[u32; 3]>>, MeshError
 /// for one that spans the region. Scaling the domain by these speeds
 /// makes it roughly isometric to the surface, which is the shape
 /// Delaunay's empty-circle criterion is good at (ADR-0003; Open
-/// CASCADE's `BRepMesh` scales its domain the same way).
-fn uv_scale(surface: &Surface, bounds: [Interval; 2]) -> [f64; 2] {
+/// CASCADE's `BRepMesh` scales its domain the same way). A direction the
+/// surface is ruled along is then [`flattened`], since the criterion has
+/// nothing to weigh there (ADR-0005).
+fn uv_scale(surface: &Surface, bounds: [Interval; 2], steps: [f64; 2]) -> [f64; 2] {
     let mut sums = [0.0f64; 2];
     let mut count = 0.0;
     for i in 0..=SPEED_SAMPLES {
@@ -383,12 +388,65 @@ fn uv_scale(surface: &Surface, bounds: [Interval; 2]) -> [f64; 2] {
             1.0
         };
     }
-    scale
+    flattened(scale, bounds, steps)
+}
+
+/// `scale` with a ruled direction flattened: on a surface curved along
+/// one parameter and ruled along the other — a cylinder, a cone — the
+/// ruled direction is scaled so the region's whole extent along it is
+/// [`RULED_RIBBON`] of one chord step in the curved one.
+///
+/// A step along the ruling costs no deviation, so it must not compete in
+/// the empty-circle criterion: in an isometric domain it does, and a
+/// region whose boundary chains run oblique to the ruling — the wall of
+/// a hole cut at an angle, whose two ends are ellipse sections — is
+/// triangulated by joining each boundary point to the one *nearest* on
+/// the other chain, which is offset along the ruling by the shear and so
+/// travels a large part of a turn in the curved parameter, far past the
+/// step the chord bound stands on. Flattening the region to a ribbon
+/// leaves the curved parameter alone to decide, which is the mesh a
+/// ruled face wants — one quad per step of its boundary — and costs no
+/// interior points at all.
+///
+/// The bound: a Delaunay triangle's circumcircle holds no vertex, and a
+/// circle that covers a ribbon of thickness `e` over a span `w` of the
+/// curved parameter holds every boundary sample in that span, so
+/// `w` is under the boundary's own step `d`; a circle of radius `r`
+/// centred in the ribbon covers `2√(r² − e²)`, so `r² < d²/4 + e²` and
+/// the triangle, which the circle contains, travels under `√(d² + 4e²)`
+/// — within a few hundredths of `d` at `e = d / 8`.
+///
+/// A plane is ruled both ways and takes no chord step at all, so nothing
+/// is flattened there and any triangulation of it is exact; a sphere, a
+/// torus and a NURBS surface curve both ways and keep the isometric
+/// domain their interior lattice is sized in.
+fn flattened(scale: [f64; 2], bounds: [Interval; 2], steps: [f64; 2]) -> [f64; 2] {
+    let mut out = scale;
+    for curved in 0..2 {
+        let ruled = 1 - curved;
+        if !steps[curved].is_finite() || steps[ruled].is_finite() {
+            continue;
+        }
+        let extent = bounds[ruled].length() * scale[ruled];
+        let ribbon = RULED_RIBBON * steps[curved] * scale[curved];
+        if extent.is_finite() && extent > ribbon && ribbon > 0.0 {
+            out[ruled] = scale[ruled] * ribbon / extent;
+        }
+    }
+    out
 }
 
 /// How many samples per direction [`uv_scale`] takes of the speeds: a
 /// mean over the region, not a bound, so a coarse grid is enough.
 const SPEED_SAMPLES: usize = 4;
+
+/// How thick [`flattened`] leaves a ruled region, as a share of one
+/// chord step in the curved direction: `1 / 8`, which by the bound in
+/// [`flattened`] keeps a triangle's travel in the curved parameter under
+/// `√(1 + 4 / 64)` of the boundary's own step — three hundredths over,
+/// against the square in the deviation, so the inscribed-prism bound
+/// holds as it does for a face whose boundary runs along the ruling.
+const RULED_RIBBON: f64 = 0.125;
 
 /// A (u, v) point in the scaled domain [`uv_scale`] defines.
 fn scaled_point(p: Point2, scale: [f64; 2]) -> Point2 {
@@ -451,4 +509,54 @@ fn region_bounds(m: &Model, face: &FaceEntity) -> Result<[Interval; 2], NotFound
         Interval::new(lo[0], hi[0]).unwrap_or(Interval::REAL),
         Interval::new(lo[1], hi[1]).unwrap_or(Interval::REAL),
     ])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use arris_topo::arris_math::Frame;
+
+    fn cylinder(radius: f64) -> Surface {
+        Surface::Cylinder {
+            frame: Frame::world(),
+            radius,
+        }
+    }
+
+    /// A cylinder's ruled `v` is scaled so the region's height is an
+    /// eighth of a chord step in `u`; a region already thinner than that
+    /// is left alone, and a plane, which has no chord step at all, keeps
+    /// its isometric scale whatever its region.
+    #[test]
+    fn a_ruled_direction_is_flattened_to_a_ribbon() {
+        let chord = 1e-3;
+        let radius = 3.0;
+        let surface = cylinder(radius);
+        let bounds = [
+            Interval::new(0.0, core::f64::consts::TAU).unwrap(),
+            Interval::new(0.0, 15.0).unwrap(),
+        ];
+        let steps = surface.chord_steps(chord, bounds);
+        assert!(steps[0].is_finite() && !steps[1].is_finite());
+        let scale = uv_scale(&surface, bounds, steps);
+        let height = bounds[1].length() * scale[1];
+        assert!(
+            (height - RULED_RIBBON * steps[0] * scale[0]).abs() <= 1e-15,
+            "the region is a ribbon an eighth of a step thick"
+        );
+        // A sliver shorter than the ribbon keeps the isometric scale.
+        let short = [bounds[0], Interval::new(0.0, 1e-6).unwrap()];
+        assert_eq!(
+            uv_scale(&surface, short, surface.chord_steps(chord, short))[1],
+            uv_scale(&surface, short, [f64::INFINITY; 2])[1]
+        );
+        // A plane is ruled both ways and is never flattened.
+        let plane = Surface::Plane {
+            frame: Frame::world(),
+        };
+        assert_eq!(
+            uv_scale(&plane, bounds, plane.chord_steps(chord, bounds)),
+            [1.0; 2]
+        );
+    }
 }

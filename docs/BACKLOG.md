@@ -22,6 +22,5 @@ re-brainstormed.
 - A NURBS surface has no `project` (cycle 1, by design), so a NURBS face's mesh deviation can only be measured against a closed form; the tessellation property test covers the analytic kinds and one hand-built saddle (M3 finding)
 - Per-vertex normals and (u, v) in `TriMesh`, alongside the `f32` position boundary (architecture §Threading `⚠ OPEN`), once a consumer's renderer asks for either (M3 non-goal)
 - Adaptive or curvature-driven mesh refinement beyond a chord tolerance, if a consumer's mesh sizes come out too coarse or too dense against `arris-mesh`'s uniform (u, v) grid (M3 non-goal)
-- A ruled face bounded by an oblique section takes no interior grid (ADR-0003: "a cylinder is ruled"), and the CDT of its strip joins boundary points across the whole face instead of column by column: `boolean/oblique-hole`'s wall meshes 1.2 rad of the cylinder per triangle and the mesh volume is out by 5e-3 where the inscribed prism bounds it at 4e-4. The rule holds only while the two boundary chains run parallel in the ruled direction; the fix is interior points, a strip-aware triangulation, or a restated guarantee (M4 finding, `crates/arris-mesh/tests/tessellate.rs` and `crates/arris/tests/corpus.rs` hold the `#[ignore]`d assertions)
 
 ## Rejected

@@ -7,7 +7,9 @@
 //! and bodies are typed errors; two runs are identical. Step 3: a patch
 //! of every surface kind in a random pose stays within its chord, the
 //! sphere and the torus mesh closed through their interior grids, and a
-//! ruled surface takes no grid at all.
+//! ruled surface takes no grid at all. M4 step 14 (ADR-0005): the wall
+//! of a hole drilled at an angle — a strip oblique to the ruling —
+//! meshes column by column, at the fixture's tilt and at random ones.
 
 use core::f64::consts::{PI, TAU};
 use std::collections::{BTreeMap, BTreeSet};
@@ -15,10 +17,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use arris_debug::prop::{DEFAULT_SCALE, check, finite_f64, point_in_box, radius, unit_vec3};
 use arris_debug::sample;
 use arris_mesh::{MeshError, TriMesh, tessellate};
+use arris_ops::measure::mass_properties;
 use arris_ops::{primitive_box, primitive_cylinder};
 use arris_topo::arris_geom::region2::MIN_SEGMENTS_PER_TURN;
 use arris_topo::arris_geom::{CurveKind, NurbsSurface, Surface, SurfaceKind};
-use arris_topo::arris_math::{Axis, Interval, Point2, Point3};
+use arris_topo::arris_math::{Axis, Interval, Point2, Point3, Vec3};
 use arris_topo::entity::{Body as BodyEntity, EdgeGeometry};
 use arris_topo::{Body, Model, Shell as ShellHandle, ShellId};
 use proptest::prelude::*;
@@ -78,7 +81,19 @@ fn assert_structure(m: &Model, body: Body, mesh: &TriMesh) {
                 if curve.kind() != CurveKind::Nurbs {
                     let projection = curve.project(p).unwrap();
                     assert!(projection.distance <= tol, "{p} is off its curve");
-                    assert!(range.contains(projection.t) || curve.period().is_some());
+                    // The end vertex of a straight edge projects back to
+                    // the range's end give or take an ulp of the
+                    // coordinate, so the range is read at the model's
+                    // parametric tolerance.
+                    let slack = m.precision().parametric_tolerance;
+                    assert!(
+                        (projection.t - range.clamp(projection.t)).abs() <= slack
+                            || curve.period().is_some(),
+                        "{} {:?} t {} range {range:?}",
+                        e.id,
+                        curve.kind(),
+                        projection.t
+                    );
                 }
             }
         }
@@ -615,34 +630,23 @@ fn the_nurbs_box_meshes_with_its_bilinear_face() {
     assert!((mesh.signed_volume().unwrap() - volume).abs() <= EXACT * volume);
 }
 
-/// A cylinder face bounded by an oblique section: its (u, v) region is a
-/// strip between two sinusoids of the same height, and the constrained
-/// Delaunay triangulation of that strip joins boundary points across the
-/// whole face rather than column by column — up to 1.2 rad of the
-/// cylinder in one triangle, where the boundary is sampled every 0.048.
-/// ADR-0003's rule that a ruled surface needs no interior grid holds
-/// only while the region's two chains run parallel in the ruled
-/// direction, which an oblique section's do not, so the mesh volume is
-/// out by an order of magnitude more than the inscribed prism bounds it
-/// by. `tests/fixtures/boolean/oblique-hole` is the fixture and
-/// `docs/BACKLOG.md` holds the line.
+/// A cylinder face bounded by two oblique sections: the strip its
+/// (u, v) region makes runs oblique to the ruling, so Delaunay in a
+/// domain scaled to the surface's own lengths joins each boundary point
+/// to the *nearest* one on the other chain — offset along the ruling by
+/// the shear, and so a large part of a turn away in `u`, where the
+/// boundary is sampled every `0.048`. Flattening the ruled direction
+/// (ADR-0005) leaves `u` alone to decide, and the wall is the inscribed
+/// prism the bound is written for. `tests/fixtures/boolean/oblique-hole`
+/// is the same solid through the corpus.
 #[test]
-#[ignore = "arris-mesh: a ruled face bounded by an oblique section needs interior points"]
 fn an_oblique_hole_meshes_within_the_inscribed_bound() {
+    let (r, tilt) = (3.0, PI / 6.0);
     let mut m = Model::default();
-    let (plate, _) =
-        primitive_box(&mut m, Point3::origin(), Point3::new(40.0, 30.0, 10.0)).unwrap();
-    let (r, half, tilt) = (3.0, 8.0, PI / 6.0);
-    let axis = Axis::new(
-        Point3::new(20.0, 15.0 - half * tilt.sin(), 5.0 - half * tilt.cos()),
-        arris_topo::arris_math::Vec3::new(0.0, tilt.sin(), tilt.cos()),
-    )
-    .unwrap();
-    let (tool, _) = primitive_cylinder(&mut m, axis, r, 2.0 * half).unwrap();
-    let (body, _) = arris_ops::cut(&mut m, plate, tool).unwrap();
-
+    let body = oblique_hole(&mut m, r, tilt, 8.0);
     let chord = 1e-3;
     let mesh = tessellate(&m, body, chord).unwrap();
+    assert_structure(&m, body, &mesh);
     let exact = 12000.0 - PI * r * r * 10.0 / tilt.cos();
     let volume = mesh.signed_volume().unwrap();
     assert!(
@@ -651,4 +655,111 @@ fn an_oblique_hole_meshes_within_the_inscribed_bound() {
         (volume - exact).abs() / exact,
         prism_bound(chord, r)
     );
+    // The wall is one quad per step of its boundary: no triangle travels
+    // more of the turn than the chord step the bound stands on.
+    let step = (8.0 * chord / r).sqrt();
+    let travel = wall_travel(&m, body, &mesh);
+    assert!(
+        travel <= step,
+        "a triangle travels {travel} of the turn, past the chord step {step}"
+    );
+    assert_eq!(mesh, tessellate(&m, body, chord).unwrap(), "two runs");
+}
+
+/// The same at random radii, tilts and chords, with the tool made long
+/// enough to pierce the plate at every tilt so the closed form holds:
+/// the solid measures as the closed form says, the mesh is within the
+/// inscribed prism's bound of it, and no triangle of the wall travels
+/// past one chord step of the turn however the strip is sheared.
+#[test]
+fn an_oblique_hole_meshes_column_by_column_at_random_tilts() {
+    check(
+        (
+            radius(0.5..=3.0),
+            finite_f64(0.0..=1.0),
+            finite_f64(-4.0..=-2.0),
+        ),
+        |(r, tilt, log_chord)| {
+            let chord = 10f64.powf(log_chord) * r;
+            let mut m = Model::default();
+            let half = (6.0 + r * tilt.sin()) / tilt.cos();
+            let body = oblique_hole(&mut m, r, tilt, half);
+            let exact = 12000.0 - PI * r * r * 10.0 / tilt.cos();
+            let measured = mass_properties(&m, body)
+                .map_err(|e| TestCaseError::fail(e.to_string()))?
+                .volume;
+            prop_assert!(
+                (measured - exact).abs() <= 1e-9 * exact,
+                "the solid is not the closed form's: {measured} vs {exact}"
+            );
+            let mesh =
+                tessellate(&m, body, chord).map_err(|e| TestCaseError::fail(e.to_string()))?;
+            prop_assert!(mesh.is_closed());
+            let volume = mesh.signed_volume().unwrap();
+            prop_assert!(
+                (volume - exact).abs() <= exact * prism_bound(chord, r),
+                "volume {volume} vs {exact}: {} relative",
+                (volume - exact).abs() / exact
+            );
+            let step = (8.0 * chord / r).sqrt();
+            let travel = wall_travel(&m, body, &mesh);
+            prop_assert!(travel <= step, "travel {travel} past the step {step}");
+            Ok(())
+        },
+    );
+}
+
+/// The plate of `boolean/oblique-hole` less a cylinder of radius `r` and
+/// length `2 half` through its middle, its axis tilted `tilt` from `z`
+/// about `x`: the hole's wall is bounded by two ellipse sections, and
+/// its (u, v) region is a strip sheared by `r tan(tilt)` against the
+/// ruling.
+fn oblique_hole(m: &mut Model, r: f64, tilt: f64, half: f64) -> Body {
+    let (plate, _) = primitive_box(m, Point3::origin(), Point3::new(40.0, 30.0, 10.0)).unwrap();
+    let axis = Axis::new(
+        Point3::new(20.0, 15.0 - half * tilt.sin(), 5.0 - half * tilt.cos()),
+        Vec3::new(0.0, tilt.sin(), tilt.cos()),
+    )
+    .unwrap();
+    let (tool, _) = primitive_cylinder(m, axis, r, 2.0 * half).unwrap();
+    arris_ops::cut(m, plate, tool).unwrap().0
+}
+
+/// The largest turn any triangle of `body`'s one cylindrical face
+/// travels: the `u` extent of its three corners, taken in the surface's
+/// own frame, which is what the chord bound on a cylinder is written in.
+fn wall_travel(m: &Model, body: Body, mesh: &TriMesh) -> f64 {
+    let mut worst: f64 = 0.0;
+    for f in m.faces(body).unwrap() {
+        let face = m.face(f.id).unwrap();
+        let Ok(Surface::Cylinder { frame, .. }) = m.surface(face.surface()) else {
+            continue;
+        };
+        let range = mesh.faces().iter().find(|x| x.face == f.id).unwrap();
+        let u_of = |i: u32| {
+            let p = mesh.positions()[i as usize];
+            let local = frame.to_local(p3([p[0], p[1], p[2]]));
+            local.y.atan2(local.x)
+        };
+        for t in &mesh.triangles()[range.triangles.clone()] {
+            let base = u_of(t[0]);
+            let turns: Vec<f64> = t
+                .iter()
+                .map(|&i| {
+                    let mut d = u_of(i) - base;
+                    while d > PI {
+                        d -= TAU;
+                    }
+                    while d < -PI {
+                        d += TAU;
+                    }
+                    d
+                })
+                .collect();
+            let lo = turns.iter().copied().fold(f64::INFINITY, f64::min);
+            let hi = turns.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+            worst = worst.max(hi - lo);
+        }
+    }
+    worst
 }

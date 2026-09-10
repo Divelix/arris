@@ -443,7 +443,14 @@ depends on `check`. The mesh guarantees (ADR-0003):
   none and their loops' own samples bound the chord. The rings and the
   lattice are scaled by the surface's mean speeds before the
   triangulation, so Delaunay's criterion measures distance on the
-  surface and not in the parameters (ADR-0003).
+  surface and not in the parameters (ADR-0003), and a ruled direction is
+  then flattened to a thin ribbon — an eighth of a chord step of the
+  curved parameter — so the criterion is left to the parameter the chord
+  bound is written in (ADR-0005). No triangle of a face on a cylinder
+  travels more than one chord step of the turn, whatever the shear of its
+  region: the wall of a hole drilled at an angle is a strip oblique to
+  the ruling, and in an isometric domain Delaunay would join its boundary
+  across the hole rather than column by column.
 - A face whose loops are not the simple nested polygons the checker
   promises is `MeshError::Face` with the `CdtError` naming the segments.
 
