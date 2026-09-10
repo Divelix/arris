@@ -34,7 +34,13 @@ def compare_step(directory: Path, step_file: Path, variant: str = "default") -> 
     tol = {**DEFAULT_TOLERANCES, **fixture.get("tolerances", {})}
     shape = step.read(step_file)
     actual = measure(shape, probes(fixture, variant), tol["probe"])
-    rows = compare(expected["results"][variant], actual, tol)
+    result = expected["results"][variant]
+    analytic = fixture.get("analytic", {})
+    if analytic.get("counts_differ") and "counts" in analytic:
+        # The recipe states a convention Arris does not follow and gives
+        # its own counts; the oracle's stay in expected.json as the record.
+        result = {**result, "counts": {"shells": 1, "solids": 1, **analytic["counts"]}}
+    rows = compare(result, actual, tol)
     return all(r[3] for r in rows), format_table(rows)
 
 

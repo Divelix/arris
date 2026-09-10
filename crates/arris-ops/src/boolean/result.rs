@@ -8,8 +8,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use arris_check::arris_topo::arris_geom::{GeomError, GeomKind, SurfaceIntersection};
-use arris_check::arris_topo::arris_math::{Interval, Point3, Precision};
+use arris_check::arris_topo::arris_geom::{GeomError, GeomKind, Surface, SurfaceIntersection};
+use arris_check::arris_topo::arris_math::{Interval, Point2, Point3, Precision, Vec3};
 use arris_check::arris_topo::builder::{
     Assembly, Builder, EdgeKey, EdgeSpec, FaceSpec, UseSpec, VertexKey, VertexSpec,
 };
@@ -101,10 +101,10 @@ fn forward(id: impl Into<EntityId>) -> Shape {
     Shape::new(id, Orientation::Forward)
 }
 
-/// A piece classified `On` a face of the other operand its own face is
-/// not coincident with, or on an edge or vertex: a tangent contact,
-/// which plan step 11 decides. Until then it is the pair the kernel has
-/// no recipe for, named.
+/// A piece classified `On` something of the other operand its own face
+/// is neither coincident nor tangent with — an edge, a vertex, a face of
+/// a `Transversal` pair — or a tangent pair that is not a plane and a
+/// cylinder: the pair the kernel has no recipe for, named.
 fn unsupported(m: &Model, face: FaceId, on: Shape) -> OpError {
     let kind = |s: Shape| -> GeomKind {
         match s.id {
@@ -418,13 +418,19 @@ impl<'m> Build<'m> {
     }
 
     /// The face of the other operand that `on` names, when face `f` of
-    /// operand `side` is coincident with it.
-    fn coincident_partner(&self, side: usize, f: FaceId, on: Shape) -> Option<FaceHandle> {
+    /// operand `side` makes a pair with it whose intersection `is` accepts.
+    fn partner(
+        &self,
+        side: usize,
+        f: FaceId,
+        on: Shape,
+        is: fn(&SurfaceIntersection) -> bool,
+    ) -> Option<FaceHandle> {
         let EntityId::Face(g) = on.id else {
             return None;
         };
         let paired = self.i.pairs.iter().any(|p| {
-            p.intersection == SurfaceIntersection::Coincident
+            is(&p.intersection)
                 && if side == 0 {
                     p.a == f && p.b == g
                 } else {
@@ -437,40 +443,156 @@ impl<'m> Build<'m> {
         self.faces[1 - side].iter().copied().find(|h| h.id == g)
     }
 
+    /// The face of the other operand that `on` names, when face `f` of
+    /// operand `side` is coincident with it.
+    fn coincident_partner(&self, side: usize, f: FaceId, on: Shape) -> Option<FaceHandle> {
+        self.partner(side, f, on, |i| *i == SurfaceIntersection::Coincident)
+    }
+
+    /// The face of the other operand that `on` names, when face `f` of
+    /// operand `side` is tangent to it.
+    fn tangent_partner(&self, side: usize, f: FaceId, on: Shape) -> Option<FaceHandle> {
+        self.partner(side, f, on, |i| {
+            matches!(i, SurfaceIntersection::Tangent(_))
+        })
+    }
+
+    fn surface_of(&self, h: FaceHandle) -> Result<&'m Surface, OpError> {
+        let face = self.m.face(h.id).map_err(|_| self.not_found(0))?;
+        self.m
+            .surface(face.surface())
+            .map_err(|_| self.not_found(0))
+    }
+
+    /// The effective outward normal of face `h` at `point` — at its
+    /// (u, v) `uv` when given, else at the surface's projection of it.
+    fn outward_normal(
+        &self,
+        h: FaceHandle,
+        uv: Option<Point2>,
+        point: Point3,
+    ) -> Result<Vec3, OpError> {
+        let surface = self.surface_of(h)?;
+        let uv = match uv {
+            Some(uv) => uv,
+            None => {
+                surface
+                    .project(point)
+                    .map_err(|e| OpError::Internal(Fault::Geometry(e)))?
+                    .uv
+            }
+        };
+        let n = surface.normal(uv.x, uv.y).ok_or_else(|| {
+            OpError::Internal(Fault::Geometry(GeomError::Degenerate {
+                kind: GeomKind::Surface(surface.kind()),
+                reason: "no normal at a piece's interior point".into(),
+            }))
+        })?;
+        let n = n.into_inner();
+        Ok(if h.orientation.is_reversed() { -n } else { n })
+    }
+
     /// `true` when the effective normals of `f` at its (u, v) `uv` and
     /// of `g` at the same point agree.
     fn normals_agree(
         &self,
         f: FaceHandle,
-        uv: arris_check::arris_topo::arris_math::Point2,
+        uv: Point2,
         point: Point3,
         g: FaceHandle,
     ) -> Result<bool, OpError> {
-        let normal = |h: FaceHandle, uv: Option<_>| -> Result<_, OpError> {
-            let face = self.m.face(h.id).map_err(|_| self.not_found(0))?;
-            let surface = self
-                .m
-                .surface(face.surface())
-                .map_err(|_| self.not_found(0))?;
-            let uv = match uv {
-                Some(uv) => uv,
-                None => {
-                    surface
-                        .project(point)
-                        .map_err(|e| OpError::Internal(Fault::Geometry(e)))?
-                        .uv
-                }
-            };
-            let n = surface.normal(uv.x, uv.y).ok_or_else(|| {
-                OpError::Internal(Fault::Geometry(GeomError::Degenerate {
-                    kind: GeomKind::Surface(surface.kind()),
-                    reason: "no normal at a piece's interior point".into(),
-                }))
-            })?;
-            let n = n.into_inner();
-            Ok(if h.orientation.is_reversed() { -n } else { n })
+        Ok(self
+            .outward_normal(f, Some(uv), point)?
+            .dot(&self.outward_normal(g, None, point)?)
+            > 0.0)
+    }
+
+    /// Whether face `f`, tangent to face `g` of the other operand along a
+    /// ruling through `point`, lies inside the other operand beside the
+    /// ruling: the curvature rule (`docs/ARCHITECTURE.md` §Operations).
+    /// The pair is a plane and a cylinder sharing a tangent plane along
+    /// the ruling; the cylinder lies on its axis's side of that plane and
+    /// the plane lies outside the cylinder's surface. So the plane's
+    /// piece is inside the cylinder's body exactly when that body is the
+    /// outside of its wall — a bore, its outward normal pointing at the
+    /// axis — and the cylinder's piece is inside the plane's body exactly
+    /// when the axis is on the material side of the plane — its outward
+    /// normal pointing away from the axis. `None` when the two surfaces
+    /// are not a plane and a cylinder, which no `Tangent` pair of this
+    /// cycle is.
+    fn tangent_side(
+        &self,
+        f: FaceHandle,
+        point: Point3,
+        g: FaceHandle,
+    ) -> Result<Option<bool>, OpError> {
+        let (f_is_plane, frame) = match (self.surface_of(f)?, self.surface_of(g)?) {
+            (Surface::Plane { .. }, Surface::Cylinder { frame, .. }) => (true, frame),
+            (Surface::Cylinder { frame, .. }, Surface::Plane { .. }) => (false, frame),
+            (
+                Surface::Plane { .. }
+                | Surface::Cylinder { .. }
+                | Surface::Cone { .. }
+                | Surface::Sphere { .. }
+                | Surface::Torus { .. }
+                | Surface::Nurbs(_),
+                Surface::Plane { .. }
+                | Surface::Cylinder { .. }
+                | Surface::Cone { .. }
+                | Surface::Sphere { .. }
+                | Surface::Torus { .. }
+                | Surface::Nurbs(_),
+            ) => return Ok(None),
         };
-        Ok(normal(f, Some(uv))?.dot(&normal(g, None)?) > 0.0)
+        // From the contact point into the cylinder's axis.
+        let z = frame.z().into_inner();
+        let d = point - frame.origin();
+        let into_axis = (frame.origin() + z * d.dot(&z)) - point;
+        let toward = self.outward_normal(g, None, point)?.dot(&into_axis);
+        Ok(Some(if f_is_plane {
+            toward > 0.0
+        } else {
+            toward < 0.0
+        }))
+    }
+
+    /// Every contact decided at its midpoint: the piece of each face
+    /// through it lies inside or outside the other operand by the
+    /// curvature rule, and the selection table says whether it survives.
+    /// A contact both pieces survive is two result faces touching along
+    /// a curve interior to both, the slit refused by name (ADR-0004).
+    fn contacts(&self) -> Result<(), OpError> {
+        for c in &self.i.contacts {
+            let pair = self.i.pairs.get(c.pair).ok_or_else(|| self.not_found(0))?;
+            let find = |side: usize, id: FaceId| {
+                self.faces[side]
+                    .iter()
+                    .copied()
+                    .find(|h| h.id == id)
+                    .ok_or_else(|| self.not_found(side))
+            };
+            let (fa, fb) = (find(0, pair.a)?, find(1, pair.b)?);
+            let (Some(inside_a), Some(inside_b)) = (
+                self.tangent_side(fa, c.point, fb)?,
+                self.tangent_side(fb, c.point, fa)?,
+            ) else {
+                return Err(unsupported(
+                    self.m,
+                    fa.id,
+                    Shape::new(fb.id, fb.orientation),
+                ));
+            };
+            if self.op.select(0, inside_a).is_some() && self.op.select(1, inside_b).is_some() {
+                return Err(OpError::Degenerate {
+                    entities: vec![
+                        Shape::new(fa.id, fa.orientation),
+                        Shape::new(fb.id, fb.orientation),
+                    ],
+                    reason: Reason::TangentContact,
+                });
+            }
+        }
+        Ok(())
     }
 
     /// Every face of both operands split, each piece classified against
@@ -504,15 +626,27 @@ impl<'m> Build<'m> {
                             (flip, None)
                         }
                         Classification::On(shape) => {
-                            let Some(g) = self.coincident_partner(side, f.id, shape) else {
+                            if let Some(g) = self.coincident_partner(side, f.id, shape) {
+                                let agree = self.normals_agree(f, piece.uv, piece.interior, g)?;
+                                if !self.op.select_on(side, agree) {
+                                    self.dropped_on = true;
+                                    continue;
+                                }
+                                (false, Some(g.id))
+                            } else if let Some(g) = self.tangent_partner(side, f.id, shape) {
+                                // The interior point lies on the ruling the
+                                // two faces touch along; the piece lies to one
+                                // side of the other operand everywhere else.
+                                let Some(inside) = self.tangent_side(f, piece.interior, g)? else {
+                                    return Err(unsupported(self.m, f.id, shape));
+                                };
+                                let Some(flip) = self.op.select(side, inside) else {
+                                    continue;
+                                };
+                                (flip, None)
+                            } else {
                                 return Err(unsupported(self.m, f.id, shape));
-                            };
-                            let agree = self.normals_agree(f, piece.uv, piece.interior, g)?;
-                            if !self.op.select_on(side, agree) {
-                                self.dropped_on = true;
-                                continue;
                             }
-                            (false, Some(g.id))
                         }
                     };
                     pieces.push(self.kept.len());
@@ -697,6 +831,7 @@ pub(super) fn boolean(
         b.sub_edges()?;
         b.aliases();
         b.raise_tolerances()?;
+        b.contacts()?;
         b.select()?;
         b.one_shell()?;
         let plan = b.assembly()?;

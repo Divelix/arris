@@ -123,6 +123,100 @@ impl OverlappingPair {
     }
 }
 
+/// A box and a cylinder whose wall touches one face of the box from
+/// outside along a ruling through the face's interior, both under one
+/// motion: the tangent case with nothing else in contact (plan
+/// m4-booleans step 11). Every boolean's outcome is known: `box −
+/// cylinder` is the box, `common` selects nothing, and `fuse` would
+/// hold the face and the wall touching along a slit, the designed
+/// `TangentContact` refusal.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TangentPair {
+    /// The box.
+    pub cuboid: Boxed,
+    /// The cylinder.
+    pub cylinder: Cylindrical,
+    /// The touched face: the axis it is normal to (`0`, `1`, `2`) and
+    /// whether it is the box's `max` side.
+    pub face: (usize, bool),
+}
+
+impl TangentPair {
+    /// Both bodies in `m`, the box first.
+    pub fn build(&self, m: &mut Model) -> Result<(Body, Body), OpError> {
+        let a = self.cuboid.build(m)?;
+        let b = self.cylinder.build(m)?;
+        Ok((a, b))
+    }
+
+    /// The outward normal of the touched face, before the motion.
+    pub fn normal(&self) -> Vec3 {
+        let mut n = Vec3::zeros();
+        n[self.face.0] = if self.face.1 { 1.0 } else { -1.0 };
+        n
+    }
+
+    /// Where the ruling crosses the touched face: the foot of the axis's
+    /// midpoint on the face's plane, before the motion.
+    pub fn foot(&self) -> Point3 {
+        let mid = self.cylinder.axis.at(self.cylinder.height / 2.0);
+        mid - self.cylinder.radius * self.normal()
+    }
+}
+
+/// [`TangentPair`]s: a box from [`box_in`], a face of it, a point in the
+/// face's interior (a tenth to nine tenths of each extent), an axis
+/// direction in the face's plane at a random angle, and a cylinder of
+/// random radius and height on that direction at the radius's distance
+/// outside the face, its midpoint over the point — so the ruling
+/// crosses the face's interior and the two faces touch along a segment
+/// interior to both. The cylinder's ends may reach past the box or stop
+/// short of it: both kinds of touch — a box edge on the wall and a rim
+/// on the face — occur.
+pub fn tangent_pair() -> impl Strategy<Value = TangentPair> {
+    (
+        box_in(DEFAULT_SCALE),
+        0usize..3,
+        any::<bool>(),
+        (finite_f64(0.1..=0.9), finite_f64(0.1..=0.9)),
+        finite_f64(0.0..=core::f64::consts::TAU),
+        radius(MIN_EXTENT / 2.0..=MAX_EXTENT / 2.0),
+        radius(MIN_EXTENT..=MAX_EXTENT),
+    )
+        .prop_filter_map(
+            "a cylinder tangent to a box face",
+            |(cuboid, axis_index, max_side, (fu, fv), angle, r, height)| {
+                let e = cuboid.max - cuboid.min;
+                let (i, j, k) = (axis_index, (axis_index + 1) % 3, (axis_index + 2) % 3);
+                let mut foot = cuboid.min;
+                foot[i] = if max_side {
+                    cuboid.max[i]
+                } else {
+                    cuboid.min[i]
+                };
+                foot[j] += fu * e[j];
+                foot[k] += fv * e[k];
+                let mut normal = Vec3::zeros();
+                normal[i] = if max_side { 1.0 } else { -1.0 };
+                let mut d = Vec3::zeros();
+                d[j] = angle.cos();
+                d[k] = angle.sin();
+                let mid = foot + r * normal;
+                let axis = Axis::new(mid - (height / 2.0) * d, d).ok()?;
+                Some(TangentPair {
+                    cuboid,
+                    cylinder: Cylindrical {
+                        axis,
+                        radius: r,
+                        height,
+                        pose: cuboid.pose,
+                    },
+                    face: (i, max_side),
+                })
+            },
+        )
+}
+
 /// Box extents, each in `[MIN_EXTENT, MAX_EXTENT]`.
 fn extents() -> impl Strategy<Value = Vec3> {
     (
@@ -241,6 +335,36 @@ mod tests {
         assert!(!post(43.8, 15.0, 4.0).pierces());
         // Along an edge: the axis on the edge x = 0, y = 0 itself.
         assert!(!post(0.0, 0.0, 1.0).pierces());
+    }
+
+    /// The tangent pairs touch: the axis is one radius outside the face's
+    /// plane, the foot of the ruling is inside the face, and the bodies
+    /// are clean.
+    #[test]
+    fn the_tangent_pairs_touch_one_face_from_outside() {
+        check(tangent_pair(), |pair| {
+            let mut m = Model::default();
+            let (a, b) = pair
+                .build(&mut m)
+                .map_err(|e| TestCaseError::fail(e.to_string()))?;
+            prop_assert!(check_body(&m, a, Level::Fast).is_ok());
+            prop_assert!(check_body(&m, b, Level::Fast).is_ok());
+            let (lo, hi) = (pair.cuboid.min, pair.cuboid.max);
+            let (i, max_side) = pair.face;
+            let plane = if max_side { hi[i] } else { lo[i] };
+            let mid = pair.cylinder.axis.at(pair.cylinder.height / 2.0);
+            let n = pair.normal();
+            prop_assert!(((mid[i] - plane) * n[i] - pair.cylinder.radius).abs() < 1e-12);
+            prop_assert!(pair.cylinder.axis.direction.dot(&n).abs() < 1e-12);
+            let foot = pair.foot();
+            prop_assert!((foot[i] - plane).abs() < 1e-12);
+            prop_assert!(
+                (0..3)
+                    .filter(|&c| c != i)
+                    .all(|c| lo[c] < foot[c] && foot[c] < hi[c])
+            );
+            Ok(())
+        });
     }
 
     #[test]

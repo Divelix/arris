@@ -7,7 +7,7 @@
 //! `tests/fixtures/boolean/` (`tests/fixtures/README.md` §Property-test
 //! failures).
 
-use arris_debug::prop::body::{Boxed, Cylindrical, OverlappingPair};
+use arris_debug::prop::body::{Boxed, Cylindrical, OverlappingPair, TangentPair};
 use arris_debug::{dump_text, prop};
 use arris_ops::arris_check::arris_topo::arris_math::nalgebra::{Quaternion, UnitQuaternion};
 use arris_ops::arris_check::arris_topo::arris_math::{Axis, Isometry, Point3, Vec3};
@@ -186,6 +186,60 @@ fn overlapping_pairs_fuse_and_common_additively() {
             }) => {}
             Err(e) => return Err(fail(format!("cut(a, b): {e}"))),
         }
+        Ok(())
+    });
+}
+
+/// A cylinder touching a random face of the box from outside along a
+/// ruling through the face's interior (plan step 11): `box − cylinder`
+/// is the box — the same faces, edges and vertices by id, the same mass
+/// properties — `common` is the designed `Empty`, and `fuse`, which
+/// would keep the face and the wall touching along the contact, is the
+/// designed `TangentContact`; the model is as it was after each
+/// refusal. The touches land in both places — a box edge on the wall
+/// where the ruling crosses the face's rim, a rim circle on the face
+/// where the cylinder ends inside it — and neither paves anything.
+#[test]
+fn a_cylinder_tangent_to_a_box_face_leaves_the_box_and_shares_nothing() {
+    prop::check(prop::body::tangent_pair(), |pair: TangentPair| {
+        let mut m = Model::default();
+        let (a, b) = pair.build(&mut m).map_err(fail)?;
+        let pa = mass_properties(&m, a).map_err(fail)?;
+        let before = dump_text(&m, a).map_err(fail)?;
+        let (body, _) = run(&mut m, "cut(box, cylinder)", cut, a, b)?;
+        let faces = |body: Body| -> Result<Vec<_>, TestCaseError> {
+            Ok(m.faces(body).map_err(fail)?.iter().map(|f| f.id).collect())
+        };
+        prop_assert_eq!(faces(body)?, faces(a)?, "every face of the box kept by id");
+        let after = mass_properties(&m, body).map_err(fail)?;
+        prop_assert!(close(after.volume, pa.volume, pa.volume));
+        prop_assert!(close(after.area, pa.area, pa.area));
+        prop_assert!((after.centroid - pa.centroid).norm() <= REL * pa.area.sqrt());
+        match common(&mut m, a, b) {
+            Err(OpError::Degenerate {
+                reason: Reason::Empty,
+                ..
+            }) => {}
+            Ok(_) => return Err(fail("common(box, cylinder): a touch shares no material")),
+            Err(e) => return Err(fail(format!("common(box, cylinder): {e}"))),
+        }
+        match fuse(&mut m, a, b) {
+            Err(OpError::Degenerate {
+                reason: Reason::TangentContact,
+                ..
+            }) => {}
+            Ok(_) => {
+                return Err(fail(
+                    "fuse(box, cylinder): the face and the wall would share a slit",
+                ));
+            }
+            Err(e) => return Err(fail(format!("fuse(box, cylinder): {e}"))),
+        }
+        prop_assert_eq!(
+            dump_text(&m, a).map_err(fail)?,
+            before,
+            "the model is as it was"
+        );
         Ok(())
     });
 }

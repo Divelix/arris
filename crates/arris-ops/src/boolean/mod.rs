@@ -36,8 +36,9 @@ pub struct FacePair {
     /// section curves; a `Coincident` pair is decided by the arrangement
     /// of the two faces on one surface — its [`Interferences::crossings`],
     /// [`Interferences::images`] and [`Interferences::blocks`] — and a
-    /// `Tangent` one by the touch (plan step 11); neither contributes a
-    /// section edge.
+    /// `Tangent` one by its [`Interferences::contacts`] — the blocks of
+    /// the tangent ruling interior to both faces — and the curvature rule
+    /// at each; neither contributes a section edge.
     pub intersection: SurfaceIntersection,
 }
 
@@ -71,7 +72,9 @@ pub struct EdgeFaceHit {
     pub point: Point3,
     /// `true` when the edge touches the surface here without crossing
     /// it. A touch pierces nothing: it makes no section vertex and no
-    /// pave, and is recorded for the tangent case (plan step 11).
+    /// pave on the edge; it paves the tangent ruling of a `Tangent` pair,
+    /// whose blocks between touches are the pair's
+    /// [`Interferences::contacts`].
     pub tangent: bool,
     /// Where on the face.
     pub landing: Landing,
@@ -168,6 +171,31 @@ pub struct SectionEdge {
     /// with `range`, each in the translate of the domain that face's
     /// loops are written in.
     pub pcurves: [Curve2; 2],
+}
+
+/// A block of a `Tangent` pair's ruling interior to both faces: where the
+/// two faces touch along a curve. The ruling is paved by every hit of
+/// either face's edges on the other face that lies on it — the touches,
+/// which are where the ruling leaves one face inside the other — and a
+/// block between consecutive paves whose midpoint is inside both faces
+/// is a contact. A contact contributes no section edge and splits
+/// nothing; the boolean decides at its midpoint, by the curvature rule,
+/// whether the piece of each face through it would survive, and refuses
+/// with [`crate::Reason::TangentContact`] when both would — the slit no
+/// manifold `Solid` can carry (ADR-0004).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Contact {
+    /// The pair, an index into [`Interferences::pairs`].
+    pub pair: usize,
+    /// Which of the pair's `Tangent` curves.
+    pub curve: usize,
+    /// The parameter range on it, between two consecutive paves.
+    pub range: Interval,
+    /// The curve's point at the range's midpoint.
+    pub point: Point3,
+    /// That point's (u, v) on the pair's faces, `a` then `b`, each in
+    /// the translate of the domain that face's loops are written in.
+    pub uv: [Point2; 2],
 }
 
 /// One point where an edge of one face of a `Coincident` pair crosses an
@@ -275,6 +303,9 @@ pub struct Interferences {
     pub curves: Vec<SectionCurve>,
     /// The section edges, in curve order and then along each curve.
     pub sections: Vec<SectionEdge>,
+    /// The contacts of every `Tangent` pair, in pair order and then along
+    /// each ruling.
+    pub contacts: Vec<Contact>,
     /// Edges of one operand lying in the surface of a face of the other
     /// within their tolerances; no hit is recorded for them. Where the
     /// face is one of a `Coincident` pair the edge's pieces appear below
@@ -305,7 +336,11 @@ pub struct Interferences {
 /// their midpoint is inside both faces, and each kept block carries a
 /// pcurve on each face that is same-parameter with the curve within the
 /// edge's tolerance, translated into the copy of the domain the face's
-/// loops are written in. For a `Coincident` pair, the two faces' edges
+/// loops are written in. For a `Tangent` pair, the ruling is paved by
+/// the touches — the hits of either face's edges on the other face
+/// lying on it — and every block between consecutive paves whose
+/// midpoint is inside both faces is a [`Contact`], with no section edge
+/// and no pave on any operand edge. For a `Coincident` pair, the two faces' edges
 /// have been intersected with one another and every crossing is a
 /// section vertex; every edge of either face is paved by every section
 /// vertex on it; and each piece of each edge between consecutive paves
@@ -384,20 +419,30 @@ pub fn interferences(m: &Model, a: Body, b: Body) -> Result<Interferences, OpErr
 /// tool touching from outside — and dropped when they agree, while the
 /// tool's piece is always dropped; a piece of the tool's edge that is
 /// a piece of the target's is one edge of the result, the target's
-/// (`docs/ARCHITECTURE.md` §Operations, the selection table).
+/// (`docs/ARCHITECTURE.md` §Operations, the selection table). A face
+/// of the target tangent to a face of the tool along a ruling — a plane
+/// and a cylinder touching — is the other named case: the ruling is no
+/// section edge and splits nothing, a piece whose interior point lies
+/// on it is classified by the curvature rule (the cylinder lies on its
+/// axis's side of the tangent plane, the plane outside the cylinder's
+/// surface), and a tool touching from outside leaves the target as it
+/// was, every id kept.
 ///
 /// Errors, the model untouched on each: [`OpError::InvalidInput`] and
 /// [`OpError::NotFound`] as every operation; [`OpError::Unsupported`]
 /// naming the pair for a surface pair or an edge–face pair with no
-/// closed form, and — until plan step 11 — for a piece lying on a face
-/// of the other operand it is not coincident with, a tangent contact;
-/// [`OpError::Degenerate`] with [`crate::Reason::Empty`] when nothing
-/// survives (the target inside the tool), [`crate::Reason::ZeroThickness`]
-/// when nothing survives and what was dropped lay on the other operand
-/// (two solids touching along a face), [`crate::Reason::MultiShell`]
-/// when the survivors make more than one shell (a tool that splits its
-/// target, an enclosed cavity), [`crate::Reason::TangentContact`] when
-/// a section edge is tangent to a loop edge at a vertex;
+/// closed form, and for a piece lying on an edge or a vertex of the
+/// other operand, or on a face of it that its own face is neither
+/// coincident nor tangent with; [`OpError::Degenerate`] with
+/// [`crate::Reason::Empty`] when nothing survives (the target inside the
+/// tool), [`crate::Reason::ZeroThickness`] when nothing survives and
+/// what was dropped lay on the other operand (two solids touching along
+/// a face), [`crate::Reason::MultiShell`] when the survivors make more
+/// than one shell (a tool that splits its target, an enclosed cavity),
+/// [`crate::Reason::TangentContact`] when two faces touch along a
+/// ruling interior to both and both pieces through it would survive —
+/// a hole wall tangent to a side face — or a section edge is tangent to
+/// a loop edge at a vertex;
 /// [`OpError::Tolerance`] when a section vertex or edge would exceed the
 /// model's maximum; [`OpError::Internal`] for a kernel bug the operation
 /// caught — an arrangement that is not a subdivision, a point that
@@ -618,9 +663,10 @@ impl fmt::Display for Interferences {
     /// The whole model, one entity per line: the pairs with their
     /// intersection kind and curves, the hits, the vertices, the paves
     /// per edge, the section curves with their paves, the section edges
-    /// with their pcurves, the coincident edges, the crossings, images
-    /// and common blocks of the coincident pairs. Deterministic, so two
-    /// runs are compared by their text.
+    /// with their pcurves, the contacts of the tangent pairs, the
+    /// coincident edges, the crossings, images and common blocks of the
+    /// coincident pairs. Deterministic, so two runs are compared by their
+    /// text.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "interferences {} vs {}", self.a, self.b)?;
         writeln!(f, "pairs {}", self.pairs.len())?;
@@ -728,6 +774,20 @@ impl fmt::Display for Interferences {
             )?;
             writeln!(f, "    on a: {}", curve2(&s.pcurves[0]))?;
             writeln!(f, "    on b: {}", curve2(&s.pcurves[1]))?;
+        }
+        writeln!(f, "contacts {}", self.contacts.len())?;
+        for (i, c) in self.contacts.iter().enumerate() {
+            writeln!(
+                f,
+                "  t{i} p{} curve {} [{}, {}] at {} uv {} / {}",
+                c.pair,
+                c.curve,
+                num(c.range.lo()),
+                num(c.range.hi()),
+                point3(c.point),
+                point2(c.uv[0]),
+                point2(c.uv[1])
+            )?;
         }
         writeln!(f, "coincident {}", self.coincident.len())?;
         for (e, face) in &self.coincident {

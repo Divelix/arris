@@ -23,8 +23,8 @@ use arris_check::arris_topo::{
 
 use super::faces::{EdgeInfo, FaceInfo, band};
 use super::{
-    CommonBlock, EdgeEdgeHit, EdgeFaceHit, EdgeImage, FacePair, Interferences, Landing, Pave,
-    SectionCurve, SectionEdge, SectionVertex, VertexSource,
+    CommonBlock, Contact, EdgeEdgeHit, EdgeFaceHit, EdgeImage, FacePair, Interferences, Landing,
+    Pave, SectionCurve, SectionEdge, SectionVertex, VertexSource,
 };
 use crate::error::{Fault, OpError};
 
@@ -117,6 +117,7 @@ struct Build<'m> {
     paves: BTreeMap<EdgeId, Vec<Pave>>,
     curves: Vec<SectionCurve>,
     sections: Vec<SectionEdge>,
+    contacts: Vec<Contact>,
     coincident: Vec<(EdgeId, FaceId)>,
     images: Vec<EdgeImage>,
     blocks: Vec<CommonBlock>,
@@ -150,6 +151,7 @@ pub(super) fn build(m: &Model, a: Body, b: Body) -> Result<Interferences, OpErro
         paves: BTreeMap::new(),
         curves: Vec::new(),
         sections: Vec::new(),
+        contacts: Vec::new(),
         coincident: Vec::new(),
         images: Vec::new(),
         blocks: Vec::new(),
@@ -161,6 +163,7 @@ pub(super) fn build(m: &Model, a: Body, b: Body) -> Result<Interferences, OpErro
     build.pave_edges();
     build.pave_coincident_edges();
     build.sections()?;
+    build.contacts()?;
     build.coincident()?;
     Ok(build.finish())
 }
@@ -615,6 +618,72 @@ impl<'m> Build<'m> {
             for (ci, curve) in curves.iter().enumerate() {
                 self.section_curve(pi, ci, curve)?;
             }
+        }
+        Ok(())
+    }
+
+    /// The rulings of every `Tangent` pair, paved by the touches and cut
+    /// into blocks, the blocks interior to both faces kept as contacts.
+    fn contacts(&mut self) -> Result<(), OpError> {
+        for pi in 0..self.pairs.len() {
+            let curves = match &self.pairs[pi].intersection {
+                SurfaceIntersection::Tangent(curves) => curves.clone(),
+                SurfaceIntersection::Empty
+                | SurfaceIntersection::Coincident
+                | SurfaceIntersection::Transversal(_) => continue,
+            };
+            for (ci, curve) in curves.iter().enumerate() {
+                self.contact_curve(pi, ci, curve)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// One tangent ruling: its paves are the hits of either face's edges
+    /// on the other face that lie on it — where the ruling leaves one
+    /// face inside the other, a touch, since every curve in a face
+    /// tangent to the other surface is tangent to it there — and each
+    /// block between consecutive paves whose midpoint is inside both
+    /// faces is a contact. A ruling is a line, so a block that is
+    /// interior to both faces has a pave at each end: the ends of the
+    /// overlap of the two faces' spans along it are each an end of one
+    /// span inside the other.
+    fn contact_curve(&mut self, pi: usize, ci: usize, curve: &Curve) -> Result<(), OpError> {
+        let (ia, ib) = self.pair_faces[pi];
+        let (fa, fb) = (&self.faces[0][ia], &self.faces[1][ib]);
+        let mut paves: Vec<f64> = Vec::new();
+        for (k, h) in self.hits.iter().enumerate() {
+            let on_pair = (h.face == fb.id && fa.edges.contains(&h.edge))
+                || (h.face == fa.id && fb.edges.contains(&h.edge));
+            if !on_pair {
+                continue;
+            }
+            let Ok(projection) = curve.project(h.point) else {
+                continue;
+            };
+            if projection.distance <= self.hit_tolerance[k] {
+                paves.push(projection.t);
+            }
+        }
+        paves.sort_by(f64::total_cmp);
+        for w in paves.windows(2) {
+            let Ok(range) = Interval::new(w[0], w[1]) else {
+                continue;
+            };
+            if range.length() <= 0.0 {
+                continue;
+            }
+            let point = curve.point(range.midpoint());
+            let Some(uv) = Self::inside_both(fa, fb, point) else {
+                continue;
+            };
+            self.contacts.push(Contact {
+                pair: pi,
+                curve: ci,
+                range,
+                point,
+                uv,
+            });
         }
         Ok(())
     }
@@ -1153,6 +1222,7 @@ impl<'m> Build<'m> {
             paves: self.paves,
             curves: self.curves,
             sections: self.sections,
+            contacts: self.contacts,
             coincident: self.coincident,
             crossings: self.crossings,
             images: self.images,

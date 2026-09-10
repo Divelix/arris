@@ -207,10 +207,16 @@ dropped when it lies outside — the coincidence is the curves' verdict,
 never the polygon band's, which two fitted pcurves of one curve can
 straddle. For the same reason a block of a section curve that is a
 piece of an operand edge of either face is that edge and not a section
-edge. A `Tangent` pair and a touching edge are recorded and contribute
-nothing: plan step 11 decides them. Every list is in a deterministic
-order and `Display` prints the whole model, which is what the `inspect`
-skill reads when a boolean is wrong. The property tests build their
+edge. A `Tangent` pair — a plane and a cylinder touching along a ruling
+— contributes no section edge and no pave on any operand edge: the
+ruling is paved by the *touches*, the hits of either face's edges on the
+other face that lie on it (every curve in a face tangent to the other
+surface is tangent to it there, so these are where the ruling leaves one
+face inside the other), and each block between consecutive touches whose
+midpoint is inside both faces is a *contact*, the segment the two faces
+share. Every list is in a deterministic order and `Display` prints the
+whole model, which is what the `inspect` skill reads when a boolean is
+wrong. The property tests build their
 operands through `arris_debug::prop::body` — a box and a cylinder whose
 axis passes through the box, both under one random motion — and, for
 the identities whose outcome has to be known in advance, its
@@ -252,9 +258,26 @@ exactly the overlap; a common block is one edge of the result, A's
 piece, and every use of B's piece is rewritten to it with a pcurve
 fitted to A's curve in that use's translate of the domain (a seam's two
 uses get two), B's piece `Modified` into A's. A piece classified `On` a
-face it is not coincident with, or on an edge or a vertex, is a tangent
-contact — plan step 11's, `OpError::Unsupported` naming the pair until
-then. The survivors are grouped by shared edges — none is `Degenerate`
+face its own face is tangent to has its interior point on the ruling
+and lies to one side of the other operand everywhere else; which side is
+the *curvature rule*: the cylinder lies on its axis's side of the shared
+tangent plane and the plane lies outside the cylinder's surface, so the
+plane's piece is inside the cylinder's body exactly when that body is
+the outside of its wall (a bore, the wall's outward normal pointing at
+the axis) and the cylinder's piece is inside the plane's body exactly
+when the axis is on the material side of the plane. Before any face is
+split, every contact is decided at its midpoint by the same rule and the
+table: a contact whose two pieces would both survive is two result faces
+touching along a curve interior to both, and the operation is
+`Degenerate` with `Reason::TangentContact` naming the pair — a hole wall
+tangent to a side face, or a `fuse` of two solids that touch along a
+line — because the manifold `Solid` cannot carry the slit (ADR-0004). A
+touch from outside in a `cut` or a `common` passes: the tool's piece is
+dropped, the target's kept whole, and the ruling is no edge — Open
+CASCADE imprints it, and `boolean/tangent-outside-cut` states that
+convention. A piece `On` an edge or a vertex, or on a face its own is
+neither coincident nor tangent with, is `OpError::Unsupported` naming
+the pair. The survivors are grouped by shared edges — none is `Degenerate`
 with `Reason::Empty`, or with `Reason::ZeroThickness` when what was
 dropped lay on the other operand (two solids sharing only a face), more
 than one group `Reason::MultiShell` — and assembled through
@@ -515,7 +538,9 @@ mesh-based mass properties (`ops::measure` integrates the B-Rep).
   oracle recorded no solid for must fail with `OpError::Degenerate`, and
   one the recipe marks `analytic.expect_error` with that typed refusal,
   the run ending there with the oracle's numbers kept as the record of
-  what Open CASCADE builds)
+  what Open CASCADE builds; one whose recipe states a convention Arris
+  does not follow, `analytic.counts_differ`, held to the recipe's own
+  counts with the oracle's kept as the record)
   over the
   oracle seam (`oracle::compare`: STEP under `target/inspect/`, then
   `compare.py` through `uv`, a missing environment a loud error), and

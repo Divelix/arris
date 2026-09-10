@@ -111,7 +111,14 @@ of the step that made the fixture pass, and a later change to it is a
   — `docs/plans/m4-booleans.md` `⚠ OPEN` 1 and 2): the oracle's numbers
   are recorded and the lint still cross-checks them against the other
   `analytic` values, but the runner asserts the typed error and compares
-  nothing. `genus` is what the Euler line is checked with:
+  nothing. `counts_differ: "why"` says Arris builds the result with
+  counts that differ from Open CASCADE's by a stated convention
+  (`boolean/tangent-outside-cut`: Open CASCADE imprints the tangent
+  ruling on the touched face, Arris keeps the face whole); `counts` is
+  then required and is Arris's, the runner and `compare.py` hold the
+  result to it, the oracle's counts stay in `expected.json` as the
+  record, and the lint holds both to the Euler line. `genus` is what the
+  Euler line is checked with:
   `V − E + F − (L − F) − 2(S − G) = 0` with the oracle's counts.
 - **Tolerances** are the fixture's; absent ones take the defaults shown.
   Counts and classifications are always exact. Three keys are Arris's

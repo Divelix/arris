@@ -200,10 +200,13 @@ entities, never from nothing.
   and `boolean/swallow-cut` (`degenerate: true`); `boolean/split-cut` (a
   slab through the plate: `expect_error: multi-shell`);
   `boolean/tangent-outside-cut` (a cylinder touching the face x = 40
-  from outside: the plate unchanged, 8/12/6/6);
-  `boolean/tangent-outside-fuse` and `boolean/tangent-hole` (a blind
-  hole whose wall touches the face x = 0 along a ruling interior to it:
-  `⚠ OPEN` 1). Every property-test failure becomes one more.
+  from outside: the plate unchanged, 8/12/6/6 — stated in the recipe's
+  `counts_differ`, since Open CASCADE imprints the ruling and reports
+  10/15/7/7); `boolean/tangent-hole` (a blind hole whose wall touches
+  the face x = 0 along a ruling interior to it: `expect_error:
+  tangent-contact`, `⚠ OPEN` 1); the fuse of the touching pair has no
+  oracle (step 11's findings) and is a unit test. Every property-test
+  failure becomes one more.
 - **ADR-0004** — the boolean's structure on this representation: the pave
   model rebuilt over coedges (paves from edge-on-face hits shared between
   the operands, section curves paved by the same hits, blocks decided in
@@ -359,7 +362,7 @@ or bound has to be established here.
   runner's degenerate path with `Reason::ZeroThickness`; the S5 backlog
   line reviewed — closed if the arrangement gives S5 its exact overlap
   test, else left.
-- [ ] Step 11 **[3]** — Tangent contact. A `Tangent` pair is a named
+- [x] Step 11 **[3]** — Tangent contact. A `Tangent` pair is a named
   case: a touch from outside contributes no section edge and no split
   (`tangent-outside-cut` is the plate); a ruling that would be interior
   to two result faces is `Degenerate { TangentContact }` naming them,
@@ -817,6 +820,79 @@ deltas above, not a new decision.
   share one fitting keep `REL`. `cut_then_fuse_of_a_cylinder_across_a_
   small_box` is the shrunk case beside the property, and asserts that it
   still needs the wider bound. Seed and count in the commit body.
+- **Step 11 — a piece on a tangent face is decided by the curvature
+  rule, at the point it has.** `tangent-outside-cut`'s side face has
+  its interior point at (40, 15, 5) — mid-height, the middle of the
+  span — which is exactly where a centred touch's ruling runs, so
+  `classify_point` says `On` the wall and the `unsupported` path of
+  step 7 fired. No second point is asked for: the pair is a plane and a
+  cylinder, the cylinder lies on its axis's side of the shared tangent
+  plane and the plane lies outside the cylinder's surface, so the
+  plane's piece is inside the cylinder's body exactly when the wall's
+  outward normal points at the axis (a bore) and the cylinder's piece is
+  inside the plane's body exactly when the axis is on the material side
+  of the plane — one dot product, `Build::tangent_side`, exhaustive over
+  the surface kinds, `Unsupported` naming the pair for any other. The
+  same rule decides every *contact* before any face is split.
+- **Step 11 — contacts are the ruling paved by the touches.** A
+  `Tangent` pair's ruling is paved by the hits of either face's edges on
+  the other face that lie on it (a curve in a face tangent to the other
+  surface is tangent to it there, so these are the touches, and they are
+  where the ruling leaves one face inside the other), and a block
+  between consecutive paves whose midpoint is inside both faces is
+  `Interferences::contacts[k]`, printed by the dump as `t{k}`. A ruling
+  is a line, so an overlap of positive length has a pave at each end
+  and needs no seed. `Build::contacts` runs before `select`: for each
+  contact the two pieces' sides by the curvature rule, the table's
+  verdict for each, and both surviving is `Degenerate { TangentContact }`
+  naming the pair. `cut` and `common` of a touch from outside pass — the
+  wall's piece is dropped, the target kept whole with every id, the
+  ruling no edge; `common` is `Reason::Empty`, not `ZeroThickness`,
+  since `dropped_on` is the coincident row's alone.
+- **Step 11 — Open CASCADE imprints the ruling; the first stated
+  convention.** The oracle's 10/15/7/7 for `tangent-outside-cut` is the
+  plate with the contact segment as an edge splitting the touched face
+  and the two rim edges it meets. Arris keeps the face whole (an edge
+  no surface pair defines, between two coplanar pieces, is what
+  Parasolid-grade kernels do not make), and the corpus needed a way to
+  say so: `analytic.counts_differ: "why"` with `analytic.counts` as
+  Arris's, honoured by the lint (both Euler lines, and the key refused
+  without counts, with a refusal, or when the counts equal the
+  oracle's), the runner's count stage and `compare.py`'s `compare_step`
+  (`selftest.py`'s round trip of Open CASCADE's own STEP reads
+  `expected.json` directly and is unaffected). Every other fixture still
+  mirrors the oracle exactly; the key is the exception's name, not a
+  tolerance.
+- **Step 11 — the oracle refuses Open CASCADE's fuse of two solids that
+  touch along a line.** `expected.py` on plate ∪ post raised "Euler
+  characteristic 3 is odd: the shape is not a closed surface": the union
+  carries the ruling as an edge of four faces. A fixture needs an
+  oracle value, so `boolean/tangent-outside-fuse` does not exist; the
+  case is `a_touch_from_outside_is_the_plate_and_a_slit_is_refused_by_
+  name` in `crates/arris-ops/tests/boolean.rs` (cut is the plate by id,
+  common `Empty`, fuse `TangentContact` naming a face of each), and the
+  property test asserts the same three at random poses. What Open
+  CASCADE builds for `tangent-hole`, put to the human as `⚠ OPEN` 1
+  asked: 12/19/9/11/1 — the blind hole's 10/15/8/9 plus the ruling
+  imprinted on the side face and the wall, splitting the top rim edge
+  and the floor circle — volume 12000 − 54π and area 3800 + 36π as the
+  closed forms say, and an Euler count that reads as genus 1 because the
+  ruling is an edge of four faces; the fixture records the counts,
+  states no analytic genus, and asserts the refusal.
+- **Step 11 — the random touch.** `prop::body::tangent_pair`: a face
+  of the box, a foot in its interior, an axis direction in the face's
+  plane at a random angle, radius and height random, the axis one
+  radius outside the plane with its midpoint over the foot, both under
+  the box's motion — so the contact is a segment interior to both faces
+  by construction, and the cylinder's ends reach past the box or stop
+  short of it, which puts the touches on both the box's rim edges and
+  the cylinder's rim circles. 256 poses (`DEFAULT_CASES`, above the
+  plan's 200): `box − cylinder` is the box by face id and by mass
+  properties, `common` is `Empty`, `fuse` is `TangentContact`, the model
+  as it was after each refusal. The exact tangency survives the
+  motion's rounding because `intersect_curve_surface` and
+  `intersect_surfaces` decide `tangent` within the tolerance, as M1's
+  property tests already held them to at random poses.
 - **Step 1 — `sample::sphere` is not assemblable.** Its two degenerate
   pole edges are used once each, which `finish` has always refused (it is
   why the sample goes through the raw insert). The round trip runs over

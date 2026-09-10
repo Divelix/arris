@@ -218,6 +218,20 @@ fn a_disjoint_pair_and_a_tangent_touch_have_no_section() {
     );
     assert!(i.vertices.is_empty(), "{i}");
     assert!(i.sections.is_empty(), "{i}");
+    // The touches pave the ruling: the plate's rim edges touch the wall
+    // at z 0 and z 10, and the segment between is the contact, inside
+    // both faces, at (40, 15, 5).
+    assert_eq!(i.contacts.len(), 1, "{i}");
+    let c = &i.contacts[0];
+    assert!(matches!(
+        i.pairs[c.pair].intersection,
+        SurfaceIntersection::Tangent(_)
+    ));
+    assert!((c.range.length() - 10.0).abs() < 1e-9, "{i}");
+    assert!(
+        (c.point - Point3::new(40.0, 15.0, 5.0)).norm() < 1e-9,
+        "{i}"
+    );
 }
 
 #[test]
@@ -932,4 +946,72 @@ fn a_posed_through_hole_is_the_through_hole_moved() {
     );
     assert!((x.volume - y.volume).abs() <= 1e-9 * x.volume);
     assert!((x.area - y.area).abs() <= 1e-9 * x.area);
+}
+
+/// The tangent case, all three selections (plan step 11). A cylinder
+/// touching the plate's side face from outside: `cut` is the plate with
+/// every id kept — the interior point of the touched face lies on the
+/// ruling, classified `On` the wall, and the curvature rule puts the
+/// face outside the rod; `common` selects nothing, `Reason::Empty` and
+/// not `ZeroThickness`, since no piece lay *on* the other operand in the
+/// coincident sense; `fuse` would keep the face and the wall touching
+/// along the contact, the designed refusal naming the pair. And the
+/// blind hole whose wall touches a side face from inside refuses the
+/// same way through `cut`, before any face is split.
+#[test]
+fn a_touch_from_outside_is_the_plate_and_a_slit_is_refused_by_name() {
+    let (mut m, plate, post) = inputs("boolean/tangent-outside-cut");
+    let before = arris_debug::dump_text(&m, plate).unwrap();
+    let (body, p) = cut(&mut m, plate, post).unwrap();
+    let report = check(&m, body, Level::Full);
+    assert!(report.is_ok() && report.unchecked().is_empty(), "{report}");
+    assert_eq!(m.faces(body).unwrap().len(), 6);
+    assert_eq!(m.edges(body).unwrap().len(), 12);
+    let plate_faces: Vec<_> = m.faces(plate).unwrap().iter().map(|f| f.id).collect();
+    let kept: Vec<_> = m.faces(body).unwrap().iter().map(|f| f.id).collect();
+    assert_eq!(kept, plate_faces, "every face of the plate is kept by id");
+    assert!(
+        p.outputs()
+            .iter()
+            .all(|o| o.id != EntityId::Face(plate_faces[0])),
+        "an untouched face is unrecorded"
+    );
+    assert_eq!(arris_debug::dump_text(&m, plate).unwrap(), before);
+
+    let (mut m, plate, post) = inputs("boolean/tangent-outside-cut");
+    match common(&mut m, plate, post) {
+        Err(OpError::Degenerate {
+            reason: Reason::Empty,
+            ..
+        }) => {}
+        other => panic!("common: {other:?}"),
+    }
+    match fuse(&mut m, plate, post) {
+        Err(OpError::Degenerate {
+            reason: Reason::TangentContact,
+            entities,
+        }) => {
+            let plate_faces: Vec<_> = m.faces(plate).unwrap().iter().map(|f| f.id).collect();
+            let post_faces: Vec<_> = m.faces(post).unwrap().iter().map(|f| f.id).collect();
+            assert_eq!(entities.len(), 2, "{entities:?}");
+            assert!(matches!(entities[0].id, EntityId::Face(f) if plate_faces.contains(&f)));
+            assert!(matches!(entities[1].id, EntityId::Face(f) if post_faces.contains(&f)));
+        }
+        other => panic!("fuse: {other:?}"),
+    }
+
+    let (mut m, plate, hole) = inputs("boolean/tangent-hole");
+    let before = arris_debug::dump_text(&m, plate).unwrap();
+    match cut(&mut m, plate, hole) {
+        Err(OpError::Degenerate {
+            reason: Reason::TangentContact,
+            ..
+        }) => {}
+        other => panic!("tangent-hole: {other:?}"),
+    }
+    assert_eq!(
+        arris_debug::dump_text(&m, plate).unwrap(),
+        before,
+        "the model is as it was"
+    );
 }

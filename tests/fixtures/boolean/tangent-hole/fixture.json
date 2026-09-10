@@ -1,0 +1,15 @@
+{
+  "description": "box [0,0,0]–[40,30,10] minus a cylinder r 3 at (3, 15) from z 4 to 16: a blind hole whose wall touches the face x = 0 from inside along the ruling x = 0, y = 15, z 4…10, interior to the face and to the wall. The result would need the two faces to share a slit; Open CASCADE builds it with the ruling as an edge of four faces (12/19/9/11, an Euler count that reads as genus 1, so no analytic genus here), Arris refuses with OpError::Degenerate and Reason::TangentContact naming the pair (plan m4-booleans ⚠ OPEN 1)",
+  "steps": [
+    {"name": "plate", "op": "box", "min": [0, 0, 0], "max": [40, 30, 10]},
+    {"name": "hole", "op": "cylinder", "base": [3, 15, 4], "axis": [0, 0, 1], "radius": 3, "height": 12},
+    {"name": "result", "op": "cut", "target": "plate", "tool": "hole"}
+  ],
+  "result": "result",
+  "probes": [],
+  "analytic": {
+    "expect_error": "tangent-contact",
+    "volume": "12000 - pi * 9 * 6",
+    "area": "3800 + 2 * pi * 3 * 6"
+  }
+}

@@ -136,10 +136,22 @@ fn boolean_oblique_hole() {
     run("boolean/oblique-hole");
 }
 
+/// A cylinder touching the plate's side face from outside: the tangent
+/// pair contributes no section edge and no split, and the result is
+/// the plate with every id kept. Open CASCADE imprints the ruling; the
+/// fixture states that convention in `analytic.counts_differ`.
 #[test]
-#[ignore = "M4: needs ops::cut and the tangent case (step 11); the oracle splits the touched face along the ruling"]
 fn boolean_tangent_outside_cut() {
     run("boolean/tangent-outside-cut");
+}
+
+/// A blind hole whose wall touches a side face from inside along a
+/// ruling interior to both: the slit no manifold `Solid` can carry,
+/// `Reason::TangentContact` through the runner's expected-error path
+/// (plan m4-booleans `⚠ OPEN` 1).
+#[test]
+fn boolean_tangent_hole() {
+    run("boolean/tangent-hole");
 }
 
 /// The same solid as `through-hole` in another pose: both operands moved

@@ -398,8 +398,17 @@ pub struct Analytic {
     pub area: Option<Num>,
     /// Centroid.
     pub centroid: Option<[Num; 3]>,
-    /// Entity counts.
+    /// Entity counts: the oracle's, cross-checked by the lint — or, with
+    /// `counts_differ`, Arris's.
     pub counts: Option<Counts>,
+    /// Why Arris's counts differ from the oracle's by a stated convention
+    /// (`boolean/tangent-outside-cut`: Open CASCADE imprints the tangent
+    /// ruling on the touched face, Arris keeps the face whole). Then
+    /// `counts` is required, is Arris's, and is what the runner and the
+    /// oracle's `compare.py` hold the result to; the oracle's counts stay
+    /// in `expected.json` as the record, and the lint holds both to the
+    /// Euler line with `genus`.
+    pub counts_differ: Option<String>,
     /// Genus.
     pub genus: Option<i64>,
 }
@@ -686,6 +695,14 @@ pub fn lint(dir: &Path) -> Vec<String> {
         if a.degenerate && a.expect_error.is_some() {
             problem("analytic.degenerate and analytic.expect_error are both set".into());
         }
+        if a.counts_differ.is_some() {
+            if a.counts.is_none() {
+                problem("analytic.counts_differ needs analytic.counts, Arris's".into());
+            }
+            if a.degenerate || a.expect_error.is_some() {
+                problem("analytic.counts_differ needs a result Arris builds".into());
+            }
+        }
         if a.degenerate != m.degenerate {
             problem(format!(
                 "[{variant}] analytic.degenerate {} but the oracle says {}",
@@ -717,6 +734,16 @@ pub fn lint(dir: &Path) -> Vec<String> {
                 problem(format!(
                     "[{variant}] Euler line is {line}, not 0: counts {c:?} with analytic genus {g} (oracle genus {genus})"
                 ));
+            }
+            if let (Some(_), Some(ac)) = (&a.counts_differ, a.counts) {
+                let chi =
+                    ac.vertices as i64 - ac.edges as i64 + 2 * ac.faces as i64 - ac.loops as i64;
+                let line = chi - 2 * (ac.shells as i64 - g);
+                if line != 0 {
+                    problem(format!(
+                        "[{variant}] Euler line of Arris's counts is {line}, not 0: {ac:?} with analytic genus {g}"
+                    ));
+                }
             }
         }
         if let Some(v) = &a.volume {
@@ -752,9 +779,14 @@ pub fn lint(dir: &Path) -> Vec<String> {
             }
         }
         if let Some(ac) = a.counts {
-            if ac != c {
+            if a.counts_differ.is_none() && ac != c {
                 problem(format!(
                     "[{variant}] analytic counts {ac:?} vs oracle {c:?}"
+                ));
+            }
+            if a.counts_differ.is_some() && ac == c {
+                problem(format!(
+                    "[{variant}] analytic.counts_differ is set but the counts {ac:?} are the oracle's"
                 ));
             }
         }

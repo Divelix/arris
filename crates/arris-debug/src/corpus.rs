@@ -1,7 +1,9 @@
 //! The corpus runner: the fixture test of `docs/ROADMAP.md` §Fixtures,
 //! one call per fixture and variant. [`run`] builds the recipe in Arris,
 //! runs the checker at `Full`, compares counts and genus against the
-//! oracle's `expected.json`, writes STEP and has the oracle read it back
+//! oracle's `expected.json` (the counts against the recipe's own where it
+//! states a convention Arris does not follow, `analytic.counts_differ`),
+//! writes STEP and has the oracle read it back
 //! (`compare.py`), measures the result over the B-Rep and holds its
 //! volume, area, centroid and inertia to the oracle's within the
 //! fixture's tolerances, tessellates the result and holds the mesh
@@ -147,7 +149,8 @@ pub enum CorpusError {
         /// What Arris said — a classification, or why it could not.
         found: String,
     },
-    /// The counts differ from the oracle's.
+    /// The counts differ from the oracle's (or from the recipe's own,
+    /// under `analytic.counts_differ`).
     #[error("{fixture}: counts {found:?} but the oracle says {expected:?}")]
     Counts {
         /// The fixture.
@@ -384,10 +387,17 @@ pub fn run(dir: &Path, variant: &str) -> Result<(), CorpusError> {
         shells: line.shells,
         solids: 1,
     };
-    if found != expected.counts {
+    // The oracle's counts, unless the recipe states a convention Arris
+    // does not follow and gives its own.
+    let analytic = &fixture.recipe.analytic;
+    let counts = match (&analytic.counts_differ, analytic.counts) {
+        (Some(_), Some(own)) => own,
+        _ => expected.counts,
+    };
+    if found != counts {
         return Err(CorpusError::Counts {
             fixture: name,
-            expected: expected.counts,
+            expected: counts,
             found,
         });
     }
