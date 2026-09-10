@@ -8,8 +8,10 @@ rust-version.workspace = true
 license.workspace = true
 
 [features]
-# Reserved: rayon inside operations; never enabled on wasm32.
-parallel = []
+# The boolean's face-pair intersections and per-face splitting over
+# rayon, both collected in the sequential order so a result is identical
+# either way; never enabled on wasm32 (01 §Threading).
+parallel = ["dep:rayon"]
 # Run the checker after every operation in release builds too, returning
 # `OpError::Internal` instead of a debug build's panic.
 paranoid = []
@@ -17,6 +19,7 @@ paranoid = []
 [dependencies]
 arris-check.workspace = true
 thiserror.workspace = true
+rayon = { workspace = true, optional = true }
 
 # The sample bodies, the dump and the oracle seam live in `arris-debug`,
 # the STEP writer in `arris-io`; dev-dependencies are exempt from the

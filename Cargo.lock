@@ -170,6 +170,7 @@ dependencies = [
  "arris-debug",
  "arris-io",
  "proptest",
+ "rayon",
  "thiserror",
 ]
 

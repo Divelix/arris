@@ -394,7 +394,7 @@ or bound has to be established here.
   Fixture un-ignored: `boolean/oblique-hole`; test un-ignored:
   `an_oblique_hole_meshes_within_the_inscribed_bound` in
   `crates/arris-mesh/tests/tessellate.rs`.
-- [ ] Step 13 **[1]** — `parallel` over face pairs. `rayon` behind
+- [x] Step 13 **[1]** — `parallel` over face pairs. `rayon` behind
   `arris-ops`'s feature for the face-pair intersections of step 6 and
   the per-face splitting of step 7, collected in pair and face order.
   Tests: every boolean fixture's dump and every property test's result
@@ -951,6 +951,20 @@ deltas above, not a new decision.
   past its range's end, which the helper asserted exactly; every body
   before this one happened to round the other way. The check is now
   `|t − range.clamp(t)| ≤ parametric_tolerance`.
+- **Step 13 — the parallel steps are pre-passes.** Neither loop could be
+  turned into a `par_iter` where it stood: `face_pairs` intersected and
+  pushed in one pass, and `select` split a face and then classified and
+  kept its pieces, both against `&mut self`. Each is now a read-only pass
+  that collects into a `Vec` in the sequential order — the candidate
+  pairs' intersections, then every face's `SplitFace` — followed by the
+  mutable pass that consumes it, which is what keeps the kept pieces'
+  indices and so the result's ids identical with the feature on or off.
+  The edge-on-face hits stay sequential: the step names the face-pair
+  intersections, and the hits' merge order is the pave model's own
+  (`docs/BACKLOG.md` has the line). Measured: the eight cuts of
+  `provenance/bolt-pattern-rebuild` go from 1.69 s to 1.21 s at
+  `opt-level = 1`, the rest being the classifier's ray casts and the
+  debug-build checker after every operation, both sequential.
 - **Step 1 — `sample::sphere` is not assemblable.** Its two degenerate
   pole edges are used once each, which `finish` has always refused (it is
   why the sample goes through the raw insert). The round trip runs over

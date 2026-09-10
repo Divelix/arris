@@ -210,23 +210,54 @@ impl<'m> Build<'m> {
 
     /// Every face pair whose boxes overlap, intersected.
     fn face_pairs(&mut self) -> Result<(), OpError> {
+        let mut candidates: Vec<(usize, usize)> = Vec::new();
         for (ia, fa) in self.faces[0].iter().enumerate() {
             for (ib, fb) in self.faces[1].iter().enumerate() {
-                if !fa.bounds.intersects(&fb.bounds) {
-                    continue;
+                if fa.bounds.intersects(&fb.bounds) {
+                    candidates.push((ia, ib));
                 }
-                let tol = tolerance_of(&self.precision, fa.tolerance, fb.tolerance);
-                let intersection = intersect_surfaces(fa.surface, fb.surface, tol)
-                    .map_err(|e| geometry(e, fa.shape(), fb.shape()))?;
-                self.pairs.push(FacePair {
-                    a: fa.id,
-                    b: fb.id,
-                    intersection,
-                });
-                self.pair_faces.push((ia, ib));
             }
         }
+        for ((ia, ib), intersection) in candidates
+            .iter()
+            .copied()
+            .zip(self.intersect_pairs(&candidates)?)
+        {
+            self.pairs.push(FacePair {
+                a: self.faces[0][ia].id,
+                b: self.faces[1][ib].id,
+                intersection,
+            });
+            self.pair_faces.push((ia, ib));
+        }
         Ok(())
+    }
+
+    /// [`intersect_surfaces`] over each candidate pair, in the
+    /// candidates' order in the result however it was computed: over
+    /// `rayon` behind `parallel`, a plain iterator otherwise. A pair's
+    /// intersection reads two surfaces and their tolerances and touches
+    /// nothing else, which is what makes it the pave model's parallel
+    /// step (ADR-0004, `docs/ARCHITECTURE.md` §Threading).
+    fn intersect_pairs(
+        &self,
+        candidates: &[(usize, usize)],
+    ) -> Result<Vec<SurfaceIntersection>, OpError> {
+        let one = |&(ia, ib): &(usize, usize)| {
+            let (fa, fb) = (&self.faces[0][ia], &self.faces[1][ib]);
+            let tol = tolerance_of(&self.precision, fa.tolerance, fb.tolerance);
+            intersect_surfaces(fa.surface, fb.surface, tol)
+                .map_err(|e| geometry(e, fa.shape(), fb.shape()))
+        };
+        #[cfg(feature = "parallel")]
+        {
+            use rayon::prelude::*;
+            candidates.par_iter().map(one).collect()
+        }
+        #[cfg(not(feature = "parallel"))]
+        {
+            candidates.iter().map(one).collect()
+        }
     }
 
     /// Every edge of each operand against every face of the other whose

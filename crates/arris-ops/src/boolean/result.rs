@@ -20,7 +20,7 @@ use arris_check::arris_topo::{
 };
 use arris_check::{Classification, classify_point};
 
-use super::pieces::{Alias, ERef, EdgeOnFace, PieceUse, SubEdge, VRef, split_face};
+use super::pieces::{Alias, ERef, EdgeOnFace, PieceUse, SplitFace, SubEdge, VRef, split_face};
 use super::{Interferences, VertexSource};
 use crate::error::{Fault, OpError, Reason, SplitFault};
 
@@ -599,74 +599,102 @@ impl<'m> Build<'m> {
     /// the other operand and kept by the selection table.
     fn select(&mut self) -> Result<(), OpError> {
         let on = self.edges_by_face();
-        for side in 0..2 {
+        // Every face split first — the step that runs in parallel —
+        // then the pieces classified and selected in one order.
+        let work: Vec<FaceHandle> = (0..2).flat_map(|side| self.faces[side].clone()).collect();
+        let splits = self.split_faces(&work, &on)?;
+        let first = self.faces[0].len();
+        for (k, (f, split)) in work.into_iter().zip(splits).enumerate() {
+            let side = usize::from(k >= first);
             let other = self.bodies[1 - side];
             let policy = self.op.policy(side);
-            for f in self.faces[side].clone() {
-                let edges = on.get(&f.id).map_or(&[][..], Vec::as_slice);
-                let split = split_face(
-                    self.m,
-                    &self.precision,
-                    f.id,
-                    &self.sub_edges,
-                    &self.touched,
-                    edges,
-                    &self.alias_uses,
-                )?;
-                let mut pieces = Vec::new();
-                for piece in split.pieces {
-                    let class = classify_point(self.m, other, piece.interior)
-                        .map_err(|e| OpError::Internal(Fault::Classify(e)))?;
-                    let (flip, stands_for) = match class {
-                        Classification::Inside | Classification::Outside => {
-                            let inside = class == Classification::Inside;
+            let mut pieces = Vec::new();
+            for piece in split.pieces {
+                let class = classify_point(self.m, other, piece.interior)
+                    .map_err(|e| OpError::Internal(Fault::Classify(e)))?;
+                let (flip, stands_for) = match class {
+                    Classification::Inside | Classification::Outside => {
+                        let inside = class == Classification::Inside;
+                        let Some(flip) = self.op.select(side, inside) else {
+                            continue;
+                        };
+                        (flip, None)
+                    }
+                    Classification::On(shape) => {
+                        if let Some(g) = self.coincident_partner(side, f.id, shape) {
+                            let agree = self.normals_agree(f, piece.uv, piece.interior, g)?;
+                            if !self.op.select_on(side, agree) {
+                                self.dropped_on = true;
+                                continue;
+                            }
+                            (false, Some(g.id))
+                        } else if let Some(g) = self.tangent_partner(side, f.id, shape) {
+                            // The interior point lies on the ruling the
+                            // two faces touch along; the piece lies to one
+                            // side of the other operand everywhere else.
+                            let Some(inside) = self.tangent_side(f, piece.interior, g)? else {
+                                return Err(unsupported(self.m, f.id, shape));
+                            };
                             let Some(flip) = self.op.select(side, inside) else {
                                 continue;
                             };
                             (flip, None)
-                        }
-                        Classification::On(shape) => {
-                            if let Some(g) = self.coincident_partner(side, f.id, shape) {
-                                let agree = self.normals_agree(f, piece.uv, piece.interior, g)?;
-                                if !self.op.select_on(side, agree) {
-                                    self.dropped_on = true;
-                                    continue;
-                                }
-                                (false, Some(g.id))
-                            } else if let Some(g) = self.tangent_partner(side, f.id, shape) {
-                                // The interior point lies on the ruling the
-                                // two faces touch along; the piece lies to one
-                                // side of the other operand everywhere else.
-                                let Some(inside) = self.tangent_side(f, piece.interior, g)? else {
-                                    return Err(unsupported(self.m, f.id, shape));
-                                };
-                                let Some(flip) = self.op.select(side, inside) else {
-                                    continue;
-                                };
-                                (flip, None)
-                            } else {
-                                return Err(unsupported(self.m, f.id, shape));
-                            }
-                        }
-                    };
-                    pieces.push(self.kept.len());
-                    self.kept.push(Kept {
-                        side,
-                        face: f,
-                        whole: split.untouched && policy == Policy::Reuse,
-                        orientation: if flip {
-                            f.orientation.flipped()
                         } else {
-                            f.orientation
-                        },
-                        loops: piece.loops,
-                        stands_for,
-                    });
-                }
-                self.face_pieces.insert(f.id, (split.untouched, pieces));
+                            return Err(unsupported(self.m, f.id, shape));
+                        }
+                    }
+                };
+                pieces.push(self.kept.len());
+                self.kept.push(Kept {
+                    side,
+                    face: f,
+                    whole: split.untouched && policy == Policy::Reuse,
+                    orientation: if flip {
+                        f.orientation.flipped()
+                    } else {
+                        f.orientation
+                    },
+                    loops: piece.loops,
+                    stands_for,
+                });
             }
+            self.face_pieces.insert(f.id, (split.untouched, pieces));
         }
         Ok(())
+    }
+
+    /// [`split_face`] over every face of both operands, in `a`'s faces'
+    /// iteration order then `b`'s in the result however it was computed:
+    /// over `rayon` behind `parallel`, a plain iterator otherwise.
+    /// Splitting a face reads the model, the paves and the section edges
+    /// on that face and writes nothing, which is what makes it the
+    /// boolean's second parallel step (ADR-0004,
+    /// `docs/ARCHITECTURE.md` §Threading).
+    fn split_faces(
+        &self,
+        work: &[FaceHandle],
+        on: &BTreeMap<FaceId, Vec<EdgeOnFace>>,
+    ) -> Result<Vec<SplitFace>, OpError> {
+        let one = |f: &FaceHandle| {
+            split_face(
+                self.m,
+                &self.precision,
+                f.id,
+                &self.sub_edges,
+                &self.touched,
+                on.get(&f.id).map_or(&[][..], Vec::as_slice),
+                &self.alias_uses,
+            )
+        };
+        #[cfg(feature = "parallel")]
+        {
+            use rayon::prelude::*;
+            work.par_iter().map(one).collect()
+        }
+        #[cfg(not(feature = "parallel"))]
+        {
+            work.iter().map(one).collect()
+        }
     }
 
     /// The surviving pieces grouped by shared edges: one group or the

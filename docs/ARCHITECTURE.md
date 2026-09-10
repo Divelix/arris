@@ -465,10 +465,15 @@ mesh-based mass properties (`ops::measure` integrates the B-Rep).
   thread-local cache, no interior mutability in the representation crates.
 - Operations take `&mut Model`: one operation at a time per model. That is
   the contract, not a limitation to be worked around with locks. Parallelism
-  *inside* an operation (face pairs in a boolean, faces in a tessellation)
-  is `rayon` behind the `parallel` feature and must give identical output
-  with the feature off — the tests run both ways. Parallelism *across*
-  operations is clone-evaluate-import, above.
+  *inside* an operation is `rayon` behind the `parallel` feature and must
+  give identical output with the feature off — the tests run both ways.
+  Today that is `arris-mesh`'s faces after the sequential edge pass, and
+  `arris-ops`'s two read-only passes over a boolean: the intersection of
+  every candidate face pair, and the splitting of every face in its own
+  (u, v). Each collects its results in the sequential order before
+  anything mutable sees them, which is what makes a result byte-identical
+  either way. Parallelism *across* operations is clone-evaluate-import,
+  above.
 - `wasm32-unknown-unknown` builds every crate with default features; CI
   checks it. No kernel crate touches the filesystem, the clock, threads or
   randomness; `arris-debug` is the only crate that writes files, and the

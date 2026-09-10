@@ -49,6 +49,12 @@ jobs:
       # step 7): the same tests, so every sample body's and primitive's
       # mesh is byte-identical with faces triangulated in parallel.
       - run: cargo test -p arris-mesh --features parallel
+      # arris-ops's (docs/plans/m4-booleans.md step 13), and the corpus
+      # through the facade with both on: every boolean fixture's dump and
+      # every property test's result byte-identical with the face pairs
+      # intersected and the faces split in parallel.
+      - run: cargo test -p arris-ops --features parallel
+      - run: cargo test -p arris --features parallel
 
   # A library's docs are part of its API: a broken intra-doc link or a
   # missing doc on a public item fails the build.
