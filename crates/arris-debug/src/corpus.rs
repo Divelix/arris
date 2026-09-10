@@ -305,10 +305,91 @@ impl Refusal {
 }
 
 /// What one step produced: the body, its record and the bodies it took.
-struct Made {
-    body: Body,
-    provenance: Provenance,
-    inputs: Vec<Body>,
+#[derive(Debug)]
+pub struct Made {
+    /// The body the step built.
+    pub body: Body,
+    /// The record the operation returned.
+    pub provenance: Provenance,
+    /// The bodies the step consumed, in the operation's argument order.
+    pub inputs: Vec<Body>,
+}
+
+/// A recipe built whole: the model every step was built in, each step by
+/// name, and the name of the step the recipe calls its result — what a
+/// test of a chain of operations reads a fixture through when it wants
+/// the steps' records, which [`run`] only accounts for.
+#[derive(Debug)]
+pub struct Chain {
+    /// The model the steps were built in.
+    pub model: Model,
+    /// Every step of the recipe, by name.
+    pub steps: BTreeMap<String, Made>,
+    /// The name of the result step in [`Chain::steps`].
+    pub result: String,
+}
+
+impl Chain {
+    /// The result step's body.
+    pub fn result(&self) -> Option<Body> {
+        Some(self.steps.get(&self.result)?.body)
+    }
+}
+
+/// Builds every step of `dir`'s recipe under `variant` in one model and
+/// returns them with their records. Errors: as [`run`]'s build stage.
+/// A recipe whose result Arris refuses by design (`expected.degenerate`
+/// or `analytic.expect_error`) fails here with that error; [`run`] is
+/// what asserts a refusal.
+///
+/// ```no_run
+/// use arris_debug::{corpus, fixtures};
+///
+/// let dir = fixtures::corpus_root().join("boolean/through-hole");
+/// let chain = corpus::chain(&dir, "default").unwrap();
+/// assert!(chain.result().is_some());
+/// assert!(!chain.steps["result"].provenance.is_empty());
+/// ```
+pub fn chain(dir: &Path, variant: &str) -> Result<Chain, CorpusError> {
+    let fixture = fixtures::load(dir)?;
+    let Some(params) = fixture.recipe.params_of(variant) else {
+        return Err(CorpusError::Variant {
+            fixture: fixture.name.clone(),
+            variant: variant.to_string(),
+        });
+    };
+    let mut model = Model::default();
+    let mut steps = BTreeMap::new();
+    build_all(&mut model, &fixture, &params, None, &mut steps)?;
+    Ok(Chain {
+        model,
+        steps,
+        result: fixture.recipe.result.clone(),
+    })
+}
+
+/// Builds every step of `fixture`'s recipe into `m` and `made`. Returns
+/// `false` when `refusal` is set and the result step failed with the
+/// refusal expected — the recipe is built no further and nothing after
+/// it is comparable; `true` when every step built.
+fn build_all(
+    m: &mut Model,
+    fixture: &Fixture,
+    params: &BTreeMap<String, f64>,
+    refusal: Option<Refusal>,
+    made: &mut BTreeMap<String, Made>,
+) -> Result<bool, CorpusError> {
+    for step in &fixture.recipe.steps {
+        let built = build_step(m, fixture, step, params, made);
+        if let Some(refusal) = refusal {
+            if step.name() == fixture.recipe.result {
+                refusal.assert(&fixture.name, step.name(), built.map(|_| ()))?;
+                return Ok(false);
+            }
+        }
+        made.insert(step.name().to_string(), built?);
+    }
+    Ok(true)
 }
 
 /// Runs every stage on `dir`'s recipe under `variant`. Errors: the first
@@ -347,14 +428,8 @@ pub fn run(dir: &Path, variant: &str) -> Result<(), CorpusError> {
     };
     let mut m = Model::default();
     let mut made: BTreeMap<String, Made> = BTreeMap::new();
-    for step in &fixture.recipe.steps {
-        let built = build_step(&mut m, &fixture, step, &params, &made);
-        if let Some(refusal) = refusal {
-            if step.name() == fixture.recipe.result {
-                return refusal.assert(&name, step.name(), built.map(|_| ()));
-            }
-        }
-        made.insert(step.name().to_string(), built?);
+    if !build_all(&mut m, &fixture, &params, refusal, &mut made)? {
+        return Ok(());
     }
     let Some(result) = made.get(&fixture.recipe.result) else {
         return Err(CorpusError::Reference {

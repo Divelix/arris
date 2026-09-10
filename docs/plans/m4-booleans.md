@@ -372,7 +372,7 @@ or bound has to be established here.
   un-ignored and blessed per the decision. Tests: a cylinder placed
   tangent to a random box face in 200 poses is the box after `cut`, and
   `common` is `Empty`.
-- [ ] Step 12 **[2]** — Provenance stability. `provenance/
+- [x] Step 12 **[2]** — Provenance stability. `provenance/
   bolt-pattern-rebuild` run in all three variants (a test per variant,
   `dump.<variant>.txt`), and `crates/arris/tests/provenance.rs`: for each
   variant the eight cuts composed by `then`, each hole wall's `origins`
@@ -893,6 +893,27 @@ deltas above, not a new decision.
   motion's rounding because `intersect_curve_surface` and
   `intersect_surfaces` decide `tangent` within the tolerance, as M1's
   property tests already held them to at random poses.
+- **Step 12 — a chain that starts at a role is `Generated`.** The step
+  asks for the plate's top face "`Modified` through the chain from
+  `Role::Box(Face(Z, Max))`", which `Relation::then` never yields: only
+  a piece of a piece stays `Modified`, and everything reached through a
+  role is generation (ADR-0002, the relation's own rule). The test
+  asserts both halves instead — the eight cuts composed alone modify the
+  plate's own top face into one face of nine loops, and the whole chain,
+  the nine primitive records prepended, generates that same face from the
+  role. The hole walls are `Generated` either way.
+- **Step 12 — the runner hands out the steps' records now.** `corpus::
+  run` accounted for each step's `Provenance` and dropped it, and
+  `corpus::inputs` returns bodies without records, so nothing could
+  compose a recipe's chain. Public additions to `arris-debug`:
+  `corpus::Made { body, provenance, inputs }` (it existed, private),
+  `corpus::Chain { model, steps, result }` with `Chain::result()`, and
+  `corpus::chain(dir, variant)`, which builds every step of a recipe in
+  one model and returns them with their records. `run`'s build loop and
+  `chain` share a private `build_all`, so the refusal path has one
+  definition. `crates/arris/tests/corpus.rs` gains `run_variant(name,
+  variant)` beside `run`, since a test per variant is what makes a
+  variant that drifts say which.
 - **Step 1 — `sample::sphere` is not assemblable.** Its two degenerate
   pole edges are used once each, which `finish` has always refused (it is
   why the sample goes through the raw insert). The round trip runs over

@@ -21,6 +21,15 @@ fn run(name: &str) {
     }
 }
 
+/// One variant of a fixture, for a recipe whose variants are worth
+/// failing apart.
+fn run_variant(name: &str, variant: &str) {
+    let dir = fixtures::corpus_root().join(name);
+    if let Err(e) = corpus::run(&dir, variant) {
+        panic!("{name} [{variant}]: {e}");
+    }
+}
+
 #[test]
 fn primitive_box() {
     run("primitive/box");
@@ -201,10 +210,23 @@ fn sweep_revolve_quarter() {
     run("sweep/revolve-quarter");
 }
 
+/// The same recipe under three parameter sets, one test each so a
+/// variant that drifts says which: the eight bolt holes' chain is
+/// `crates/arris/tests/provenance.rs`'s subject, and these hold each
+/// variant's solid to the oracle and to its own `dump.<variant>.txt`.
 #[test]
-#[ignore = "M4: the origins chain across three variants and dump.<variant>.txt (step 12)"]
 fn provenance_bolt_pattern_rebuild() {
-    run("provenance/bolt-pattern-rebuild");
+    run_variant("provenance/bolt-pattern-rebuild", "default");
+}
+
+#[test]
+fn provenance_bolt_pattern_rebuild_thicker_wider() {
+    run_variant("provenance/bolt-pattern-rebuild", "thicker-wider");
+}
+
+#[test]
+fn provenance_bolt_pattern_rebuild_tighter() {
+    run_variant("provenance/bolt-pattern-rebuild", "tighter");
 }
 
 /// A recipe with an op the kernel has no operation for fails naming it:
