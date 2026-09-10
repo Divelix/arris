@@ -22,15 +22,20 @@ git config core.hooksPath .githooks   # fmt, clippy -D warnings, test, doc befor
 
 ## Current state
 
-**M3 done (2026-09-07).** A body tessellates and measures: `arris-mesh`
-(`cdt`, a constrained Delaunay triangulation of our own over `robust`,
-ADR-0003; `tessellate` through the pcurves, seams and poles as (u, v)
-copies of one mesh vertex; `parallel` over faces), `ops::measure::
-mass_properties` (volume, area, centroid, inertia exact over the B-Rep),
-`arris_debug::{render_body, render_domain, rerun}`. The two `primitive/*`
-fixtures pass every corpus stage including the new mesh and `measure`
-ones; M2's topology and M1's geometry stand underneath. **Next:** `/plan
-m4-booleans` (roadmap §M4).
+**M4 done (2026-09-11).** Two bodies cut, fuse and intersect. `ops::
+{fuse, common, cut}` are three selections over one General Fuse
+decomposition (ADR-0004): paves shared between the operands, every face
+split in its own (u, v) through the pcurves, each piece classified by
+`arris_check::classify::classify_point`, the result assembled through
+`Builder::assemble` with every untouched entity keeping its id.
+Coincident and tangent faces are named cases, and what a manifold `Solid`
+cannot hold is a typed refusal — `Reason::{Empty, MultiShell,
+TangentContact, ZeroThickness}`. Beside them `ops::transform`, the query
+`ops::boolean::interferences` (the decomposition as a printable value),
+and ADR-0005 (a ruled direction flattened before the triangulation).
+Every `primitive/*`, `transform/*`, `boolean/*` and `provenance/*`
+fixture passes every corpus stage; only the three `sweep/*` are ignored.
+**Next:** `/plan m5-sweeps` (roadmap §M5).
 
 ## Rules that are not derivable from the code
 

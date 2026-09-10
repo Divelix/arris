@@ -24,14 +24,15 @@ The unit of acceptance. A fixture is a directory
   never depends on a reader that does not exist yet and so a change to an
   operand is a one-line diff.
 - `expected.json` — the **oracle's answer**, one per recipe variant:
-  volume, area, centroid, counts (vertices, edges, faces, loops, shells),
-  the Euler characteristic and genus, the in/out/on result for each probe
-  point, the OCCT version and the recipe's hash. Written by
+  volume, area, centroid, the inertia tensor about the centroid, counts
+  (vertices, edges, faces, loops, shells), the Euler characteristic and
+  genus, the in/out/on result for each probe point, whether Open CASCADE
+  built a solid at all, the OCCT version and the recipe's hash. Written by
   `tools/oracle/expected.py`, never by hand, and committed. A change to it is a `fixtures:` commit that says why
   (`.agents/rules/git.md`).
 - `dump.txt` — Arris's text dump of the result once the fixture passes,
-  the regression guard for ids and provenance. Absent while the fixture is
-  `#[ignore]`d.
+  the regression guard for ids and provenance (`dump.<variant>.txt` for a
+  variant other than `default`). Absent while the fixture is `#[ignore]`d.
 
 The test for a fixture (`arris_debug::corpus::run`, one `#[test]` per
 fixture in `crates/arris/tests/corpus.rs`) builds the recipe in Arris,
@@ -42,9 +43,20 @@ and every probe, read back by Open CASCADE), tessellates the result at
 the fixture's `mesh_chord` and holds the mesh closed with its signed
 volume within `mesh_volume_rel` of the oracle's, measures it over the
 B-Rep (`ops::measure::mass_properties`) and holds volume, area, centroid
-and inertia to the oracle's within `inertia_rel`, asserts the provenance
-accounting (data-model §Provenance), and diffs the dump — written
-instead under `ARRIS_BLESS=1`.
+and inertia to the oracle's within `inertia_rel`, classifies every probe
+point against the result itself (`arris_check::classify::classify_point`)
+and holds it to the oracle's class exactly, asserts each step's
+provenance accounting (data-model §Provenance), and diffs the dump —
+written instead under `ARRIS_BLESS=1`.
+A fixture whose result is no solid does not reach those stages: one the
+oracle recorded none for (`degenerate`) must fail with
+`OpError::Degenerate`, and one whose recipe says `analytic.expect_error`
+must fail with that typed refusal — `multi-shell` or `tangent-contact`,
+the oracle's numbers kept as the record of what Open CASCADE builds
+instead. A recipe may also say `analytic.counts_differ: "why"` and carry
+its own counts, for the one place Arris's convention is deliberately not
+Open CASCADE's (a tangent ruling left unimprinted); every other fixture
+mirrors the oracle's counts exactly.
 Tolerances are the fixture's: relative 1e-9 on volume and area for
 analytic results, exact on counts and classifications. The oracle is run,
 never linked (`SEED.md` §7).
@@ -215,12 +227,39 @@ and a seam, read by the agent.
 
 *Goal: box − cylinder, then everything C1's corpus asks of it.*
 
+**Status: done 2026-09-11.** Retired the risk the cycle is named for: on
+this representation a plane–cylinder boolean is one decomposition and one
+selection table (ADR-0004). The paves are shared between the operands by
+construction — an edge of one piercing a face of the other is one section
+vertex both see — so the faces split in their own (u, v) through the
+pcurves meet along the same edges, and the pieces, classified by B1's own
+ray cast made public (`arris_check::classify::classify_point`), reassemble
+through `Builder::assemble` with every untouched entity keeping its id.
+Coincident faces (images, common blocks and the normals rule) and tangent
+contact (the curvature rule, decided before any face is split) are named
+cases, and what a manifold `Solid` cannot hold is a typed refusal rather
+than a tolerance accident: `Reason::{Empty, MultiShell, TangentContact,
+ZeroThickness}`. Two conventions were stated rather than inherited: Arris
+leaves a tangent ruling unimprinted where Open CASCADE splits the touched
+face (`analytic.counts_differ`, the corpus's one exception), and a `cut`'s
+tool keeps nothing, its surviving pieces `Generated` from it. ADR-0005 came
+out of the corpus: a ruled direction is flattened before the triangulation,
+which an oblique hole's wall needed to mesh within the inscribed bound.
+Accepted at 1000 property cases per test, with the identity between two
+separately fitted pcurves held to the model's tolerance over the body's
+size and not to a bare relative bound; every `primitive/*`, `transform/*`,
+`boolean/*` fixture and `provenance/bolt-pattern-rebuild`'s three variants
+passing every corpus stage, only the three `sweep/*` fixtures still
+ignored; `parallel` byte-identical with the feature on and off; the layer
+check and the wasm build green.
+
 - The General Fuse decomposition in `ops::boolean`: intersect every face
   pair (M1's table), split faces by the intersection edges with pcurves on
   both sides, share the split edges between operands (the pave model, read
   in the reference tree and rebuilt for coedges), classify each piece
   in/out/on with tolerance-aware point classification, assemble the result
-  for `fuse`, `common`, `cut`.
+  for `fuse`, `common`, `cut`; `boolean::interferences` is the same
+  decomposition as a printable value.
 - Coincident planar faces (flush) and tangent cylinder–plane contact as
   explicit cases, not tolerance accidents.
 - Provenance built inside the algorithm: `Modified` for split pieces,
@@ -269,17 +308,28 @@ edges (a seam counted once), faces, loops. `χ` is the Euler line
 |---|---|---|---|---|---|
 | `primitive/box` | box [0,0,0]–[40,30,10] | 12000 | 3800 | 8/12/6/6 | 0 |
 | `primitive/cylinder` | r 4, h 12, axis z, base at origin | 603.1858 | 402.1239 | 2/3/3/3 | 0 |
+| `transform/posed-cylinder` | the cylinder above, rotated 30° about [1,1,0] through the origin and translated: `ops::transform`'s fixture, every entity `Modified` one-to-one | 603.1858 | 402.1239 | 2/3/3/3 | 0 |
 | `boolean/through-hole` | box above − cylinder r 4 at (20,15), z −1…11 | 11497.3452 | 3950.7964 | 10/15/7/9 | 1 |
+| `boolean/posed-through-hole` | `through-hole` with both operands under one rigid motion: the same solid in another pose, so `through-hole`'s numbers with the centroid moved | 11497.3452 | 3950.7964 | 10/15/7/9 | 1 |
 | `boolean/blind-hole` | box above − cylinder r 4 at (20,15), z 4…16 (depth 6, floor kept) | 11698.4071 | 3950.7964 | 10/15/8/9 | 0 |
+| `boolean/oblique-hole` | box above − cylinder r 3 whose axis is tilted 30° about x through (20,15,5): two ellipse sections, NURBS pcurves on the wall | 11673.5161 | 3952.3591 | 10/15/7/9 | 1 |
 | `boolean/bolt-pattern-8` | plate [0,0,0]–[100,100,10] − 8 cylinders r 3 on a circle R 35 about (50,50), each a separate cut | 97738.0533 | 25055.5751 | 24/36/14/30 | 8 |
 | `boolean/flush-union` | box [0,0,0]–[40,30,10] ∪ box [40,0,0]–[80,30,10]; the shared face vanishes, coplanar neighbours are *not* merged (as Open CASCADE) | 24000 | 7000 | 12/20/10/10 | 0 |
 | `boolean/corner-union` | cube [−1,1]³ ∪ cube [0,2]³ | 15 | 42 | 20/30/12/12 | 0 |
 | `boolean/corner-common` | same, ∩ | 1 | 6 | 8/12/6/6 | 0 |
 | `boolean/corner-cut` | same, − | 7 | 24 | 14/21/9/9 | 0 |
-| `boolean/flush-common` | the two flush boxes, ∩ | — | — | `OpError::Degenerate` (zero-thickness result) | — |
+| `boolean/sliver-common` | box ∩ a cylinder r 4 whose axis stands just outside the face x = 40, the arc inside spanning 36°: a sliver whose caps are a D of one chord and one short arc (`region2::MIN_SEGMENTS_PER_ARC`) | 3.2427 | 50.5026 | 4/6/4/4 | 0 |
+| `boolean/flush-common` | the two flush boxes, ∩ | — | — | `OpError::Degenerate` (`Reason::ZeroThickness`: the two coincident faces are dropped by the normals and nothing survives) | — |
+| `boolean/boss` | the plate ∪ a cylinder r 4 at (20,15), z 5…20: the wall crosses the top face, the tool's bottom cap is swallowed | 12502.6548 | 4051.3274 | 10/15/8/9 | 0 |
 | `boolean/boss-flush` | the plate ∪ the boss of `boss` raised to z 10…20, its bottom cap coincident with the plate's top: the cap vanishes, the rim is the wall's own edge — `boss`'s numbers | 12502.6548 | 4051.3274 | 10/15/8/9 | 0 |
+| `boolean/coaxial-cut` | cylinder r 2, z −1…1 − a coaxial r 1 running through it: a tube — the coaxial pair has no section curve and the bore's wall is the tool's wall reversed (`sweep/revolve-tube`'s numbers) | 18.8496 | 56.5487 | 4/6/4/6 | 1 |
 | `boolean/coaxial-fuse` | the tube of `coaxial-cut` ∪ a cylinder r 1, z −1…1 filling its bore: the coincident walls vanish, the discs sit beside the annuli sharing the inner circles (as Open CASCADE) | 25.1327 | 50.2655 | 4/5/5/7 | 0 |
 | `boolean/disjoint-cut` | box − a cylinder clear of it | 12000 | 3800 | 8/12/6/6, provenance: every tool entity `Deleted`, target kept | 0 |
+| `boolean/disjoint-common` | box ∩ a cylinder clear of it | — | — | `OpError::Degenerate` (`Reason::Empty`) | — |
+| `boolean/swallow-cut` | box [10,10,2]–[30,20,8] − the plate that contains it | — | — | `OpError::Degenerate` (`Reason::Empty`) | — |
+| `boolean/split-cut` | the plate − a slab [18,−1,−1]–[22,31,11] straight through it | — | — | `OpError::Degenerate` (`Reason::MultiShell`); Open CASCADE's two solids recorded: 10800, 4080, 16/24/12/12 in two shells | — |
+| `boolean/tangent-outside-cut` | the plate − a cylinder r 4 whose wall touches the face x = 40 from outside along a ruling: no material removed, the plate back with every id | 12000 | 3800 | 8/12/6/6 — `counts_differ`: Open CASCADE imprints the ruling and reports 10/15/7/7 | 0 |
+| `boolean/tangent-hole` | the plate − a cylinder r 3 at (3,15), z 4…16, whose wall touches the face x = 0 from inside along a ruling interior to both | — | — | `OpError::Degenerate` (`Reason::TangentContact`); Open CASCADE's slit recorded: 11830.3540, 3913.0973, 12/19/9/11 | — |
 | `boolean/frame-cut` | box [0,0,0]–[40,30,10] − box [10,10,−1]–[30,20,11]: a rectangular frame; M2 builds it by hand through the Euler operators (`sample::frame`), M4 by this recipe — the cross-check between the two paths, as `extrude-plate-with-hole` is for `through-hole` | 10000 | 4000 | 16/24/10/12 | 1 |
 | `sweep/extrude-plate-with-hole` | rectangle 40×30 with a hole r 4 at (20,15), extruded 10 | 11497.3452 | 3950.7964 | 10/15/7/9 (same numbers as `through-hole`: the cross-check between the two paths) | 1 |
 | `sweep/revolve-tube` | rectangle x∈[1,2], z∈[−1,1] revolved 2π about z | 18.8496 | 56.5487 | 4/6/4/6 | 1 |
@@ -305,9 +355,10 @@ with their `#[ignore]`d twins — green.*
   at the hole-edge fillet.
 - Cylinder–cylinder booleans (transversal and coaxial), closing the
   quadric-curve `⚠ OPEN` with an ADR.
-- Two-shell results (enclosed cavity), the revolve profile touching its
-  axis (apex and degenerate edges), a `Degenerate` for a profile crossing
-  it.
+- Results of more than one shell — an enclosed cavity, a disjoint `fuse`,
+  a `cut` that splits its target — which M4 refuses as
+  `Reason::MultiShell`; the revolve profile touching its axis (apex and
+  degenerate edges), a `Degenerate` for a profile crossing it.
 - `Model::retain` semantics (the compaction `⚠ OPEN`), the `f32`
   boundary `⚠ OPEN`, the origin-name helper `⚠ OPEN` — each an ADR with
   the consumer's adapter as the test.

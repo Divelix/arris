@@ -22,7 +22,7 @@ re-exports the public API. Lower crates never name types from upper ones.
 | `arris-topo` | `Model` (the arena), typed ids, `Shape`/`Body`/`Face`/… handles, orientation, entities, pcurves, per-entity tolerances, Euler operators, adjacency and iteration, `Provenance`; re-exports `arris-geom` and `arris-math` | `arris-geom`, `arris-math`, `thiserror`, `serde` (feature) | 0 — representation |
 | `arris-check` | The invariant checker: `check(&Model, Body, Level) -> Report` and the `Violation` list of data-model §Invariants; re-exports `arris-topo` | `arris-topo` | 1 |
 | `arris-ops` | Primitives, planar profiles, extrude, revolve, transform, booleans, later blends; `measure` (mass properties); each returns `Provenance` | `arris-check`, `thiserror`, `rayon` (feature) | 2 — algorithms |
-| `arris-mesh` | `TriMesh`, `Polyline`, the constrained Delaunay triangulation in (u, v) (`cdt`, ADR-0003), tessellation of faces and edges with shared edge discretisation; re-exports `arris-math`'s `Aabb` | `arris-check`, `arris-topo`, `thiserror` | 2 — algorithms |
+| `arris-mesh` | `TriMesh`, `Polyline`, the constrained Delaunay triangulation in (u, v) (`cdt`, ADR-0003), tessellation of faces and edges with shared edge discretisation; re-exports `arris-math`'s `Aabb` | `arris-check`, `arris-topo`, `thiserror`, `rayon` (feature) | 2 — algorithms |
 | `arris-io` | STEP AP214 Part 21 writer (later reader), the native format (`native`); re-exports `arris-check` | `arris-check`, `thiserror`, `serde`, `serde_json`, `postcard` (the last three behind the `serde` feature) | 2 — algorithms |
 | `arris-debug` | Text dump, the hand-built sample bodies (`sample`), PNG render (own software rasteriser over `image`), Rerun stream (feature), the fixture loader and corpus lint, the corpus runner (`corpus`) and the oracle seam (`oracle`), the seeded property-test runner and strategies | `arris-ops`, `arris-mesh`, `arris-io`, `arris-topo`, `arris-geom`, `arris-math`, `image`, `serde`, `serde_json`, `sha2`, `thiserror`, `proptest` (not on `wasm32`), `rerun` (feature) | 3 — dev-facing |
 | `arris` | Facade: re-exports | `math` through `io`; `debug` as a dev-dependency only | 4 |
@@ -154,6 +154,18 @@ pub fn cut(m: &mut Model, target: Body, tool: Body) -> Result<(Body, Provenance)
   from a `Role`.
 - Same input, same output, same ids, on every platform. The tests assert
   this by dumping twice and diffing.
+
+`ops::transform(m, body, motion: &Isometry)` moves a body rigidly. Every
+curve and surface is appended transformed and every pcurve id is reused as
+it stands — a rigid motion carries the parametrisation with it, so
+parameter space does not move — and every vertex, edge, face, shell and
+the body itself is appended new in the body's own iteration order through
+`Builder::assemble`, each `Modified` one-to-one from the entity it moved.
+The body's kind is kept and nothing of the input is shared, so the moved
+body is an operand a boolean can take beside the original. It reaches
+exactly as far as `assemble` does — one edge-connected shell, which is
+what every operation in the kernel produces today — and it is how the
+property tests put their operands in random poses.
 
 A **query** has a different shape: it takes `&Model`, makes no body and
 records no provenance, because there is nothing for a later operation to
@@ -310,7 +322,7 @@ involved, so the message a consumer shows — or the agent reads — says
 | `Degenerate` | the requested result has no valid representation: a parameter that makes no geometry (`Reason::NonFinite`, `Reason::NotPositive` naming it — a zero radius, a box whose `min` is not below its `max`), a zero-thickness intersection, a profile crossing its revolve axis, a sweep of zero length; a boolean that selects no material (`Reason::Empty`: a target inside its tool, a `common` of disjoint operands), whose survivors make more than one shell (`Reason::MultiShell { shells }`: a split target, a disjoint fuse, a cavity), or whose faces touch along a curve interior to both result faces (`Reason::TangentContact`) | the entities (none for a primitive) and a `Reason` enum |
 | `Tolerance` | the result would need an entity tolerance above `Precision::max_tolerance` | the entity, the tolerance it wanted |
 | `NotFound` | a handle does not resolve in this model (wrong model, or compacted away) | the `Shape` |
-| `Internal` | a kernel bug the operation caught: the checker rejected its own output, the builder refused a step of its fixed sequence, a frame could not be placed from inputs it had validated, a point it had to classify could not be, a geometry query failed on validated input for a reason other than a missing closed form, a section edge crossed a seam the seam's own hit should have paved, the (u, v) arrangement of a face was not the subdivision the pave model promised (`SplitFault`: a dangling section edge, a cycle not turning once, a hole inside no piece, a piece with no interior point, a pave at an edge's end) | a `Fault` — the `Report`, the `BuildError`, the `FrameError`, the `ClassifyError`, the `GeomError`, the two faces of the seam crossing, or the `SplitFault` naming the face |
+| `Internal` | a kernel bug the operation caught: the checker rejected its own output, the builder refused a step of its fixed sequence, a frame could not be placed from inputs it had validated, a point it had to classify could not be, a geometry query failed on validated input for a reason other than a missing closed form, a section edge crossed a seam the seam's own hit should have paved, a piece of a coincident face pair's edge matched no piece of the edge it lies along, the (u, v) arrangement of a face was not the subdivision the pave model promised (`SplitFault`: a dangling section edge, a cycle not turning once, a hole inside no piece, a piece with no interior point, a pave at an edge's end) | a `Fault` — the `Report`, the `BuildError`, the `FrameError`, the `ClassifyError`, the `GeomError`, the two faces of the seam crossing, the edge and face of the unmatched common block, or the `SplitFault` naming the face |
 
 `Internal` is returned only in release builds with `paranoid` on; in debug
 builds the same condition panics (below). A degenerate *result* that the
