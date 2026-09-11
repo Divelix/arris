@@ -3,10 +3,10 @@
 //! the recipe built in Arris, the checker at `Full`, counts and genus
 //! against the oracle, STEP read back by the oracle, provenance
 //! accounting, the dump diffed against `dump.txt`. The `primitive/*`,
-//! `transform/*` and `cut` fixtures are live; every fixture that needs
-//! an operation of a later step or milestone is `#[ignore]`d naming it,
-//! and `--include-ignored` runs it anyway, so the day the operation
-//! lands the test says so.
+//! `transform/*`, `boolean/*`, `provenance/*` and `revolve` fixtures are
+//! live; every fixture that needs an operation of a later step or
+//! milestone is `#[ignore]`d naming it, and `--include-ignored` runs it
+//! anyway, so the day the operation lands the test says so.
 
 use arris_debug::corpus::{self, CorpusError};
 use arris_debug::fixtures;
@@ -192,21 +192,30 @@ fn boolean_sliver_common() {
 }
 
 #[test]
-#[ignore = "M5: needs ops::planar_face and ops::extrude"]
+#[ignore = "M5: needs ops::extrude (plans/m5-sweeps step 5)"]
 fn sweep_extrude_plate_with_hole() {
     run("sweep/extrude-plate-with-hole");
 }
 
+/// A rectangle revolved a full turn about z: two seamed walls and two
+/// annuli of two closed rises each — `boolean/coaxial-cut`'s solid by the
+/// other path.
 #[test]
-#[ignore = "M5: needs ops::planar_face and ops::revolve"]
 fn sweep_revolve_tube() {
     run("sweep/revolve-tube");
 }
 
+/// The same rectangle a quarter turn: two flat ends, every rise an arc.
 #[test]
-#[ignore = "M5: needs ops::planar_face and ops::revolve"]
 fn sweep_revolve_quarter() {
     run("sweep/revolve-quarter");
+}
+
+/// An L revolved 270°: the walls' (u, v) regions run past `π` with no
+/// seam, two annular sectors of one notch face each other.
+#[test]
+fn sweep_revolve_l_profile() {
+    run("sweep/revolve-l-profile");
 }
 
 /// The same recipe under three parameter sets, one test each so a
@@ -229,17 +238,18 @@ fn provenance_bolt_pattern_rebuild_tighter() {
 }
 
 /// A recipe with an op the kernel has no operation for fails naming it:
-/// `extrude`, since a box, a cylinder and now `transform` all build (M5
-/// is where this is retargeted again).
+/// `extrude`, the one op left (plans/m5-sweeps step 5 retires this test
+/// with it).
 #[test]
 fn an_unsupported_op_fails_with_its_name() {
     let dir = tempdir("unsupported-op");
     std::fs::write(
         dir.join("fixture.json"),
         r#"{
-            "description": "a box referenced by an op the kernel does not have yet",
+            "description": "a profile swept by an op the kernel does not have yet",
             "steps": [
-                {"name": "base", "op": "box", "min": [0, 0, 0], "max": [1, 1, 1]},
+                {"name": "base", "op": "profile", "plane": {"origin": [0, 0, 0], "x": [1, 0, 0], "y": [0, 1, 0]},
+                 "outer": {"start": [0, 0], "segments": [{"line_to": [1, 0]}, {"line_to": [1, 1]}, {"line_to": [0, 0]}]}},
                 {"name": "result", "op": "extrude", "profile": "base", "direction": [0, 0, 1], "length": 1}
             ],
             "result": "result"

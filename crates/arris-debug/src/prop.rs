@@ -25,7 +25,10 @@
 //! every one is uniform over its space so a property that holds "at 1000
 //! cases" has seen the seams, the poles and the octants. `geom` places
 //! every surface and curve kind and random NURBS; `body` describes boxes
-//! and cylinders in random poses that a test builds into a model.
+//! and cylinders in random poses that a test builds into a model;
+//! `profile` draws sketches, with an axis and the sweep parameters for
+//! them, and `sweep` is the Pappus oracle a sweep's volume and area are
+//! held to.
 //!
 //! ```
 //! use arris_debug::prop::{check, frame, point_in_box, DEFAULT_SCALE};
@@ -41,6 +44,7 @@
 pub mod body;
 pub mod geom;
 pub mod profile;
+pub mod sweep;
 
 use core::fmt::Debug;
 use core::ops::RangeInclusive;

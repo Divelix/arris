@@ -867,7 +867,7 @@ nothing — so that every chain has a root (ADR-0002):
 ```rust
 pub enum Relation { Generated, Modified, Deleted }
 pub enum Origin   { Entity(Shape), Role(Role) }
-pub enum Role     { Box(BoxPart), Cylinder(CylinderPart) }   // exhaustive; M5 adds the profile roles
+pub enum Role     { Box(BoxPart), Cylinder(CylinderPart), Extrude(SweepPart), Revolve(SweepPart) }   // exhaustive
 
 pub struct Provenance {
     generated: BTreeMap<Origin, Vec<Shape>>,   // origin → outputs generated from it, sorted
@@ -879,13 +879,22 @@ pub struct Provenance {
 - **Generated**: the output is a new entity of a *different* kind or role
   built from the origin — the wall of a hole from the tool's cylindrical
   face, an intersection edge from a pair of faces (one record per face;
-  `generated_pair(a, b)` is their intersection), the side faces of an
-  extrude from the profile's edges, every entity of a primitive from its
+  `generated_pair(a, b)` is their intersection), the side faces of a
+  sweep from the profile's segments, every entity of a primitive from its
   role (`Role::Box(BoxPart::Face(Coord::Z, Side::Max))` is a box's top;
   `BoxPart::Edge { along, sides }` and `BoxPart::Vertex([Side; 3])` name
   the rest; `CylinderPart::{Wall, BottomCap, TopCap, BottomRim, TopRim,
   Seam, BottomVertex, TopVertex}` a cylinder's; both have `Shell` and
-  `Body`).
+  `Body`). A sweep's entities are `Generated` from a `SweepPart` naming
+  the part of the consumer's sketch (§Profiles) each came from, with the
+  consumer's own indices: `StartCap` and `EndCap` from the profile face;
+  `Side`, `StartEdge` and `EndEdge { loop_index, segment }` from one
+  segment; `Rise`, `StartVertex` and `EndVertex { loop_index, vertex }`
+  from one vertex, `vertex` the index of the segment that starts there
+  (a circle loop has segment `0` and vertex `0`); `Shell` and `Body`. A
+  full revolve has no `EndCap`, `EndEdge` or `EndVertex` — its start
+  edges are the seams — and a segment perpendicular to its axis, which
+  sweeps an annulus of two closed rises, has no `StartEdge`.
 - **Modified**: the output is a trimmed, split or re-tolerated piece of the
   input, same kind — the box's top face with a circle cut out of it, each
   half of a face split by an intersection curve (one input, several

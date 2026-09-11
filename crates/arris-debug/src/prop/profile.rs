@@ -1,5 +1,6 @@
 //! Strategies for random sketches: a star polygon with arcs and holes in
-//! a random plane pose, in either orientation.
+//! a random plane pose, in either orientation, and a rectilinear
+//! staircase beside an axis with the sweep parameters that go with it.
 //!
 //! Every profile a strategy here produces is a *valid* one —
 //! `Profile::edges` accepts it — so a property over sweeps never has to
@@ -12,8 +13,11 @@
 //! star-shaped. The holes are placed inside the largest disc about the
 //! centre that the chords leave free.
 
+use core::f64::consts::TAU;
+use core::ops::RangeInclusive;
+
 use arris_geom::profile::{Profile, ProfileLoop, ProfileSegment};
-use arris_math::{Point2, Vec2};
+use arris_math::{Axis, Frame, Point2, Point3, UnitVec3, Vec2, Vec3};
 use proptest::prelude::*;
 
 use super::{finite_f64, frame};
@@ -175,4 +179,157 @@ fn distance_to_segment(p: Point2, a: Point2, b: Point2) -> f64 {
     }
     let t = ((p - a).dot(&d) / len2).clamp(0.0, 1.0);
     (p - (a + t * d)).norm()
+}
+
+/// A profile with the parameters of the sweeps it is drawn for: an axis
+/// in its plane at a positive distance from every loop, a revolve angle
+/// in `(0, 2π]` and an extrude length. What [`rectilinear`] yields and
+/// what a sweep property test builds a body from.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Sweep {
+    /// The sketch.
+    pub profile: Profile,
+    /// The revolve axis: in the profile's plane, clear of the profile.
+    pub axis: Axis,
+    /// The revolve angle in radians, `2π` for a full turn.
+    pub angle: f64,
+    /// The extrude length.
+    pub length: f64,
+}
+
+/// The number of bars of a [`rectilinear`] staircase.
+pub const STAIRCASE_BARS: RangeInclusive<usize> = 2..=5;
+
+/// The distance of a [`rectilinear`] staircase's inner side from the
+/// axis: at least one, so the smallest radius any face has is one.
+pub const STAIRCASE_CLEARANCE: RangeInclusive<f64> = 1.0..=3.0;
+
+/// How far the bars of a staircase reach beyond its inner side, at most.
+const STAIRCASE_REACH: f64 = 6.0;
+
+/// The height of one bar along the axis.
+const BAR_HEIGHT: RangeInclusive<f64> = 0.5..=2.0;
+
+/// Where a bar's outer side falls within its share of the reach: away
+/// from both ends of the share, so two bars are never within rounding of
+/// one radius and no bar is within rounding of the inner side.
+const BAR_JITTER: RangeInclusive<f64> = 0.1..=0.9;
+
+/// A revolve angle: a full turn one time in four, otherwise a partial one
+/// clear of both ends of the range so the flat ends never coincide and
+/// the turn is never within rounding of none.
+fn angle() -> impl Strategy<Value = f64> {
+    prop_oneof![
+        1 => Just(TAU),
+        3 => finite_f64(0.1..=TAU - 0.1),
+    ]
+}
+
+/// The raw draw of [`rectilinear`].
+type StaircaseDraw = (
+    (Frame, f64, f64, f64, bool),
+    (f64, usize, Vec<f64>, Vec<f64>, Vec<f64>),
+    (bool, bool, f64, f64),
+);
+
+/// A staircase polygon beside an axis, both in a random plane pose: a
+/// histogram of `STAIRCASE_BARS` bars stacked along the axis, every
+/// segment parallel or perpendicular to it, the inner side at
+/// `STAIRCASE_CLEARANCE` from the axis and the bars' outer sides at
+/// distinct radii in a random order, with — half the time — a
+/// rectangular hole inside the first bar; the axis in a random in-plane
+/// direction through a random point, the profile on either side of it,
+/// every loop written in either orientation. A revolve of it makes
+/// planes and cylinders only, every pair of which the checker's S5 row
+/// decides; the angle is a full turn one time in four and otherwise a
+/// partial one clear of both ends of `(0, 2π)`, the extrude length random.
+pub fn rectilinear() -> impl Strategy<Value = Sweep> {
+    let bars = *STAIRCASE_BARS.end();
+    (
+        (
+            frame(),
+            finite_f64(0.0..=TAU),
+            finite_f64(-5.0..=5.0),
+            finite_f64(-5.0..=5.0),
+            any::<bool>(),
+        ),
+        (
+            finite_f64(STAIRCASE_CLEARANCE),
+            STAIRCASE_BARS,
+            proptest::collection::vec(finite_f64(BAR_JITTER), bars),
+            proptest::collection::vec(finite_f64(BAR_HEIGHT), bars),
+            proptest::collection::vec(finite_f64(0.0..=1.0), bars),
+        ),
+        (
+            any::<bool>(),
+            any::<bool>(),
+            angle(),
+            finite_f64(1.0..=10.0),
+        ),
+    )
+        .prop_map(build_staircase)
+}
+
+fn build_staircase(
+    (
+        (plane, beta, au, av, left),
+        (clearance, bars, jitter, heights, keys),
+        (hole, flipped, angle, length),
+    ): StaircaseDraw,
+) -> Sweep {
+    // The axis in (u, v), and the material side of it.
+    let along = Vec2::new(beta.cos(), beta.sin());
+    let left_normal = Vec2::new(-along.y, along.x);
+    let radial = if left { left_normal } else { -left_normal };
+    let origin = Point2::new(au, av);
+    let at = |rho: f64, t: f64| origin + t * along + rho * radial;
+    // The bars' outer radii: distinct by construction, in a random order.
+    let n = bars.min(jitter.len()).min(heights.len()).min(keys.len());
+    let mut levels: Vec<(f64, f64)> = (0..n)
+        .map(|k| {
+            let share = STAIRCASE_REACH / n as f64;
+            (keys[k], clearance + share * (k as f64 + jitter[k]))
+        })
+        .collect();
+    levels.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let rho: Vec<f64> = levels.iter().map(|l| l.1).collect();
+    let mut t = vec![0.0];
+    for k in 0..n {
+        t.push(t[k] + heights[k]);
+    }
+    // The histogram: up the inner side is the closing segment.
+    let mut points = vec![at(clearance, t[0])];
+    for k in 0..n {
+        points.push(at(rho[k], t[k]));
+        points.push(at(rho[k], t[k + 1]));
+    }
+    points.push(at(clearance, t[n]));
+    let no_arcs = vec![None; points.len()];
+    let outer = path_loop(&points, &no_arcs, flipped);
+    let holes = if hole {
+        // A rectangle in the middle of the first bar.
+        let (ra, rb) = (
+            clearance + 0.25 * (rho[0] - clearance),
+            clearance + 0.75 * (rho[0] - clearance),
+        );
+        let (ta, tb) = (t[0] + 0.25 * heights[0], t[0] + 0.75 * heights[0]);
+        let corners = [at(ra, ta), at(rb, ta), at(rb, tb), at(ra, tb)];
+        vec![path_loop(&corners, &[None; 4], !flipped)]
+    } else {
+        Vec::new()
+    };
+    let direction = plane.vec_to_world(Vec3::new(along.x, along.y, 0.0));
+    Sweep {
+        profile: Profile {
+            plane,
+            outer,
+            holes,
+        },
+        axis: Axis {
+            origin: plane.to_world(Point3::new(au, av, 0.0)),
+            direction: UnitVec3::new_normalize(direction),
+        },
+        angle,
+        length,
+    }
 }

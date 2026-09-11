@@ -169,6 +169,7 @@ dependencies = [
  "arris-check",
  "arris-debug",
  "arris-io",
+ "arris-mesh",
  "proptest",
  "rayon",
  "thiserror",

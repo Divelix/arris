@@ -246,7 +246,7 @@ bound has to be established here.
   `NotOnSurface`; an oblique line on a cone and every NURBS are
   `Unsupported` naming the pair; `crates/arris-geom/tests/pcurve.rs`'s
   existing plane and cylinder tests unchanged.
-- [ ] Step 3 **[3]** — `ops::revolve` over planes and cylinders, and the
+- [x] Step 3 **[3]** — `ops::revolve` over planes and cylinders, and the
   runner's `profile` and `revolve` arms. The `Role` variants, the new
   `Reason`s and `OpError::Profile`, the sweep's private cap builder and
   assembly order, the seam layout of a full turn, the annulus of a
@@ -268,7 +268,9 @@ bound has to be established here.
   untouched after each.
 - [ ] Step 4 **[3]** — `ops::revolve` over cones, spheres and tori: the
   oblique segment (both cone orientations, the `Z = −axis` case), the arc
-  centred on the axis and off it, `SpindleTorus`. Tests: `prop::profile::
+  centred on the axis and off it, `SpindleTorus` — the arms step 3 wrote
+  unexercised (Findings), proven here and fixed where the proof fails.
+  Tests: `prop::profile::
   general` at 1000 cases — the checker at `Fast` green and at `Full` with
   no violation and every unchecked row a pair or a cast on a cone,
   sphere or torus face and nothing else, volume and area to the Pappus
@@ -433,3 +435,38 @@ deltas above, not a new decision.
   parallel arm carries that half turn. Noted in 02 §Pcurves.
 - **Step 2.** `docs/DATA-MODEL.md` §Pcurves was rewritten in the step, for
   the same reason as §Profiles in step 1.
+- **Step 3.** A full turn of a profile with holes is refused with
+  `Reason::MultiShell { shells: 1 + holes }`: every hole closes into a
+  cavity, a shell of its own, which `Builder::assemble` (one
+  edge-connected component) and the one-shell `Solid` of cycle 1 do not
+  hold — the same refusal the booleans give a cavity; a partial turn's
+  holes open onto its flat ends and are one shell with the rest. The
+  design deltas did not foresee it; `prop::profile::rectilinear` draws
+  holes with full turns and the property asserts the refusal there.
+- **Step 3.** The sweep machinery is one path for every segment kind —
+  surface, pcurves through `pcurve_on`, the four-use loop, the outward
+  test — so the cone, sphere and torus arms of `swept_surface` and the
+  `SpindleTorus` refusal landed here rather than as a throw-away typed
+  refusal (no `OpError` variant can name a sketch part, and adding one to
+  delete it a step later is public-API churn). They are *unexercised*:
+  step 4 owns their proof.
+- **Step 3.** `pcurve_on` reports a periodic parameter in `[0, 2π)`, so a
+  curve in the profile plane (`u = 0` by the frame convention) can come
+  back at `2π` less a rounding of the frame's dot products. Every side
+  face's pcurves are therefore translated by whole periods into the copy
+  of the domain the loop is written in — the first use nearest `u = 0`,
+  each later use continuous with the end of the one before it — which is
+  also how a seam's second use gets its period, and how a circle loop's
+  rise, used twice by one torus face as a `v` seam, gets its (step 4).
+- **Step 3.** The runner gained `CorpusError::Profile` for a `profile`
+  step whose plane or numbers do not build (`fixtures::geom::BuildError`),
+  and `Chain` and `Inputs` carry `profiles` beside the bodies.
+  `prop::profile::rectilinear` yields a `Sweep { profile, axis, angle,
+  length }`; `prop::sweep::revolved` is the Pappus oracle, its boundary
+  integral by Gauss–Legendre over the pcurves rather than per-edge closed
+  forms, so no arm depends on the segment kind.
+- **Step 3.** `docs/ARCHITECTURE.md` §Operations, §Errors and §Formats and
+  tools and `docs/DATA-MODEL.md` §Provenance were written in the step
+  (`.agents/rules/git.md`); the `planar_face` sentence is already gone.
+  `arris-mesh` is a dev-dependency of `arris-ops` for the property's mesh
+  check.

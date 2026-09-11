@@ -1,7 +1,7 @@
 //! The typed errors of the operations (`docs/ARCHITECTURE.md` §Errors):
 //! every variant names the entities involved.
 
-use arris_check::arris_topo::arris_geom::{GeomError, GeomKind};
+use arris_check::arris_topo::arris_geom::{GeomError, GeomKind, ProfileError};
 use arris_check::arris_topo::arris_math::FrameError;
 use arris_check::arris_topo::builder::BuildError;
 use arris_check::arris_topo::{Body, EdgeId, FaceId, Shape};
@@ -27,18 +27,41 @@ pub enum Reason {
     /// The result has no thickness: a common of flush bodies, a sweep of
     /// zero length.
     ZeroThickness,
-    /// A revolve profile crosses its axis.
+    /// A revolve profile crosses its axis: it has points on both sides of
+    /// the axis line in its plane, beyond the tolerance.
     ProfileCrossesAxis,
+    /// A revolve profile touches its axis: a vertex or a segment of it lies
+    /// within the tolerance of the axis line, which would sweep an apex or
+    /// a degenerate edge (cycle 2's).
+    ProfileTouchesAxis,
+    /// A revolve axis does not lie in the profile's plane within the
+    /// tolerances: its direction is off the plane by more than the angular
+    /// tolerance, or its origin is off it by more than the linear one.
+    AxisNotInProfilePlane,
+    /// A revolve angle is above a full turn, by more than the angular
+    /// tolerance.
+    AngleAboveTurn,
+    /// A revolve profile has an arc whose centre is nearer the axis than
+    /// its radius, so its circle crosses the axis and the face it sweeps
+    /// would be a self-intersecting torus, which the data model does not
+    /// hold (`docs/DATA-MODEL.md` §Surfaces: `R > r`).
+    SpindleTorus,
+    /// An extrude direction is off the profile plane's normal by more than
+    /// the angular tolerance; an oblique extrusion is a sweep along a path
+    /// (cycle 5).
+    DirectionNotNormal,
     /// The query needs an enclosed volume and the body is not a solid:
     /// a sheet, a wire, a general body.
     NotSolid,
     /// A boolean selected no material: a `common` of disjoint operands,
     /// a target swallowed by its tool.
     Empty,
-    /// A boolean's surviving pieces make more than one shell — a
-    /// disjoint `fuse`, a cut that splits its target, an enclosed cavity
-    /// — and the `Solid` of cycle 1 holds one (ADR-0004, plan `⚠ OPEN`
-    /// 2; a `General` body for it is cycle 2's).
+    /// The result would have more than one shell — a boolean's surviving
+    /// pieces making a disjoint `fuse`, a cut that splits its target, an
+    /// enclosed cavity; a full revolve of a profile with holes, each of
+    /// which closes into a cavity — and the `Solid` of cycle 1 holds one
+    /// (ADR-0004, plan m4-booleans `⚠ OPEN` 2; a body with voids is
+    /// cycle 2's).
     MultiShell {
         /// How many shells the pieces make.
         shells: usize,
@@ -59,6 +82,17 @@ impl core::fmt::Display for Reason {
             }
             Reason::ZeroThickness => f.write_str("the result has no thickness"),
             Reason::ProfileCrossesAxis => f.write_str("the profile crosses the revolve axis"),
+            Reason::ProfileTouchesAxis => f.write_str("the profile touches the revolve axis"),
+            Reason::AxisNotInProfilePlane => {
+                f.write_str("the revolve axis does not lie in the profile's plane")
+            }
+            Reason::AngleAboveTurn => f.write_str("the revolve angle is above a full turn"),
+            Reason::SpindleTorus => {
+                f.write_str("an arc's circle crosses the revolve axis: a spindle torus")
+            }
+            Reason::DirectionNotNormal => {
+                f.write_str("the extrude direction is not the profile plane's normal")
+            }
             Reason::NotSolid => f.write_str("the body is not a solid"),
             Reason::Empty => f.write_str("the result has no material"),
             Reason::MultiShell { shells } => {
@@ -229,7 +263,7 @@ pub enum OpError {
     },
     /// The requested result has no valid representation: a parameter that
     /// makes no geometry, a zero-thickness intersection, a profile
-    /// crossing its revolve axis. Never a silently empty body.
+    /// crossing or touching its revolve axis. Never a silently empty body.
     #[error("degenerate result: {reason}{}", entities_suffix(.entities))]
     Degenerate {
         /// The entities involved; none for a primitive, which has no
@@ -238,6 +272,11 @@ pub enum OpError {
         /// Why.
         reason: Reason,
     },
+    /// The profile of a sweep is not a valid sketch: `Profile::edges`
+    /// refused it, naming the loop and segment. An invalid profile has no
+    /// entities to name, so it is neither `InvalidInput` nor `Degenerate`.
+    #[error("the profile is not valid: {0}")]
+    Profile(ProfileError),
     /// The result would need an entity tolerance above
     /// `Precision::max_tolerance`.
     #[error("{entity} would need tolerance {wanted}, above the model's maximum")]
@@ -262,6 +301,12 @@ fn entities_suffix(entities: &[Shape]) -> String {
     } else {
         let names: Vec<String> = entities.iter().map(|s| s.to_string()).collect();
         format!(" ({})", names.join(", "))
+    }
+}
+
+impl From<ProfileError> for OpError {
+    fn from(e: ProfileError) -> Self {
+        OpError::Profile(e)
     }
 }
 

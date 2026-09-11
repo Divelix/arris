@@ -304,10 +304,56 @@ are `Modified` from both operands' where a `cut`'s are `Modified` from
 the target's alone. Tolerances follow §Tolerances' growth rule and a
 piece keeps its parent's.
 
-Sweeps take a planar `Profile` — an outer loop and holes of lines and arcs
-in a plane's own (u, v) — and build the planar face themselves (`ops::
-planar_face`), so a consumer's sketch never has to become topology before
-it becomes a solid.
+Sweeps take a planar `geom::Profile` — an outer loop and holes of lines
+and arcs in a plane's own (u, v), validated and oriented by
+`Profile::edges` (data-model §Profiles) — so a consumer's sketch never has
+to become topology before it becomes a solid. A sweep's faces are known
+outright, so it enters the builder through `Builder::assemble` as
+`transform` does, in one fixed order — vertices per loop in walking order
+(the start ring, then the end ring), edges (start, end, rises), faces
+(start cap, end cap, sides per loop per segment) — so the ids are a
+function of the profile alone; every tolerance is `default_tolerance`,
+and every entity is `Generated` from a `Role` naming the part of the
+sketch it came from (data-model §Provenance, `SweepPart`).
+
+`ops::revolve(m, &profile, axis: Axis, angle)` sweeps the profile about
+an axis lying in its plane within the tolerances
+(`Reason::AxisNotInProfilePlane` otherwise): a partial turn with two flat
+ends — the profile face, its outward normal against the turn, and its
+copy rotated by `angle` — or a full turn with seams when `angle` is within
+`angular_tolerance` of `2π` (`Reason::AngleAboveTurn` above it,
+`NotPositive` at or below zero). The profile lies wholly on one side of
+the axis, every vertex and every arc's nearest approach at a distance
+above `default_tolerance` — `Reason::ProfileTouchesAxis` within it,
+`ProfileCrossesAxis` across it, the apex and its degenerate edges being
+cycle 2's — and an arc whose centre is nearer the axis than its radius
+is `Reason::SpindleTorus`. Every segment sweeps one face: a segment
+parallel to the axis a cylinder, perpendicular a plane (an annulus, or a
+sector of one), oblique a cone with its apex on the axis; an arc centred
+on the axis a sphere, elsewhere a torus of `R` its centre's distance and
+`r` its radius (the quadric faces are cycle 1's *as surfaces*; their
+booleans are C3's, and the checker's S5 stays unchecked on them). The
+surfaces of revolution share one frame: origin on the axis, `X` the unit
+radial from the axis into the profile's plane — so `u = 0` *is* the
+profile plane and every seam lies in it — `Z` the axis direction, except
+a cone whose radius shrinks along the axis, which takes `Z = −axis` since
+the data model's cone grows along `+Z`. Every vertex sweeps a circular
+*rise* about the axis over `[0, angle]`; each side face's loop is start
+edge, rise, end edge, rise — the end edge the start edge's second use
+across the seam in a full turn — walked that way when the material sweeps
+along the profile's normal and the other way otherwise, and the face's
+use orientation is the surface normal against the segment's outward
+in-plane normal at its midpoint (material on the loop's left), uniform
+over a face by construction. Every pcurve is exact through `pcurve_on`,
+then translated by whole periods into the copy of the domain the loop is
+written in (the profile plane at `u = 0`, a seam's second use one period
+on), since `pcurve_on` reports a periodic parameter in `[0, 2π)`. A full
+turn of a profile with holes is `Reason::MultiShell`: each hole closes
+into a cavity, a shell of its own, which the one-shell `Solid` of cycle 1
+does not hold; a partial turn's holes open onto its flat ends and are one
+shell with the rest. `ops::extrude` is the plan's next step; there is no
+`planar_face` operation — a sheet of one face is C7's sheet bodies, and
+the cap construction is the sweeps' private helper.
 
 ### Errors
 
@@ -319,7 +365,8 @@ involved, so the message a consumer shows — or the agent reads — says
 |---|---|---|
 | `InvalidInput` | an input body fails the checker (checked in debug builds before the operation starts, and in release when the `paranoid` feature is on) | `Body`, the `Report` |
 | `Unsupported` | the exhaustive dispatch reached a surface or curve pair the kernel has no formula for yet | the two `GeomKind`s with their entities |
-| `Degenerate` | the requested result has no valid representation: a parameter that makes no geometry (`Reason::NonFinite`, `Reason::NotPositive` naming it — a zero radius, a box whose `min` is not below its `max`), a zero-thickness intersection, a profile crossing its revolve axis, a sweep of zero length; a boolean that selects no material (`Reason::Empty`: a target inside its tool, a `common` of disjoint operands), whose survivors make more than one shell (`Reason::MultiShell { shells }`: a split target, a disjoint fuse, a cavity), or whose faces touch along a curve interior to both result faces (`Reason::TangentContact`) | the entities (none for a primitive) and a `Reason` enum |
+| `Degenerate` | the requested result has no valid representation: a parameter that makes no geometry (`Reason::NonFinite`, `Reason::NotPositive` naming it — a zero radius, a box whose `min` is not below its `max`, a revolve angle at or below zero; `Reason::AngleAboveTurn` past `2π`), a zero-thickness intersection, a revolve whose axis is off the profile's plane (`Reason::AxisNotInProfilePlane`), whose profile crosses (`Reason::ProfileCrossesAxis`) or touches (`Reason::ProfileTouchesAxis`) its axis, or whose arc's circle crosses it (`Reason::SpindleTorus`); an extrude off its plane's normal (`Reason::DirectionNotNormal`); a boolean that selects no material (`Reason::Empty`: a target inside its tool, a `common` of disjoint operands); a result of more than one shell (`Reason::MultiShell { shells }`: a split target, a disjoint fuse, a cavity — a full revolve of a profile with holes); faces touching along a curve interior to both result faces (`Reason::TangentContact`) | the entities (none for a primitive or a sweep) and a `Reason` enum |
+| `Profile` | a sweep's sketch is not a valid profile: `Profile::edges` refused it (data-model §Profiles). An invalid profile has no entities to name, so it is neither `InvalidInput` nor `Degenerate` | the `ProfileError`, naming the loop and segment |
 | `Tolerance` | the result would need an entity tolerance above `Precision::max_tolerance` | the entity, the tolerance it wanted |
 | `NotFound` | a handle does not resolve in this model (wrong model, or compacted away) | the `Shape` |
 | `Internal` | a kernel bug the operation caught: the checker rejected its own output, the builder refused a step of its fixed sequence, a frame could not be placed from inputs it had validated, a point it had to classify could not be, a geometry query failed on validated input for a reason other than a missing closed form, a section edge crossed a seam the seam's own hit should have paved, a piece of a coincident face pair's edge matched no piece of the edge it lies along, the (u, v) arrangement of a face was not the subdivision the pave model promised (`SplitFault`: a dangling section edge, a cycle not turning once, a hole inside no piece, a piece with no interior point, a pave at an edge's end) | a `Fault` — the `Report`, the `BuildError`, the `FrameError`, the `ClassifyError`, the `GeomError`, the two faces of the seam crossing, the edge and face of the unmatched common block, or the `SplitFault` naming the face |
@@ -559,7 +606,9 @@ mesh-based mass properties (`ops::measure` integrates the B-Rep).
   that feed it a curve or a surface without a body (`polyline_of`,
   `wireframe_of`), the Rerun stream, the fixture loader and corpus lint
   (`fixtures`), the corpus runner (`corpus::run`, the fixture test of
-  roadmap §Fixtures — checker, counts and genus, the oracle's reading
+  roadmap §Fixtures — a `profile` step built into a `geom::Profile` kept
+  beside the bodies for the sweep steps that name it, no body and no
+  accounting of its own; checker, counts and genus, the oracle's reading
   of the STEP, the mass properties against the oracle's within the
   fixture's tolerances, the mesh closed and within `mesh_volume_rel`,
   every probe classified as the oracle classifies it
@@ -580,7 +629,14 @@ mesh-based mass properties (`ops::measure` integrates the B-Rep).
   then `compare.py` through `uv`, a missing environment a loud error), and
   the seeded property-test runner and strategies (`prop`,
   with every analytic surface and curve in a random pose and random
-  clamped NURBS curves and surfaces under `prop::geom`). `prop` runs a
+  clamped NURBS curves and surfaces under `prop::geom`; sketches under
+  `prop::profile` — `star`, a polygon with arcs and holes in either
+  orientation, and `rectilinear`, a staircase of segments parallel and
+  perpendicular to an axis beside it, given as a `Sweep` with the axis,
+  a revolve angle and an extrude length; and `prop::sweep`, Pappus's
+  theorems as the oracle a sweep's volume and area are held to, taken
+  in the profile's plane by `region_integral` and a quadrature over its
+  boundary, an independent path from `measure`'s flux). `prop` runs a
   property whole through `check`, or split across `k` shards through
   `prop_shards!`, which writes one `#[test]` per shard over a body given
   once so libtest's pool runs them at once instead of one property holding

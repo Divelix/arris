@@ -43,6 +43,7 @@ fn every_row_of_the_roadmap_table_has_a_fixture() {
         "sweep/extrude-plate-with-hole",
         "sweep/revolve-tube",
         "sweep/revolve-quarter",
+        "sweep/revolve-l-profile",
         "provenance/bolt-pattern-rebuild",
     ] {
         assert!(

@@ -14,7 +14,9 @@
 //! [`CorpusError`] saying which fixture, which stage and what differed;
 //! a recipe step the kernel has no operation for yet is
 //! [`CorpusError::Unsupported`] naming the op, which is what an
-//! `#[ignore]`d fixture reports until its milestone lands. A result the
+//! `#[ignore]`d fixture reports until its milestone lands. A `profile`
+//! step builds a `geom::Profile` kept beside the bodies for the sweep
+//! steps that name it; it makes no body and needs no accounting. A result the
 //! oracle recorded no solid for (`expected.degenerate`) must fail with
 //! `OpError::Degenerate`, and one the recipe marks `analytic.expect_error`
 //! must fail with that typed refusal; either ends the run there, the
@@ -23,6 +25,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
+use arris_geom::Profile;
 use arris_io::arris_check::arris_topo::arris_math::nalgebra::UnitQuaternion;
 use arris_io::arris_check::arris_topo::arris_math::{
     Axis, FrameError, Isometry, Point3, UnitVec3, Vec3,
@@ -33,9 +36,12 @@ use arris_io::arris_check::{Level, Report, check};
 use arris_io::step::{self, StepError};
 use arris_mesh::tessellate;
 use arris_ops::measure::mass_properties;
-use arris_ops::{OpError, Reason, common, cut, fuse, primitive_box, primitive_cylinder, transform};
+use arris_ops::{
+    OpError, Reason, common, cut, fuse, primitive_box, primitive_cylinder, revolve, transform,
+};
 
 use crate::dump::dump_text;
+use crate::fixtures::geom::{self as geom_spec, build_profile};
 use crate::fixtures::{
     self, Class, Counts, ExpectError, ExprError, Fixture, FixtureError, Measured, Num, Rotate,
     Step, Tolerances,
@@ -90,6 +96,16 @@ pub enum CorpusError {
         step: String,
         /// The cause.
         source: ExprError,
+    },
+    /// A `profile` step's plane or numbers do not build.
+    #[error("{fixture}: step {step:?}: profile: {source}")]
+    Profile {
+        /// The fixture.
+        fixture: String,
+        /// The step's name.
+        step: String,
+        /// The cause, boxed to keep the error small.
+        source: Box<geom_spec::BuildError>,
     },
     /// A recipe axis is not one.
     #[error("{fixture}: step {step:?}: axis: {source}")]
@@ -316,16 +332,19 @@ pub struct Made {
     pub inputs: Vec<Body>,
 }
 
-/// A recipe built whole: the model every step was built in, each step by
-/// name, and the name of the step the recipe calls its result — what a
-/// test of a chain of operations reads a fixture through when it wants
-/// the steps' records, which [`run`] only accounts for.
+/// A recipe built whole: the model every step was built in, each body
+/// step by name, the profiles the `profile` steps described, and the name
+/// of the step the recipe calls its result — what a test of a chain of
+/// operations reads a fixture through when it wants the steps' records,
+/// which [`run`] only accounts for.
 #[derive(Debug)]
 pub struct Chain {
     /// The model the steps were built in.
     pub model: Model,
-    /// Every step of the recipe, by name.
+    /// Every body step of the recipe, by name.
     pub steps: BTreeMap<String, Made>,
+    /// Every `profile` step, by name.
+    pub profiles: BTreeMap<String, Profile>,
     /// The name of the result step in [`Chain::steps`].
     pub result: String,
 }
@@ -361,27 +380,42 @@ pub fn chain(dir: &Path, variant: &str) -> Result<Chain, CorpusError> {
     };
     let mut model = Model::default();
     let mut steps = BTreeMap::new();
-    build_all(&mut model, &fixture, &params, None, &mut steps)?;
+    let mut profiles = BTreeMap::new();
+    build_all(
+        &mut model,
+        &fixture,
+        &params,
+        None,
+        &mut steps,
+        &mut profiles,
+    )?;
     Ok(Chain {
         model,
         steps,
+        profiles,
         result: fixture.recipe.result.clone(),
     })
 }
 
-/// Builds every step of `fixture`'s recipe into `m` and `made`. Returns
-/// `false` when `refusal` is set and the result step failed with the
-/// refusal expected — the recipe is built no further and nothing after
-/// it is comparable; `true` when every step built.
+/// Builds every step of `fixture`'s recipe into `m` and `made`, a
+/// `profile` step into `profiles`. Returns `false` when `refusal` is set
+/// and the result step failed with the refusal expected — the recipe is
+/// built no further and nothing after it is comparable; `true` when every
+/// step built.
 fn build_all(
     m: &mut Model,
     fixture: &Fixture,
     params: &BTreeMap<String, f64>,
     refusal: Option<Refusal>,
     made: &mut BTreeMap<String, Made>,
+    profiles: &mut BTreeMap<String, Profile>,
 ) -> Result<bool, CorpusError> {
     for step in &fixture.recipe.steps {
-        let built = build_step(m, fixture, step, params, made);
+        if let Some(profile) = build_profile_step(fixture, step, params)? {
+            profiles.insert(step.name().to_string(), profile);
+            continue;
+        }
+        let built = build_step(m, fixture, step, params, made, profiles);
         if let Some(refusal) = refusal {
             if step.name() == fixture.recipe.result {
                 refusal.assert(&fixture.name, step.name(), built.map(|_| ()))?;
@@ -453,7 +487,8 @@ pub fn run(dir: &Path, variant: &str) -> Result<(), CorpusError> {
     };
     let mut m = Model::default();
     let mut made: BTreeMap<String, Made> = BTreeMap::new();
-    if !build_all(&mut m, &fixture, &params, refusal, &mut made)? {
+    let mut profiles: BTreeMap<String, Profile> = BTreeMap::new();
+    if !build_all(&mut m, &fixture, &params, refusal, &mut made, &mut profiles)? {
         return Ok(());
     }
     let Some(result) = made.get(&fixture.recipe.result) else {
@@ -586,9 +621,11 @@ pub fn run(dir: &Path, variant: &str) -> Result<(), CorpusError> {
         }
     }
 
-    // Provenance accounting, every step.
+    // Provenance accounting, every body step (a profile step makes none).
     for step in &fixture.recipe.steps {
-        let out = &made[step.name()];
+        let Some(out) = made.get(step.name()) else {
+            continue;
+        };
         account(&m, out).map_err(|what| CorpusError::Provenance {
             fixture: name.clone(),
             step: step.name().to_string(),
@@ -641,8 +678,10 @@ pub fn run(dir: &Path, variant: &str) -> Result<(), CorpusError> {
 pub struct Inputs {
     /// The model the steps were built in.
     pub model: Model,
-    /// Every step before the result, by name.
+    /// Every body step before the result, by name.
     pub bodies: BTreeMap<String, Body>,
+    /// Every `profile` step before the result, by name.
+    pub profiles: BTreeMap<String, Profile>,
     /// The result step, unbuilt.
     pub result: Step,
 }
@@ -690,16 +729,22 @@ pub fn inputs(dir: &Path, variant: &str) -> Result<Inputs, CorpusError> {
     };
     let mut model = Model::default();
     let mut made: BTreeMap<String, Made> = BTreeMap::new();
+    let mut profiles: BTreeMap<String, Profile> = BTreeMap::new();
     for step in &fixture.recipe.steps {
         if step.name() == fixture.recipe.result {
             let bodies = made.iter().map(|(k, v)| (k.clone(), v.body)).collect();
             return Ok(Inputs {
                 model,
                 bodies,
+                profiles,
                 result: step.clone(),
             });
         }
-        let out = build_step(&mut model, &fixture, step, &params, &made)?;
+        if let Some(profile) = build_profile_step(&fixture, step, &params)? {
+            profiles.insert(step.name().to_string(), profile);
+            continue;
+        }
+        let out = build_step(&mut model, &fixture, step, &params, &made, &profiles)?;
         made.insert(step.name().to_string(), out);
     }
     Err(CorpusError::Reference {
@@ -781,12 +826,51 @@ fn motion(
     Ok(m)
 }
 
+/// The [`Profile`] of a `profile` step, `None` for any other step.
+fn build_profile_step(
+    fixture: &Fixture,
+    step: &Step,
+    params: &BTreeMap<String, f64>,
+) -> Result<Option<Profile>, CorpusError> {
+    let Step::Profile {
+        name,
+        plane,
+        outer,
+        holes,
+    } = step
+    else {
+        return Ok(None);
+    };
+    build_profile(name, plane, outer, holes, params)
+        .map(Some)
+        .map_err(|source| CorpusError::Profile {
+            fixture: fixture.name.clone(),
+            step: name.clone(),
+            source: Box::new(source),
+        })
+}
+
+/// The profile a sweep step names, built by an earlier `profile` step.
+fn profile_reference<'a>(
+    fixture: &Fixture,
+    step: &Step,
+    name: &str,
+    profiles: &'a BTreeMap<String, Profile>,
+) -> Result<&'a Profile, CorpusError> {
+    profiles.get(name).ok_or_else(|| CorpusError::Reference {
+        fixture: fixture.name.clone(),
+        step: step.name().to_string(),
+        name: name.to_string(),
+    })
+}
+
 fn build_step(
     m: &mut Model,
     fixture: &Fixture,
     step: &Step,
     params: &BTreeMap<String, f64>,
     made: &BTreeMap<String, Made>,
+    profiles: &BTreeMap<String, Profile>,
 ) -> Result<Made, CorpusError> {
     let name = fixture.name.clone();
     let op = |source: OpError| CorpusError::Op {
@@ -837,14 +921,35 @@ fn build_step(
                 inputs: Vec::new(),
             })
         }
+        // A profile step is `build_profile_step`'s; reaching it here is a
+        // caller that did not ask first, and reports as an op the kernel
+        // has no body-making operation for — which is true.
         Step::Profile { .. } => Err(unsupported("profile")),
         Step::Extrude { profile, .. } => {
-            reference(fixture, step, profile, made)?;
+            profile_reference(fixture, step, profile, profiles)?;
             Err(unsupported("extrude"))
         }
-        Step::Revolve { profile, .. } => {
-            reference(fixture, step, profile, made)?;
-            Err(unsupported("revolve"))
+        Step::Revolve {
+            profile,
+            axis,
+            angle_deg,
+            ..
+        } => {
+            let profile = profile_reference(fixture, step, profile, profiles)?;
+            let origin = point(fixture, step, &axis.origin, params)?;
+            let direction = vector(fixture, step, &axis.direction, params)?;
+            let axis = Axis::new(origin, direction).map_err(|source| CorpusError::Axis {
+                fixture: name.clone(),
+                step: step.name().to_string(),
+                source,
+            })?;
+            let angle = number(fixture, step, angle_deg, params)?.to_radians();
+            let (body, provenance) = revolve(m, profile, axis, angle).map_err(op)?;
+            Ok(Made {
+                body,
+                provenance,
+                inputs: Vec::new(),
+            })
         }
         Step::Transform {
             of,

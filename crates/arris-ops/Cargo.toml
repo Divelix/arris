@@ -22,11 +22,12 @@ thiserror.workspace = true
 rayon = { workspace = true, optional = true }
 
 # The sample bodies, the dump and the oracle seam live in `arris-debug`,
-# the STEP writer in `arris-io`; dev-dependencies are exempt from the
-# layer rule.
+# the STEP writer in `arris-io`, the tessellator the sweeps' mesh check
+# runs in `arris-mesh`; dev-dependencies are exempt from the layer rule.
 [dev-dependencies]
 arris-debug.workspace = true
 arris-io.workspace = true
+arris-mesh.workspace = true
 proptest.workspace = true
 
 [lints]

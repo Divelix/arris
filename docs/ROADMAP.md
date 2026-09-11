@@ -334,6 +334,7 @@ edges (a seam counted once), faces, loops. `χ` is the Euler line
 | `sweep/extrude-plate-with-hole` | rectangle 40×30 with a hole r 4 at (20,15), extruded 10 | 11497.3452 | 3950.7964 | 10/15/7/9 (same numbers as `through-hole`: the cross-check between the two paths) | 1 |
 | `sweep/revolve-tube` | rectangle x∈[1,2], z∈[−1,1] revolved 2π about z | 18.8496 | 56.5487 | 4/6/4/6 | 1 |
 | `sweep/revolve-quarter` | the same rectangle revolved π/2 | 4.7124 | 18.1372 | 8/12/6/6 | 0 |
+| `sweep/revolve-l-profile` | an L of six segments, x∈[1,3], z∈[−1,1] less the notch [2,3]×[0,1], revolved 3π/2: every face a plane or a cylinder, the walls' u range past π with no seam | 25.9181 | 76.6858 | 12/18/8/8 | 0 |
 | `provenance/bolt-pattern-rebuild` | `bolt-pattern-8` at (t 10, r 3, R 35), (12, 3.5, 35), (10, 3, 30) | — | — | 8/8 hole walls with the same `origins` chain in all three; the plate's top face `Modified` through the chain into one face with 9 loops | — |
 
 Each also carries probe points (one inside, one outside, one on a face,

@@ -128,9 +128,78 @@ pub enum CylinderPart {
     TopVertex,
 }
 
+/// What an entity of a sweep — `extrude` or `revolve` — is, named by the
+/// part of the consumer's sketch it came from: the caps from the profile
+/// face, a side face and its start and end edges from one segment, a rise
+/// and its two vertices from one vertex of the profile. The indices are
+/// the consumer's own (`docs/DATA-MODEL.md` §Profiles): `loop_index` `0`
+/// is the outer loop and the holes count from `1`; `segment` is the
+/// segment's position in its loop as written; `vertex` is the index of
+/// the segment that *starts* there, so a circle loop has segment `0` and
+/// vertex `0`. In a full revolve there is no `EndCap`, no `EndEdge` and
+/// no `EndVertex`: the start edges are the seams and the start vertices
+/// the only ones; and a segment perpendicular to the axis sweeps an
+/// annulus of two closed rises, so it has no `StartEdge` either.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum SweepPart {
+    /// The body.
+    Body,
+    /// The one shell.
+    Shell,
+    /// The profile face where the sweep starts, its outward normal against
+    /// the sweep.
+    StartCap,
+    /// The profile face where the sweep ends.
+    EndCap,
+    /// The face one segment sweeps.
+    Side {
+        /// The segment's loop.
+        loop_index: usize,
+        /// The segment.
+        segment: usize,
+    },
+    /// The segment itself, where the sweep starts.
+    StartEdge {
+        /// The segment's loop.
+        loop_index: usize,
+        /// The segment.
+        segment: usize,
+    },
+    /// The segment carried to where the sweep ends.
+    EndEdge {
+        /// The segment's loop.
+        loop_index: usize,
+        /// The segment.
+        segment: usize,
+    },
+    /// The edge one vertex of the profile sweeps: a line for an extrude, a
+    /// circle about the axis for a revolve.
+    Rise {
+        /// The vertex's loop.
+        loop_index: usize,
+        /// The vertex: the index of the segment that starts there.
+        vertex: usize,
+    },
+    /// The vertex itself, where the sweep starts.
+    StartVertex {
+        /// The vertex's loop.
+        loop_index: usize,
+        /// The vertex.
+        vertex: usize,
+    },
+    /// The vertex carried to where the sweep ends.
+    EndVertex {
+        /// The vertex's loop.
+        loop_index: usize,
+        /// The vertex.
+        vertex: usize,
+    },
+}
+
 /// What an entity is to the operation that made it from nothing:
 /// exhaustive over the operations that generate from no input body, one
-/// variant per operation kind (the sweeps of M5 add the profile's roles).
+/// variant per operation kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Role {
@@ -138,6 +207,10 @@ pub enum Role {
     Box(BoxPart),
     /// An entity of `primitive_cylinder`.
     Cylinder(CylinderPart),
+    /// An entity of `extrude`.
+    Extrude(SweepPart),
+    /// An entity of `revolve`.
+    Revolve(SweepPart),
 }
 
 impl fmt::Display for Role {
@@ -145,6 +218,8 @@ impl fmt::Display for Role {
         match self {
             Role::Box(part) => write!(f, "box:{part:?}"),
             Role::Cylinder(part) => write!(f, "cylinder:{part:?}"),
+            Role::Extrude(part) => write!(f, "extrude:{part:?}"),
+            Role::Revolve(part) => write!(f, "revolve:{part:?}"),
         }
     }
 }
