@@ -32,6 +32,13 @@ jobs:
   # (docs/ROADMAP.md §M1); the pre-commit hook keeps the 256 default.
   # The STEP tests run the oracle's compare.py on Arris's output, so the
   # oracle environment is synced first (tools/oracle/README.md).
+  #
+  # The suite runs under nextest, which overlaps the test binaries and puts
+  # every test in its own process; a property split into shards
+  # (`arris_debug::prop_shards!`) is what makes that worth doing. nextest
+  # does not run doctests, so those are their own step — together the two
+  # are the whole suite, and a plain `cargo test --workspace` beside them
+  # would only pay for the same work twice.
   test:
     runs-on: ubuntu-latest
     env:
@@ -40,21 +47,23 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@nextest
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
       - run: uv sync --project tools/oracle
-      - run: cargo test --workspace
-      # arris-mesh's `parallel` feature (docs/plans/m3-tessellation.md
-      # step 7): the same tests, so every sample body's and primitive's
-      # mesh is byte-identical with faces triangulated in parallel.
-      - run: cargo test -p arris-mesh --features parallel
-      # arris-ops's (docs/plans/m4-booleans.md step 13), and the corpus
-      # through the facade with both on: every boolean fixture's dump and
-      # every property test's result byte-identical with the face pairs
-      # intersected and the faces split in parallel.
-      - run: cargo test -p arris-ops --features parallel
-      - run: cargo test -p arris --features parallel
+      - run: cargo nextest run --workspace
+      - run: cargo test --workspace --doc
+      # arris-mesh's `parallel` feature: the same tests, so every sample
+      # body's and primitive's mesh is byte-identical with faces
+      # triangulated in parallel.
+      - run: cargo nextest run -p arris-mesh --features parallel
+      # arris-ops's, and the corpus through the facade with both on: every
+      # boolean fixture's dump and every property test's result
+      # byte-identical with the face pairs intersected and the faces split
+      # in parallel.
+      - run: cargo nextest run -p arris-ops --features parallel
+      - run: cargo nextest run -p arris --features parallel
 
   # A library's docs are part of its API: a broken intra-doc link or a
   # missing doc on a public item fails the build.
@@ -102,11 +111,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --workspace --target wasm32-unknown-unknown
 
-  # arris-debug's `rerun` feature pulls in the large `rerun` SDK crate
-  # (docs/plans/m3-tessellation.md step 6, ⚠ OPEN resolved): kept out of
-  # the hook and the `test` job so that feature's build time never slows
-  # either, but still blocking here since a broken feature is a broken
-  # crate.
+  # arris-debug's `rerun` feature pulls in the large `rerun` SDK crate:
+  # kept out of the hook and the `test` job so that feature's build time
+  # never slows either, but still blocking here since a broken feature is
+  # a broken crate.
   rerun:
     runs-on: ubuntu-latest
     steps:

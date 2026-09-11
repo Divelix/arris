@@ -5,8 +5,17 @@
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 [ -f Cargo.toml ] || exit 0
+command -v cargo-nextest >/dev/null || {
+  echo "pre-commit: cargo-nextest is missing. Run:" >&2
+  echo "    cargo install cargo-nextest --locked" >&2
+  echo "(AGENTS.md, \"Setup\"). The suite runs under nextest so that the 53" >&2
+  echo "test binaries overlap instead of running one after another." >&2
+  exit 1
+}
+
 echo "pre-commit: layer rule" && tools/check-layers.sh
 echo "pre-commit: cargo fmt --check" && cargo fmt --all -- --check
 echo "pre-commit: cargo clippy" && cargo clippy --workspace --all-targets -- -D warnings
-echo "pre-commit: cargo test" && cargo test --workspace --quiet
+echo "pre-commit: cargo nextest" && cargo nextest run --workspace --cargo-quiet --status-level fail
+echo "pre-commit: cargo test --doc" && cargo test --workspace --doc --quiet
 echo "pre-commit: cargo doc" && RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --quiet

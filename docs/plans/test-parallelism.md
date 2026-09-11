@@ -217,7 +217,7 @@ or bound has to be established here.
   else step 1's table shows above the resulting wall clock gets the same
   treatment in this step.
 
-- [ ] Step 4 **[2]** — **nextest in the hook and CI.** The careful part is
+- [x] Step 4 **[2]** — **nextest in the hook and CI.** The careful part is
   that nextest runs every test in its own process at much higher
   concurrency: the corpus runner writes STEP under `target/inspect/`, and
   per-test processes make a name collision there likelier than the
@@ -312,13 +312,28 @@ it.
   sharding it would add shards without moving the wall clock. It becomes
   worth revisiting only if `boolean_prop` gets cheaper per case (the S5
   backlog line).
-- `⚠ OPEN:` **Is nextest required or optional?** A hook that falls back
-  to `cargo test` when nextest is absent keeps a fresh clone working; a
-  hard requirement keeps every committer running the same thing, which is
-  what "`main` is always green" rests on. **Human, step 4.**
-  Recommendation: required, with the install line in `AGENTS.md` §Setup —
-  the hook already demands one setup command, and a fallback means two
-  code paths that can disagree.
-- `⚠ OPEN:` **Does CI keep a plain `cargo test --workspace` as well?**
-  **Agent, step 4.** Recommendation: no — nextest plus `--doc` is the
-  suite, and a second full run would cost more than the parallelism buys.
+- **Resolved (step 4) by the human — nextest is required.** The hook
+  fails with the `cargo install cargo-nextest --locked` line when it is
+  absent rather than falling back to `cargo test`, and `AGENTS.md` §Setup
+  carries that line beside `git config core.hooksPath`. One code path, so
+  every committer runs the same suite. Nothing is added to the backlog.
+- **Resolved (step 4) — CI keeps no plain `cargo test --workspace`.** As
+  recommended: `cargo nextest run --workspace` plus `cargo test --workspace
+  --doc` is the whole suite, and a second full run would cost more than the
+  parallelism buys. The `--features parallel` jobs moved to nextest too.
+  The reason is written into the job's comment, where the next person to
+  wonder will be.
+
+- **Found and fixed in step 4 — two tests wrote one STEP file.** The step
+  asked whether `target/inspect/` needed making per-test-unique. It did,
+  and not only because of nextest: `corpus::run` named the file after the
+  fixture's *recipe*, so `primitive_cylinder` and the scratch copy of that
+  recipe in `a_dump_that_differs_by_one_id_fails_with_the_diff` both wrote
+  `primitive-cylinder-default.step` — already concurrently, as two libtest
+  threads, before this plan. `corpus::step_tag` now appends a short digest
+  of the directory for any copy outside the corpus; the canonical fixture
+  keeps the name `docs/ARCHITECTURE.md` and the `inspect` skill quote.
+  Nothing else collides: renders use distinct names per test, and the
+  scratch dirs already carry the process id. No test depended on sharing a
+  process — nothing in the workspace mutates the environment or shares a
+  static across tests.

@@ -41,6 +41,7 @@ use crate::fixtures::{
     Step, Tolerances,
 };
 use crate::oracle::{self, OracleError};
+use sha2::{Digest, Sha256};
 
 /// The environment variable that makes [`run`] write `dump.txt` instead
 /// of diffing against it.
@@ -392,6 +393,30 @@ fn build_all(
     Ok(true)
 }
 
+/// The name of the STEP file [`run`] writes for the oracle:
+/// `<area>-<slug>-<variant>` for a fixture in the corpus, and the same
+/// with a short digest of the directory for a copy of that recipe
+/// anywhere else.
+///
+/// Two runs of one recipe from different directories — the corpus's own
+/// copy and a scratch copy in a test of this runner — otherwise name the
+/// same file, and they run at the same time: under libtest as two threads
+/// of one binary, and under `cargo nextest` as two processes. The
+/// canonical directory keeps the plain name `docs/ARCHITECTURE.md`
+/// §Formats and tools and the `inspect` skill quote, so a failure is still
+/// looked at under the name the docs give it.
+fn step_tag(name: &str, variant: &str, dir: &Path) -> String {
+    let tag = format!("{}-{variant}", name.replace('/', "-"));
+    let canonical = crate::fixtures::corpus_root().join(name);
+    let same = dir == canonical
+        || matches!((dir.canonicalize(), canonical.canonicalize()), (Ok(a), Ok(b)) if a == b);
+    if same {
+        return tag;
+    }
+    let digest = Sha256::digest(dir.to_string_lossy().as_bytes());
+    format!("{tag}-{:02x}{:02x}{:02x}", digest[0], digest[1], digest[2])
+}
+
 /// Runs every stage on `dir`'s recipe under `variant`. Errors: the first
 /// stage that fails, with what differed. Writes `target/inspect/<area>-
 /// <slug>-<variant>.step` for the oracle, and the dump file under
@@ -491,7 +516,7 @@ pub fn run(dir: &Path, variant: &str) -> Result<(), CorpusError> {
         fixture: name.clone(),
         source,
     })?;
-    let tag = format!("{}-{variant}", name.replace('/', "-"));
+    let tag = step_tag(&name, variant, dir);
     oracle::compare_dir(dir, &text, Some(variant), &tag)?;
 
     let tolerances = fixture.recipe.tolerances;
@@ -1038,6 +1063,27 @@ fn diff(committed: &str, actual: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn one_recipe_in_two_directories_names_two_step_files() {
+        // The corpus's own copy keeps the name the docs quote.
+        let canonical = crate::fixtures::corpus_root().join("primitive/cylinder");
+        assert_eq!(
+            step_tag("primitive/cylinder", "default", &canonical),
+            "primitive-cylinder-default"
+        );
+        // A scratch copy of the same recipe — what this module's own tests
+        // build — does not, so the two never write one file while they run
+        // at the same time.
+        let scratch = Path::new("/tmp/arris-corpus-dump-diff-1");
+        let other = Path::new("/tmp/arris-corpus-dump-diff-2");
+        let a = step_tag("primitive/cylinder", "default", scratch);
+        let b = step_tag("primitive/cylinder", "default", other);
+        assert!(a.starts_with("primitive-cylinder-default-"), "{a}");
+        assert_ne!(a, "primitive-cylinder-default");
+        assert_ne!(a, b, "two scratch copies name two files");
+        assert_eq!(a, step_tag("primitive/cylinder", "default", scratch));
+    }
 
     #[test]
     fn diff_names_the_lines_that_differ() {

@@ -18,6 +18,7 @@ geometry, live in `.agents/skills/` (same symlink arrangement).
 
 ```sh
 git config core.hooksPath .githooks   # fmt, clippy -D warnings, test, doc before every commit
+cargo install cargo-nextest --locked  # the hook runs the suite under nextest
 ```
 
 ## Current state
