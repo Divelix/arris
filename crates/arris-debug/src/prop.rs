@@ -7,6 +7,16 @@
 //! randomness outside property tests, and those are seeded). A failure
 //! panics with the shrunk input and the seed that reproduces it.
 //!
+//! A property whose cases are expensive is *sharded*:
+//! [`prop_shards!`](crate::prop_shards)
+//! writes one `#[test]` per shard over a body given once, so libtest's
+//! thread pool runs the shards concurrently instead of one property
+//! sitting on one thread. The `k` shards together run [`cases`] cases and
+//! never fewer, each from its own [`shard_seed`]; the derivation ignores
+//! `k`, so raising a property's shard count shortens every existing
+//! shard's stream to a prefix of what it was rather than re-rolling the
+//! corpus.
+//!
 //! Regressions are not persisted by proptest: a failure becomes a fixture
 //! under `tests/fixtures/` with the seed in its commit body
 //! (`tests/fixtures/README.md` §Property-test failures).
@@ -38,6 +48,7 @@ use arris_math::nalgebra::{Quaternion, UnitQuaternion};
 use arris_math::{Frame, Isometry, Point3, UnitVec3, Vec3};
 use proptest::prelude::*;
 use proptest::test_runner::{Config, RngAlgorithm, TestCaseError, TestError, TestRng, TestRunner};
+use sha2::{Digest, Sha256};
 
 /// The environment variable that sets the number of cases per property.
 pub const CASES_VAR: &str = "ARRIS_PROPTEST_CASES";
@@ -96,8 +107,13 @@ pub fn seed_hex(seed: &[u8; 32]) -> String {
 /// `#![proptest_config(arris_debug::prop::config())]` — but such a block
 /// seeds itself from entropy; [`check`] is the seeded path.
 pub fn config() -> Config {
+    config_of(cases())
+}
+
+/// [`config`] at an explicit case count, which is what one shard runs.
+fn config_of(cases: u32) -> Config {
     Config {
-        cases: cases(),
+        cases,
         failure_persistence: None,
         max_shrink_iters: 4096,
         ..Config::default()
@@ -106,7 +122,15 @@ pub fn config() -> Config {
 
 /// A runner over [`config`] seeded with `seed`.
 pub fn runner_with_seed(seed: &[u8; 32]) -> TestRunner {
-    TestRunner::new_with_rng(config(), TestRng::from_seed(RngAlgorithm::ChaCha, seed))
+    runner_of(seed, cases())
+}
+
+/// A runner over `cases` cases seeded with `seed`.
+fn runner_of(seed: &[u8; 32], cases: u32) -> TestRunner {
+    TestRunner::new_with_rng(
+        config_of(cases),
+        TestRng::from_seed(RngAlgorithm::ChaCha, seed),
+    )
 }
 
 /// Runs `test` over [`cases`] values of `strategy` from [`seed`]. On
@@ -142,6 +166,163 @@ where
         )),
         Err(TestError::Abort(reason)) => Err(format!("property aborted: {reason}")),
     }
+}
+
+/// The seed shard `shard` draws its cases from: `sha256(base ‖
+/// shard.to_le_bytes())`.
+///
+/// Guarantees: the shard *count* is not in the derivation. Shard `i`'s
+/// case stream depends only on `base` and `i`, so raising a property's
+/// shard count leaves every existing shard's stream a prefix of what it
+/// was and only adds new shards — changing `k` is not a silent re-roll of
+/// the corpus.
+///
+/// ```
+/// use arris_debug::prop::{DEFAULT_SEED, shard_seed};
+///
+/// assert_ne!(shard_seed(&DEFAULT_SEED, 0), shard_seed(&DEFAULT_SEED, 1));
+/// assert_eq!(shard_seed(&DEFAULT_SEED, 2), shard_seed(&DEFAULT_SEED, 2));
+/// ```
+pub fn shard_seed(base: &[u8; 32], shard: u32) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(base);
+    hasher.update(shard.to_le_bytes());
+    hasher.finalize().into()
+}
+
+/// The cases one of `shards` shards runs: [`cases`] over `shards`,
+/// rounded up.
+///
+/// Guarantees: `shards * cases_per_shard(shards) >= cases()`, so a
+/// sharded property never runs fewer cases than the configured count —
+/// a remainder rounds up rather than being dropped. Panics when `shards`
+/// is zero.
+///
+/// ```
+/// use arris_debug::prop::{cases, cases_per_shard};
+///
+/// assert!(7 * cases_per_shard(7) >= cases());
+/// assert_eq!(cases_per_shard(1), cases());
+/// ```
+pub fn cases_per_shard(shards: u32) -> u32 {
+    assert!(shards > 0, "a property has at least one shard");
+    cases().div_ceil(shards)
+}
+
+/// Runs `test` over shard `shard` of `shards`: [`cases_per_shard`]
+/// values of `strategy` from [`shard_seed`] of [`seed`]. On failure,
+/// panics with the shrunk input, the shard, and the
+/// `ARRIS_PROPTEST_SEED=…` *base* seed that reproduces the whole run.
+///
+/// Written through [`prop_shards!`](crate::prop_shards) rather than called
+/// directly, so the
+/// shard index and the shard count cannot disagree.
+pub fn check_shard<S, F>(shard: u32, shards: u32, strategy: S, test: F)
+where
+    S: Strategy,
+    S::Value: Debug,
+    F: Fn(S::Value) -> Result<(), TestCaseError>,
+{
+    let base = seed();
+    if let Err(message) = try_check_shard(&base, shard, shards, strategy, test) {
+        panic!("{message}");
+    }
+}
+
+/// [`check_shard`] with an explicit base seed, returning the failure
+/// message instead of panicking. What a test of the harness itself uses.
+pub fn try_check_shard<S, F>(
+    base: &[u8; 32],
+    shard: u32,
+    shards: u32,
+    strategy: S,
+    test: F,
+) -> Result<(), String>
+where
+    S: Strategy,
+    S::Value: Debug,
+    F: Fn(S::Value) -> Result<(), TestCaseError>,
+{
+    assert!(
+        shard < shards,
+        "shard {shard} is not one of {shards} shards"
+    );
+    let mut runner = runner_of(&shard_seed(base, shard), cases_per_shard(shards));
+    match runner.run(&strategy, test) {
+        Ok(()) => Ok(()),
+        Err(TestError::Fail(reason, value)) => Err(format!(
+            "property failed in shard {shard} of {shards}: {reason}\nminimal failing input: {value:#?}\nreproduce the whole run with {SEED_VAR}={} {CASES_VAR}={} — the base seed and the total, not the shard's",
+            seed_hex(base),
+            cases()
+        )),
+        Err(TestError::Abort(reason)) => Err(format!(
+            "property aborted in shard {shard} of {shards}: {reason}"
+        )),
+    }
+}
+
+/// Writes one `#[test]` per shard of a property, over a body given once.
+///
+/// Guarantees: the `k` tests together run at least
+/// [`prop::cases`](crate::prop::cases) cases of the strategy, each shard from
+/// its own [`shard_seed`](crate::prop::shard_seed) of
+/// [`seed`](crate::prop::seed), and `k` is
+/// the length of the list of shard names. The tests go in a module named
+/// after the property, so a failure reads `property::shard_3` and names
+/// the shard it is; the message it panics with names the base seed that
+/// reproduces the whole run.
+///
+/// The shards are named rather than numbered because `macro_rules!`
+/// cannot build an ident out of a number, and the workspace is not
+/// taking a `seq-macro` dependency to let it: a shard's index is its
+/// name's position in the list, and the count is the list's length, so
+/// both are visible where the property is written.
+///
+/// ```
+/// use arris_debug::prop;
+/// use proptest::prelude::*;
+///
+/// arris_debug::prop_shards! {
+///     /// Four shards of one property, run by libtest concurrently.
+///     drawn_values_stay_in_range [shard_0 shard_1 shard_2 shard_3]
+///         (v) = prop::finite_f64(0.0..=1.0) => {
+///             prop_assert!((0.0..=1.0).contains(&v));
+///             Ok(())
+///         }
+/// }
+/// ```
+#[macro_export]
+macro_rules! prop_shards {
+    (
+        $(#[$meta:meta])*
+        $name:ident [$($shard:ident)+] ($arg:pat_param) = $strategy:expr => $body:block
+    ) => {
+        $(#[$meta])*
+        mod $name {
+            #[allow(unused_imports)]
+            use super::*;
+
+            $crate::prop_shards!(
+                @shards (0u32 $(+ $crate::prop_shards!(@one $shard))+), 0u32,
+                [$($shard)+], ($arg) = $strategy => $body
+            );
+        }
+    };
+    (@one $shard:ident) => { 1u32 };
+    (@shards $shards:expr, $index:expr, [], ($arg:pat_param) = $strategy:expr => $body:block) => {};
+    (
+        @shards $shards:expr, $index:expr, [$first:ident $($rest:ident)*],
+        ($arg:pat_param) = $strategy:expr => $body:block
+    ) => {
+        #[test]
+        fn $first() {
+            $crate::prop::check_shard($index, $shards, $strategy, |$arg| $body);
+        }
+
+        $crate::prop_shards!(
+            @shards $shards, $index + 1u32, [$($rest)*], ($arg) = $strategy => $body
+        );
+    };
 }
 
 /// Finite `f64` values in `range`, both ends included; never NaN or
@@ -235,9 +416,119 @@ pub fn pose() -> impl Strategy<Value = Isometry> {
 }
 
 #[cfg(test)]
+crate::prop_shards! {
+    /// The macro's own property: two shards, each a real `#[test]`,
+    /// together covering the configured cases.
+    the_macro_writes_one_test_per_shard [shard_0 shard_1] (v) =
+        finite_f64(0.0..=1.0) => {
+            prop_assert!((0.0..=1.0).contains(&v));
+            Ok(())
+        }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use proptest::strategy::ValueTree;
+
+    /// Every value shard `shard` of `shards` draws from `base`, in order.
+    /// The property holds, so nothing is shrunk and the recorded sequence
+    /// is exactly the shard's cases.
+    fn drawn(base: &[u8; 32], shard: u32, shards: u32) -> Vec<f64> {
+        let seen = std::cell::RefCell::new(Vec::new());
+        try_check_shard(base, shard, shards, finite_f64(0.0..=1.0), |v| {
+            seen.borrow_mut().push(v);
+            Ok(())
+        })
+        .expect("the property holds");
+        seen.into_inner()
+    }
+
+    #[test]
+    fn one_shard_runs_every_configured_case() {
+        assert_eq!(drawn(&DEFAULT_SEED, 0, 1).len(), cases() as usize);
+    }
+
+    #[test]
+    fn shards_of_one_base_draw_disjoint_streams() {
+        let a = drawn(&DEFAULT_SEED, 0, 8);
+        let b = drawn(&DEFAULT_SEED, 1, 8);
+        assert!(!a.is_empty() && !b.is_empty());
+        assert!(
+            a.iter().all(|x| !b.contains(x)),
+            "two shards of one base drew the same value"
+        );
+    }
+
+    #[test]
+    fn a_shard_at_a_higher_count_is_a_prefix_of_itself_at_a_lower_one() {
+        // The shard-seed derivation ignores the shard count, so raising k
+        // only shortens each existing shard's stream — it never re-rolls
+        // the corpus.
+        for shard in 0..8 {
+            let eight = drawn(&DEFAULT_SEED, shard, 8);
+            let sixteen = drawn(&DEFAULT_SEED, shard, 16);
+            assert!(sixteen.len() <= eight.len());
+            assert_eq!(sixteen[..], eight[..sixteen.len()], "shard {shard}");
+        }
+    }
+
+    #[test]
+    fn shards_together_run_at_least_the_configured_cases() {
+        // Including counts that do not divide the case count, where the
+        // remainder has to round up rather than be dropped.
+        for shards in [1u32, 3, 5, 8, 16] {
+            let total: usize = (0..shards)
+                .map(|i| drawn(&DEFAULT_SEED, i, shards).len())
+                .sum();
+            assert!(
+                total >= cases() as usize,
+                "{shards} shards ran {total} of {} cases",
+                cases()
+            );
+        }
+    }
+
+    #[test]
+    fn a_shard_failure_names_the_shard_and_the_base_seed() {
+        let failing = |v: f64| {
+            prop_assert!(v < 0.5, "too large");
+            Ok(())
+        };
+        let message =
+            try_check_shard(&DEFAULT_SEED, 3, 8, finite_f64(0.0..=1.0), failing).unwrap_err();
+        assert!(message.contains("shard 3 of 8"), "{message}");
+        let printed = message
+            .lines()
+            .find_map(|l| l.split_once(&format!("{SEED_VAR}=")))
+            .and_then(|(_, rest)| rest.split_whitespace().next())
+            .expect("the message names the seed");
+        assert_eq!(
+            parse_seed(printed),
+            Some(DEFAULT_SEED),
+            "the base seed, not the shard's"
+        );
+        let again =
+            try_check_shard(&DEFAULT_SEED, 3, 8, finite_f64(0.0..=1.0), failing).unwrap_err();
+        assert_eq!(message, again, "same seed, same shrunk input, same message");
+    }
+
+    #[test]
+    fn shard_seeds_differ_from_each_other_and_from_the_base() {
+        let seeds: std::collections::BTreeSet<_> =
+            (0..32).map(|i| shard_seed(&DEFAULT_SEED, i)).collect();
+        assert_eq!(seeds.len(), 32);
+        assert!(!seeds.contains(&DEFAULT_SEED));
+        assert_eq!(shard_seed(&DEFAULT_SEED, 2), shard_seed(&DEFAULT_SEED, 2));
+    }
+
+    #[test]
+    fn cases_per_shard_rounds_the_remainder_up() {
+        assert_eq!(cases_per_shard(1), cases());
+        for shards in 1..=64u32 {
+            assert!(shards * cases_per_shard(shards) >= cases());
+        }
+    }
 
     #[test]
     fn unit_vec3_has_unit_length() {

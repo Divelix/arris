@@ -198,7 +198,7 @@ or bound has to be established here.
   first because every later step's value is read off it, and because it
   says whether any binary besides `boolean_prop` is worth sharding.
 
-- [ ] Step 2 **[2]** — **`check_shard`, `shard_seed` and the macro**, with
+- [x] Step 2 **[2]** — **`check_shard`, `shard_seed` and the macro**, with
   the harness's own tests beside the existing `try_check` ones: two
   shards of one base draw disjoint streams; shard *i* at `k = 16` is a
   prefix of shard *i* at `k = 8` (the derivation ignores `k`); `shards`
@@ -279,12 +279,15 @@ it.
 
 ## Open questions
 
-- `⚠ OPEN:` **The macro's shape.** `macro_rules!` cannot count to a
-  numeric bound, so either the macro takes the shard indices as a literal
-  list (`[0 1 2 3 4 5 6 7]`, the count being the list's length) or the
-  workspace gains a `seq-macro` dev-dependency. **Agent, step 2.**
-  Recommendation: the literal list — no new dependency, and the shard
-  count is visible where the property is written.
+- **Resolved (step 2) — the macro's shape.** Neither option as written.
+  A literal list `[0 1 2 3]` cannot work, because the macro has to *name*
+  each `#[test]` it writes and `macro_rules!` cannot build an ident out of
+  a number. The shards are named instead of numbered —
+  `[shard_0 shard_1 shard_2 shard_3]` — and the tests go in a module named
+  after the property, so a failure reads `property::shard_2`. A shard's
+  index is its name's position in the list and the count is the list's
+  length, which is what the recommendation was after: no new dependency,
+  and both visible where the property is written.
 - `⚠ OPEN:` **Shard counts.** Uniform `k` per property, or per-property
   counts from step 1's costs. **Agent, step 3.** Recommendation:
   per-property, since `cut_then_fuse` is 8.5× `piercing_pairs` and a
