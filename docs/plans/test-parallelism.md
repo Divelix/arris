@@ -138,6 +138,94 @@ The cost is heavily skewed: `cut_then_fuse` alone is 47 % of the serial
 total and 100 % of the wall clock, so shard counts are chosen per
 property, not uniformly.
 
+## Result (step 5, same machine, same script)
+
+`ARRIS_PROPTEST_CASES=256`, 32 cores, 2026-09-11.
+
+| Target, run alone | Seconds |
+|---|---|
+| `arris-ops::boolean_prop` | 69.05 |
+| `arris-mesh::tessellate` | 10.78 |
+| `arris::corpus` | 2.24 |
+| `arris-debug::builder` | 1.05 |
+| `arris::provenance` | 1.04 |
+| `arris-ops::primitives` | 0.97 |
+| `arris-ops::boolean` | 0.94 |
+| `arris-ops::transform` | 0.63 |
+| `arris-io::step` | 0.59 |
+| `arris-ops::measure` | 0.36 |
+| `arris-check::classify` | 0.29 |
+| `arris-geom::curve2` | 0.21 |
+| `arris-debug::arris_debug` | 0.11 |
+| *40 further targets, each under 0.10* | 0.43 |
+| **serial total** — what `cargo test --workspace` costs | **88.69** |
+| `cargo test --workspace --doc` | 2.86 |
+| **`cargo nextest run --workspace`, wall clock** | **70.92** |
+
+`ARRIS_PROPTEST_CASES=1000`, 32 cores, 2026-09-11.
+
+| Target, run alone | Seconds |
+|---|---|
+| `arris-ops::boolean_prop` | 240.30 |
+| `arris-mesh::tessellate` | 40.95 |
+| `arris-ops::boolean` | 3.57 |
+| `arris-ops::transform` | 2.48 |
+| `arris::corpus` | 2.17 |
+| `arris-ops::measure` | 1.37 |
+| `arris-check::classify` | 1.11 |
+| `arris-debug::builder` | 1.06 |
+| `arris::provenance` | 1.04 |
+| `arris-ops::primitives` | 0.98 |
+| `arris-geom::curve2` | 0.80 |
+| `arris-io::step` | 0.58 |
+| `arris-debug::arris_debug` | 0.42 |
+| `arris-geom::bounds` | 0.34 |
+| `arris-geom::pcurve` | 0.24 |
+| `arris-geom::intersect_curve_surface` | 0.14 |
+| *37 further targets, each under 0.10* | 0.49 |
+| **serial total** — what `cargo test --workspace` costs | **298.04** |
+| `cargo test --workspace --doc` | 2.87 |
+| **`cargo nextest run --workspace`, wall clock** | **254.13** |
+
+| | Before | After | Ratio |
+|---|---|---|---|
+| `cargo nextest run --workspace`, 256 cases | 445.68 | 70.92 | **6.28×** |
+| `cargo nextest run --workspace`, 1000 cases | 1656.26 | 254.13 | **6.52×** |
+| serial total (`cargo test --workspace`), 256 | 458.04 | 88.69 | 5.16× |
+| serial total (`cargo test --workspace`), 1000 | 1682.67 | 298.04 | 5.65× |
+| `arris-ops::boolean_prop`, 256 | 438.29 | 69.05 | 6.35× |
+| `arris-ops::boolean_prop`, 1000 | 1624.35 | 240.30 | 6.76× |
+| `arris-mesh::tessellate`, 256 | 10.79 | 10.78 | 1.00× |
+
+Every other target is unchanged, as it should be: nothing but
+`boolean_prop` was touched.
+
+**6.3× against the plan's ≥ 7×, and the shortfall is the machine, not the
+design.** The prediction assumed 32 cores because `nproc` says 32. The
+machine is a Ryzen 9 7950X: **16 physical cores**, two SMT threads each.
+The ceiling for this suite is its total work over the cores that can
+actually run it at once, and `boolean_prop` is essentially all of that
+work: 994 s of it at 256 cases, so 994/16 = **62 s** is the floor no shard
+count can go below. It came in at 69.05 s — 90 % of the bound — and the
+whole suite at 70.92 s, because under nextest every binary's tests share
+one pool and the other 52 binaries fill the gaps around `boolean_prop`'s
+shards. Against a 62 s floor the best achievable ratio was 445.68/65 ≈
+7.0×; 6.28× is 90 % of what the hardware allows.
+
+The remaining 7 s over the floor is tail variance, not imbalance between
+properties: per-case cost varies enough that the heaviest of
+`cut_then_fuse`'s 30 shards took 51.97 s under full load against a 15.3 s
+mean. Raising the shard counts would trim that tail, but it cannot buy
+more than the 7 s to the floor, and it costs the other way —
+`cases_per_shard` rounds up, so k=60 would run 300 cases where 256 were
+asked for, a 17 % overshoot that adds more work than the tail costs. The
+counts stay as step 3 set them.
+
+The way past 62 s is therefore not more parallelism but cheaper cases —
+the S5 backlog line on the checker's super-linear coincident arm, which
+this plan names as a non-goal. That is the finding step 5 exists to
+produce.
+
 ## Design deltas
 
 - **`arris-debug` — `prop` gains a sharded entry point**
@@ -229,7 +317,7 @@ or bound has to be established here.
   `docs/plans/m4-booleans.md` references in CI's comments — both files
   retired and deleted — are corrected here while the file is open.
 
-- [ ] Step 5 **[1]** — **The after measurement and the comparison.**
+- [x] Step 5 **[1]** — **The after measurement and the comparison.**
   Re-run `tools/test-timings.sh` at 256 and 1000, put the two tables
   beside step 1's in this plan, and state the speedup as a ratio per
   binary and for the whole suite. This is what `/retire-plan` moves into
