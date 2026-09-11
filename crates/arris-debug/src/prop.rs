@@ -40,6 +40,7 @@
 
 pub mod body;
 pub mod geom;
+pub mod profile;
 
 use core::fmt::Debug;
 use core::ops::RangeInclusive;

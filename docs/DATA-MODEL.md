@@ -393,6 +393,72 @@ surface at the fitted point and the true curve. Refinement is bounded by
 `MAX_FIT_SPANS` (1024): beyond it the result is `FitError::Diverged`
 (`GeomError::Fit`), never a loop.
 
+### Profiles
+
+A consumer's sketch is a value, not a shape: `geom::profile` holds it and
+the sweeps of `arris-ops` read it (`docs/ARCHITECTURE.md` §Operations).
+
+```rust
+pub struct Profile { plane: Frame, outer: ProfileLoop, holes: Vec<ProfileLoop> }
+
+pub enum ProfileLoop {
+    Circle { center: Point2, radius: f64 },
+    Path   { start: Point2, segments: Vec<ProfileSegment> },
+}
+
+pub enum ProfileSegment {
+    LineTo(Point2),
+    ArcTo { to: Point2, via: Point2 },
+}
+```
+
+The loops are drawn in the plane's own (u, v) — `origin + u·X + v·Y` — and
+carry no orientation: the grammar is one-to-one with a recipe's `profile`
+step (`tests/fixtures/README.md`), the consumer's sketch as it is drawn.
+An arc is three points: `via` decides its centre, its radius and which way
+round it goes.
+
+`Profile::edges(tol)` is the validation and the orientation in one, and
+returns one `Vec<ProfileEdge>` per loop — index `0` the outer, the holes
+from `1` — in walking order:
+
+| Check | Error |
+|---|---|
+| a path loop's last segment ends where the loop started, within `tol.linear` | `NotClosed { loop_index, gap }` |
+| a path loop has at least two segments | `TooFewSegments` |
+| a segment is longer than `tol.linear` — its length for a line, the distance between its ends for an arc, so an arc back to its own start is refused rather than taken for a full circle | `ShortSegment { loop_index, segment }` |
+| an arc's `via` is off its chord by more than `tol.linear` | `DegenerateArc` |
+| a loop's mean width — twice its area over its perimeter: the width of a long thin rectangle, the radius of a disc — is above `tol.linear` | `ZeroArea { loop_index }` |
+| a loop does not meet itself | `SelfIntersecting { loop_index, segments }` |
+| no two loops meet | `Crossing { loops }` |
+| every hole is inside the outer loop | `HoleOutside { hole }` |
+| no hole is inside another | `NestedHoles { holes }` |
+
+The checks run loop by loop in the table's order, so the error reported is
+the first fault in loop order, and every one names the loop and the
+segment the consumer wrote. The area, self-intersection and containment
+checks are made on each loop's polygon at `region2`'s *minimum* segment
+counts, whose arcs are their chords. `GeomError` reaches the caller as
+`ProfileError::Geometry` — an inconsistent tolerance, and the curve-in-its-
+own-plane case that cannot happen, carried rather than unwrapped.
+
+The outer loop comes back counter-clockwise about the plane's normal and
+every hole clockwise, reversed from the consumer's order where needed. A
+`ProfileEdge` is one segment's 3D `Curve` — a `Line`, or a `Circle` whose
+`Z` is `±` the plane's normal so the parameter runs from the segment's
+start through its `via` — its `range`, its exact in-plane `Curve2` (by
+`pcurve_on`, so same-parameter and checked), its two endpoints in (u, v),
+the `(loop_index, segment)` indices *as the consumer wrote them*, and
+`reversed`, which says whether orienting the loop turned it round. A
+circle loop is one closed edge over `[0, 2π]` whose one vertex sits at
+`center + radius · plane.x`, where the oracle's `gp_Circ` on the plane's
+`Ax2` puts it.
+
+`Profile::area_and_centroid(tol)` is the region's area and (u, v) centroid
+by `integrate::region_integral` over those oriented edges, so the holes
+subtract themselves: what a sweep is held to by Pappus's theorems and what
+it reads to know which side of a segment its material is on.
+
 ### NURBS
 
 `NurbsCurve`, `NurbsCurve2` and `NurbsSurface` follow *The NURBS Book*:

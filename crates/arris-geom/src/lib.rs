@@ -2,8 +2,9 @@
 //! the parametrisations of `docs/DATA-MODEL.md` §Geometry, their
 //! evaluation and derivatives, point projection, the curve/surface and
 //! surface/surface intersections, the pcurves of curves on planes and
-//! cylinders, and the (u, v) toolkit — regions bounded by pcurve pieces
-//! (`region2`) and integrals over them (`integrate`).
+//! cylinders, the consumer's sketch as a value (`profile`), and the
+//! (u, v) toolkit — regions bounded by pcurve pieces (`region2`) and
+//! integrals over them (`integrate`).
 //!
 //! Guarantees: `Surface`, `Curve` and `Curve2` are exhaustive enums, so a
 //! new variant fails every dispatch to compile until it is handled; a pair
@@ -25,6 +26,7 @@ mod intersect_curve;
 mod intersect_curves;
 mod nurbs;
 mod pcurve;
+pub mod profile;
 mod project;
 pub mod region2;
 mod surface;
@@ -39,5 +41,6 @@ pub use nurbs::{
     FitError, MAX_DEGREE, MAX_FIT_SPANS, NurbsCurve, NurbsCurve2, NurbsSurface, fit_curve2,
 };
 pub use pcurve::{PCURVE_FIT_DEGREE, PCURVE_SAMPLES, pcurve_on, project_to_plane};
+pub use profile::{Profile, ProfileEdge, ProfileError, ProfileLoop, ProfileSegment};
 pub use project::{CurveProjection, SurfaceProjection};
 pub use surface::{Surface, SurfaceEval, SurfaceKind};

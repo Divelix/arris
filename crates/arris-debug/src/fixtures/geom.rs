@@ -2,16 +2,19 @@
 //! parameters to evaluate, points to project and pairs to intersect, and
 //! the oracle's answer for each (`tests/fixtures/README.md`, "kind":
 //! "geometry"). [`build_surface`] and [`build_curve`] turn a spec into
-//! the `arris-geom` value the fixture describes.
+//! the `arris-geom` value the fixture describes; [`build_profile`] does
+//! the same for the `profile` step of a *solid* recipe, whose loops and
+//! segments are one-to-one with `geom::Profile`'s.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use arris_geom::profile::{Profile, ProfileLoop, ProfileSegment};
 use arris_geom::{Curve, Surface};
-use arris_math::{Frame, FrameError, Point3, UnitVec3, Vec3};
+use arris_math::{Frame, FrameError, Point2, Point3, UnitVec3, Vec3};
 use serde::{Deserialize, Serialize};
 
-use super::{ExprError, FixtureError, Num, read_json, recipe_hash};
+use super::{ExprError, FixtureError, Loop, Num, Plane, Segment, read_json, recipe_hash};
 
 /// A placed surface, as written in `fixture.json`. `origin`, `z` and `x`
 /// are the frame as `Frame::new` builds it (`x` made perpendicular to
@@ -231,6 +234,91 @@ fn frame(
     .map_err(|source| BuildError::Frame {
         name: name.to_string(),
         source,
+    })
+}
+
+fn point2(name: &str, p: &[Num; 2], params: &BTreeMap<String, f64>) -> Result<Point2, BuildError> {
+    Ok(Point2::new(
+        num(name, &p[0], params)?,
+        num(name, &p[1], params)?,
+    ))
+}
+
+/// The [`ProfileLoop`] a recipe loop describes, under `params`.
+fn build_loop(
+    name: &str,
+    spec: &Loop,
+    params: &BTreeMap<String, f64>,
+) -> Result<ProfileLoop, BuildError> {
+    Ok(match spec {
+        Loop::Circle { circle } => ProfileLoop::Circle {
+            center: point2(name, &circle.center, params)?,
+            radius: num(name, &circle.radius, params)?,
+        },
+        Loop::Path { start, segments } => ProfileLoop::Path {
+            start: point2(name, start, params)?,
+            segments: segments
+                .iter()
+                .map(|s| {
+                    Ok(match s {
+                        Segment::Line { line_to } => {
+                            ProfileSegment::LineTo(point2(name, line_to, params)?)
+                        }
+                        Segment::Arc { arc_to, via } => ProfileSegment::ArcTo {
+                            to: point2(name, arc_to, params)?,
+                            via: point2(name, via, params)?,
+                        },
+                    })
+                })
+                .collect::<Result<Vec<_>, BuildError>>()?,
+        },
+    })
+}
+
+/// The [`Profile`] a recipe's `profile` step describes, under `params`:
+/// the plane by its origin and its two in-plane axes (`z = x × y`, as
+/// `Frame::new` and the oracle's `gp_Ax3` build it), and the loops
+/// one-to-one with [`ProfileLoop`] and [`ProfileSegment`] — the recipe
+/// grammar of `tests/fixtures/README.md` *is* the profile grammar.
+/// Validation is `Profile::edges`'s, not this function's.
+///
+/// ```no_run
+/// use arris_debug::fixtures::{self, geom::build_profile};
+/// use std::collections::BTreeMap;
+///
+/// let dir = fixtures::corpus_root().join("sweep/extrude-plate-with-hole");
+/// let fixture = fixtures::load(&dir).unwrap();
+/// let params = fixture.recipe.params_of("default").unwrap();
+/// let fixtures::Step::Profile { plane, outer, holes, .. } = &fixture.recipe.steps[0] else {
+///     panic!("the first step is the sketch")
+/// };
+/// let profile = build_profile("sketch", plane, outer, holes, &params).unwrap();
+/// assert_eq!(profile.holes.len(), 1);
+/// ```
+pub fn build_profile(
+    name: &str,
+    plane: &Plane,
+    outer: &Loop,
+    holes: &[Loop],
+    params: &BTreeMap<String, f64>,
+) -> Result<Profile, BuildError> {
+    let (x, y) = (vec3(name, &plane.x, params)?, vec3(name, &plane.y, params)?);
+    let frame = Frame::new(
+        Point3::from(vec3(name, &plane.origin, params)?),
+        x.cross(&y),
+        x,
+    )
+    .map_err(|source| BuildError::Frame {
+        name: name.to_string(),
+        source,
+    })?;
+    Ok(Profile {
+        plane: frame,
+        outer: build_loop(name, outer, params)?,
+        holes: holes
+            .iter()
+            .map(|h| build_loop(name, h, params))
+            .collect::<Result<Vec<_>, BuildError>>()?,
     })
 }
 

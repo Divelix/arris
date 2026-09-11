@@ -224,7 +224,7 @@ mechanical; **[2]** careful — a geometric or numeric case to get right
 within a given design; **[3]** unproven — an algorithm whose robustness or
 bound has to be established here.
 
-- [ ] Step 1 **[2]** — `geom::profile`. The types, `Profile::edges`,
+- [x] Step 1 **[2]** — `geom::profile`. The types, `Profile::edges`,
   `area_and_centroid`, `ProfileError`; the recipe grammar's `Loop` and
   `Segment` convert to it in `arris-debug`. Tests (1000 cases, random
   plane poses): a random star polygon with arcs and holes, given in either
@@ -398,3 +398,25 @@ so the reasoning stays with the plan until retirement.
 
 Recorded by the step that met them; each is a departure from the design
 deltas above, not a new decision.
+
+- **Step 1.** `ProfileError` has a tenth variant, `Geometry(GeomError)`:
+  `Profile::edges` builds its pcurves through `pcurve_on`, whose
+  inconsistent-tolerance refusal has to reach the caller rather than be
+  unwrapped (`.agents/rules/kernel.md`: no `unwrap` on data derived from
+  geometry, even where it cannot fail).
+- **Step 1.** The field is `loop_index`, not `loop`: `loop` is a keyword,
+  and a raw identifier in a public field reaches every caller and every
+  `#[error]` format string. `SweepPart` takes the same spelling in step 3.
+- **Step 1.** `prop::profile::star()` — a random star polygon with arcs
+  and holes in either orientation — landed here, since the validator's
+  property needs random sketches; `rectilinear` and `general`, which carry
+  an axis and the sweep parameters, stay with steps 3–5.
+- **Step 1.** The three new fixtures do not exist yet, so the recipe test
+  holds *every* `sweep/*` profile step the corpus has — three now, six
+  after step 5 — rather than a list of six names.
+- **Step 1.** `docs/DATA-MODEL.md` §Profiles was written in the step
+  rather than at retirement (`.agents/rules/git.md`: docs change in the
+  commit that changes the behaviour). Still open from the docs list:
+  `.agents/skills/inspect/SKILL.md`, rendering a profile the validator
+  refuses — it needs the raw loops, not the edges, so it lands with the
+  step that first meets a refusal.
