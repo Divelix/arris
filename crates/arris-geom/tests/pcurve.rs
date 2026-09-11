@@ -2,7 +2,10 @@
 //! image under the surface is the curve at the same parameter — exactly
 //! on the exact arms, within the tolerance on the fitted one — and a
 //! curve projected onto a plane is the expected conic
-//! (`docs/plans/m1-geometry.md` step 10).
+//! (`docs/plans/m1-geometry.md` step 10); and the six exact arms a
+//! revolve makes on a cone, a sphere and a torus are lines in (u, v) with
+//! the same property, while every other pair on those three is
+//! `Unsupported` naming it (`docs/plans/m5-sweeps.md` step 2).
 
 use core::f64::consts::{PI, TAU};
 
@@ -338,4 +341,385 @@ fn a_circle_projected_to_an_oblique_plane_is_the_expected_ellipse() {
             Ok(())
         },
     );
+}
+
+/// The direction `(cos θ, sin θ, 0)` of a frame, in the world.
+fn radial(frame: &Frame, theta: f64) -> Vec3 {
+    frame.vec_to_world(Vec3::new(theta.cos(), theta.sin(), 0.0))
+}
+
+/// `a` and `b` are the same angle modulo a turn, to rounding.
+fn same_angle(a: f64, b: f64) -> bool {
+    let d = (a - b).rem_euclid(TAU);
+    d.min(TAU - d) <= 1e-9
+}
+
+/// The pcurve is a `Line` with the expected origin and direction, and its
+/// image is the curve at the same parameter.
+fn line_pcurve(
+    pc: &Curve2,
+    curve: &Curve,
+    surface: &Surface,
+    range: Interval,
+    origin: arris_math::Point2,
+    direction: arris_math::Vec2,
+) -> Result<(), TestCaseError> {
+    let Curve2::Line {
+        origin: o,
+        direction: d,
+    } = pc
+    else {
+        prop_assert!(false, "{pc:?} is not a line in (u, v)");
+        return Ok(());
+    };
+    prop_assert_eq!(d.into_inner(), direction, "{:?}", pc);
+    if direction.x == 0.0 {
+        prop_assert!(same_angle(o.x, origin.x), "u is {} not {}", o.x, origin.x);
+        prop_assert!(
+            (o.y - origin.y).abs() <= 1e-9,
+            "v is {} not {}",
+            o.y,
+            origin.y
+        );
+    } else {
+        prop_assert!(same_angle(o.x, origin.x), "u is {} not {}", o.x, origin.x);
+        prop_assert!(
+            (o.y - origin.y).abs() <= 1e-9 || same_angle(o.y, origin.y),
+            "v is {} not {}",
+            o.y,
+            origin.y
+        );
+    }
+    image_matches(pc, curve, surface, range, EXACT)
+}
+
+#[test]
+fn a_ruling_and_a_parallel_of_a_cone_are_lines_in_uv() {
+    check(
+        (
+            arris_debug::prop::geom::cone(),
+            finite_f64(0.0..=TAU),
+            finite_f64(0.0..=TAU),
+            finite_f64(-5.0..=5.0),
+            any::<bool>(),
+            any::<bool>(),
+        ),
+        |(s, u0, beta, v0, up, flip)| {
+            let Surface::Cone {
+                frame: cone,
+                radius,
+                half_angle,
+            } = &s
+            else {
+                unreachable!("the cone strategy yields cones")
+            };
+            let (sin, cos) = (half_angle.sin(), half_angle.cos());
+            let axis = cone.z().into_inner();
+            // A ruling: the line through the apex in the half-plane u0.
+            let sense = if up { 1.0 } else { -1.0 };
+            let ruling = Curve::Line {
+                origin: s.point(u0, v0),
+                direction: arris_math::UnitVec3::new_normalize(
+                    sense * (sin * radial(cone, u0) + cos * axis),
+                ),
+            };
+            let range = Interval::new(-4.0, 4.0).unwrap();
+            let pc = pcurve_on(&ruling, range, &s, tol()).unwrap();
+            line_pcurve(
+                &pc,
+                &ruling,
+                &s,
+                range,
+                arris_math::Point2::new(u0, v0),
+                arris_math::Vec2::new(0.0, sense),
+            )?;
+            // A parallel: the circle at v0, its own X at an arbitrary
+            // angle and its Z either way round. Beyond the apex the
+            // radial factor `R + v sin α` is negative, and the surface
+            // reaches the circle's own `X` at `u + π`.
+            let signed = radius + v0 * sin;
+            if signed.abs() < 1e-3 {
+                return Ok(()); // the apex is not a circle
+            }
+            let z = if flip { -axis } else { axis };
+            let circle = Curve::Circle {
+                frame: Frame::new(
+                    cone.to_world(Point3::new(0.0, 0.0, v0 * cos)),
+                    z,
+                    radial(cone, beta),
+                )
+                .unwrap(),
+                radius: signed.abs(),
+            };
+            let pc = pcurve_on(&circle, Interval::TURN, &s, tol()).unwrap();
+            let expected_u = if signed > 0.0 { beta } else { beta + PI };
+            line_pcurve(
+                &pc,
+                &circle,
+                &s,
+                Interval::TURN,
+                arris_math::Point2::new(expected_u.rem_euclid(TAU), v0),
+                arris_math::Vec2::new(if flip { -1.0 } else { 1.0 }, 0.0),
+            )?;
+            Ok(())
+        },
+    );
+}
+
+#[test]
+fn a_parallel_and_a_meridian_of_a_sphere_are_lines_in_uv() {
+    check(
+        (
+            arris_debug::prop::geom::sphere(),
+            finite_f64(-1.4..=1.4),
+            finite_f64(0.0..=TAU),
+            finite_f64(0.0..=TAU),
+            finite_f64(-0.7..=0.7),
+            any::<bool>(),
+        ),
+        |(s, v0, beta, psi, phi, flip)| {
+            let Surface::Sphere {
+                frame: sphere,
+                radius,
+            } = &s
+            else {
+                unreachable!("the sphere strategy yields spheres")
+            };
+            let axis = sphere.z().into_inner();
+            // A parallel at the latitude v0.
+            let z = if flip { -axis } else { axis };
+            let parallel = Curve::Circle {
+                frame: Frame::new(
+                    sphere.to_world(Point3::new(0.0, 0.0, radius * v0.sin())),
+                    z,
+                    radial(sphere, beta),
+                )
+                .unwrap(),
+                radius: radius * v0.cos(),
+            };
+            let pc = pcurve_on(&parallel, Interval::TURN, &s, tol()).unwrap();
+            line_pcurve(
+                &pc,
+                &parallel,
+                &s,
+                Interval::TURN,
+                arris_math::Point2::new(beta, v0),
+                arris_math::Vec2::new(if flip { -1.0 } else { 1.0 }, 0.0),
+            )?;
+            // A meridian: the great circle whose plane holds the axis,
+            // its own X at the latitude phi of the half-plane psi + π/2.
+            let u = psi + PI / 2.0;
+            let cz = radial(sphere, psi);
+            let cx = phi.cos() * radial(sphere, u) + phi.sin() * axis;
+            let meridian = Curve::Circle {
+                frame: Frame::new(sphere.origin(), if flip { -cz } else { cz }, cx).unwrap(),
+                radius: *radius,
+            };
+            // A range that stays clear of the poles: v runs phi ± t.
+            let range = Interval::new(-0.7, 0.7).unwrap();
+            let pc = pcurve_on(&meridian, range, &s, tol()).unwrap();
+            let Curve2::Line { origin, direction } = &pc else {
+                prop_assert!(false, "{pc:?} is not a line in (u, v)");
+                return Ok(());
+            };
+            prop_assert_eq!(direction.x, 0.0, "{:?}", pc);
+            prop_assert_eq!(direction.y.abs(), 1.0, "{:?}", pc);
+            prop_assert!(same_angle(origin.x, u), "u is {} not {}", origin.x, u);
+            prop_assert!(
+                (origin.y - phi).abs() <= 1e-9,
+                "v is {} not {}",
+                origin.y,
+                phi
+            );
+            image_matches(&pc, &meridian, &s, range, EXACT)?;
+            // Over a full turn the same line still names the curve: the
+            // great circle runs up one meridian and down the other, which
+            // is where v outside [−π/2, π/2] puts it.
+            let pc = pcurve_on(&meridian, Interval::TURN, &s, tol()).unwrap();
+            image_matches(&pc, &meridian, &s, Interval::TURN, EXACT)?;
+            Ok(())
+        },
+    );
+}
+
+#[test]
+fn a_parallel_and_a_tube_circle_of_a_torus_are_lines_in_uv() {
+    check(
+        (
+            arris_debug::prop::geom::torus(),
+            finite_f64(0.0..=TAU),
+            finite_f64(0.0..=TAU),
+            finite_f64(0.0..=TAU),
+            finite_f64(0.0..=TAU),
+            any::<bool>(),
+        ),
+        |(s, v0, beta, u0, phi, flip)| {
+            let Surface::Torus {
+                frame: torus,
+                major_radius,
+                minor_radius,
+            } = &s
+            else {
+                unreachable!("the torus strategy yields tori")
+            };
+            let axis = torus.z().into_inner();
+            // A circle about the axis at v0.
+            let z = if flip { -axis } else { axis };
+            let parallel = Curve::Circle {
+                frame: Frame::new(
+                    torus.to_world(Point3::new(0.0, 0.0, minor_radius * v0.sin())),
+                    z,
+                    radial(torus, beta),
+                )
+                .unwrap(),
+                radius: major_radius + minor_radius * v0.cos(),
+            };
+            let pc = pcurve_on(&parallel, Interval::TURN, &s, tol()).unwrap();
+            line_pcurve(
+                &pc,
+                &parallel,
+                &s,
+                Interval::TURN,
+                arris_math::Point2::new(beta, v0),
+                arris_math::Vec2::new(if flip { -1.0 } else { 1.0 }, 0.0),
+            )?;
+            // A circle of the tube at u0, its own X at the tube angle phi.
+            let r = radial(torus, u0);
+            let cz = r.cross(&axis);
+            let cx = phi.cos() * r + phi.sin() * axis;
+            let tube = Curve::Circle {
+                frame: Frame::new(
+                    torus.origin() + *major_radius * r,
+                    if flip { -cz } else { cz },
+                    cx,
+                )
+                .unwrap(),
+                radius: *minor_radius,
+            };
+            let pc = pcurve_on(&tube, Interval::TURN, &s, tol()).unwrap();
+            let Curve2::Line { origin, direction } = &pc else {
+                prop_assert!(false, "{pc:?} is not a line in (u, v)");
+                return Ok(());
+            };
+            prop_assert_eq!(direction.x, 0.0, "{:?}", pc);
+            prop_assert_eq!(direction.y.abs(), 1.0, "{:?}", pc);
+            prop_assert!(same_angle(origin.x, u0), "u is {} not {}", origin.x, u0);
+            prop_assert!(same_angle(origin.y, phi), "v is {} not {}", origin.y, phi);
+            prop_assert!((0.0..TAU).contains(&origin.y));
+            image_matches(&pc, &tube, &s, Interval::TURN, EXACT)?;
+            Ok(())
+        },
+    );
+}
+
+#[test]
+fn what_a_surface_of_revolution_has_no_variant_for_is_unsupported_by_name() {
+    let tol = tol();
+    let sphere_frame = Frame::from_z(Point3::new(1.0, 2.0, 3.0), Vec3::new(0.0, 0.0, 1.0)).unwrap();
+    let sphere = Surface::Sphere {
+        frame: sphere_frame,
+        radius: 5.0,
+    };
+    // A small circle on the sphere, about no axis of it: on the surface,
+    // and with no `Curve2` variant.
+    let centre = Point3::new(2.0, 3.0, 4.0);
+    let offset = (centre - sphere_frame.origin()).norm();
+    let oblique = Curve::Circle {
+        frame: Frame::from_z(centre, centre - sphere_frame.origin()).unwrap(),
+        radius: (25.0f64 - offset * offset).sqrt(),
+    };
+    for t in [0.0, 1.0, 2.0, 3.0] {
+        assert!(((oblique.point(t) - sphere_frame.origin()).norm() - 5.0).abs() < 1e-12);
+    }
+    let err = pcurve_on(&oblique, Interval::TURN, &sphere, tol).unwrap_err();
+    assert!(
+        matches!(err, arris_geom::GeomError::Unsupported { a, b }
+            if a == arris_geom::GeomKind::Curve(arris_geom::CurveKind::Circle)
+            && b == arris_geom::GeomKind::Surface(arris_geom::SurfaceKind::Sphere)),
+        "{err}"
+    );
+    // A rational quadratic Bézier quarter of the equator: exactly on the
+    // sphere, and a NURBS, which has no exact arm here.
+    let arc = NurbsCurve::new(
+        2,
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        vec![
+            sphere_frame.to_world(Point3::new(5.0, 0.0, 0.0)),
+            sphere_frame.to_world(Point3::new(5.0, 5.0, 0.0)),
+            sphere_frame.to_world(Point3::new(0.0, 5.0, 0.0)),
+        ],
+        vec![1.0, 0.5f64.sqrt(), 1.0],
+    )
+    .unwrap();
+    let arc = Curve::Nurbs(arc);
+    for i in 0..=8 {
+        let t = i as f64 / 8.0;
+        assert!(((arc.point(t) - sphere_frame.origin()).norm() - 5.0).abs() < 1e-12);
+    }
+    let err = pcurve_on(&arc, Interval::UNIT, &sphere, tol).unwrap_err();
+    assert!(
+        matches!(err, arris_geom::GeomError::Unsupported { a, .. }
+            if a == arris_geom::GeomKind::Curve(arris_geom::CurveKind::Nurbs)),
+        "{err}"
+    );
+    // An oblique plane section of a cone: an ellipse that lies on it.
+    let (r, alpha) = (3.0, 0.6);
+    let cone_frame = Frame::from_z(Point3::origin(), Vec3::z()).unwrap();
+    let cone = Surface::Cone {
+        frame: cone_frame,
+        radius: r,
+        half_angle: alpha,
+    };
+    let apex = Point3::new(0.0, 0.0, -r / alpha.tan());
+    let gamma = (PI / 2.0 - alpha) / 2.0;
+    let (k, h) = (alpha.tan().powi(2), 4.0);
+    let a = gamma.cos().powi(2) - k * gamma.sin().powi(2);
+    let s2c = k * h * gamma.sin() / a;
+    let c = k * h * h * gamma.cos().powi(2) / a;
+    let (e1, e2) = (Vec3::x(), Vec3::new(0.0, gamma.cos(), gamma.sin()));
+    let centre = apex + Vec3::new(0.0, 0.0, h) + s2c * e2;
+    let (a1, a2) = (c.sqrt(), (c / a).sqrt());
+    let (major, minor, x, y) = if a2 >= a1 {
+        (a2, a1, e2, e1)
+    } else {
+        (a1, a2, e1, e2)
+    };
+    let section = Curve::Ellipse {
+        frame: Frame::new(centre, x.cross(&y), x).unwrap(),
+        major_radius: major,
+        minor_radius: minor,
+    };
+    for i in 0..16 {
+        let t = TAU * i as f64 / 16.0;
+        let d = section.point(t) - apex;
+        let angle = Vec3::new(d.x, d.y, 0.0).norm().atan2(d.z);
+        assert!(
+            (angle - alpha).abs() < 1e-12,
+            "the section is on the cone: {angle} vs {alpha}"
+        );
+    }
+    let err = pcurve_on(&section, Interval::TURN, &cone, tol).unwrap_err();
+    assert!(
+        matches!(err, arris_geom::GeomError::Unsupported { a, b }
+            if a == arris_geom::GeomKind::Curve(arris_geom::CurveKind::Ellipse)
+            && b == arris_geom::GeomKind::Surface(arris_geom::SurfaceKind::Cone)),
+        "{err}"
+    );
+    // A curve off any of the three is `NotOnSurface`, not unsupported.
+    let torus = Surface::Torus {
+        frame: Frame::world(),
+        major_radius: 5.0,
+        minor_radius: 1.0,
+    };
+    for surface in [&sphere, &cone, &torus] {
+        let lifted = Curve::Circle {
+            frame: Frame::from_z(Point3::new(0.0, 0.0, 50.0), Vec3::z()).unwrap(),
+            radius: 2.0,
+        };
+        let err = pcurve_on(&lifted, Interval::TURN, surface, tol).unwrap_err();
+        assert!(
+            matches!(err, arris_geom::GeomError::NotOnSurface { .. }),
+            "{surface:?}: {err}"
+        );
+    }
 }

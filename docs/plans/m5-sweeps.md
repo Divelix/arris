@@ -238,7 +238,7 @@ bound has to be established here.
   hole outside, a hole inside a hole — named with the right indices; the
   three committed `sweep/*` recipes and the three new ones load into
   valid profiles.
-- [ ] Step 2 **[2]** — `pcurve_on` on cone, sphere and torus: the six
+- [x] Step 2 **[2]** — `pcurve_on` on cone, sphere and torus: the six
   exact arms of the deltas. Tests (1000 cases, `prop::geom` poses): the
   image of every arm's pcurve is the curve at the same parameter to
   1e-12·scale over its range, including circles offset from the
@@ -420,3 +420,16 @@ deltas above, not a new decision.
   `.agents/skills/inspect/SKILL.md`, rendering a profile the validator
   refuses — it needs the raw loops, not the edges, so it lands with the
   step that first meets a refusal.
+- **Step 2.** An *oblique line* on a cone cannot reach the `Unsupported`
+  arm: `check_on` runs first, and a line at any angle but the half-angle
+  is not on the cone at all, so it is `NotOnSurface`. The pairs that do
+  reach `Unsupported` are the curves that genuinely lie on the surface
+  with no `Curve2` variant — an oblique *section* of a cone (an ellipse),
+  a small circle of a sphere about no axis of it, a Villarceau circle, a
+  NURBS — and those are what the test witnesses, each constructed on its
+  surface and checked to be on it first.
+- **Step 2.** A cone's circle beyond the apex, whose radial factor
+  `R + v sin α` is negative, is reached by the surface at `u + π`: the
+  parallel arm carries that half turn. Noted in 02 §Pcurves.
+- **Step 2.** `docs/DATA-MODEL.md` §Pcurves was rewritten in the step, for
+  the same reason as §Profiles in step 1.

@@ -1,7 +1,7 @@
-//! Pcurves: the (u, v) image of a 3D curve on a plane or a cylinder at
-//! the curve's own parameter, exact where a `Curve2` variant exists and a
-//! fitted NURBS otherwise (`docs/DATA-MODEL.md` §Pcurves), and the
-//! projection of a curve onto a plane for a consumer's sketch.
+//! Pcurves: the (u, v) image of a 3D curve on a surface at the curve's own
+//! parameter, exact where a `Curve2` variant exists and a fitted NURBS
+//! otherwise (`docs/DATA-MODEL.md` §Pcurves), and the projection of a
+//! curve onto a plane for a consumer's sketch.
 
 use core::f64::consts::{FRAC_PI_2, TAU};
 
@@ -67,8 +67,25 @@ fn degenerate(kind: GeomKind, reason: impl Into<String>) -> GeomError {
 /// everything else — an oblique section, a NURBS — is a `Nurbs` fitted by
 /// [`fit_curve2`] over the cylinder's projection with `u` unwrapped along
 /// `t`, so a seam crossing stays continuous and `u` may leave `[0, 2π)`.
-/// Cone, sphere, torus and NURBS surfaces are [`GeomError::Unsupported`]
-/// arms.
+///
+/// On the surfaces of revolution the exact arms are the six a revolve
+/// makes, each a `Line` in (u, v) at the curve's own parameter: on a
+/// **cone**, a ruling — the line through the apex — at constant `u`, and a
+/// circle about the axis at constant `v`; on a **sphere**, a circle about
+/// the axis at constant `v` (a parallel) and the great circle through both
+/// poles at constant `u` (a meridian); on a **torus**, a circle about the
+/// axis at constant `v` and a circle of the tube at constant `u`. A `u`
+/// origin is the offset of the circle's `X` from the surface's, in
+/// `[0, 2π)`, running in the sense of the circle's `Z` against the
+/// surface's, as on the cylinder; a constant-`u` arm's `v` runs with `t`
+/// or against it by the turn of the circle's own axes in the plane of the
+/// axis, and a meridian's `v` leaves `[−π/2, π/2]` where the great circle
+/// passes a pole onto the opposite meridian, which is where the sphere's
+/// parametrisation puts it. Every other pair on these three — an oblique
+/// section of a cone, a small circle of a sphere about no axis of it, a
+/// Villarceau circle, a NURBS — is [`GeomError::Unsupported`] naming the
+/// pair: there is no fitted fallback here, since the sweeps' curves are
+/// all exact. NURBS surfaces are an `Unsupported` arm.
 ///
 /// Errors: [`GeomError::NotOnSurface`] when the curve is farther than
 /// `tol.linear` from the surface at any of [`PCURVE_SAMPLES`] parameters
@@ -120,10 +137,34 @@ pub fn pcurve_on(
             })?;
             on_cylinder(curve, range, frame, radius, surface, tol)
         }
-        Surface::Cone { .. }
-        | Surface::Sphere { .. }
-        | Surface::Torus { .. }
-        | Surface::Nurbs(_) => Err(GeomError::Unsupported {
+        &Surface::Cone {
+            ref frame,
+            radius,
+            half_angle,
+        } => {
+            check_on(curve, range, surface, tol, |p| {
+                cone_distance(frame, radius, half_angle, p)
+            })?;
+            on_cone(curve, frame, radius, half_angle, surface, tol)
+        }
+        &Surface::Sphere { ref frame, radius } => {
+            check_on(curve, range, surface, tol, |p| {
+                ((p - frame.origin()).norm() - radius).abs()
+            })?;
+            on_sphere(curve, range, frame, radius, surface, tol)
+        }
+        &Surface::Torus {
+            ref frame,
+            major_radius,
+            minor_radius,
+        } => {
+            check_on(curve, range, surface, tol, |p| {
+                let q = frame.to_local(p);
+                ((q.x.hypot(q.y) - major_radius).hypot(q.z) - minor_radius).abs()
+            })?;
+            on_torus(curve, frame, major_radius, minor_radius, surface, tol)
+        }
+        Surface::Nurbs(_) => Err(GeomError::Unsupported {
             a: curve_kind,
             b: GeomKind::Surface(surface.kind()),
         }),
@@ -266,6 +307,246 @@ fn on_cylinder(
         }
         Curve::Ellipse { .. } | Curve::Nurbs(_) => {
             fitted_on_cylinder(curve, range, cyl, surface, tol)
+        }
+    }
+}
+
+/// The distance from `p` to a cone, whose meridian in `(ρ, z)` is the line
+/// through `(R, 0)` at the half-angle from the axis — and its mirror, the
+/// second nappe, which `ρ ≥ 0` folds onto the same half-plane.
+fn cone_distance(cone: &Frame, radius: f64, half_angle: f64, p: arris_math::Point3) -> f64 {
+    let q = cone.to_local(p);
+    let (rho, z) = (q.x.hypot(q.y), q.z);
+    let (sin, cos) = (half_angle.sin(), half_angle.cos());
+    let near = ((rho - radius) * cos - z * sin).abs();
+    let far = ((rho + radius) * cos + z * sin).abs();
+    near.min(far)
+}
+
+/// [`GeomError::Unsupported`] naming the pair.
+fn unsupported(curve: &Curve, surface: &Surface) -> GeomError {
+    GeomError::Unsupported {
+        a: GeomKind::Curve(curve.kind()),
+        b: GeomKind::Surface(surface.kind()),
+    }
+}
+
+/// `true` when two axes are parallel — either way round — within `tol`.
+fn parallel_axes(a: &Vec3, b: &Vec3, tol: Tolerance) -> bool {
+    line_angle(a, b) <= tol.angular
+}
+
+/// `true` when two axes are perpendicular within `tol`.
+fn perpendicular_axes(a: &Vec3, b: &Vec3, tol: Tolerance) -> bool {
+    (FRAC_PI_2 - line_angle(a, b)).abs() <= tol.angular
+}
+
+/// The pcurve of a circle about a surface of revolution's axis: a `Line`
+/// at constant `v`, `u` starting at the offset of the circle's `X` from
+/// the surface's and running in the sense of the circle's `Z` against the
+/// surface's, exactly as on a cylinder. `flipped` is for a cone's circle
+/// beyond the apex, whose radial factor `R + v sin α` is negative: the
+/// surface reaches it at `u + π`.
+fn parallel_pcurve(surface: &Frame, circle: &Frame, v: f64, flipped: bool) -> Curve2 {
+    let x = surface.vec_to_local(circle.x().into_inner());
+    let half_turn = if flipped { TAU / 2.0 } else { 0.0 };
+    let u0 = wrap_turn(x.y.atan2(x.x) + half_turn);
+    let sense = if circle.z().dot(&surface.z()) >= 0.0 {
+        1.0
+    } else {
+        -1.0
+    };
+    Curve2::Line {
+        origin: Point2::new(u0, v),
+        direction: UnitVec2::new_unchecked(Vec2::new(sense, 0.0)),
+    }
+}
+
+/// The pcurve of a circle lying in a plane through a surface of
+/// revolution's axis — a sphere's meridian, a torus's tube circle — at
+/// constant `u`: a `Line` whose `v` runs with `t` or against it. In the
+/// (radial, axis) plane the surface's own `v` measures the angle from
+/// `radial`, and the circle's `(X, Y)` is that basis turned by `φ` when
+/// the two agree in orientation and reflected about `φ / 2` when they do
+/// not, so `v` is `φ + t` one way and `φ − t` the other.
+///
+/// `radial` is the unit direction, in the surface's local frame and in the
+/// equatorial plane, that `u` points along; `period` wraps `φ` into
+/// `[0, 2π)` on a surface whose `v` is periodic and leaves it alone on a
+/// sphere, whose `v` is an angle in `[−π/2, π/2]`.
+fn meridian_pcurve(surface: &Frame, circle: &Frame, radial: Vec3, periodic_v: bool) -> Curve2 {
+    let u = wrap_turn(radial.y.atan2(radial.x));
+    let x = surface.vec_to_local(circle.x().into_inner());
+    let y = surface.vec_to_local(circle.y().into_inner());
+    let (a, b) = (x.dot(&radial), x.z);
+    let (c, d) = (y.dot(&radial), y.z);
+    let phi = b.atan2(a);
+    let phi = if periodic_v { wrap_turn(phi) } else { phi };
+    let sense = if a * d - c * b >= 0.0 { 1.0 } else { -1.0 };
+    Curve2::Line {
+        origin: Point2::new(u, phi),
+        direction: UnitVec2::new_unchecked(Vec2::new(0.0, sense)),
+    }
+}
+
+/// The unit equatorial direction of the half-plane a meridian arc lies
+/// in: `axis` is the candidate, `±` the one the curve's own points pick.
+/// The midpoint is asked first and the start second, since a curve may
+/// begin on the axis (a sphere's pole) where the half-plane is not
+/// decided; neither deciding leaves the candidate as written, which names
+/// the same meridian circle at `u + π`.
+fn meridian_radial(
+    surface: &Frame,
+    curve: &Curve,
+    range: Interval,
+    candidate: Vec3,
+    scale: f64,
+) -> Vec3 {
+    for t in [range.midpoint(), range.lo()] {
+        let q = surface.to_local(curve.point(t));
+        let radial = Vec2::new(q.x, q.y);
+        if !is_negligible(radial.norm(), scale) {
+            let along = radial.x * candidate.x + radial.y * candidate.y;
+            return if along >= 0.0 { candidate } else { -candidate };
+        }
+    }
+    candidate
+}
+
+/// The exact pcurves on a cone: a ruling at constant `u`, a circle about
+/// the axis at constant `v`.
+fn on_cone(
+    curve: &Curve,
+    cone: &Frame,
+    radius: f64,
+    half_angle: f64,
+    surface: &Surface,
+    tol: Tolerance,
+) -> Result<Curve2, GeomError> {
+    let kind = GeomKind::Curve(curve.kind());
+    let (sin, cos) = (half_angle.sin(), half_angle.cos());
+    if is_negligible(sin, 1.0) || cos <= 0.0 {
+        return Err(degenerate(
+            GeomKind::Surface(surface.kind()),
+            format!("a cone's half-angle is in (0, π/2), not {half_angle}"),
+        ));
+    }
+    match curve {
+        &Curve::Line { origin, direction } => {
+            // A line on a cone is a ruling through the apex: `v` runs
+            // along it, and the sense is the sign of its axial part, since
+            // the ruling climbs by `cos α > 0` per unit of `v`.
+            let d = cone.vec_to_local(direction.into_inner());
+            let sense = if d.z >= 0.0 { 1.0 } else { -1.0 };
+            let equatorial = Vec2::new(sense * d.x, sense * d.y);
+            if (equatorial.norm().atan2(d.z.abs()) - half_angle).abs() > tol.angular {
+                return Err(unsupported(curve, surface));
+            }
+            if is_negligible(equatorial.norm(), 1.0) {
+                return Err(degenerate(kind, "the ruling has no radial direction"));
+            }
+            let u = wrap_turn(equatorial.y.atan2(equatorial.x));
+            let v0 = cone.to_local(origin).z / cos;
+            Ok(Curve2::Line {
+                origin: Point2::new(u, v0),
+                direction: UnitVec2::new_unchecked(Vec2::new(0.0, sense)),
+            })
+        }
+        Curve::Circle { frame, .. } => {
+            let centre = cone.to_local(frame.origin());
+            let about_axis =
+                centre.x.hypot(centre.y) <= tol.linear && parallel_axes(&frame.z(), &cone.z(), tol);
+            if !about_axis {
+                return Err(unsupported(curve, surface));
+            }
+            let v = centre.z / cos;
+            Ok(parallel_pcurve(cone, frame, v, radius + v * sin < 0.0))
+        }
+        Curve::Ellipse { .. } | Curve::Nurbs(_) => Err(unsupported(curve, surface)),
+    }
+}
+
+/// The exact pcurves on a sphere: a parallel at constant `v`, a meridian
+/// at constant `u`.
+fn on_sphere(
+    curve: &Curve,
+    range: Interval,
+    sphere: &Frame,
+    radius: f64,
+    surface: &Surface,
+    tol: Tolerance,
+) -> Result<Curve2, GeomError> {
+    match curve {
+        &Curve::Circle {
+            ref frame,
+            radius: rho,
+        } => {
+            let centre = sphere.to_local(frame.origin());
+            if centre.x.hypot(centre.y) <= tol.linear && parallel_axes(&frame.z(), &sphere.z(), tol)
+            {
+                // A parallel: `v` is the latitude of its plane.
+                return Ok(parallel_pcurve(sphere, frame, centre.z.atan2(rho), false));
+            }
+            // A meridian: the great circle whose plane holds the axis.
+            let through_axis = centre.coords.norm() <= tol.linear
+                && (rho - radius).abs() <= tol.linear
+                && perpendicular_axes(&frame.z(), &sphere.z(), tol);
+            if !through_axis {
+                return Err(unsupported(curve, surface));
+            }
+            let z = sphere.vec_to_local(frame.z().into_inner());
+            let candidate = Vec3::new(-z.y, z.x, 0.0);
+            let Some(candidate) = candidate.try_normalize(0.0) else {
+                return Err(unsupported(curve, surface));
+            };
+            let radial = meridian_radial(sphere, curve, range, candidate, radius);
+            Ok(meridian_pcurve(sphere, frame, radial, false))
+        }
+        Curve::Line { .. } | Curve::Ellipse { .. } | Curve::Nurbs(_) => {
+            Err(unsupported(curve, surface))
+        }
+    }
+}
+
+/// The exact pcurves on a torus: a circle about the axis at constant `v`,
+/// a circle of the tube at constant `u`.
+fn on_torus(
+    curve: &Curve,
+    torus: &Frame,
+    major_radius: f64,
+    minor_radius: f64,
+    surface: &Surface,
+    tol: Tolerance,
+) -> Result<Curve2, GeomError> {
+    match curve {
+        &Curve::Circle {
+            ref frame,
+            radius: rho,
+        } => {
+            let centre = torus.to_local(frame.origin());
+            let equatorial = Vec2::new(centre.x, centre.y);
+            if equatorial.norm() <= tol.linear && parallel_axes(&frame.z(), &torus.z(), tol) {
+                // About the axis: `v` is where the tube's own angle puts
+                // this radius and height.
+                let v = wrap_turn(centre.z.atan2(rho - major_radius));
+                return Ok(parallel_pcurve(torus, frame, v, false));
+            }
+            let Some(radial) = Vec3::new(centre.x, centre.y, 0.0).try_normalize(0.0) else {
+                return Err(unsupported(curve, surface));
+            };
+            let z = torus.vec_to_local(frame.z().into_inner());
+            let of_the_tube = (equatorial.norm() - major_radius).abs() <= tol.linear
+                && centre.z.abs() <= tol.linear
+                && (rho - minor_radius).abs() <= tol.linear
+                && perpendicular_axes(&z, &Vec3::z(), tol)
+                && perpendicular_axes(&z, &radial, tol);
+            if !of_the_tube {
+                return Err(unsupported(curve, surface));
+            }
+            Ok(meridian_pcurve(torus, frame, radial, true))
+        }
+        Curve::Line { .. } | Curve::Ellipse { .. } | Curve::Nurbs(_) => {
+            Err(unsupported(curve, surface))
         }
     }
 }
@@ -452,8 +733,20 @@ mod tests {
             frame: Frame::world(),
             radius: 1.0,
         };
+        // A line is nowhere near a sphere: that is not an unsupported
+        // pair, it is a curve off the surface.
         assert!(matches!(
             pcurve_on(&lifted, range, &sphere, tol()),
+            Err(GeomError::NotOnSurface { .. })
+        ));
+        // A small circle *on* the sphere about no axis of it has no
+        // `Curve2` variant, and is the unsupported pair.
+        let small = Curve::Circle {
+            frame: Frame::from_z(Point3::new(0.5, 0.0, 0.0), Vec3::x()).unwrap(),
+            radius: 0.75f64.sqrt(),
+        };
+        assert!(matches!(
+            pcurve_on(&small, Interval::TURN, &sphere, tol()),
             Err(GeomError::Unsupported { .. })
         ));
         assert!(matches!(

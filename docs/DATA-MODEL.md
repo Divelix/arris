@@ -289,8 +289,27 @@ variant exists, fitted otherwise, and in both cases the checker verifies
 the pcurve against the 3D curve (§Invariants E4). A curve farther than
 `tol.linear` from the surface at any of `PCURVE_SAMPLES` parameters over
 the range is `GeomError::NotOnSurface` naming the parameter and the
-distance; cone, sphere, torus and NURBS surfaces are `Unsupported` arms
-until revolve needs them (M5).
+distance.
+
+On the surfaces of revolution the exact arms are the six a revolve makes,
+each a `Line` in (u, v): on a **cone**, a ruling — the line through the
+apex — at constant `u`, and a circle about the axis at constant `v`; on a
+**sphere**, a circle about the axis at constant `v` (a parallel) and the
+great circle through both poles at constant `u` (a meridian); on a
+**torus**, a circle about the axis at constant `v` and a circle of the
+tube at constant `u`. A `u` origin is the offset of the circle's `X` from
+the surface's, in `[0, 2π)`, running in the sense of the circle's `Z`
+against the surface's, as on the cylinder — and `u + π` for a cone's
+circle beyond the apex, whose radial factor `R + v sin α` is negative. A
+constant-`u` arm's `v` runs with `t` or against it by the turn of the
+circle's own axes in the plane of the axis, and a meridian's `v` leaves
+`[−π/2, π/2]` where the great circle passes a pole onto the opposite
+meridian, which is where the sphere's parametrisation puts it. Every
+other pair on these three — an oblique section of a cone, a small circle
+of a sphere about no axis of it, a Villarceau circle, a NURBS — is
+`Unsupported` naming the pair, with no fitted fallback: the sweeps' curves
+are all exact there (a fallback is a backlog line, for the operation that
+first needs one). NURBS surfaces are an `Unsupported` arm.
 
 **The (u, v) toolkit** is what every algorithm that reasons about a
 face's domain shares — the checker's loop, face and body rows,
