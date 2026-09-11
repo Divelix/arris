@@ -208,7 +208,7 @@ or bound has to be established here.
   and the case-count arithmetic — `div_ceil` so a remainder rounds up and
   coverage never drops below the configured count.
 
-- [ ] Step 3 **[1]** — **Shard `boolean_prop`'s four properties**, shard
+- [x] Step 3 **[1]** — **Shard `boolean_prop`'s four properties**, shard
   counts cost-proportional to step 1's table rather than uniform, since
   `cut_then_fuse` is 47 % of the serial cost: roughly `k` chosen so every
   shard costs about the same, with the total shard count near twice the
@@ -288,10 +288,30 @@ it.
   index is its name's position in the list and the count is the list's
   length, which is what the recommendation was after: no new dependency,
   and both visible where the property is written.
-- `⚠ OPEN:` **Shard counts.** Uniform `k` per property, or per-property
-  counts from step 1's costs. **Agent, step 3.** Recommendation:
-  per-property, since `cut_then_fuse` is 8.5× `piercing_pairs` and a
-  uniform `k` would leave the wall clock set by the one heavy shard.
+- **Resolved (step 3) — shard counts.** Per-property, as recommended.
+  Measured per property with one `cargo nextest run` at 64 cases, which
+  also priced the tangent property the baseline table had omitted:
+
+  | Property | 64 cases | ×3.906 → 256 | `k` | s/shard |
+  |---|---|---|---|---|
+  | `cut_then_fuse_restores_the_union_at_random_poses` | 114.53 | 458 | 30 | 15.3 |
+  | `fuse_and_common_commute_at_random_poses` | 70.69 | 283 | 18 | 15.7 |
+  | `overlapping_pairs_fuse_and_common_additively` | 48.27 | 193 | 12 | 16.1 |
+  | `piercing_pairs_obey_every_identity_and_refuse_the_two_shells` | 13.44 | 54 | 4 | 13.5 |
+  | `a_cylinder_tangent_to_a_box_face_leaves_the_box_and_shares_nothing` | 1.66 | 7 | 1 | 7 |
+
+  64 shards in all — twice the core count, as the step asked — each about
+  16 s at 256 cases, so no one shard sets the wall clock. The tangent
+  property stays unsharded: at 7 s it is already below the floor.
+
+- **Resolved (step 3) — `arris-mesh::tessellate` is not sharded.** Step 3
+  says anything the table shows above the resulting wall clock gets the
+  same treatment. It does not: 10.79 s at 256 cases and 41.15 s at 1000,
+  against a suite that cannot go below total-work-over-cores — about 31 s
+  and 121 s on this machine. `tessellate` is comfortably under both, so
+  sharding it would add shards without moving the wall clock. It becomes
+  worth revisiting only if `boolean_prop` gets cheaper per case (the S5
+  backlog line).
 - `⚠ OPEN:` **Is nextest required or optional?** A hook that falls back
   to `cargo test` when nextest is absent keeps a fresh clone working; a
   hard requirement keeps every committer running the same thing, which is

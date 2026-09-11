@@ -8,7 +8,7 @@
 //! failures).
 
 use arris_debug::prop::body::{Boxed, Cylindrical, OverlappingPair, TangentPair};
-use arris_debug::{dump_text, prop};
+use arris_debug::{dump_text, prop, prop_shards};
 use arris_ops::arris_check::arris_topo::arris_math::nalgebra::{Quaternion, UnitQuaternion};
 use arris_ops::arris_check::arris_topo::arris_math::{Axis, Isometry, Point3, Vec3};
 use arris_ops::arris_check::arris_topo::{Body, Model, Provenance};
@@ -127,67 +127,70 @@ fn assert_cut_identity(
     Ok(())
 }
 
-/// A cylinder that clears every edge of the box: every outcome is known
-/// by construction. `fuse`, `common` and `box − cylinder` are one clean
-/// shell each and obey the identities; `cylinder − box` is the designed
-/// refusal, two shells by name (`⚠ OPEN` 2).
-#[test]
-fn piercing_pairs_obey_every_identity_and_refuse_the_two_shells() {
-    prop::check(prop::body::piercing_pair(), |pair| {
-        let (mut m, a, b, pa, pb) = operands(&pair)?;
-        let (_, union) = run(&mut m, "fuse(a, b)", fuse, a, b)?;
-        let (_, inter) = run(&mut m, "common(a, b)", common, a, b)?;
-        let (_, diff) = run(&mut m, "cut(a, b)", cut, a, b)?;
-        assert_additive(&union, &inter, &pa, &pb)?;
-        assert_cut_identity(&diff, &inter, &pa, &pb)?;
-        let before = dump_text(&m, b).map_err(fail)?;
-        match cut(&mut m, b, a) {
-            Err(OpError::Degenerate {
-                reason: Reason::MultiShell { shells: 2 },
-                ..
-            }) => {}
-            Ok(_) => return Err(fail("cut(b, a): the cylinder minus the box is two shells")),
-            Err(e) => return Err(fail(format!("cut(b, a): {e}"))),
+prop_shards! {
+    /// A cylinder that clears every edge of the box: every outcome is known
+    /// by construction. `fuse`, `common` and `box − cylinder` are one clean
+    /// shell each and obey the identities; `cylinder − box` is the designed
+    /// refusal, two shells by name (`⚠ OPEN` 2).
+    piercing_pairs_obey_every_identity_and_refuse_the_two_shells
+        [shard_0 shard_1 shard_2 shard_3]
+        (pair) = prop::body::piercing_pair() => {
+            let (mut m, a, b, pa, pb) = operands(&pair)?;
+            let (_, union) = run(&mut m, "fuse(a, b)", fuse, a, b)?;
+            let (_, inter) = run(&mut m, "common(a, b)", common, a, b)?;
+            let (_, diff) = run(&mut m, "cut(a, b)", cut, a, b)?;
+            assert_additive(&union, &inter, &pa, &pb)?;
+            assert_cut_identity(&diff, &inter, &pa, &pb)?;
+            let before = dump_text(&m, b).map_err(fail)?;
+            match cut(&mut m, b, a) {
+                Err(OpError::Degenerate {
+                    reason: Reason::MultiShell { shells: 2 },
+                    ..
+                }) => {}
+                Ok(_) => return Err(fail("cut(b, a): the cylinder minus the box is two shells")),
+                Err(e) => return Err(fail(format!("cut(b, a): {e}"))),
+            }
+            prop_assert_eq!(
+                dump_text(&m, b).map_err(fail)?,
+                before,
+                "the model is as it was"
+            );
+            Ok(())
         }
-        prop_assert_eq!(
-            dump_text(&m, b).map_err(fail)?,
-            before,
-            "the model is as it was"
-        );
-        Ok(())
-    });
 }
 
-/// Any overlapping pair, the wall free to cross the box's edges: `fuse`
-/// and `common` are one clean shell each and additive; `box − cylinder`
-/// either obeys the identity or is the two-shell refusal (a corner sliced
-/// off), never anything else.
-#[test]
-fn overlapping_pairs_fuse_and_common_additively() {
-    prop::check(prop::body::overlapping_pair(), |pair| {
-        let (mut m, a, b, pa, pb) = operands(&pair)?;
-        let (_, union) = run(&mut m, "fuse(a, b)", fuse, a, b)?;
-        let (_, inter) = run(&mut m, "common(a, b)", common, a, b)?;
-        assert_additive(&union, &inter, &pa, &pb)?;
-        match cut(&mut m, a, b) {
-            Ok((body, _)) => {
-                let report = check(&m, body, Level::Full);
-                prop_assert!(
-                    report.is_ok() && report.unchecked().is_empty(),
-                    "cut(a, b): not clean at Full\n{}",
-                    report
-                );
-                let diff = mass_properties(&m, body).map_err(fail)?;
-                assert_cut_identity(&diff, &inter, &pa, &pb)?;
+prop_shards! {
+    /// Any overlapping pair, the wall free to cross the box's edges: `fuse`
+    /// and `common` are one clean shell each and additive; `box − cylinder`
+    /// either obeys the identity or is the two-shell refusal (a corner sliced
+    /// off), never anything else.
+    overlapping_pairs_fuse_and_common_additively
+        [shard_0 shard_1 shard_2 shard_3 shard_4 shard_5 shard_6 shard_7
+         shard_8 shard_9 shard_10 shard_11]
+        (pair) = prop::body::overlapping_pair() => {
+            let (mut m, a, b, pa, pb) = operands(&pair)?;
+            let (_, union) = run(&mut m, "fuse(a, b)", fuse, a, b)?;
+            let (_, inter) = run(&mut m, "common(a, b)", common, a, b)?;
+            assert_additive(&union, &inter, &pa, &pb)?;
+            match cut(&mut m, a, b) {
+                Ok((body, _)) => {
+                    let report = check(&m, body, Level::Full);
+                    prop_assert!(
+                        report.is_ok() && report.unchecked().is_empty(),
+                        "cut(a, b): not clean at Full\n{}",
+                        report
+                    );
+                    let diff = mass_properties(&m, body).map_err(fail)?;
+                    assert_cut_identity(&diff, &inter, &pa, &pb)?;
+                }
+                Err(OpError::Degenerate {
+                    reason: Reason::MultiShell { .. },
+                    ..
+                }) => {}
+                Err(e) => return Err(fail(format!("cut(a, b): {e}"))),
             }
-            Err(OpError::Degenerate {
-                reason: Reason::MultiShell { .. },
-                ..
-            }) => {}
-            Err(e) => return Err(fail(format!("cut(a, b): {e}"))),
+            Ok(())
         }
-        Ok(())
-    });
 }
 
 /// A cylinder touching a random face of the box from outside along a
@@ -339,86 +342,94 @@ fn assert_same_properties_to(
     Ok(())
 }
 
-/// `fuse(a, b)` and `fuse(b, a)`, `common(a, b)` and `common(b, a)`: the
-/// same mass properties, the same counts, the same dump up to ids.
-#[test]
-fn fuse_and_common_commute_at_random_poses() {
-    prop::check(prop::body::overlapping_pair(), |pair| {
-        for (name, op) in [("fuse", fuse as Boolean), ("common", common as Boolean)] {
-            let (mut m, a, b, _, _) = operands(&pair)?;
-            let (ab, pab) = run(&mut m, &format!("{name}(a, b)"), op, a, b)?;
-            let (ba, pba) = run(&mut m, &format!("{name}(b, a)"), op, b, a)?;
-            assert_same_properties(&pab, &pba, name)?;
-            let (da, db) = (
-                dump_text(&m, ab).map_err(fail)?,
-                dump_text(&m, ba).map_err(fail)?,
-            );
-            prop_assert_eq!(
-                arris_debug::dump::euler_line(&m, ab).map_err(fail)?,
-                arris_debug::dump::euler_line(&m, ba).map_err(fail)?,
-                "{}: counts",
-                name
-            );
-            prop_assert_eq!(
-                up_to_ids(&da),
-                up_to_ids(&db),
-                "{}: dumps\n{}\n{}",
-                name,
-                da,
-                db
-            );
+prop_shards! {
+    /// `fuse(a, b)` and `fuse(b, a)`, `common(a, b)` and `common(b, a)`: the
+    /// same mass properties, the same counts, the same dump up to ids.
+    fuse_and_common_commute_at_random_poses
+        [shard_0 shard_1 shard_2 shard_3 shard_4 shard_5 shard_6 shard_7
+         shard_8 shard_9 shard_10 shard_11 shard_12 shard_13 shard_14
+         shard_15 shard_16 shard_17]
+        (pair) = prop::body::overlapping_pair() => {
+            for (name, op) in [("fuse", fuse as Boolean), ("common", common as Boolean)] {
+                let (mut m, a, b, _, _) = operands(&pair)?;
+                let (ab, pab) = run(&mut m, &format!("{name}(a, b)"), op, a, b)?;
+                let (ba, pba) = run(&mut m, &format!("{name}(b, a)"), op, b, a)?;
+                assert_same_properties(&pab, &pba, name)?;
+                let (da, db) = (
+                    dump_text(&m, ab).map_err(fail)?,
+                    dump_text(&m, ba).map_err(fail)?,
+                );
+                prop_assert_eq!(
+                    arris_debug::dump::euler_line(&m, ab).map_err(fail)?,
+                    arris_debug::dump::euler_line(&m, ba).map_err(fail)?,
+                    "{}: counts",
+                    name
+                );
+                prop_assert_eq!(
+                    up_to_ids(&da),
+                    up_to_ids(&db),
+                    "{}: dumps\n{}\n{}",
+                    name,
+                    da,
+                    db
+                );
+            }
+            Ok(())
         }
-        Ok(())
-    });
 }
 
 // -- coincident faces (plan step 10, `⚠ OPEN` 4) -----------------------
 
-/// `V((A − B) ∪ B) = V(A ∪ B)` and `V((A − B) ∪ (A ∩ B)) = V(A)`: every
-/// face of `A − B` that came from the tool is coincident with a face of
-/// `B` with the normals opposed, every face of `A ∩ B` is coincident
-/// with one of `A − B`, and the section edges of the first cut are
-/// common blocks of the fuse — the flush case at every pose the cut
-/// succeeds at. Both fuses are clean at `Full` and hold the union's
-/// counts where they are known.
-#[test]
-fn cut_then_fuse_restores_the_union_at_random_poses() {
-    prop::check(prop::body::overlapping_pair(), |pair| {
-        let (mut m, a, b, pa, _) = operands(&pair)?;
-        let diff = match cut(&mut m, a, b) {
-            Ok((body, _)) => body,
-            Err(OpError::Degenerate {
-                reason: Reason::MultiShell { .. },
-                ..
-            }) => return Ok(()),
-            Err(e) => return Err(fail(format!("cut(a, b): {e}"))),
-        };
-        let (union, punion) = run(&mut m, "fuse(a, b)", fuse, a, b)?;
-        let (inter, _) = run(&mut m, "common(a, b)", common, a, b)?;
-        let (restored, prestored) = run(&mut m, "fuse(a − b, b)", fuse, diff, b)?;
-        let rel = fitted_rel(&m, &punion);
-        assert_same_properties_to(&prestored, &punion, "(a − b) ∪ b against a ∪ b", rel)?;
-        prop_assert_eq!(
-            arris_debug::dump::euler_line(&m, restored).map_err(fail)?,
-            arris_debug::dump::euler_line(&m, union).map_err(fail)?,
-            "(a − b) ∪ b: counts"
-        );
-        let (_, pwhole) = run(&mut m, "fuse(a − b, a ∩ b)", fuse, diff, inter)?;
-        let rel = fitted_rel(&m, &pa);
-        prop_assert!(
-            close_to(pwhole.volume, pa.volume, pa.volume, rel),
-            "V((a − b) ∪ (a ∩ b)) = {}, V(a) = {}",
-            pwhole.volume,
-            pa.volume
-        );
-        prop_assert!(
-            close_to(pwhole.area, pa.area, pa.area, rel),
-            "A((a − b) ∪ (a ∩ b)) = {}, A(a) = {}",
-            pwhole.area,
-            pa.area
-        );
-        Ok(())
-    });
+prop_shards! {
+    /// `V((A − B) ∪ B) = V(A ∪ B)` and `V((A − B) ∪ (A ∩ B)) = V(A)`: every
+    /// face of `A − B` that came from the tool is coincident with a face of
+    /// `B` with the normals opposed, every face of `A ∩ B` is coincident
+    /// with one of `A − B`, and the section edges of the first cut are
+    /// common blocks of the fuse — the flush case at every pose the cut
+    /// succeeds at. Both fuses are clean at `Full` and hold the union's
+    /// counts where they are known.
+    cut_then_fuse_restores_the_union_at_random_poses
+        [shard_0 shard_1 shard_2 shard_3 shard_4 shard_5 shard_6 shard_7
+         shard_8 shard_9 shard_10 shard_11 shard_12 shard_13 shard_14
+         shard_15 shard_16 shard_17 shard_18 shard_19 shard_20 shard_21
+         shard_22 shard_23 shard_24 shard_25 shard_26 shard_27 shard_28
+         shard_29]
+        (pair) = prop::body::overlapping_pair() => {
+            let (mut m, a, b, pa, _) = operands(&pair)?;
+            let diff = match cut(&mut m, a, b) {
+                Ok((body, _)) => body,
+                Err(OpError::Degenerate {
+                    reason: Reason::MultiShell { .. },
+                    ..
+                }) => return Ok(()),
+                Err(e) => return Err(fail(format!("cut(a, b): {e}"))),
+            };
+            let (union, punion) = run(&mut m, "fuse(a, b)", fuse, a, b)?;
+            let (inter, _) = run(&mut m, "common(a, b)", common, a, b)?;
+            let (restored, prestored) = run(&mut m, "fuse(a − b, b)", fuse, diff, b)?;
+            let rel = fitted_rel(&m, &punion);
+            assert_same_properties_to(&prestored, &punion, "(a − b) ∪ b against a ∪ b", rel)?;
+            prop_assert_eq!(
+                arris_debug::dump::euler_line(&m, restored).map_err(fail)?,
+                arris_debug::dump::euler_line(&m, union).map_err(fail)?,
+                "(a − b) ∪ b: counts"
+            );
+            let (_, pwhole) = run(&mut m, "fuse(a − b, a ∩ b)", fuse, diff, inter)?;
+            let rel = fitted_rel(&m, &pa);
+            prop_assert!(
+                close_to(pwhole.volume, pa.volume, pa.volume, rel),
+                "V((a − b) ∪ (a ∩ b)) = {}, V(a) = {}",
+                pwhole.volume,
+                pa.volume
+            );
+            prop_assert!(
+                close_to(pwhole.area, pa.area, pa.area, rel),
+                "A((a − b) ∪ (a ∩ b)) = {}, A(a) = {}",
+                pwhole.area,
+                pa.area
+            );
+            Ok(())
+        }
 }
 
 /// The first shrunk failure of the test above (seed and count in the
