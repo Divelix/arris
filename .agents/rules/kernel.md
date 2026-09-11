@@ -41,7 +41,11 @@ down. They apply to every crate; `SEED.md` §9 holds the reasons.
 - **Property tests over hand-picked cases.** Random operands in random
   poses, algebraic identities (volume additivity, cut-then-fuse,
   commutativity, STEP round-trip). A hand-picked case is a regression
-  fixture, not coverage.
+  fixture, not coverage. A property may be split across shards
+  (`prop_shards!`) so the machine runs them at once; each shard is seeded
+  from the base seed and its own index, and the shards together run the
+  configured case count and never fewer, so "those are seeded" and the
+  count both still hold of the sharded form.
 
 ## API
 

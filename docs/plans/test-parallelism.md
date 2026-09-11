@@ -349,6 +349,13 @@ it.
 
 ## Docs to update on completion
 
+**Agent note (2026-09-11):** the first three were done as the code landed,
+not left for retirement — `.agents/rules/git.md` has docs change in the
+same commit as the behaviour, and by step 4 all three described a runner
+the code no longer matched. `/retire-plan` has the roadmap status line and
+deleting this file left to do; check the three below rather than assume
+they are pending.
+
 - `docs/ARCHITECTURE.md` §Formats and tools — `prop` described as a
   sharded seeded runner (`check`, `check_shard`, the macro, the
   shard-seed derivation and its prefix property); `tools/test-timings.sh`

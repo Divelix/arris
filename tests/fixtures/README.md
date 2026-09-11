@@ -217,7 +217,14 @@ Property tests run through `arris_debug::prop::check`: a seeded
 `proptest` runner, `ARRIS_PROPTEST_CASES` cases (default 256) from
 `ARRIS_PROPTEST_SEED` (default fixed, so CI is deterministic). A failure
 prints the shrunk input and the `ARRIS_PROPTEST_SEED=…` that reproduces
-it. proptest's own `proptest-regressions/` files are gitignored and never
+it.
+
+An expensive property is split across shards by `prop_shards!` and runs as
+`property::shard_3`. Its failure names the shard, but the seed it prints is
+still the *base* seed and the total case count — that recipe reproduces the
+whole run, and the shard alone is re-run by its test name. The fixture a
+sharded failure becomes records all three in its commit body: the base
+seed, the case count and the shard. proptest's own `proptest-regressions/` files are gitignored and never
 committed: the regression is a fixture under this directory (or a
 hand-picked test beside the property) with the *desired* assertion,
 `#[ignore]`d until it passes, and the seed and case count in the commit

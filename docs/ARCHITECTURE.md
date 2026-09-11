@@ -527,6 +527,14 @@ mesh-based mass properties (`ops::measure` integrates the B-Rep).
 - **Text dump** (`arris-debug::dump_text`): the deterministic, diffable
   rendering of a body that fixtures store and tests compare. Not a format:
   it has no reader.
+- **`tools/test-timings.sh`**: the suite's wall clock, per test binary and
+  whole, at whatever `ARRIS_PROPTEST_CASES` is set to. Sharding the boolean
+  properties and moving the suite onto `cargo nextest` took
+  `cargo nextest run --workspace` from 445.68 s to 70.92 s at 256 cases and
+  from 1656.26 s to 254.13 s at 1000, measured with this script on a
+  16-core machine — 6.3×, within a tenth of the floor that machine's total
+  work over its cores allows. Not a benchmark harness: it times binaries,
+  not operations.
 - **The oracle** (`tools/oracle/`, Python 3.12, Open CASCADE through the
   `cadquery-ocp` wheels in a `uv` environment): `expected.py` builds each
   fixture's recipe in OCCT and writes `expected.json`; `compare.py` reads
@@ -566,11 +574,22 @@ mesh-based mass properties (`ops::measure` integrates the B-Rep).
   does not follow, `analytic.counts_differ`, held to the recipe's own
   counts with the oracle's kept as the record)
   over the
-  oracle seam (`oracle::compare`: STEP under `target/inspect/`, then
-  `compare.py` through `uv`, a missing environment a loud error), and
+  oracle seam (`oracle::compare`: STEP under `target/inspect/`, named
+  after the fixture, and after the fixture plus a digest of its directory
+  for a scratch copy of one, so two runs of a recipe never write one file;
+  then `compare.py` through `uv`, a missing environment a loud error), and
   the seeded property-test runner and strategies (`prop`,
   with every analytic surface and curve in a random pose and random
-  clamped NURBS curves and surfaces under `prop::geom`). It is a
+  clamped NURBS curves and surfaces under `prop::geom`). `prop` runs a
+  property whole through `check`, or split across `k` shards through
+  `prop_shards!`, which writes one `#[test]` per shard over a body given
+  once so libtest's pool runs them at once instead of one property holding
+  one thread. A shard draws from `shard_seed(base, i) = sha256(base ‖ i)`,
+  which does not take `k`: raising a property's shard count shortens every
+  existing shard's stream to a prefix of what it was rather than re-rolling
+  the corpus, and `cases_per_shard` rounds up, so `k` shards run at least
+  the configured cases and never fewer. A failure names its shard and
+  prints the base seed and total that reproduce the whole run. It is a
   dev-dependency of the workspace's crates and never of a consumer. For
   the crates below it (`math`, `geom`, `topo`) that dev-dependency is a
   cycle, so their property tests are integration tests under
