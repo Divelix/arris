@@ -48,7 +48,12 @@ probe (0.1³ − 0.04³ = 9.36e-4, two shells) passes as a fixture.
   `Assembly::shells: Vec<Vec<FaceSpec>>` (**public type change**).
   `assemble` proves each shell one edge-connected component, no edge or
   vertex shared between shells, the Euler line at `S = shells.len()`.
-  `Builder::finish` over the operators stays one shell.
+  `Builder::finish` over the operators stays one shell. Found at step 1:
+  `Built::shell: ShellId` → `Built::shells: Vec<ShellId>`,
+  `StagedFace::shell()` (a face made by an operator takes its parent's),
+  and `BuildError::{EmptyShell, SharedEdge, SharedVertex}`, the Euler line
+  checked per shell with the builder's genus their sum (**public type
+  changes**).
 - `arris-check`: `lumps(&Model, Body) -> Result<Vec<Lump>, …>` with `Lump
   { outer: Shell, voids: Vec<Shell> }` (**new public item**), the nesting
   B1 proves, for the writer and the consumer.
@@ -77,7 +82,7 @@ mechanical; **[2]** careful — a geometric or numeric case to get right
 within a given design; **[3]** unproven — an algorithm whose robustness or
 bound has to be established here.
 
-- [ ] Step 1 **[2]** — ADR-0006. `Assembly::shells`; `assemble` proves
+- [x] Step 1 **[2]** — ADR-0006. `Assembly::shells`; `assemble` proves
   each shell connected and closed and no entity shared between shells;
   the Euler line over several shells; every caller moved to one-element
   `shells`. Tests: two boxes' faces kept into one body of two shells; an
@@ -139,9 +144,10 @@ naming `multi-shell`.
 
 ## Open questions
 
-- `⚠ OPEN 1:` lumps in one `Solid` (preferred) versus a `General` body as
-  ADR-0004 foresaw, versus several bodies per operation — human, before
-  step 1; the ADR records the answer.
+- ~~`⚠ OPEN 1:`~~ lumps in one `Solid` (preferred) versus a `General`
+  body as ADR-0004 foresaw, versus several bodies per operation.
+  **Decided at step 1 (the human delegated it): lumps in one `Solid`,
+  ADR-0006.**
 - `⚠ OPEN 2:` two lumps meeting at a single vertex: `NonManifold`
   (preferred, what a manifold `Solid` promises) or allowed — agent, step 5,
   checked against what Open CASCADE's `BRepCheck` says of the same shape.

@@ -863,7 +863,7 @@ fn finish_stores_reversed_faces_backwards_and_returns_the_maps() {
         Orientation::Forward
     );
     assert_eq!(
-        m.shell(built.shell).unwrap().faces()[0].orientation,
+        m.shell(built.shells[0]).unwrap().faces()[0].orientation,
         Orientation::Reversed
     );
 }

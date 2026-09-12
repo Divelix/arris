@@ -583,7 +583,14 @@ test scaffolding that stores a dangling reference as given), the builder
 - A **shell** is a set of face uses. A shell of a solid body is closed and
   its effective face normals point out of the material.
 - A **body** is what operations take and return. `Solid`: every shell
-  closed, every edge used by exactly two coedges. `Sheet`: open shells
+  closed, every edge used by exactly two coedges, no edge or vertex used by
+  two shells, and the shells nesting into *lumps* — a lump an outer shell,
+  enclosing positive volume, with the void shells whose innermost
+  container it is (B1) — so one solid holds a cavity, the two halves of a
+  split, disjoint pieces, and a piece inside another's cavity (ADR-0006).
+  A lump is derived, never stored: `arris_check::lumps(&Model, Body)`
+  returns them, and an operation stores a body's shells lump by lump, the
+  outer shell first. `Sheet`: open shells
   allowed, every edge used by one or two coedges, a face's effective normal
   is the sheet's front. `Wire`: no faces, only free edges. `General`: any
   mix, including a face used by two shells (a face separating two regions
@@ -700,8 +707,9 @@ checker, above this crate, is where the finished body is proven.
 outright rather than reaching them by a sequence of edits — a boolean, a
 sweep, a transform — enters the builder through `assemble(&Model, tolerance, Assembly) ->
 Result<Builder, BuildError>` instead (ADR-0004). An `Assembly` is a list
-of `VertexSpec`s, a list of `EdgeSpec`s and a list of `FaceSpec`s, each
-spec `Keep` (an entity the model already holds) or `New`, with
+of `VertexSpec`s, a list of `EdgeSpec`s and the body's shells, each a list
+of `FaceSpec`s, every spec `Keep` (an entity the model already holds) or
+`New`, with
 `VertexKey`/`EdgeKey` naming either an arena id or a position in the
 list; a `New` face's loops are `UseSpec`s in effective orientation, as
 the operators take them. A `Keep` face is kept whole — its loops,
@@ -715,13 +723,20 @@ the kept/modified distinction are that one rule. Any operator applied to
 a kept slot drops the mark — `canonicalise` and `set_pcurve` clear it —
 and `finish` appends that slot instead, so the two entry points compose;
 `Builder::dump` writes ` kept f3` on a slot that still carries a mark.
-`assemble` proves what the operators would have kept true: every loop has
-coedges and closes through effective vertices, every edge is used exactly
-twice and in opposite directions, no arena entity is kept twice, the
-faces are one edge-connected component, and the Euler–Poincaré line
-closes at a whole genus, which becomes the builder's — each failure a
-typed `BuildError` (`LoopOpen`, `EdgeUses`, `SameDirection`, `Duplicate`,
-`Disconnected`, `NotClosed`, `EmptyLoop`, `NoSpec`, `NotFound`), and the model is only read.
+`assemble` proves what the operators would have kept true of each shell:
+every loop has coedges and closes through effective vertices, every edge
+is used exactly twice and in opposite directions, no arena entity is kept
+twice, no shell is empty, no edge is used by and no vertex is an end of
+edges of two shells, the faces of each shell are one edge-connected
+component, and each shell's Euler–Poincaré line closes at a whole genus,
+their sum becoming the builder's — each failure a typed `BuildError`
+(`LoopOpen`, `EdgeUses`, `SameDirection`, `Duplicate`, `EmptyShell`,
+`SharedEdge`, `SharedVertex`, `Disconnected`, `NotClosed`, `EmptyLoop`,
+`NoSpec`, `NotFound`), and the model is only read. How the shells nest is
+not the builder's to prove: it is B1's. `finish` appends one shell per
+shell of the assembly, in order, and `Built::shells` lists them; a face an
+operator makes out of another belongs to that face's shell, so a builder
+of operators makes one.
 
 ### Adjacency and iteration
 

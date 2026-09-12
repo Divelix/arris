@@ -165,9 +165,10 @@ the body itself is appended new in the body's own iteration order through
 `Builder::assemble`, each `Modified` one-to-one from the entity it moved.
 The body's kind is kept and nothing of the input is shared, so the moved
 body is an operand a boolean can take beside the original. It reaches
-exactly as far as `assemble` does — one edge-connected shell, which is
-what every operation in the kernel produces today — and it is how the
-property tests put their operands in random poses.
+exactly as far as `assemble` does — shells that share nothing, each one
+edge-connected, carried shell by shell in the body's stored order, each
+`Modified` from the one it moved — and it is how the property tests put
+their operands in random poses.
 
 A **query** has a different shape: it takes `&Model`, makes no body and
 records no provenance, because there is nothing for a later operation to

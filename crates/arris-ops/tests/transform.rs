@@ -53,6 +53,64 @@ fn a_pose() -> Isometry {
     )
 }
 
+/// A body of two shells — two boxes apart, assembled from their own faces
+/// — moves shell by shell: the two shells in the stored order, each
+/// `Modified` from the one it moved and holding as many faces, every
+/// entity `Modified` exactly once, and the volume both boxes enclose.
+#[test]
+fn a_body_of_two_shells_moves_shell_by_shell() {
+    use arris_ops::arris_check::arris_topo::builder::{Assembly, Builder, FaceSpec};
+    use arris_ops::arris_check::arris_topo::entity::BodyKind;
+    use arris_ops::primitive_box;
+
+    let mut m = Model::default();
+    let (a, _) = primitive_box(&mut m, Point3::origin(), Point3::new(1.0, 1.0, 1.0)).unwrap();
+    let (b, _) = primitive_box(
+        &mut m,
+        Point3::new(5.0, 0.0, 0.0),
+        Point3::new(6.0, 2.0, 1.0),
+    )
+    .unwrap();
+    let shells = [a, b]
+        .iter()
+        .map(|&body| {
+            m.faces(body)
+                .unwrap()
+                .into_iter()
+                .map(FaceSpec::Keep)
+                .collect()
+        })
+        .collect();
+    let assembly = Assembly {
+        shells,
+        ..Assembly::default()
+    };
+    let body = Builder::assemble(&m, m.precision().default_tolerance, assembly)
+        .unwrap()
+        .finish(&mut m, BodyKind::Solid)
+        .unwrap()
+        .body;
+
+    let (moved, provenance) = transform(&mut m, body, &a_pose()).unwrap();
+    assert!(check(&m, moved, Level::Fast).is_ok());
+    let (before, after) = (m.shells(body).unwrap(), m.shells(moved).unwrap());
+    assert_eq!(after.len(), 2);
+    for (old, new) in before.iter().zip(&after) {
+        assert_eq!(provenance.modified_from(old.shape()), [new.shape()]);
+        assert_eq!(
+            m.shell(old.id).unwrap().faces().len(),
+            m.shell(new.id).unwrap().faces().len()
+        );
+    }
+    let (inputs, outputs) = (entities_of(&m, body), entities_of(&m, moved));
+    assert_eq!(inputs.len(), outputs.len());
+    for e in inputs {
+        assert_eq!(provenance.modified_from(e).len(), 1, "{e}");
+    }
+    let volume = mass_properties(&m, moved).unwrap().volume;
+    assert!((volume - 3.0).abs() < 1e-12, "{volume}");
+}
+
 #[test]
 fn a_transformed_cylinder_is_clean_at_full_and_one_to_one_modified() {
     let mut m = Model::default();

@@ -462,7 +462,9 @@ fn record(
     for (&id, &role) in built.faces.values().zip(face_roles) {
         provenance.add_generated(role, forward(id.into()));
     }
-    provenance.add_generated(part(SweepPart::Shell), forward(built.shell.into()));
+    for &shell in &built.shells {
+        provenance.add_generated(part(SweepPart::Shell), forward(shell.into()));
+    }
     provenance.add_generated(part(SweepPart::Body), built.body);
     provenance
 }
@@ -862,7 +864,7 @@ pub fn revolve(
         let assembly = Assembly {
             vertices,
             edges,
-            faces,
+            shells: vec![faces],
         };
         let b = Builder::assemble(m, tolerance, assembly)?;
         let built = b.finish(m, BodyKind::Solid)?;
@@ -1218,7 +1220,7 @@ pub fn extrude(
         let assembly = Assembly {
             vertices,
             edges,
-            faces,
+            shells: vec![faces],
         };
         let b = Builder::assemble(m, tolerance, assembly)?;
         let built = b.finish(m, BodyKind::Solid)?;

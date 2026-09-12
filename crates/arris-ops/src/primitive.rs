@@ -120,7 +120,9 @@ fn roles(
     for (&r, &id) in &built.faces {
         p.add_generated(face(r), Shape::new(id, Orientation::Forward));
     }
-    p.add_generated(shell, Shape::new(built.shell, Orientation::Forward));
+    for &id in &built.shells {
+        p.add_generated(shell, Shape::new(id, Orientation::Forward));
+    }
     p.add_generated(body, built.body);
     p
 }

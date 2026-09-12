@@ -22,9 +22,10 @@ use crate::verify;
 /// kind is kept.
 ///
 /// Built over `assemble`, so it reaches exactly as far as that does: a
-/// body reduced entirely to shells of faces (a `Solid`, the one kind
-/// [`Builder::finish`] builds and every operation produces today) moves
-/// whole; one that is not one connected shell comes back as
+/// body reduced entirely to shells of faces that share nothing (a
+/// `Solid`, the one kind [`Builder::finish`] builds and every operation
+/// produces today) moves whole, every shell of it carried to a shell of
+/// the result in the body's stored order; one that is not comes back as
 /// [`OpError::Internal`] naming the builder's refusal, the same as
 /// `assemble`'s own.
 ///
@@ -52,7 +53,18 @@ pub fn transform(
     let not_found = || OpError::NotFound(Shape::new(body.id, body.orientation));
     crate::verify_input(m, body)?;
     let entity = m.body(body.id).map_err(|_| not_found())?.clone();
-    let faces = m.faces(body).map_err(|_| not_found())?;
+    // Every shell use with its faces seen through it, in stored order.
+    let mut shells = Vec::new();
+    for shell in m.shells(body).map_err(|_| not_found())? {
+        let faces: Vec<_> = m
+            .shell(shell.id)
+            .map_err(|_| not_found())?
+            .faces()
+            .iter()
+            .map(|f| f.oriented_by(shell.orientation))
+            .collect();
+        shells.push((shell, faces));
+    }
     let closure = m.closure(body).map_err(|_| not_found())?;
     let tolerance = m.precision().default_tolerance;
 
@@ -99,45 +111,50 @@ pub fn transform(
             edge_index.insert(e, i);
         }
 
-        let mut face_specs = Vec::with_capacity(faces.len());
-        for f in &faces {
-            let old = m.face(f.id).map_err(|_| not_found())?.clone();
-            let loops = old
-                .loops()
-                .iter()
-                .map(|l| {
-                    // `UseSpec::orientation` is the *effective* direction, as
-                    // seen from outside the material — `f.orientation`
-                    // composed with the coedge's own, the loop reversed to
-                    // match when the face itself is reversed (the same
-                    // conversion `Builder::assemble`'s `Keep` case applies).
-                    let mut uses: Vec<UseSpec> = l
-                        .coedges()
-                        .iter()
-                        .map(|c| UseSpec {
-                            edge: EdgeKey::New(edge_index[&c.edge()]),
-                            orientation: f.orientation.compose(c.orientation()),
-                            pcurve: c.pcurve(),
-                        })
-                        .collect();
-                    if f.orientation.is_reversed() {
-                        uses.reverse();
-                    }
-                    uses
-                })
-                .collect();
-            face_specs.push(FaceSpec::New {
-                surface: surface_of[&old.surface()],
-                orientation: f.orientation,
-                loops,
-                tolerance: old.tolerance(),
-            });
+        let mut shell_specs = Vec::with_capacity(shells.len());
+        for (_, faces) in &shells {
+            let mut face_specs = Vec::with_capacity(faces.len());
+            for f in faces {
+                let old = m.face(f.id).map_err(|_| not_found())?.clone();
+                let loops = old
+                    .loops()
+                    .iter()
+                    .map(|l| {
+                        // `UseSpec::orientation` is the *effective* direction,
+                        // as seen from outside the material — `f.orientation`
+                        // composed with the coedge's own, the loop reversed to
+                        // match when the face itself is reversed (the same
+                        // conversion `Builder::assemble`'s `Keep` case
+                        // applies).
+                        let mut uses: Vec<UseSpec> = l
+                            .coedges()
+                            .iter()
+                            .map(|c| UseSpec {
+                                edge: EdgeKey::New(edge_index[&c.edge()]),
+                                orientation: f.orientation.compose(c.orientation()),
+                                pcurve: c.pcurve(),
+                            })
+                            .collect();
+                        if f.orientation.is_reversed() {
+                            uses.reverse();
+                        }
+                        uses
+                    })
+                    .collect();
+                face_specs.push(FaceSpec::New {
+                    surface: surface_of[&old.surface()],
+                    orientation: f.orientation,
+                    loops,
+                    tolerance: old.tolerance(),
+                });
+            }
+            shell_specs.push(face_specs);
         }
 
         let assembly = Assembly {
             vertices,
             edges,
-            faces: face_specs,
+            shells: shell_specs,
         };
         let b = Builder::assemble(m, tolerance, assembly)?;
         let built = b.finish(m, entity.kind())?;
@@ -152,11 +169,14 @@ pub fn transform(
         for (&old, &new) in closure.edges.iter().zip(built.edges.values()) {
             provenance.add_modified(forward(old), forward(new));
         }
-        for (old, &new) in faces.iter().zip(built.faces.values()) {
+        // `assemble` makes one face slot per spec in spec order, and one
+        // shell per assembly shell in order, so both zip.
+        let faces = shells.iter().flat_map(|(_, faces)| faces);
+        for (old, &new) in faces.zip(built.faces.values()) {
             provenance.add_modified(forward(old.id), forward(new));
         }
-        for &old in &closure.shells {
-            provenance.add_modified(forward(old), forward(built.shell));
+        for ((old, _), &new) in shells.iter().zip(&built.shells) {
+            provenance.add_modified(forward(old.id), forward(new));
         }
         provenance.add_modified(forward(body.id), forward(built.body.id));
 

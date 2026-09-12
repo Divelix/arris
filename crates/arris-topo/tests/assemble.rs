@@ -1,9 +1,10 @@
-//! `Builder::assemble` (ADR-0004, `docs/DATA-MODEL.md` §Euler
+//! `Builder::assemble` (ADR-0004, ADR-0006, `docs/DATA-MODEL.md` §Euler
 //! operators): a body described as `Keep`/`New` specs rather than built by
 //! an operator sequence. A body assembled from its own entities is the
 //! same body — the same ids when every spec is `Keep`, the same dump up to
-//! ids when every spec is `New` — and every way of describing something
-//! that is not a closed surface is a typed refusal.
+//! ids when every spec is `New` — a body of several shells is several
+//! closed surfaces that share nothing, and every way of describing
+//! something that is not is a typed refusal.
 
 use std::collections::BTreeMap;
 
@@ -114,46 +115,47 @@ fn describe(m: &Model, body: Body, keep: bool) -> Assembly {
                 }
             })
             .collect(),
-        faces: m
-            .faces(body)
-            .unwrap()
-            .into_iter()
-            .map(|face| {
-                if keep {
-                    return FaceSpec::Keep(face);
-                }
-                let entity = m.face(face.id).unwrap();
-                let loops = entity
-                    .loops()
-                    .iter()
-                    .map(|l| {
-                        let mut walk: Vec<UseSpec> = l
-                            .coedges()
-                            .iter()
-                            .map(|c| UseSpec {
-                                edge: if keep {
-                                    EdgeKey::Kept(c.edge())
-                                } else {
-                                    EdgeKey::New(edge_index[&c.edge()])
-                                },
-                                orientation: face.orientation.compose(c.orientation()),
-                                pcurve: c.pcurve(),
-                            })
-                            .collect();
-                        if face.orientation.is_reversed() {
-                            walk.reverse();
-                        }
-                        walk
-                    })
-                    .collect();
-                FaceSpec::New {
-                    surface: entity.surface(),
-                    orientation: face.orientation,
-                    loops,
-                    tolerance: entity.tolerance(),
-                }
-            })
-            .collect(),
+        shells: vec![
+            m.faces(body)
+                .unwrap()
+                .into_iter()
+                .map(|face| {
+                    if keep {
+                        return FaceSpec::Keep(face);
+                    }
+                    let entity = m.face(face.id).unwrap();
+                    let loops = entity
+                        .loops()
+                        .iter()
+                        .map(|l| {
+                            let mut walk: Vec<UseSpec> = l
+                                .coedges()
+                                .iter()
+                                .map(|c| UseSpec {
+                                    edge: if keep {
+                                        EdgeKey::Kept(c.edge())
+                                    } else {
+                                        EdgeKey::New(edge_index[&c.edge()])
+                                    },
+                                    orientation: face.orientation.compose(c.orientation()),
+                                    pcurve: c.pcurve(),
+                                })
+                                .collect();
+                            if face.orientation.is_reversed() {
+                                walk.reverse();
+                            }
+                            walk
+                        })
+                        .collect();
+                    FaceSpec::New {
+                        surface: entity.surface(),
+                        orientation: face.orientation,
+                        loops,
+                        tolerance: entity.tolerance(),
+                    }
+                })
+                .collect(),
+        ],
     }
 }
 
@@ -407,7 +409,7 @@ fn an_edge_used_once_none_or_three_times_is_refused() {
     let body = sample::cylinder(&mut m, 4.0, 12.0).unwrap();
     // One face left out: its edges lose a use.
     let mut assembly = describe(&m, body, true);
-    assembly.faces.pop();
+    assembly.shells[0].pop();
     assert!(matches!(
         assemble(&m, assembly),
         Err(BuildError::EdgeUses { uses: 1, .. })
@@ -436,7 +438,7 @@ fn an_edge_used_once_none_or_three_times_is_refused() {
         frame: Frame2::identity(),
         radius: 4.0,
     });
-    assembly.faces.push(FaceSpec::New {
+    assembly.shells[0].push(FaceSpec::New {
         surface: plane,
         orientation: Orientation::Forward,
         loops: vec![vec![UseSpec {
@@ -469,7 +471,7 @@ fn an_edge_used_twice_the_same_way_is_refused() {
     let circle = closed_edge(&m, body);
     let mut assembly = describe(&m, body, false);
     let mut flipped = 0;
-    for face in &mut assembly.faces {
+    for face in &mut assembly.shells[0] {
         if let FaceSpec::New { loops, .. } = face {
             for walk in loops.iter_mut() {
                 if walk.len() == 1 && walk[0].edge == EdgeKey::New(edge_slot(&m, body, circle)) {
@@ -505,7 +507,7 @@ fn a_loop_that_does_not_close_is_refused() {
     let mut m = Model::default();
     let body = sample::unit_box(&mut m).unwrap();
     let mut assembly = describe(&m, body, false);
-    if let FaceSpec::New { loops, .. } = &mut assembly.faces[0] {
+    if let FaceSpec::New { loops, .. } = &mut assembly.shells[0][0] {
         loops[0][0].orientation = loops[0][0].orientation.flipped();
     }
     assert!(matches!(
@@ -519,8 +521,7 @@ fn a_loop_given_backwards_is_refused() {
     let mut m = Model::default();
     let body = sample::cylinder(&mut m, 4.0, 12.0).unwrap();
     let mut assembly = describe(&m, body, false);
-    let wall = assembly
-        .faces
+    let wall = assembly.shells[0]
         .iter_mut()
         .find(|f| matches!(f, FaceSpec::New { loops, .. } if loops[0].len() == 4))
         .expect("the wall's loop: bottom circle, seam up, top circle, seam down");
@@ -534,7 +535,7 @@ fn a_loop_given_backwards_is_refused() {
 }
 
 #[test]
-fn two_components_are_refused() {
+fn two_components_in_one_shell_are_refused() {
     let mut m = Model::default();
     let a = sample::unit_box(&mut m).unwrap();
     let b = sample::cuboid(
@@ -545,11 +546,230 @@ fn two_components_are_refused() {
     .unwrap();
     let mut assembly = describe(&m, a, true);
     let other = describe(&m, b, true);
-    assembly.faces.extend(other.faces);
+    assembly.shells[0].extend(other.shells.into_iter().flatten());
     assert!(matches!(
         assemble(&m, assembly),
         Err(BuildError::Disconnected { .. })
     ));
+}
+
+/// Two boxes apart, `a`'s faces the first shell and `b`'s the second.
+fn two_boxes(m: &mut Model) -> (Body, Body) {
+    let a = sample::unit_box(m).unwrap();
+    let b = sample::cuboid(m, Point3::new(5.0, 0.0, 0.0), Point3::new(6.0, 1.0, 1.0)).unwrap();
+    (a, b)
+}
+
+/// The same two components as two shells are one body: every face kept,
+/// the counts the sum of the two boxes', a body storing the shells in the
+/// assembly's order, and each shell the faces of one box.
+#[test]
+fn two_components_as_two_shells_are_one_body() {
+    let mut m = Model::default();
+    let (a, b) = two_boxes(&mut m);
+    let mut assembly = describe(&m, a, true);
+    assembly.shells.extend(describe(&m, b, true).shells);
+    let builder = assemble(&m, assembly).unwrap();
+    assert_eq!(builder.counts().to_string(), "16/24/12/12/2 g0 = 0");
+    assert!(builder.dump().contains(" shell 1 "), "{}", builder.dump());
+    let built = builder.finish(&mut m, BodyKind::Solid).unwrap();
+    assert_eq!(built.shells.len(), 2);
+    let shells = m.shells(built.body).unwrap();
+    assert_eq!(
+        shells.iter().map(|s| s.id).collect::<Vec<_>>(),
+        built.shells
+    );
+    for (shell, box_body) in shells.iter().zip([a, b]) {
+        let faces: Vec<FaceId> = m
+            .shell(shell.id)
+            .unwrap()
+            .faces()
+            .iter()
+            .map(|f| f.id)
+            .collect();
+        let own: Vec<FaceId> = m.faces(box_body).unwrap().iter().map(|f| f.id).collect();
+        assert_eq!(faces, own);
+    }
+    assert_eq!(m.faces(built.body).unwrap().len(), 12);
+    let report = check(&m, built.body, Level::Fast);
+    assert!(report.is_ok(), "{report}");
+    assert_eq!(
+        report.euler().map(|l| l.to_string()),
+        Some("16/24/12/12/2 g0 = 0".to_string())
+    );
+
+    // Described with every entity new, the same counts.
+    let mut assembly = describe(&m, a, false);
+    let other = describe(&m, b, false);
+    let (nv, ne) = (assembly.vertices.len(), assembly.edges.len());
+    assembly.vertices.extend(other.vertices);
+    assembly
+        .edges
+        .extend(other.edges.into_iter().map(|e| shifted_edge(e, nv)));
+    assembly.shells.extend(
+        other
+            .shells
+            .into_iter()
+            .map(|faces| faces.into_iter().map(|f| shifted_face(f, ne)).collect()),
+    );
+    let builder = assemble(&m, assembly).unwrap();
+    assert_eq!(builder.counts().to_string(), "16/24/12/12/2 g0 = 0");
+}
+
+/// An edge spec of a second description appended after `by` vertices.
+fn shifted_edge(e: EdgeSpec, by: usize) -> EdgeSpec {
+    match e {
+        EdgeSpec::New {
+            geometry,
+            start,
+            end,
+            tolerance,
+        } => EdgeSpec::New {
+            geometry,
+            start: shifted_key(start, by),
+            end: shifted_key(end, by),
+            tolerance,
+        },
+        kept @ EdgeSpec::Keep(_) => kept,
+    }
+}
+
+fn shifted_key(k: VertexKey, by: usize) -> VertexKey {
+    match k {
+        VertexKey::New(i) => VertexKey::New(i + by),
+        kept @ VertexKey::Kept(_) => kept,
+    }
+}
+
+/// A face spec of a second description appended after `by` edges.
+fn shifted_face(f: FaceSpec, by: usize) -> FaceSpec {
+    match f {
+        FaceSpec::New {
+            surface,
+            orientation,
+            loops,
+            tolerance,
+        } => FaceSpec::New {
+            surface,
+            orientation,
+            loops: loops
+                .into_iter()
+                .map(|l| {
+                    l.into_iter()
+                        .map(|u| UseSpec {
+                            edge: match u.edge {
+                                EdgeKey::New(i) => EdgeKey::New(i + by),
+                                kept @ EdgeKey::Kept(_) => kept,
+                            },
+                            ..u
+                        })
+                        .collect()
+                })
+                .collect(),
+            tolerance,
+        },
+        kept @ FaceSpec::Keep(_) => kept,
+    }
+}
+
+/// One box's faces split between two shells: every edge between the
+/// halves is used once by each, so neither half is closed.
+#[test]
+fn an_edge_used_by_two_shells_is_refused() {
+    let mut m = Model::default();
+    let body = sample::unit_box(&mut m).unwrap();
+    let mut assembly = describe(&m, body, true);
+    let second = assembly.shells[0].split_off(3);
+    assembly.shells.push(second);
+    assert!(matches!(
+        assemble(&m, assembly),
+        Err(BuildError::SharedEdge { shells: [0, 1], .. })
+    ));
+}
+
+/// Two boxes touching at a corner, the corner one vertex of both: two
+/// closed shells meeting at a point.
+#[test]
+fn a_vertex_on_two_shells_is_refused() {
+    let mut m = Model::default();
+    let a = sample::unit_box(&mut m).unwrap();
+    let b = sample::cuboid(
+        &mut m,
+        Point3::new(1.0, 1.0, 1.0),
+        Point3::new(2.0, 2.0, 2.0),
+    )
+    .unwrap();
+    let corner = |body: Body| {
+        m.vertices(body)
+            .unwrap()
+            .into_iter()
+            .map(|v| v.id)
+            .find(|&v| (m.vertex(v).unwrap().point() - Point3::new(1.0, 1.0, 1.0)).norm() == 0.0)
+            .unwrap()
+    };
+    let (ca, cb) = (corner(a), corner(b));
+    let mut assembly = describe(&m, a, false);
+    let other = describe(&m, b, false);
+    let nv = assembly.vertices.len();
+    let ne = assembly.edges.len();
+    let mut b_vertices: Vec<VertexId> = m.vertices(b).unwrap().iter().map(|v| v.id).collect();
+    b_vertices.sort_unstable();
+    let mut a_vertices: Vec<VertexId> = m.vertices(a).unwrap().iter().map(|v| v.id).collect();
+    a_vertices.sort_unstable();
+    let (ia, ib) = (
+        a_vertices.iter().position(|&v| v == ca).unwrap(),
+        b_vertices.iter().position(|&v| v == cb).unwrap(),
+    );
+    assembly.vertices.extend(other.vertices);
+    assembly.edges.extend(other.edges.into_iter().map(|e| {
+        // `b`'s corner is `a`'s: one vertex, on edges of both shells.
+        let e = shifted_edge(e, nv);
+        match e {
+            EdgeSpec::New {
+                geometry,
+                start,
+                end,
+                tolerance,
+            } => {
+                let at = |k: VertexKey| {
+                    if k == VertexKey::New(nv + ib) {
+                        VertexKey::New(ia)
+                    } else {
+                        k
+                    }
+                };
+                EdgeSpec::New {
+                    geometry,
+                    start: at(start),
+                    end: at(end),
+                    tolerance,
+                }
+            }
+            kept @ EdgeSpec::Keep(_) => kept,
+        }
+    }));
+    assembly.shells.extend(
+        other
+            .shells
+            .into_iter()
+            .map(|faces| faces.into_iter().map(|f| shifted_face(f, ne)).collect()),
+    );
+    assert!(matches!(
+        assemble(&m, assembly),
+        Err(BuildError::SharedVertex { shells: [0, 1], .. })
+    ));
+}
+
+#[test]
+fn an_empty_shell_is_refused() {
+    let mut m = Model::default();
+    let body = sample::unit_box(&mut m).unwrap();
+    let mut assembly = describe(&m, body, true);
+    assembly.shells.insert(0, Vec::new());
+    assert_eq!(
+        assemble(&m, assembly).err(),
+        Some(BuildError::EmptyShell { shell: 0 })
+    );
 }
 
 #[test]
@@ -579,7 +799,7 @@ fn a_kept_entity_that_does_not_resolve_is_refused() {
     let mut m = Model::default();
     let body = sample::unit_box(&mut m).unwrap();
     let mut assembly = describe(&m, body, true);
-    assembly.faces[0] = FaceSpec::Keep(arris_topo::Face::forward(FaceId::new(99, 0)));
+    assembly.shells[0][0] = FaceSpec::Keep(arris_topo::Face::forward(FaceId::new(99, 0)));
     assert!(matches!(
         assemble(&m, assembly),
         Err(BuildError::NotFound(_))
@@ -597,7 +817,8 @@ fn keeping_one_entity_twice_is_refused() {
     let mut m = Model::default();
     let body = sample::unit_box(&mut m).unwrap();
     let mut assembly = describe(&m, body, true);
-    assembly.faces.push(assembly.faces[0].clone());
+    let again = assembly.shells[0][0].clone();
+    assembly.shells[0].push(again);
     assert!(matches!(
         assemble(&m, assembly),
         Err(BuildError::Duplicate(_))

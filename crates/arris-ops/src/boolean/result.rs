@@ -951,7 +951,11 @@ pub(super) fn boolean(
             let shells: Vec<Shape> = closures[side].shells.iter().map(|&s| forward(s)).collect();
             for s in shells {
                 match policy {
-                    Policy::Reuse => p.add_modified(s, forward(built.shell)),
+                    Policy::Reuse => {
+                        for &out in &built.shells {
+                            p.add_modified(s, forward(out));
+                        }
+                    }
                     Policy::Regenerate => p.add_deleted(s),
                 }
             }
@@ -1148,9 +1152,10 @@ impl Build<'_> {
             new_edges.push(r);
         }
 
+        let mut faces = Vec::with_capacity(self.kept.len());
         for piece in &self.kept {
             if piece.whole {
-                assembly.faces.push(FaceSpec::Keep(FaceHandle::new(
+                faces.push(FaceSpec::Keep(FaceHandle::new(
                     piece.face.id,
                     piece.orientation,
                 )));
@@ -1177,13 +1182,14 @@ impl Build<'_> {
                     uses
                 })
                 .collect();
-            assembly.faces.push(FaceSpec::New {
+            faces.push(FaceSpec::New {
                 surface: entity.surface(),
                 orientation: piece.orientation,
                 loops,
                 tolerance: entity.tolerance(),
             });
         }
+        assembly.shells = vec![faces];
         Ok(Plan {
             assembly,
             new_vertices,

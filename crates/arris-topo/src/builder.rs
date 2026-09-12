@@ -274,12 +274,14 @@ impl StagedLoop {
 }
 
 /// A face under construction: its surface, the orientation the shell will
-/// use it with, and its loops in the builder's canonical order (loops
-/// without uses first, by their seed; then by their first use).
+/// use it with, the shell it belongs to, and its loops in the builder's
+/// canonical order (loops without uses first, by their seed; then by their
+/// first use).
 #[derive(Debug, Clone, PartialEq)]
 pub struct StagedFace {
     surface: SurfaceId,
     orientation: Orientation,
+    shell: usize,
     loops: Vec<StagedLoop>,
     tolerance: f64,
     kept: Option<FaceId>,
@@ -289,6 +291,14 @@ impl StagedFace {
     /// The surface.
     pub const fn surface(&self) -> SurfaceId {
         self.surface
+    }
+
+    /// The shell the face belongs to: its index in the
+    /// [`Assembly::shells`] the builder was assembled from, and `0` for a
+    /// builder of operators, which makes one shell. A face an operator
+    /// makes out of another belongs to that face's shell.
+    pub const fn shell(&self) -> usize {
+        self.shell
     }
 
     /// `Forward` when the surface's normal is the outward one, `Reversed`
@@ -390,7 +400,8 @@ pub struct Counts {
     pub faces: usize,
     /// Loops over those faces.
     pub loops: usize,
-    /// One while a face exists, else zero: the builder makes one shell.
+    /// The shells the live faces belong to: one while a face exists for a
+    /// builder of operators, the assembly's shells for an assembled one.
     pub shells: usize,
     /// Handles made by `kfmrh` and not yet removed by `mfkrh`.
     pub genus: usize,
@@ -429,14 +440,15 @@ impl fmt::Display for Counts {
     }
 }
 
-/// What [`Builder::finish`] appended: the body, its shell, and the arena
+/// What [`Builder::finish`] appended: the body, its shells, and the arena
 /// id of every slot — what an operation's provenance is built from.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Built {
     /// The body, `Forward`.
     pub body: Body,
-    /// Its one shell.
-    pub shell: ShellId,
+    /// Its shells, one per shell index the faces carry, in index order —
+    /// the order the body stores them in. One for a builder of operators.
+    pub shells: Vec<ShellId>,
     /// Slot → arena id, every live vertex.
     pub vertices: BTreeMap<VertexRef, VertexId>,
     /// Slot → arena id, every live edge.
@@ -679,21 +691,49 @@ pub enum BuildError {
         /// The vertex this use starts at.
         starts: VertexRef,
     },
-    /// [`Builder::assemble`]: the faces are not one edge-connected
-    /// component, so they are not one shell.
-    #[error("{face} is not edge-connected to {from}")]
+    /// [`Builder::assemble`]: the faces of one shell are not one
+    /// edge-connected component.
+    #[error("{face} is not edge-connected to {from}, the first face of its shell")]
     Disconnected {
         /// A face of another component.
         face: FaceRef,
         /// The face the walk started from.
         from: FaceRef,
     },
-    /// [`Builder::assemble`]: the counts do not close the Euler–Poincaré
-    /// line at a whole genus, so the faces are not a closed surface.
+    /// [`Builder::assemble`]: the counts of a shell do not close the
+    /// Euler–Poincaré line at a whole genus, so its faces are not a closed
+    /// surface — or a vertex is on no shell's edge, so the body's do not.
     #[error("{counts} is not a closed surface of whole genus")]
     NotClosed {
-        /// The counts the specs make, with the genus reported as zero.
+        /// The counts of the shell that does not close (`S` = 1), or of
+        /// the whole body for a vertex on no edge; the genus reported as
+        /// zero.
         counts: Counts,
+    },
+    /// [`Builder::assemble`]: a shell of the assembly has no faces.
+    #[error("shell {shell} of the assembly has no faces")]
+    EmptyShell {
+        /// The shell's index in [`Assembly::shells`].
+        shell: usize,
+    },
+    /// [`Builder::assemble`]: an edge is used by faces of two shells, so
+    /// neither shell is closed on its own.
+    #[error("{edge} is used by shells {} and {}", .shells[0], .shells[1])]
+    SharedEdge {
+        /// The edge.
+        edge: EdgeRef,
+        /// The two shells, ascending.
+        shells: [usize; 2],
+    },
+    /// [`Builder::assemble`]: a vertex is an end of edges of two shells —
+    /// two closed shells touching at a point, which a manifold solid's
+    /// shells never do.
+    #[error("{vertex} is on edges of shells {} and {}", .shells[0], .shells[1])]
+    SharedVertex {
+        /// The vertex.
+        vertex: VertexRef,
+        /// The two shells, ascending.
+        shells: [usize; 2],
     },
 }
 
@@ -862,7 +902,7 @@ pub struct UseSpec {
 /// its id, or one to append.
 #[derive(Debug, Clone, PartialEq)]
 pub enum FaceSpec {
-    /// The face with this arena id, used by the new shell with this
+    /// The face with this arena id, used by its new shell with this
     /// orientation, kept: its surface, loops, pcurves and tolerance are the
     /// model's, and every edge and vertex it names is kept with it.
     Keep(handle::Face),
@@ -881,8 +921,9 @@ pub enum FaceSpec {
     },
 }
 
-/// The faces of one body and the edges and vertices they are over, each
-/// kept from the model or new: what [`Builder::assemble`] takes.
+/// The faces of one body, grouped into its shells, and the edges and
+/// vertices they are over, each kept from the model or new: what
+/// [`Builder::assemble`] takes.
 ///
 /// The lists are addressed positionally by [`VertexKey::New`] and
 /// [`EdgeKey::New`], so a caller that has a slot per entity of its
@@ -896,9 +937,10 @@ pub struct Assembly {
     pub vertices: Vec<VertexSpec>,
     /// The edges, addressed by [`EdgeKey::New`].
     pub edges: Vec<EdgeSpec>,
-    /// The faces of the body's one shell, in the order the shell uses
-    /// them.
-    pub faces: Vec<FaceSpec>,
+    /// The body's shells in the order the body stores them, each the
+    /// faces it uses in order. A shell shares no edge and no vertex with
+    /// another (`docs/DATA-MODEL.md` §Entities: a solid's lumps).
+    pub shells: Vec<Vec<FaceSpec>>,
 }
 
 /// ` kept f3` for a slot [`Builder::assemble`] took from the model and no
@@ -1006,13 +1048,18 @@ impl Builder {
     /// The counts and the Euler line they make.
     pub fn counts(&self) -> Counts {
         let loops = self.faces.iter().map(|(_, f)| f.loops.len()).sum();
-        let faces = self.faces.len();
+        let shells = self
+            .faces
+            .iter()
+            .map(|(_, f)| f.shell)
+            .collect::<BTreeSet<_>>()
+            .len();
         Counts {
             vertices: self.vertices.len(),
             edges: self.edges.len(),
-            faces,
+            faces: self.faces.len(),
             loops,
-            shells: usize::from(faces > 0),
+            shells,
             genus: self.genus,
         }
     }
@@ -1217,6 +1264,7 @@ impl Builder {
         let f = FaceRef(self.faces.insert(StagedFace {
             surface: seed.surface,
             orientation: seed.orientation,
+            shell: 0,
             loops: vec![StagedLoop {
                 uses: Vec::new(),
                 seed: v,
@@ -1409,6 +1457,7 @@ impl Builder {
         if matches!(split.geometry, EdgeGeometry::Degenerate { .. }) && start != end {
             return Err(BuildError::DegenerateEnds { start, end });
         }
+        let shell = self.face(from.face)?.shell;
         let e = EdgeRef(self.edges.insert(StagedEdge {
             geometry: split.geometry,
             start,
@@ -1446,6 +1495,7 @@ impl Builder {
         let f = FaceRef(self.faces.insert(StagedFace {
             surface: split.surface,
             orientation: split.orientation,
+            shell,
             loops: vec![StagedLoop {
                 uses: new_uses,
                 seed: end,
@@ -1687,11 +1737,13 @@ impl Builder {
         if self.genus == 0 {
             return Err(BuildError::NoHandle);
         }
-        let (surface, orientation, tolerance) = (f.surface, f.orientation, f.tolerance);
+        let (surface, orientation, tolerance, shell) =
+            (f.surface, f.orientation, f.tolerance, f.shell);
         let lifted = self.face_mut(face)?.loops.remove(ring);
         let new = FaceRef(self.faces.insert(StagedFace {
             surface,
             orientation: orientation.flipped(),
+            shell,
             loops: vec![lifted],
             tolerance,
             kept: None,
@@ -1725,11 +1777,13 @@ impl Builder {
     }
 
     /// The builder's state as text: every live slot in order with its
-    /// geometry ids, every loop's uses, the genus and the counts line.
-    /// Identical for two builders that went through the same calls, and
-    /// restored byte for byte by an operator's inverse.
+    /// geometry ids — a face's shell index too once there are several —
+    /// every loop's uses, the genus and the counts line. Identical for two
+    /// builders that went through the same calls, and restored byte for
+    /// byte by an operator's inverse.
     pub fn dump(&self) -> String {
         use core::fmt::Write as _;
+        let several_shells = self.counts().shells > 1;
         let mut out = String::new();
         let _ = writeln!(
             out,
@@ -1763,9 +1817,14 @@ impl Builder {
         }
         let _ = writeln!(out, "faces");
         for (i, f) in self.faces.iter() {
+            let shell = if several_shells {
+                format!(" shell {}", f.shell)
+            } else {
+                String::new()
+            };
             let _ = writeln!(
                 out,
-                "  f{i} {} {} tol {}{}",
+                "  f{i} {} {}{shell} tol {}{}",
                 f.surface,
                 f.orientation,
                 f.tolerance,
@@ -1789,11 +1848,13 @@ impl Builder {
     /// Freezes the body into `model` as a `Solid`: every live vertex,
     /// edge and face appended in slot order — bar the slots
     /// [`Builder::assemble`] marked `Keep` and no operator has touched,
-    /// which keep their arena id and append nothing — then the shell and
-    /// the body, inside a transaction. A loop of a `Reversed` face is stored
-    /// backwards with every use flipped, so every stored loop is
-    /// counter-clockwise about its surface's normal. Returns the body and
-    /// the slot → id maps.
+    /// which keep their arena id and append nothing — then one shell per
+    /// shell index the faces carry, in index order and each over its faces
+    /// in slot order, and the body over the shells, inside a transaction.
+    /// A loop of a `Reversed` face is stored backwards with every use
+    /// flipped, so every stored loop is counter-clockwise about its
+    /// surface's normal. Returns the body, its shells and the slot → id
+    /// maps.
     ///
     /// Errors, each leaving the model untouched: [`BuildError::Kind`] for
     /// any kind but `Solid` (the operators build closed surfaces, and no
@@ -1888,7 +1949,7 @@ impl Builder {
                 edges.insert(EdgeRef(i), id);
             }
             let mut faces = BTreeMap::new();
-            let mut shell = Vec::with_capacity(self.faces.len());
+            let mut shell_faces: BTreeMap<usize, Vec<handle::Face>> = BTreeMap::new();
             for (i, f) in self.faces.iter() {
                 let id = match f.kept {
                     Some(id) => id,
@@ -1916,18 +1977,24 @@ impl Builder {
                     }
                 };
                 faces.insert(FaceRef(i), id);
-                shell.push(handle::Face::new(id, f.orientation));
+                shell_faces
+                    .entry(f.shell)
+                    .or_default()
+                    .push(handle::Face::new(id, f.orientation));
             }
-            let shell = m.push_shell(entity::Shell::new(shell));
+            let shells: Vec<ShellId> = shell_faces
+                .into_values()
+                .map(|uses| m.push_shell(entity::Shell::new(uses)))
+                .collect();
             let body = m.push_body(entity::Body::new(
                 kind,
-                vec![handle::Shell::forward(shell)],
+                shells.iter().copied().map(handle::Shell::forward).collect(),
                 Vec::new(),
                 Vec::new(),
             ));
             Ok(Built {
                 body: Body::forward(body),
-                shell,
+                shells,
                 vertices,
                 edges,
                 faces,
@@ -1962,19 +2029,25 @@ impl Builder {
     /// are kept with it. Any operator applied to a kept slot drops the
     /// mark, and `finish` appends that slot instead.
     ///
-    /// What `assemble` proves, so that the result is a body the operators
-    /// could have built: every loop has coedges and closes through
-    /// effective vertices; every edge is used exactly twice and in
-    /// opposite directions; no arena entity is kept twice; the faces are
-    /// one edge-connected component; and the Euler–Poincaré line closes at
-    /// a whole genus, which becomes the builder's ([`Builder::counts`]).
+    /// What `assemble` proves, so that the result is a body each of whose
+    /// shells the operators could have built: every loop has coedges and
+    /// closes through effective vertices; every edge is used exactly twice
+    /// and in opposite directions; no arena entity is kept twice; no shell
+    /// is empty; no edge is used by, and no vertex is an end of edges of,
+    /// two shells; the faces of each shell are one edge-connected
+    /// component; and the Euler–Poincaré line of each shell closes at a
+    /// whole genus, their sum becoming the builder's ([`Builder::counts`]).
+    /// It does not prove how the shells nest — which one is outer and
+    /// which a void inside it is geometry, the checker's B1.
     ///
     /// Errors, leaving nothing behind (the model is only read):
     /// [`BuildError::NoSpec`] for a key past its list;
     /// [`BuildError::NotFound`] for an id that does not resolve;
+    /// [`BuildError::Empty`], [`BuildError::EmptyShell`],
     /// [`BuildError::Duplicate`], [`BuildError::EmptyLoop`],
     /// [`BuildError::LoopOpen`], [`BuildError::EdgeUses`],
-    /// [`BuildError::SameDirection`], [`BuildError::Disconnected`],
+    /// [`BuildError::SameDirection`], [`BuildError::SharedEdge`],
+    /// [`BuildError::SharedVertex`], [`BuildError::Disconnected`],
     /// [`BuildError::NotClosed`].
     ///
     /// ```
@@ -1987,7 +2060,7 @@ impl Builder {
     /// let mut m = Model::default();
     /// let body = sample::cylinder(&mut m, 4.0, 12.0)?;
     /// let faces = m.faces(body)?.into_iter().map(FaceSpec::Keep).collect();
-    /// let assembly = Assembly { faces, ..Assembly::default() };
+    /// let assembly = Assembly { shells: vec![faces], ..Assembly::default() };
     /// let b = Builder::assemble(&m, m.precision().default_tolerance, assembly)?;
     /// assert_eq!(b.counts().to_string(), "2/3/3/3/1 g0 = 0");
     /// let again = b.finish(&mut m, BodyKind::Solid)?;
@@ -2036,40 +2109,46 @@ impl Builder {
             };
             at.edge_of.push(slot);
         }
-        for spec in &assembly.faces {
-            match spec {
-                FaceSpec::Keep(face) => {
-                    b.keep_face(model, &mut at, *face)?;
-                }
-                FaceSpec::New {
-                    surface,
-                    orientation,
-                    loops,
-                    tolerance,
-                } => {
-                    model.surface(*surface)?;
-                    let mut staged = Vec::with_capacity(loops.len());
-                    for uses in loops {
-                        let mut walk = Vec::with_capacity(uses.len());
-                        for u in uses {
-                            model.curve2(u.pcurve)?;
-                            walk.push(Use {
-                                edge: b.edge_key(model, &mut at, u.edge)?,
-                                orientation: u.orientation,
-                                pcurve: Some(u.pcurve),
-                            });
-                        }
-                        staged.push(b.staged_loop(walk, staged.len())?);
+        for (shell, specs) in assembly.shells.iter().enumerate() {
+            if specs.is_empty() {
+                return Err(BuildError::EmptyShell { shell });
+            }
+            for spec in specs {
+                match spec {
+                    FaceSpec::Keep(face) => {
+                        b.keep_face(model, &mut at, *face, shell)?;
                     }
-                    let mut face = StagedFace {
-                        surface: *surface,
-                        orientation: *orientation,
-                        loops: staged,
-                        tolerance: *tolerance,
-                        kept: None,
-                    };
-                    face.canonicalise();
-                    b.faces.insert(face);
+                    FaceSpec::New {
+                        surface,
+                        orientation,
+                        loops,
+                        tolerance,
+                    } => {
+                        model.surface(*surface)?;
+                        let mut staged = Vec::with_capacity(loops.len());
+                        for uses in loops {
+                            let mut walk = Vec::with_capacity(uses.len());
+                            for u in uses {
+                                model.curve2(u.pcurve)?;
+                                walk.push(Use {
+                                    edge: b.edge_key(model, &mut at, u.edge)?,
+                                    orientation: u.orientation,
+                                    pcurve: Some(u.pcurve),
+                                });
+                            }
+                            staged.push(b.staged_loop(walk, staged.len())?);
+                        }
+                        let mut face = StagedFace {
+                            surface: *surface,
+                            orientation: *orientation,
+                            shell,
+                            loops: staged,
+                            tolerance: *tolerance,
+                            kept: None,
+                        };
+                        face.canonicalise();
+                        b.faces.insert(face);
+                    }
                 }
             }
         }
@@ -2132,15 +2211,16 @@ impl Builder {
         Ok(slot)
     }
 
-    /// The slot of the kept face `face`, with every edge and vertex it
-    /// names kept too. A stored loop of a `Reversed` face is walked
-    /// backwards with every use flipped — the inverse of what
+    /// The slot of the kept face `face` in shell `shell`, with every edge
+    /// and vertex it names kept too. A stored loop of a `Reversed` face is
+    /// walked backwards with every use flipped — the inverse of what
     /// [`Builder::finish`] stores.
     fn keep_face(
         &mut self,
         model: &Model,
         at: &mut Assembled,
         face: handle::Face,
+        shell: usize,
     ) -> Result<FaceRef, BuildError> {
         if at.kept_faces.contains_key(&face.id) {
             return Err(BuildError::Duplicate(face.id.into()));
@@ -2167,6 +2247,7 @@ impl Builder {
         let mut staged = StagedFace {
             surface: entity.surface(),
             orientation: face.orientation,
+            shell,
             loops,
             tolerance: entity.tolerance(),
             kept: Some(face.id),
@@ -2230,8 +2311,9 @@ impl Builder {
         })
     }
 
-    /// Proves the assembled slots are a closed surface of whole genus and
-    /// returns that genus; the errors are [`Builder::assemble`]'s.
+    /// Proves the assembled slots are closed surfaces of whole genus, one
+    /// per shell and sharing nothing, and returns the sum of their genera;
+    /// the errors are [`Builder::assemble`]'s.
     fn assembled_genus(&self) -> Result<usize, BuildError> {
         let mut uses: BTreeMap<EdgeRef, Vec<(Orientation, FaceRef)>> = BTreeMap::new();
         for (fi, face) in self.faces.iter() {
@@ -2275,48 +2357,109 @@ impl Builder {
                 return Err(BuildError::SameDirection { edge });
             }
         }
-        let Some((first, _)) = self.faces.iter().next() else {
+        if self.faces.len() == 0 {
             return Err(BuildError::Empty);
-        };
-        let from = FaceRef(first);
-        let mut reached: BTreeSet<FaceRef> = BTreeSet::new();
-        reached.insert(from);
-        let mut front = vec![from];
-        while let Some(f) = front.pop() {
-            let Some(face) = self.faces.get(f.0) else {
+        }
+        let shell_of = |f: FaceRef| self.faces.get(f.0).map(|face| face.shell);
+        // Every edge in the shell of its two faces, and every vertex in the
+        // shell of its edges: two shells share nothing.
+        let mut edge_shell: BTreeMap<EdgeRef, usize> = BTreeMap::new();
+        for (&edge, list) in &uses {
+            let shells: Vec<usize> = list.iter().filter_map(|&(_, f)| shell_of(f)).collect();
+            if let [a, b] = shells[..] {
+                if a != b {
+                    return Err(BuildError::SharedEdge {
+                        edge,
+                        shells: [a.min(b), a.max(b)],
+                    });
+                }
+            }
+            if let Some(&s) = shells.first() {
+                edge_shell.insert(edge, s);
+            }
+        }
+        let mut vertex_shell: BTreeMap<VertexRef, usize> = BTreeMap::new();
+        for (ei, e) in self.edges.iter() {
+            let Some(&s) = edge_shell.get(&EdgeRef(ei)) else {
                 continue;
             };
-            for u in face.loops.iter().flat_map(|lp| lp.uses.iter()) {
-                for &(_, other) in uses.get(&u.edge).map_or(&[][..], Vec::as_slice) {
-                    if reached.insert(other) {
-                        front.push(other);
+            for v in [e.start, e.end] {
+                match vertex_shell.get(&v) {
+                    Some(&t) if t != s => {
+                        return Err(BuildError::SharedVertex {
+                            vertex: v,
+                            shells: [t.min(s), t.max(s)],
+                        });
+                    }
+                    _ => {
+                        vertex_shell.insert(v, s);
                     }
                 }
             }
         }
-        if let Some((fi, _)) = self
-            .faces
-            .iter()
-            .find(|(fi, _)| !reached.contains(&FaceRef(*fi)))
-        {
-            return Err(BuildError::Disconnected {
-                face: FaceRef(fi),
-                from,
+        let shells: BTreeSet<usize> = self.faces.iter().map(|(_, f)| f.shell).collect();
+        let mut genus = 0;
+        for shell in shells {
+            let faces: Vec<FaceRef> = self
+                .faces
+                .iter()
+                .filter(|(_, f)| f.shell == shell)
+                .map(|(fi, _)| FaceRef(fi))
+                .collect();
+            let Some(&from) = faces.first() else {
+                continue;
+            };
+            let mut reached: BTreeSet<FaceRef> = BTreeSet::new();
+            reached.insert(from);
+            let mut front = vec![from];
+            while let Some(f) = front.pop() {
+                let Some(face) = self.faces.get(f.0) else {
+                    continue;
+                };
+                for u in face.loops.iter().flat_map(|lp| lp.uses.iter()) {
+                    for &(_, other) in uses.get(&u.edge).map_or(&[][..], Vec::as_slice) {
+                        if reached.insert(other) {
+                            front.push(other);
+                        }
+                    }
+                }
+            }
+            if let Some(&face) = faces.iter().find(|f| !reached.contains(f)) {
+                return Err(BuildError::Disconnected { face, from });
+            }
+            let counts = Counts {
+                vertices: vertex_shell.values().filter(|&&s| s == shell).count(),
+                edges: edge_shell.values().filter(|&&s| s == shell).count(),
+                faces: faces.len(),
+                loops: faces
+                    .iter()
+                    .filter_map(|f| self.faces.get(f.0))
+                    .map(|f| f.loops.len())
+                    .sum(),
+                shells: 1,
+                genus: 0,
+            };
+            let (v, e, f, l) = (
+                counts.vertices as i64,
+                counts.edges as i64,
+                counts.faces as i64,
+                counts.loops as i64,
+            );
+            // V − E + F − (L − F) − 2(S − G) = 0 at S = 1.
+            let twice_genus = 2 - (v - e + 2 * f - l);
+            if twice_genus < 0 || twice_genus % 2 != 0 {
+                return Err(BuildError::NotClosed { counts });
+            }
+            genus += (twice_genus / 2) as usize;
+        }
+        // A vertex no edge ends at is on no shell, and the body's counts
+        // are then not the sum of its closed shells'.
+        if vertex_shell.len() != self.vertices.len() {
+            return Err(BuildError::NotClosed {
+                counts: self.counts(),
             });
         }
-        let counts = self.counts();
-        let (v, e, f, l) = (
-            counts.vertices as i64,
-            counts.edges as i64,
-            counts.faces as i64,
-            counts.loops as i64,
-        );
-        // V − E + F − (L − F) − 2(S − G) = 0 at S = 1.
-        let twice_genus = 2 - (v - e + 2 * f - l);
-        if twice_genus < 0 || twice_genus % 2 != 0 {
-            return Err(BuildError::NotClosed { counts });
-        }
-        Ok((twice_genus / 2) as usize)
+        Ok(genus)
     }
 }
 
