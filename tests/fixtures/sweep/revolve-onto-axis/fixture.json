@@ -1,0 +1,33 @@
+{
+  "description": "a rectangle with one side on the axis revolved about z: a solid cylinder in a full turn (the side on the axis sweeps nothing, its two vertices no rise), a sector with the flat ends sharing the edge on the axis in a partial turn, reflex at that edge past half a turn",
+  "params": {"angle": 360, "caps": 0},
+  "variants": {
+    "quarter": {"angle": 90, "caps": 4},
+    "three-quarter": {"angle": 270, "caps": 4}
+  },
+  "steps": [
+    {
+      "name": "rect",
+      "op": "profile",
+      "plane": {"origin": [0, 0, 0], "x": [1, 0, 0], "y": [0, 0, 1]},
+      "outer": {"start": [0, -1], "segments": [{"line_to": [1, -1]}, {"line_to": [1, 1]}, {"line_to": [0, 1]}, {"line_to": [0, -1]}]}
+    },
+    {"name": "result", "op": "revolve", "profile": "rect", "axis": {"origin": [0, 0, 0], "direction": [0, 0, 1]}, "angle_deg": "angle"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [0.35355339059327373, 0.35355339059327373, 0.5], "expect": "in"},
+    {"label": "outside", "point": [1.5, 0, 0], "expect": "out"},
+    {"label": "above", "point": [0.25, 0.25, 1.5], "expect": "out"},
+    {"label": "on_top", "point": [0.35355339059327373, 0.35355339059327373, 1], "expect": "on"},
+    {"label": "on_wall", "point": [0.7071067811865476, 0.7071067811865476, -0.5], "expect": "on"},
+    {"label": "behind", "point": [-0.5, -0.1, 0.25], "expect": null},
+    {"label": "on_axis", "point": [0, 0, 0.25], "expect": null},
+    {"label": "past_the_axis", "point": [0.1, -0.5, -0.25], "expect": null}
+  ],
+  "analytic": {
+    "volume": "pi * 2 * angle / 360",
+    "area": "6 * pi * angle / 360 + caps",
+    "genus": 0
+  }
+}

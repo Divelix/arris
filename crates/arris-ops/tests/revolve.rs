@@ -29,7 +29,7 @@ use arris_ops::arris_check::arris_topo::arris_math::{
 };
 use arris_ops::arris_check::arris_topo::provenance::SweepPart;
 use arris_ops::arris_check::arris_topo::{
-    Body, Model, Orientation, Origin, Provenance, Relation, Role, Shape,
+    Body, EntityId, Model, Orientation, Origin, Provenance, Relation, Role, Shape,
 };
 use arris_ops::arris_check::{Level, Unchecked, check, lumps};
 use arris_ops::measure::mass_properties;
@@ -412,9 +412,6 @@ fn the_profile_is_held_clear_of_the_axis_and_the_axis_to_the_plane() {
         ],
     });
     assert_eq!(reason(&mut m, &apex, z), Reason::ProfileTouchesAxis);
-    // A segment along the axis.
-    let flush = sketch(rectangle(0.0, 1.0, -1.0, 1.0, false));
-    assert_eq!(reason(&mut m, &flush, z), Reason::ProfileTouchesAxis);
     // Straddling it.
     let across = sketch(rectangle(-1.0, 1.0, -1.0, 1.0, false));
     assert_eq!(reason(&mut m, &across, z), Reason::ProfileCrossesAxis);
@@ -474,6 +471,107 @@ fn the_profile_is_held_clear_of_the_axis_and_the_axis_to_the_plane() {
         dump_text(&fresh, again).unwrap(),
         "the model is as it was"
     );
+}
+
+/// The consumer's rectangle `[0, 1] × [−1, 1]` with its side `u = 0` on
+/// the axis — segments 0 to 3 the bottom, the wall, the top and the side
+/// on the axis; vertices 0 and 3 on the axis. A full turn is a solid
+/// cylinder: the side on the axis sweeps no face and no edge, its
+/// vertices nothing, the bottom and the top a disc of one rise each. A
+/// partial turn — a quarter, and three quarters, reflex at the axis — is
+/// a sector whose flat ends share the one edge on the axis, `Generated`
+/// from that side's `StartEdge`, its two vertices shared too and neither
+/// sweeping a rise.
+#[test]
+fn a_profile_along_its_axis_sweeps_nothing_there() {
+    let z = Axis::z_at(Point3::origin());
+    let profile = Profile {
+        plane: xz_plane(),
+        outer: rectangle(0.0, 1.0, -1.0, 1.0, false),
+        holes: Vec::new(),
+    };
+    let side = |segment| SweepPart::Side {
+        loop_index: 0,
+        segment,
+    };
+    let start_edge = |segment| SweepPart::StartEdge {
+        loop_index: 0,
+        segment,
+    };
+    let rise = |vertex| SweepPart::Rise {
+        loop_index: 0,
+        vertex,
+    };
+    let start_vertex = |vertex| SweepPart::StartVertex {
+        loop_index: 0,
+        vertex,
+    };
+    let end_vertex = |vertex| SweepPart::EndVertex {
+        loop_index: 0,
+        vertex,
+    };
+    for (angle, line) in [
+        (TAU, "2/3/3/3/1 g0 = 0"),
+        (PI / 2.0, "6/9/5/5/1 g0 = 0"),
+        (3.0 * PI / 2.0, "6/9/5/5/1 g0 = 0"),
+    ] {
+        let full = angle == TAU;
+        let mut m = Model::default();
+        let (body, p) = revolve(&mut m, &profile, z, angle).unwrap();
+        let report = check(&m, body, Level::Full);
+        assert!(
+            report.is_ok() && report.unchecked().is_empty(),
+            "{angle}\n{report}"
+        );
+        assert_eq!(report.euler().unwrap().to_string(), line, "{angle}");
+        // A cylinder of radius 1 and height 2 over `angle` of a turn.
+        let props = mass_properties(&m, body).unwrap();
+        assert!(close(props.volume, angle), "{angle}: {}", props.volume);
+        let caps = if full { 0.0 } else { 4.0 };
+        assert!(
+            close(props.area, 3.0 * angle + caps),
+            "{angle}: {}",
+            props.area
+        );
+
+        let parts = recorded_parts(&m, body, &p).unwrap();
+        assert!(!parts.contains(&side(3)), "{angle}: {parts:?}");
+        for vertex in [0, 3] {
+            assert!(!parts.contains(&rise(vertex)), "{angle}: {parts:?}");
+            assert!(!parts.contains(&end_vertex(vertex)), "{angle}: {parts:?}");
+            assert_eq!(parts.contains(&start_vertex(vertex)), !full, "{angle}");
+        }
+        assert_eq!(parts.contains(&start_edge(3)), !full, "{angle}");
+        assert!(!parts.contains(&SweepPart::EndEdge {
+            loop_index: 0,
+            segment: 3
+        }));
+        if full {
+            continue;
+        }
+        // The edge on the axis is used once by each flat end, and nothing
+        // else uses it.
+        let [
+            Shape {
+                id: EntityId::Edge(shared),
+                ..
+            },
+        ] = p.generated_from(Role::Revolve(start_edge(3)))
+        else {
+            panic!("{angle}: {p}");
+        };
+        let caps: BTreeSet<_> = [SweepPart::StartCap, SweepPart::EndCap]
+            .into_iter()
+            .map(|c| p.generated_from(Role::Revolve(c))[0].id)
+            .collect();
+        let users: BTreeSet<_> = m
+            .edge_uses(*shared)
+            .unwrap()
+            .iter()
+            .map(|u| EntityId::from(u.face))
+            .collect();
+        assert_eq!(users, caps, "{angle}");
+    }
 }
 
 /// The surface kind of every face of `body`, with a cone's `Z` against

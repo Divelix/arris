@@ -929,6 +929,11 @@ pub struct Provenance {
   full revolve has no `EndCap`, `EndEdge` or `EndVertex` — its start
   edges are the seams — and in one a segment perpendicular to the axis,
   which sweeps an annulus of two closed rises, has no `StartEdge` at all.
+  A revolve's vertex on the axis sweeps no `Rise` and has no
+  `EndVertex`, and in a full turn no `StartVertex` either; a line
+  segment along the axis sweeps no `Side` and has no `EndEdge`, its
+  `StartEdge` being in a partial turn the edge both flat ends share and
+  nothing in a full turn.
 - **Modified**: the output is a trimmed, split or re-tolerated piece of the
   input, same kind — the box's top face with a circle cut out of it, each
   half of a face split by an intersection curve (one input, several

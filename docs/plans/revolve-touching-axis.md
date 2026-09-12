@@ -105,7 +105,7 @@ bound has to be established here.
   the oracle's self-test builds Open CASCADE's own cone and sphere
   (`BRepPrimAPI`) and derives genus 0 with an even characteristic, and
   every committed `expected.json` reproduces unchanged.
-- [ ] Step 2 **[2]** — a segment along the axis and a vertex on it, for
+- [x] Step 2 **[2]** — a segment along the axis and a vertex on it, for
   faces on planes and cylinders; cones and spheres at the axis still
   refused as `ProfileTouchesAxis`. Fixture `sweep/revolve-onto-axis`: the
   consumer's rectangle, `default` a full turn (volume `2π`, `2/3/3/3/1`),

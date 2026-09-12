@@ -30,9 +30,11 @@ pub enum Reason {
     /// A revolve profile crosses its axis: it has points on both sides of
     /// the axis line in its plane, beyond the tolerance.
     ProfileCrossesAxis,
-    /// A revolve profile touches its axis: a vertex or a segment of it lies
-    /// within the tolerance of the axis line, which would sweep an apex or
-    /// a degenerate edge (cycle 2's).
+    /// A revolve profile touches its axis where the kernel does not build
+    /// it yet: a vertex on the axis where a segment would sweep a cone's
+    /// apex or a sphere's pole (a degenerate edge), or a full turn whose
+    /// loop lies along the axis more than once (several shells of one
+    /// loop).
     ProfileTouchesAxis,
     /// A revolve axis does not lie in the profile's plane within the
     /// tolerances: its direction is off the plane by more than the angular

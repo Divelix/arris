@@ -278,6 +278,14 @@ fn sweep_revolve_hollow_ring() {
     run("sweep/revolve-hollow-ring");
 }
 
+/// The consumer's rectangle with a side on the axis: a solid cylinder in
+/// a full turn, and in a quarter and three-quarter turn a sector whose
+/// flat ends share the edge on the axis — reflex there past half a turn.
+#[test]
+fn sweep_revolve_onto_axis() {
+    run("sweep/revolve-onto-axis");
+}
+
 /// The same recipe under three parameter sets, one test each so a
 /// variant that drifts says which: the eight bolt holes' chain is
 /// `crates/arris/tests/provenance.rs`'s subject, and these hold each

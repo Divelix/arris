@@ -133,11 +133,13 @@ fn axis_in_plane(
     ))
 }
 
-/// The profile held to one side of the axis: every point of every edge at
-/// a positive distance above `tol.linear` on the side `radial` is turned
-/// to face ([`Reason::ProfileCrossesAxis`] for points on both sides,
-/// [`Reason::ProfileTouchesAxis`] for one within the tolerance), and no
-/// arc's circle crossing the axis ([`Reason::SpindleTorus`]).
+/// The profile held to one side of the axis: `radial` turned to face the
+/// side every point of every edge lies on, reaching at worst within
+/// `tol.linear` of the axis — a point that near is *on* it —
+/// ([`Reason::ProfileCrossesAxis`] for points beyond the tolerance on
+/// both sides, [`Reason::ZeroThickness`] for a profile within it
+/// everywhere), and no arc's circle crossing the axis off its centre
+/// ([`Reason::SpindleTorus`]).
 fn orient(
     loops: &[Vec<ProfileEdge>],
     mut axis: AxisInPlane,
@@ -149,15 +151,18 @@ fn orient(
         lo = lo.min(a);
         hi = hi.max(b);
     }
+    if !(lo.is_finite() && hi.is_finite()) {
+        return Err(degenerate(Reason::NonFinite { what: "profile" }));
+    }
     if lo < -tol.linear && hi > tol.linear {
         return Err(degenerate(Reason::ProfileCrossesAxis));
     }
     if hi <= tol.linear {
         axis.radial = -axis.radial;
-        (lo, hi) = (-hi, -lo);
+        hi = -lo;
     }
-    if lo <= tol.linear || !hi.is_finite() {
-        return Err(degenerate(Reason::ProfileTouchesAxis));
+    if hi <= tol.linear {
+        return Err(degenerate(Reason::ZeroThickness));
     }
     for edge in loops.iter().flatten() {
         if let Curve2::Circle { frame, radius } = &edge.pcurve {
@@ -268,6 +273,15 @@ fn swept_surface(
         // `Profile::edges` makes lines and circles and nothing else.
         Curve::Ellipse { .. } | Curve::Nurbs(_) => Err(profile_curve_fault(edge)),
     }
+}
+
+/// An entity the fixed sequence of a sweep should have made for `edge`
+/// and did not: a kernel bug, never a property of the sketch.
+fn unmade(edge: &ProfileEdge, what: &str) -> OpError {
+    OpError::Internal(Fault::Geometry(GeomError::Degenerate {
+        kind: GeomKind::Curve(edge.curve.kind()),
+        reason: format!("{what} of segment {} was not made", edge.segment),
+    }))
 }
 
 /// A profile edge whose curve is not one `Profile::edges` makes: a
@@ -477,7 +491,11 @@ fn record(
 /// perpendicular a plane (an annulus, or a sector of one), oblique a cone;
 /// an arc centred on the axis a sphere, elsewhere a torus — every vertex a
 /// circular *rise* about the axis, and every pcurve is exact through
-/// `pcurve_on`. The surfaces of revolution share one frame: origin on the
+/// `pcurve_on`. A vertex within `default_tolerance` of the axis is *on* it
+/// and sweeps no rise — one vertex, shared by both flat ends of a partial
+/// turn and not made in a full turn — and a line segment with both ends
+/// on it lies *along* it and sweeps no face: in a partial turn it is the
+/// one edge both flat ends share, in a full turn nothing. The surfaces of revolution share one frame: origin on the
 /// axis, `X` the radial into the profile's plane, so `u = 0` is the
 /// profile plane and every seam lies in it, `Z` the axis (`−axis` for a
 /// cone narrowing along it). The flat ends of a partial turn are the
@@ -498,14 +516,17 @@ fn record(
 ///
 /// Errors, the model untouched: [`OpError::Profile`] when
 /// `Profile::edges` refuses the sketch; [`OpError::Degenerate`] with
-/// [`Reason::NonFinite`] for a non-finite angle or axis origin,
+/// [`Reason::NonFinite`] for a non-finite angle, axis origin or profile,
 /// [`Reason::NotPositive`] for an angle at or below zero,
 /// [`Reason::AngleAboveTurn`] above `2π`, [`Reason::AxisNotInProfilePlane`]
 /// when the axis is off the plane by more than the tolerances,
 /// [`Reason::ProfileCrossesAxis`] when the profile has points on both
-/// sides of the axis, [`Reason::ProfileTouchesAxis`] when a vertex or a
-/// segment comes within `default_tolerance` of it,
-/// and [`Reason::SpindleTorus`] when an arc's circle crosses it.
+/// sides of the axis, [`Reason::ZeroThickness`] when it lies within
+/// `default_tolerance` of the axis everywhere,
+/// [`Reason::ProfileTouchesAxis`] when a cone's apex or a sphere's pole
+/// would lie on the axis or a full turn's loop lies along it more than
+/// once, and [`Reason::SpindleTorus`] when an arc's circle crosses it off
+/// its centre.
 ///
 /// ```
 /// use arris_ops::revolve;
@@ -579,14 +600,63 @@ pub fn revolve(
         axis.origin.coords - Isometry::from_rotation(rotation).apply_vec(axis.origin.coords),
     );
 
-    // Every segment's surface, before anything is written.
-    let mut surfaces: Vec<Vec<(Surface, bool)>> = Vec::with_capacity(loops.len());
-    for edges in &loops {
+    // Which vertices lie on the axis — walk index `j` the vertex edge `j`
+    // starts at — and which line segments lie along it, both ends on it.
+    let on_axis: Vec<Vec<bool>> = loops
+        .iter()
+        .map(|edges| {
+            edges
+                .iter()
+                .map(|e| in_plane.rho(e.start).abs() <= tol.linear)
+                .collect()
+        })
+        .collect();
+    let along: Vec<Vec<bool>> = loops
+        .iter()
+        .zip(&on_axis)
+        .map(|(edges, on)| {
+            let n = edges.len();
+            edges
+                .iter()
+                .enumerate()
+                .map(|(j, e)| matches!(e.curve, Curve::Line { .. }) && on[j] && on[(j + 1) % n])
+                .collect()
+        })
+        .collect();
+
+    // Every segment's surface, before anything is written; none for a
+    // segment along the axis, which sweeps nothing.
+    let mut surfaces: Vec<Vec<Option<(Surface, bool)>>> = Vec::with_capacity(loops.len());
+    for (li, edges) in loops.iter().enumerate() {
         let mut row = Vec::with_capacity(edges.len());
-        for edge in edges {
-            row.push(swept_surface(edge, &in_plane, &base, axis_point, tol)?);
+        for (j, edge) in edges.iter().enumerate() {
+            row.push(if along[li][j] {
+                None
+            } else {
+                Some(swept_surface(edge, &in_plane, &base, axis_point, tol)?)
+            });
         }
         surfaces.push(row);
+    }
+    // Not yet built: a cone's apex or a sphere's pole on the axis, which
+    // needs a degenerate edge, and a full turn along the axis more than
+    // once in one loop, which makes several shells of one loop.
+    for (li, edges) in loops.iter().enumerate() {
+        let n = edges.len();
+        let singular = |j: usize| {
+            matches!(
+                surfaces[li][j],
+                Some((Surface::Cone { .. } | Surface::Sphere { .. }, _))
+            )
+        };
+        let runs = (0..n)
+            .filter(|&j| along[li][j] && !along[li][(j + n - 1) % n])
+            .count();
+        if (0..n).any(|j| on_axis[li][j] && (singular(j) || singular((j + n - 1) % n)))
+            || (full && runs > 1)
+        {
+            return Err(degenerate(Reason::ProfileTouchesAxis));
+        }
     }
 
     let tolerance = precision.default_tolerance;
@@ -610,29 +680,30 @@ pub fn revolve(
         let mut faces: Vec<FaceSpec> = Vec::new();
         let mut face_roles: Vec<Role> = Vec::new();
 
-        // The start ring, then the end ring; slot (loop, walk index).
-        let mut start_vertex: Vec<Vec<usize>> = Vec::with_capacity(loops.len());
-        let mut end_vertex: Vec<Vec<usize>> = Vec::with_capacity(loops.len());
-        let mut points: Vec<Vec<Point3>> = Vec::with_capacity(loops.len());
-        for edges_of in &loops {
+        // The start ring, then the end ring; slot (loop, walk index). A
+        // vertex on the axis is one vertex, with no end copy, and a full
+        // turn does not make it, since no face keeps it there.
+        let mut start_vertex: Vec<Vec<Option<usize>>> = Vec::with_capacity(loops.len());
+        let mut end_vertex: Vec<Vec<Option<usize>>> = Vec::with_capacity(loops.len());
+        for (li, edges_of) in loops.iter().enumerate() {
             let n = edges_of.len();
             let mut ring = Vec::with_capacity(n);
-            let mut ps = Vec::with_capacity(n);
-            for edge in edges_of {
-                let p = edge.curve.point(edge.range.lo());
-                ring.push(vertices.len());
+            for (j, edge) in edges_of.iter().enumerate() {
+                if full && on_axis[li][j] {
+                    ring.push(None);
+                    continue;
+                }
+                ring.push(Some(vertices.len()));
                 vertices.push(VertexSpec::New {
-                    point: p,
+                    point: edge.curve.point(edge.range.lo()),
                     tolerance,
                 });
                 vertex_roles.push(part(SweepPart::StartVertex {
                     loop_index: edge.loop_index,
                     vertex: vertex_index(edge, n),
                 }));
-                ps.push(p);
             }
             start_vertex.push(ring);
-            points.push(ps);
         }
         if full {
             end_vertex.clone_from(&start_vertex);
@@ -641,9 +712,13 @@ pub fn revolve(
                 let n = edges_of.len();
                 let mut ring = Vec::with_capacity(n);
                 for (j, edge) in edges_of.iter().enumerate() {
-                    ring.push(vertices.len());
+                    if on_axis[li][j] {
+                        ring.push(start_vertex[li][j]);
+                        continue;
+                    }
+                    ring.push(Some(vertices.len()));
                     vertices.push(VertexSpec::New {
-                        point: about_axis.apply(points[li][j]),
+                        point: about_axis.apply(edge.curve.point(edge.range.lo())),
                         tolerance,
                     });
                     vertex_roles.push(part(SweepPart::EndVertex {
@@ -654,28 +729,37 @@ pub fn revolve(
                 end_vertex.push(ring);
             }
         }
+        let key = |slot: Option<usize>, edge: &ProfileEdge| {
+            slot.map(VertexKey::New)
+                .ok_or_else(|| unmade(edge, "a vertex"))
+        };
 
         // The start edges, the end edges, then the rises.
         let mut start_edge: Vec<Vec<Option<usize>>> = Vec::with_capacity(loops.len());
         let mut end_edge: Vec<Vec<Option<usize>>> = Vec::with_capacity(loops.len());
-        let mut rise_edge: Vec<Vec<usize>> = Vec::with_capacity(loops.len());
+        let mut rise_edge: Vec<Vec<Option<usize>>> = Vec::with_capacity(loops.len());
         for (li, edges_of) in loops.iter().enumerate() {
             let n = edges_of.len();
             let mut row = Vec::with_capacity(n);
             for (j, edge) in edges_of.iter().enumerate() {
-                let annulus = surfaces[li][j].1;
-                if full && annulus {
+                // A full turn's annulus keeps only its rises, and a segment
+                // along the axis is nothing there; in a partial turn that
+                // segment is the one edge both flat ends share.
+                let annulus = surfaces[li][j].as_ref().is_some_and(|s| s.1);
+                if full && (annulus || along[li][j]) {
                     row.push(None);
                     continue;
                 }
+                let start = key(start_vertex[li][j], edge)?;
+                let end = key(start_vertex[li][(j + 1) % n], edge)?;
                 row.push(Some(edges.len()));
                 edges.push(EdgeSpec::New {
                     geometry: EdgeGeometry::Curve {
                         curve: m.add_curve(edge.curve.clone()),
                         range: edge.range,
                     },
-                    start: VertexKey::New(start_vertex[li][j]),
-                    end: VertexKey::New(start_vertex[li][(j + 1) % n]),
+                    start,
+                    end,
                     tolerance,
                 });
                 edge_roles.push(part(SweepPart::StartEdge {
@@ -691,11 +775,13 @@ pub fn revolve(
             let mut row = Vec::with_capacity(n);
             let mut curves = Vec::with_capacity(n);
             for (j, edge) in edges_of.iter().enumerate() {
-                if full {
+                if full || along[li][j] {
                     row.push(None);
                     curves.push(None);
                     continue;
                 }
+                let start = key(end_vertex[li][j], edge)?;
+                let end = key(end_vertex[li][(j + 1) % n], edge)?;
                 let curve = edge.curve.transformed(&about_axis);
                 row.push(Some(edges.len()));
                 edges.push(EdgeSpec::New {
@@ -703,8 +789,8 @@ pub fn revolve(
                         curve: m.add_curve(curve.clone()),
                         range: edge.range,
                     },
-                    start: VertexKey::New(end_vertex[li][j]),
-                    end: VertexKey::New(end_vertex[li][(j + 1) % n]),
+                    start,
+                    end,
                     tolerance,
                 });
                 edge_roles.push(part(SweepPart::EndEdge {
@@ -716,31 +802,39 @@ pub fn revolve(
             end_edge.push(row);
             end_curves.push(curves);
         }
-        let mut rises: Vec<Vec<Curve>> = Vec::with_capacity(loops.len());
+        let mut rises: Vec<Vec<Option<Curve>>> = Vec::with_capacity(loops.len());
         for (li, edges_of) in loops.iter().enumerate() {
             let n = edges_of.len();
             let mut row = Vec::with_capacity(n);
             let mut curves = Vec::with_capacity(n);
             for (j, edge) in edges_of.iter().enumerate() {
+                // A vertex on the axis sweeps no rise.
+                if on_axis[li][j] {
+                    row.push(None);
+                    curves.push(None);
+                    continue;
+                }
+                let start = key(start_vertex[li][j], edge)?;
+                let end = key(end_vertex[li][j], edge)?;
                 let rise = Curve::Circle {
                     frame: base.with_origin(axis_point(in_plane.t(edge.start))),
                     radius: in_plane.rho(edge.start),
                 };
-                row.push(edges.len());
+                row.push(Some(edges.len()));
                 edges.push(EdgeSpec::New {
                     geometry: EdgeGeometry::Curve {
                         curve: m.add_curve(rise.clone()),
                         range: rise_range,
                     },
-                    start: VertexKey::New(start_vertex[li][j]),
-                    end: VertexKey::New(end_vertex[li][j]),
+                    start,
+                    end,
                     tolerance,
                 });
                 edge_roles.push(part(SweepPart::Rise {
                     loop_index: edge.loop_index,
                     vertex: vertex_index(edge, n),
                 }));
-                curves.push(rise);
+                curves.push(Some(rise));
             }
             rise_edge.push(row);
             rises.push(curves);
@@ -765,12 +859,26 @@ pub fn revolve(
                 tolerance,
             ));
             face_roles.push(part(SweepPart::StartCap));
+            // A segment along the axis is the start cap's edge in the end
+            // cap too.
+            let end_slots: Vec<Vec<Option<usize>>> = end_edge
+                .iter()
+                .zip(&start_edge)
+                .zip(&along)
+                .map(|((ends, starts), on)| {
+                    ends.iter()
+                        .zip(starts)
+                        .zip(on)
+                        .map(|((&e, &s), &a)| if a { s } else { e })
+                        .collect()
+                })
+                .collect();
             faces.push(cap_face(
                 m,
                 &loops,
                 plane.transformed(&about_axis),
                 end_use,
-                &end_edge,
+                &end_slots,
                 tolerance,
             ));
             face_roles.push(part(SweepPart::EndCap));
@@ -783,12 +891,16 @@ pub fn revolve(
         // turn — walked that way when the material sweeps along the
         // profile's normal and the other way otherwise, so the material
         // is on the walk's left seen from outside; an annulus of a full
-        // turn keeps only its two closed rises, one loop each.
+        // turn keeps only its closed rises, one loop each. A segment along
+        // the axis sweeps no side, and a vertex on the axis has no rise to
+        // walk, so a side reaching the axis closes there.
         for (li, edges_of) in loops.iter().enumerate() {
             side_start.push(faces.len());
             let n = edges_of.len();
             for (j, edge) in edges_of.iter().enumerate() {
-                let (surface, annulus) = &surfaces[li][j];
+                let Some((surface, annulus)) = &surfaces[li][j] else {
+                    continue;
+                };
                 let next = (j + 1) % n;
                 let on = |curve: &Curve, range: Interval| -> Result<Curve2, OpError> {
                     pcurve_on(curve, range, surface, tol)
@@ -805,12 +917,14 @@ pub fn revolve(
                         range: edge.range,
                     });
                 }
-                cycle.push(SideUse {
-                    edge: rise_edge[li][next],
-                    orientation: Orientation::Forward,
-                    pcurve: on(&rises[li][next], rise_range)?,
-                    range: rise_range,
-                });
+                if let (Some(slot), Some(rise)) = (rise_edge[li][next], &rises[li][next]) {
+                    cycle.push(SideUse {
+                        edge: slot,
+                        orientation: Orientation::Forward,
+                        pcurve: on(rise, rise_range)?,
+                        range: rise_range,
+                    });
+                }
                 match (end_edge[li][j], &end_curves[li][j], start_edge[li][j]) {
                     (Some(slot), Some(curve), _) => cycle.push(SideUse {
                         edge: slot,
@@ -832,12 +946,14 @@ pub fn revolve(
                         })));
                     }
                 }
-                cycle.push(SideUse {
-                    edge: rise_edge[li][j],
-                    orientation: Orientation::Reversed,
-                    pcurve: on(&rises[li][j], rise_range)?,
-                    range: rise_range,
-                });
+                if let (Some(slot), Some(rise)) = (rise_edge[li][j], &rises[li][j]) {
+                    cycle.push(SideUse {
+                        edge: slot,
+                        orientation: Orientation::Reversed,
+                        pcurve: on(rise, rise_range)?,
+                        range: rise_range,
+                    });
+                }
                 if !turn_along_normal {
                     cycle.reverse();
                     for u in &mut cycle {
