@@ -1,0 +1,99 @@
+{
+  "occt": "8.0.1.0.0",
+  "recipe_sha256": "bf57102e795e8f52fc75c3c3efd23eb960af59fac6672cf820e81bbc9ae7cda0",
+  "results": {
+    "default": {
+      "area": 8400.0,
+      "centroid": [
+        14.999999999999995,
+        14.999999999999995,
+        14.999999999999995
+      ],
+      "counts": {
+        "edges": 36,
+        "faces": 18,
+        "loops": 18,
+        "shells": 3,
+        "solids": 2,
+        "vertices": 24
+      },
+      "degenerate": false,
+      "euler_characteristic": 6,
+      "genus": 0,
+      "inertia": [
+        [
+          3533333.3333333377,
+          -1.862645149230957e-09,
+          -1.862645149230957e-09
+        ],
+        [
+          -1.862645149230957e-09,
+          3533333.3333333377,
+          -1.862645149230957e-09
+        ],
+        [
+          -1.862645149230957e-09,
+          -1.862645149230957e-09,
+          3533333.3333333377
+        ]
+      ],
+      "probes": [
+        {
+          "class": "in",
+          "label": "in_wall",
+          "point": [
+            2.0,
+            15.0,
+            15.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "in_cavity",
+          "point": [
+            7.0,
+            15.0,
+            15.0
+          ]
+        },
+        {
+          "class": "in",
+          "label": "in_core",
+          "point": [
+            15.0,
+            15.0,
+            15.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "outside",
+          "point": [
+            35.0,
+            15.0,
+            15.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_cavity_face",
+          "point": [
+            5.0,
+            15.0,
+            15.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_core_face",
+          "point": [
+            20.0,
+            15.0,
+            15.0
+          ]
+        }
+      ],
+      "volume": 20000.000000000007
+    }
+  }
+}

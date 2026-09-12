@@ -1,0 +1,23 @@
+{
+  "description": "box [0,0,0]–[40,30,10] ∪ box [60,0,0]–[80,30,10], apart: two lumps of one solid, every face of both kept by id — Open CASCADE builds a compound of two solids (ADR-0006)",
+  "steps": [
+    {"name": "a", "op": "box", "min": [0, 0, 0], "max": [40, 30, 10]},
+    {"name": "b", "op": "box", "min": [60, 0, 0], "max": [80, 30, 10]},
+    {"name": "result", "op": "fuse", "a": "a", "b": "b"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "in_a", "point": [20, 15, 5], "expect": "in"},
+    {"label": "in_b", "point": [70, 15, 5], "expect": "in"},
+    {"label": "between", "point": [50, 15, 5], "expect": "out"},
+    {"label": "on_a_face", "point": [40, 15, 5], "expect": "on"},
+    {"label": "on_b_face", "point": [60, 15, 5], "expect": "on"}
+  ],
+  "analytic": {
+    "volume": "40 * 30 * 10 + 20 * 30 * 10",
+    "area": "2 * (40 * 30 + 40 * 10 + 30 * 10) + 2 * (20 * 30 + 20 * 10 + 30 * 10)",
+    "centroid": ["(12000 * 20 + 6000 * 70) / 18000", 15, 5],
+    "counts": {"vertices": 16, "edges": 24, "faces": 12, "loops": 12, "shells": 2, "solids": 2},
+    "genus": 0
+  }
+}

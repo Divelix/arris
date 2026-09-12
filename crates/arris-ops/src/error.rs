@@ -5,7 +5,7 @@ use arris_check::arris_topo::arris_geom::{GeomError, GeomKind, ProfileError};
 use arris_check::arris_topo::arris_math::FrameError;
 use arris_check::arris_topo::builder::BuildError;
 use arris_check::arris_topo::{Body, EdgeId, FaceId, Shape};
-use arris_check::{ClassifyError, Report};
+use arris_check::{ClassifyError, LumpError, Report};
 
 /// Why a requested result has no valid representation.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -56,12 +56,10 @@ pub enum Reason {
     /// A boolean selected no material: a `common` of disjoint operands,
     /// a target swallowed by its tool.
     Empty,
-    /// The result would have more than one shell — a boolean's surviving
-    /// pieces making a disjoint `fuse`, a cut that splits its target, an
-    /// enclosed cavity; a full revolve of a profile with holes, each of
-    /// which closes into a cavity — and the `Solid` of cycle 1 holds one
-    /// (ADR-0004, plan m4-booleans `⚠ OPEN` 2; a body with voids is
-    /// cycle 2's).
+    /// A full revolve of a profile with holes, each of which would close
+    /// into a cavity: a result of more than one shell, which the revolve
+    /// does not build yet. A boolean returns such a result as lumps of one
+    /// solid (ADR-0006).
     MultiShell {
         /// How many shells the pieces make.
         shells: usize,
@@ -152,6 +150,11 @@ pub enum Fault {
         /// The face whose boundary it lies along.
         face: FaceId,
     },
+    /// The shells of a result could not be ordered into lumps
+    /// (`arris_check::lumps`, ADR-0006): the pieces an operation kept,
+    /// which share no edge and no vertex between shells, did not nest, or
+    /// their nesting could not be decided.
+    Lumps(LumpError),
 }
 
 /// How the arrangement a boolean splits a face by failed to be a planar
@@ -235,6 +238,7 @@ impl core::fmt::Display for Fault {
                 f,
                 "a piece of {edge} lies along the boundary of {face} but matches no piece of it"
             ),
+            Fault::Lumps(e) => write!(f, "the result's shells are not lumps: {e}"),
         }
     }
 }

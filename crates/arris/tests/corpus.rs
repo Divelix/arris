@@ -102,11 +102,38 @@ fn boolean_swallow_cut() {
     run("boolean/swallow-cut");
 }
 
-/// A slab through the plate: Open CASCADE builds two solids, Arris
-/// refuses with `Reason::MultiShell` — the runner's expected-error path.
+/// A slab through the plate: two boxes, two lumps of one solid — Open
+/// CASCADE's two solids (ADR-0006).
 #[test]
 fn boolean_split_cut() {
     run("boolean/split-cut");
+}
+
+/// The consumer's hollow box in its own units: one lump, its cavity a
+/// void shell made of the tool's faces turned inward.
+#[test]
+fn boolean_enclosed_cavity() {
+    run("boolean/enclosed-cavity");
+}
+
+/// Operands apart: two lumps, every face of both kept by id.
+#[test]
+fn boolean_disjoint_fuse() {
+    run("boolean/disjoint-fuse");
+}
+
+/// A cylinder wholly inside a box: a void of three faces, the seam
+/// carried with them.
+#[test]
+fn boolean_cavity_cylinder() {
+    run("boolean/cavity-cylinder");
+}
+
+/// A box inside the cavity of a hollow box: three shells, two lumps, one
+/// of them in the other's void.
+#[test]
+fn boolean_lump_in_cavity() {
+    run("boolean/lump-in-cavity");
 }
 
 #[test]

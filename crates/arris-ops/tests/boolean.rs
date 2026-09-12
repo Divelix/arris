@@ -345,7 +345,7 @@ use arris_ops::arris_check::arris_topo::arris_math::Point2;
 use arris_ops::arris_check::arris_topo::{
     EntityId, Face as FaceHandle, Orientation, Origin, Provenance, Shape,
 };
-use arris_ops::arris_check::{Level, check};
+use arris_ops::arris_check::{Level, check, lumps};
 use arris_ops::measure::mass_properties;
 use arris_ops::{Reason, common, cut, fuse};
 
@@ -523,41 +523,43 @@ fn a_disjoint_cut_keeps_every_face_of_the_target() {
     assert_eq!(p.outputs().len(), 2, "the shell and the body\n{p}");
 }
 
-/// The target inside the tool selects nothing; a tool that splits its
-/// target makes two shells. Each is the typed refusal, and the model is
-/// as it was.
+/// The target inside the tool selects nothing: the typed refusal, and the
+/// model is as it was.
 #[test]
-fn a_swallowed_target_and_a_split_target_are_typed_refusals() {
-    for (name, want) in [
-        ("boolean/swallow-cut", "empty"),
-        ("boolean/split-cut", "two"),
-    ] {
-        let (mut m, a, b) = inputs(name);
-        let before = arris_debug::dump_text(&m, a).unwrap();
-        let faces = m.faces(a).unwrap().len();
-        let err = cut(&mut m, a, b).unwrap_err();
-        match (want, &err) {
-            (
-                "empty",
-                OpError::Degenerate {
-                    reason: Reason::Empty,
-                    entities,
-                },
-            ) => {
-                assert_eq!(entities.as_slice(), [Shape::from(a), Shape::from(b)]);
-            }
-            (
-                "two",
-                OpError::Degenerate {
-                    reason: Reason::MultiShell { shells: 2 },
-                    ..
-                },
-            ) => {}
-            other => panic!("{name}: {other:?}"),
-        }
-        assert_eq!(arris_debug::dump_text(&m, a).unwrap(), before);
-        assert_eq!(m.faces(a).unwrap().len(), faces);
+fn a_swallowed_target_is_a_typed_refusal() {
+    let (mut m, a, b) = inputs("boolean/swallow-cut");
+    let before = arris_debug::dump_text(&m, a).unwrap();
+    let faces = m.faces(a).unwrap().len();
+    match cut(&mut m, a, b).unwrap_err() {
+        OpError::Degenerate {
+            reason: Reason::Empty,
+            entities,
+        } => assert_eq!(entities.as_slice(), [Shape::from(a), Shape::from(b)]),
+        other => panic!("{other:?}"),
     }
+    assert_eq!(arris_debug::dump_text(&m, a).unwrap(), before);
+    assert_eq!(m.faces(a).unwrap().len(), faces);
+}
+
+/// A tool that splits its target leaves two lumps of one solid
+/// (ADR-0006): two shells, clean at `Full`, the plate's volume less the
+/// slab's, the plate's shell `Modified` into both result shells and the
+/// slab's `Deleted` with nothing generated from it.
+#[test]
+fn a_split_target_is_two_lumps_of_one_solid() {
+    let (m, plate, slab, body, p) = cut_of("boolean/split-cut");
+    let report = check(&m, body, Level::Full);
+    assert!(report.is_ok() && report.unchecked().is_empty(), "{report}");
+    let shells = m.shells(body).unwrap();
+    assert_eq!(shells.len(), 2);
+    assert_eq!(lumps(&m, body).unwrap().len(), 2);
+    let plate_shell = shape(m.shells(plate).unwrap()[0].id);
+    let result_shells: Vec<Shape> = shells.iter().map(|s| shape(s.id)).collect();
+    assert_eq!(p.modified_from(plate_shell), result_shells.as_slice());
+    let slab_shell = shape(m.shells(slab).unwrap()[0].id);
+    assert!(p.is_deleted(slab_shell) && p.generated_from(slab_shell).is_empty());
+    let volume = mass_properties(&m, body).unwrap().volume;
+    assert!((volume - 10800.0).abs() < 1e-9 * 10800.0, "{volume}");
 }
 
 /// Two runs of every cut fixture give the same dump.
@@ -860,36 +862,34 @@ fn the_common_of_the_corner_cubes_is_the_unit_cube() {
     assert!((p.centroid - Point3::new(0.5, 0.5, 0.5)).norm() <= 1e-12);
 }
 
-/// Operands that do not touch: their common holds no material and their
-/// fuse holds two shells. Each is the typed refusal, and the model is as
-/// it was.
+/// Operands that do not touch: their common holds no material, the typed
+/// refusal with the model as it was; their fuse is two lumps of one solid
+/// (ADR-0006), every face of both kept by id and each operand's shell
+/// `Modified` into the result shell of its own faces.
 #[test]
-fn disjoint_operands_refuse_by_name() {
-    for (name, want) in [("common", "empty"), ("fuse", "two")] {
-        let (mut m, a, b) = inputs("boolean/disjoint-common");
-        let before = arris_debug::dump_text(&m, a).unwrap();
-        let err = match name {
-            "common" => common(&mut m, a, b).unwrap_err(),
-            _ => fuse(&mut m, a, b).unwrap_err(),
-        };
-        match (want, &err) {
-            (
-                "empty",
-                OpError::Degenerate {
-                    reason: Reason::Empty,
-                    entities,
-                },
-            ) => assert_eq!(entities.as_slice(), [Shape::from(a), Shape::from(b)]),
-            (
-                "two",
-                OpError::Degenerate {
-                    reason: Reason::MultiShell { shells: 2 },
-                    ..
-                },
-            ) => {}
-            other => panic!("{name}: {other:?}"),
-        }
-        assert_eq!(arris_debug::dump_text(&m, a).unwrap(), before);
+fn disjoint_operands_are_empty_in_common_and_two_lumps_in_fuse() {
+    let (mut m, a, b) = inputs("boolean/disjoint-common");
+    let before = arris_debug::dump_text(&m, a).unwrap();
+    match common(&mut m, a, b).unwrap_err() {
+        OpError::Degenerate {
+            reason: Reason::Empty,
+            entities,
+        } => assert_eq!(entities.as_slice(), [Shape::from(a), Shape::from(b)]),
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(arris_debug::dump_text(&m, a).unwrap(), before);
+
+    let (body, p) = fuse(&mut m, a, b).unwrap();
+    let report = check(&m, body, Level::Full);
+    assert!(report.is_ok() && report.unchecked().is_empty(), "{report}");
+    let mut faces = m.faces(a).unwrap();
+    faces.extend(m.faces(b).unwrap());
+    assert_eq!(m.faces(body).unwrap(), faces, "every face kept, in order");
+    let shells = m.shells(body).unwrap();
+    assert_eq!(shells.len(), 2);
+    for (operand, out) in [a, b].into_iter().zip(&shells) {
+        let own = shape(m.shells(operand).unwrap()[0].id);
+        assert_eq!(p.modified_from(own), [shape(out.id)]);
     }
 }
 

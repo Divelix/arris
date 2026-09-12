@@ -237,10 +237,10 @@ axis passes through the box, both under one random motion — and, for
 the identities whose outcome has to be known in advance, its
 `piercing_pair`: the cylinder clears every edge of the box, so `fuse`,
 `common` and `box − cylinder` are one shell each and `cylinder − box` is
-exactly two, the designed `MultiShell` refusal. The other pairs — the
-wall crossing an edge, a corner sliced off — stay in `overlapping_pair`,
-where `cut` is held to the identity when it succeeds and to that refusal
-otherwise.
+exactly two, two lumps of one solid that hold the identities like the
+rest. The other pairs — the wall crossing an edge, a corner sliced off —
+stay in `overlapping_pair`, where `cut` is held to the identity whatever
+number of lumps it makes.
 
 `ops::fuse(m, a, b)`, `ops::common(m, a, b)` and `ops::cut(m, target,
 tool)` are three selections over that decomposition (ADR-0004), one
@@ -292,19 +292,25 @@ dropped, the target's kept whole, and the ruling is no edge — Open
 CASCADE imprints it, and `boolean/tangent-outside-cut` states that
 convention. A piece `On` an edge or a vertex, or on a face its own is
 neither coincident nor tangent with, is `OpError::Unsupported` naming
-the pair. The survivors are grouped by shared edges — none is `Degenerate`
-with `Reason::Empty`, or with `Reason::ZeroThickness` when what was
-dropped lay on the other operand (two solids sharing only a face), more
-than one group `Reason::MultiShell` — and assembled through
+the pair. The survivors are grouped into shells by shared edges — none is
+`Degenerate` with `Reason::Empty`, or with `Reason::ZeroThickness` when
+what was dropped lay on the other operand (two solids sharing only a
+face) — and several shells are ordered into lumps, each outer shell then
+the voids inside it (ADR-0006), by assembling them once into a clone of
+the model and reading `arris_check::lumps` of that body, so the order is
+B1's own; a split target, a disjoint `fuse` and a cavity are each one
+solid. The shells are then assembled through
 `Builder::assemble` with every untouched entity of a kept-by-id operand
 `Keep`: a face whose loops changed at all, even only by a split edge or
 a re-tolerated vertex, is a new face `Modified` from the old; the tool
 of a `cut` keeps nothing, every entity of it `Deleted` and each
 surviving piece `Generated` from its parent (data-model §Provenance).
 A `fuse` and a `common` have no tool: both operands are kept by id, so
-an untouched face of either keeps it, and the result's shell and body
-are `Modified` from both operands' where a `cut`'s are `Modified` from
-the target's alone. Tolerances follow data-model §Tolerances' growth rule and a
+an untouched face of either keeps it, and the result's body is `Modified`
+from both operands' where a `cut`'s is `Modified` from the target's
+alone; a result shell is `Modified` from the operand shells its pieces
+came from, and a cavity made of a cut tool's pieces alone is `Generated`
+from the tool's shell. Tolerances follow data-model §Tolerances' growth rule and a
 piece keeps its parent's.
 
 Sweeps take a planar `geom::Profile` — an outer loop and holes of lines
@@ -391,11 +397,11 @@ involved, so the message a consumer shows — or the agent reads — says
 |---|---|---|
 | `InvalidInput` | an input body fails the checker (checked in debug builds before the operation starts, and in release when the `paranoid` feature is on) | `Body`, the `Report` |
 | `Unsupported` | the exhaustive dispatch reached a surface or curve pair the kernel has no formula for yet | the two `GeomKind`s with their entities |
-| `Degenerate` | the requested result has no valid representation: a parameter that makes no geometry (`Reason::NonFinite`, `Reason::NotPositive` naming it — a zero radius, a box whose `min` is not below its `max`, a revolve angle at or below zero, a zero extrude direction; `Reason::AngleAboveTurn` past `2π`), a zero-thickness intersection or an extrude of zero length (`Reason::ZeroThickness`), a revolve whose axis is off the profile's plane (`Reason::AxisNotInProfilePlane`), whose profile crosses (`Reason::ProfileCrossesAxis`) or touches (`Reason::ProfileTouchesAxis`) its axis, or whose arc's circle crosses it (`Reason::SpindleTorus`); an extrude off its plane's normal (`Reason::DirectionNotNormal`); a boolean that selects no material (`Reason::Empty`: a target inside its tool, a `common` of disjoint operands); a result of more than one shell (`Reason::MultiShell { shells }`: a split target, a disjoint fuse, a cavity — a full revolve of a profile with holes); faces touching along a curve interior to both result faces (`Reason::TangentContact`); a query on a body that is not a `Solid` (`Reason::NotSolid`) | the entities (none for a primitive or a sweep) and a `Reason` enum |
+| `Degenerate` | the requested result has no valid representation: a parameter that makes no geometry (`Reason::NonFinite`, `Reason::NotPositive` naming it — a zero radius, a box whose `min` is not below its `max`, a revolve angle at or below zero, a zero extrude direction; `Reason::AngleAboveTurn` past `2π`), a zero-thickness intersection or an extrude of zero length (`Reason::ZeroThickness`), a revolve whose axis is off the profile's plane (`Reason::AxisNotInProfilePlane`), whose profile crosses (`Reason::ProfileCrossesAxis`) or touches (`Reason::ProfileTouchesAxis`) its axis, or whose arc's circle crosses it (`Reason::SpindleTorus`); an extrude off its plane's normal (`Reason::DirectionNotNormal`); a boolean that selects no material (`Reason::Empty`: a target inside its tool, a `common` of disjoint operands); a full revolve of a profile with holes, whose holes would close into cavities (`Reason::MultiShell { shells }`); faces touching along a curve interior to both result faces (`Reason::TangentContact`); a query on a body that is not a `Solid` (`Reason::NotSolid`) | the entities (none for a primitive or a sweep) and a `Reason` enum |
 | `Profile` | a sweep's sketch is not a valid profile: `Profile::edges` refused it (data-model §Profiles). An invalid profile has no entities to name, so it is neither `InvalidInput` nor `Degenerate` | the `ProfileError`, naming the loop and segment |
 | `Tolerance` | the result would need an entity tolerance above `Precision::max_tolerance` | the entity, the tolerance it wanted |
 | `NotFound` | a handle does not resolve in this model (wrong model, or compacted away) | the `Shape` |
-| `Internal` | a kernel bug the operation caught: the checker rejected its own output, the builder refused a step of its fixed sequence, a frame could not be placed from inputs it had validated, a point it had to classify could not be, a geometry query failed on validated input for a reason other than a missing closed form, a section edge crossed a seam the seam's own hit should have paved, a piece of a coincident face pair's edge matched no piece of the edge it lies along, the (u, v) arrangement of a face was not the subdivision the pave model promised (`SplitFault`: a dangling section edge, a cycle not turning once, a hole inside no piece, a piece with no interior point, a pave at an edge's end) | a `Fault` — the `Report`, the `BuildError`, the `FrameError`, the `ClassifyError`, the `GeomError`, the two faces of the seam crossing, the edge and face of the unmatched common block, or the `SplitFault` naming the face |
+| `Internal` | a kernel bug the operation caught: the checker rejected its own output, the builder refused a step of its fixed sequence, a frame could not be placed from inputs it had validated, a point it had to classify could not be, a geometry query failed on validated input for a reason other than a missing closed form, a section edge crossed a seam the seam's own hit should have paved, a piece of a coincident face pair's edge matched no piece of the edge it lies along, the (u, v) arrangement of a face was not the subdivision the pave model promised (`SplitFault`: a dangling section edge, a cycle not turning once, a hole inside no piece, a piece with no interior point, a pave at an edge's end), the shells a boolean kept did not nest into lumps | a `Fault` — the `Report`, the `BuildError`, the `FrameError`, the `ClassifyError`, the `GeomError`, the two faces of the seam crossing, the edge and face of the unmatched common block, the `SplitFault` naming the face, or the `LumpError` |
 
 `Internal(Fault::Checker)` is returned only in release builds with
 `paranoid` on, since a debug build panics on the same report (below);

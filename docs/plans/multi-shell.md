@@ -62,7 +62,13 @@ probe (0.1³ − 0.04³ = 9.36e-4, two shells) passes as a fixture.
   survivors into shells, orders them into lumps by signed volume and
   containment, and assembles them. `SweepPart::Cavity { loop_index }`
   added: the shell a hole closes into on a full revolve (**public enum
-  change**). `transform` carries every shell.
+  change**). `transform` carries every shell. Found at step 4: the lump
+  order is read by assembling the shells once into a clone of the model
+  and asking `arris_check::lumps`, so it is B1's own; a nesting that
+  fails there is `Fault::Lumps(LumpError)` (**public enum change**);
+  `Reason::MultiShell` stays until step 6, where the revolve stops
+  refusing with it; `NonManifold` is fieldless, its entities in
+  `OpError::Degenerate`'s list as every other reason's are.
 - `docs/DATA-MODEL.md` §Provenance: a result shell is `Modified` from
   every operand shell a piece of it came from, except a shell made only of
   a cut tool's pieces, which is `Generated` from the tool's shell (the
@@ -74,7 +80,8 @@ probe (0.1³ − 0.04³ = 9.36e-4, two shells) passes as a fixture.
   for a solid whose shells do not nest, and the runner's
   `CorpusError::Lumps` (**public enum changes**).
 - `arris-debug` corpus: `solids` is the lump count, not `1`; `expect_error`
-  gains `non-manifold` and loses `multi-shell`.
+  gains `non-manifold` (step 5) and loses `multi-shell` (step 4, with
+  `split-cut`, its last user).
 
 ## Steps
 
@@ -99,9 +106,10 @@ bound has to be established here.
   `solids` from `lumps`. Test: a hand-assembled hollow box and a
   two-box body written, read back by Open CASCADE (`arris_debug::oracle`)
   with the volume, the shell and solid counts of the closed form.
-- [ ] Step 4 **[2]** — the boolean returns several shells: survivors
+- [x] Step 4 **[2]** — the boolean returns several shells: survivors
   grouped, ordered into lumps, assembled; shell provenance as above;
-  `Reason::MultiShell` removed. Fixtures, each passing every corpus stage:
+  the boolean never returns `Reason::MultiShell`. Fixtures, each passing
+  every corpus stage:
   `boolean/enclosed-cavity` (the consumer's hollow box, its units: volume
   9.36e-4, 2 shells, 1 solid), `boolean/split-cut` flipped from
   `expect_error` to passing (10800, 2 solids), `boolean/disjoint-fuse`,
@@ -115,7 +123,8 @@ bound has to be established here.
   leaves two boxes sharing an edge) with `expect_error: "non-manifold"`;
   the corpus grammar and lint learn it.
 - [ ] Step 6 **[2]** — a full revolve of a profile with holes: one void
-  shell per hole, `SweepPart::Cavity { loop_index }`. Fixture
+  shell per hole, `SweepPart::Cavity { loop_index }`; `Reason::MultiShell`
+  removed. Fixture
   `sweep/revolve-hollow-ring` (a rectangle with a rectangular hole about
   an axis clear of both: planes and cylinders only). `transform` of it
   in `provenance/` or a `transform/` fixture, so a lump body moves whole.

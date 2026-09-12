@@ -962,9 +962,15 @@ is the hole's rim. The tool of a `cut` keeps nothing: every entity of it
 is `Deleted`, and a piece of it that survives — the hole's wall from the
 tool's wall, the floor of a blind hole from the tool's cap, whole or not
 — is a new entity `Generated` from the tool entity it is a piece of, so
-no entity is shared between the tool body and the result. The result's
-shell and body are `Modified` from the target's in `cut`, from both
-operands' in `fuse` and `common`.
+no entity is shared between the tool body and the result. A result
+shell — the surviving pieces that share edges, several of them being the
+lumps and voids of ADR-0006 — is `Modified` from every shell of a
+kept-by-id operand (the target of a `cut`, either operand of a `fuse` or
+a `common`) a piece of it came from, and one made of a cut tool's pieces
+alone, a cavity, is `Generated` from the tool's shell; a shell of a
+kept-by-id operand no result shell came from is `Deleted`. The result's
+body is `Modified` from the target's in `cut`, from both operands' in
+`fuse` and `common`.
 
 Queries: `generated_from(origin) -> &[Shape]`, `modified_from(origin)`,
 `is_deleted(input)`, `origins(output) -> Vec<(Relation, Origin)>` (the

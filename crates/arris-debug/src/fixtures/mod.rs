@@ -370,15 +370,11 @@ fn one() -> usize {
 
 /// A result the oracle builds and Arris refuses by design: the typed
 /// error the corpus runner asserts instead of comparing the result
-/// (`docs/plans/m4-booleans.md` `⚠ OPEN` 1 and 2). The oracle's numbers
-/// are recorded in `expected.json` as the record of what Open CASCADE
-/// makes, and not compared.
+/// (ADR-0004). The oracle's numbers are recorded in `expected.json` as the
+/// record of what Open CASCADE makes, and not compared.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ExpectError {
-    /// `OpError::Degenerate` with `Reason::MultiShell`: the survivors
-    /// make more than one shell.
-    MultiShell,
     /// `OpError::Degenerate` with `Reason::TangentContact`: two faces
     /// touch along a curve interior to both.
     TangentContact,

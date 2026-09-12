@@ -1,0 +1,24 @@
+{
+  "description": "box [0,0,0]–[40,30,20] − a cylinder r 4 at (20,15) from z 5 to 15, wholly inside it: one solid of two shells, the cavity the tool's three faces turned inward and Generated from it (ADR-0006)",
+  "steps": [
+    {"name": "block", "op": "box", "min": [0, 0, 0], "max": [40, 30, 20]},
+    {"name": "pocket", "op": "cylinder", "base": [20, 15, 5], "axis": [0, 0, 1], "radius": 4, "height": 10},
+    {"name": "result", "op": "cut", "target": "block", "tool": "pocket"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "in_wall", "point": [5, 5, 5], "expect": "in"},
+    {"label": "in_cavity", "point": [20, 15, 10], "expect": "out"},
+    {"label": "outside", "point": [50, 15, 10], "expect": "out"},
+    {"label": "on_cavity_wall", "point": [20, 19, 10], "expect": "on"},
+    {"label": "on_cavity_cap", "point": [20, 15, 5], "expect": "on"},
+    {"label": "on_block_face", "point": [20, 15, 20], "expect": "on"}
+  ],
+  "analytic": {
+    "volume": "40 * 30 * 20 - pi * 16 * 10",
+    "area": "2 * (40 * 30 + 40 * 20 + 30 * 20) + 2 * pi * 4 * 10 + 2 * pi * 16",
+    "centroid": [20, 15, 10],
+    "counts": {"vertices": 10, "edges": 15, "faces": 9, "loops": 9, "shells": 2, "solids": 1},
+    "genus": 0
+  }
+}

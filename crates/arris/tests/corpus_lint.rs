@@ -142,7 +142,7 @@ fn a_comparable_fixture_without_its_dump_fails_the_lint() {
         assert!(problems.iter().any(|p| p.contains(&file)), "{problems:?}");
     }
 
-    for name in ["boolean/flush-common", "boolean/split-cut"] {
+    for name in ["boolean/flush-common", "boolean/tangent-hole"] {
         let scratch = root.join(name);
         std::fs::create_dir_all(&scratch).unwrap();
         copy_fixture(name, &scratch);

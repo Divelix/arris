@@ -405,7 +405,12 @@ pub fn interferences(m: &Model, a: Body, b: Body) -> Result<Interferences, OpErr
 /// the hole's wall from the tool's wall (`docs/DATA-MODEL.md`
 /// §Provenance). A section vertex is `Generated` from the edge and the
 /// face of every hit it merges, a section edge from both faces of its
-/// pair; the result's shell and body are `Modified` from the target's.
+/// pair; the result's body is `Modified` from the target's. The result
+/// may be several shells — a tool that splits its target, a cavity the
+/// tool leaves inside it — each an outer shell or a void, stored lump by
+/// lump (ADR-0006): a result shell is `Modified` from the target's shells
+/// it holds pieces of, and a cavity made of the tool's pieces alone is
+/// `Generated` from the tool's shell.
 /// Tolerances follow the growth rule: a section vertex's is the largest
 /// of what it merges plus their spread, a section edge's the larger of
 /// its faces' raised to the pcurves' residual, a piece keeps its
@@ -437,9 +442,7 @@ pub fn interferences(m: &Model, a: Body, b: Body) -> Result<Interferences, OpErr
 /// [`crate::Reason::Empty`] when nothing survives (the target inside the
 /// tool), [`crate::Reason::ZeroThickness`] when nothing survives and
 /// what was dropped lay on the other operand (two solids touching along
-/// a face), [`crate::Reason::MultiShell`] when the survivors make more
-/// than one shell (a tool that splits its target, an enclosed cavity),
-/// [`crate::Reason::TangentContact`] when two faces touch along a
+/// a face), [`crate::Reason::TangentContact`] when two faces touch along a
 /// ruling interior to both and both pieces through it would survive —
 /// a hole wall tangent to a side face — or a section edge is tangent to
 /// a loop edge at a vertex;
@@ -490,8 +493,10 @@ pub fn cut(m: &mut Model, target: Body, tool: Body) -> Result<(Body, Provenance)
 /// edge is `Modified` into its surviving pieces; whatever has no piece
 /// left is `Deleted`. A section vertex is `Generated` from the edge and
 /// the face of every hit it merges, a section edge from both faces of
-/// its pair; the result's shell and body are `Modified` from both
-/// operands' (`docs/DATA-MODEL.md` §Provenance). Tolerances follow
+/// its pair; the result's body is `Modified` from both operands', and
+/// each result shell from the operand shells its pieces came from — two
+/// operands that do not meet are two lumps of one solid (ADR-0006,
+/// `docs/DATA-MODEL.md` §Provenance). Tolerances follow
 /// the growth rule, as [`cut`]. Two faces on one surface are the flush
 /// case: a piece of `a`'s face lying on `b`'s is kept, once and in `a`'s
 /// orientation, exactly when the two effective normals agree, and
@@ -501,10 +506,7 @@ pub fn cut(m: &mut Model, target: Body, tool: Body) -> Result<(Body, Provenance)
 /// `a`'s. The result is deterministic: the same ids on every run and
 /// every platform.
 ///
-/// Errors, the model untouched on each: as [`cut`]'s, with
-/// [`crate::Reason::MultiShell`] where a `cut` would rarely reach it —
-/// two operands that do not overlap make two shells, which is M4's
-/// "out" (`docs/plans/m4-booleans.md` `⚠ OPEN` 2).
+/// Errors, the model untouched on each: as [`cut`]'s.
 ///
 /// ```
 /// use arris_ops::{fuse, primitive_box, primitive_cylinder};
@@ -543,7 +545,8 @@ pub fn fuse(m: &mut Model, a: Body, b: Body) -> Result<(Body, Provenance), OpErr
 /// orientation, and a piece of `a`'s face lying on a coincident face of
 /// `b` is kept once, from `a`, when the normals agree. Entities are
 /// reused from both operands and the provenance is written the same
-/// way; the result's shell and body are `Modified` from both operands'.
+/// way; the result's body is `Modified` from both operands', and each
+/// result shell from the operand shells its pieces came from.
 ///
 /// Errors, the model untouched on each: as [`cut`]'s, with
 /// [`crate::Reason::Empty`] where two operands share no material — the

@@ -2,9 +2,10 @@
 //! into pieces, each piece classified at a point inside it against the
 //! other operand and kept or dropped by the selection table — a piece
 //! lying on a coincident face of the other operand by the two normals —
-//! the survivors grouped into one shell and assembled through
-//! `Builder::assemble` with every untouched entity kept by id, and the
-//! provenance written from the pieces as they are made.
+//! the survivors grouped into shells by the edges they share and ordered
+//! into lumps (ADR-0006), assembled through `Builder::assemble` with every
+//! untouched entity kept by id, and the provenance written from the pieces
+//! as they are made.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -16,9 +17,9 @@ use arris_check::arris_topo::builder::{
 use arris_check::arris_topo::entity::{BodyKind, EdgeGeometry};
 use arris_check::arris_topo::{
     Body, Curve2Id, CurveId, EdgeId, EntityId, Face as FaceHandle, FaceId, Model, NotFound,
-    Orientation, Provenance, Shape, VertexId,
+    Orientation, Provenance, Shape, ShellId, VertexId,
 };
-use arris_check::{Classification, classify_point};
+use arris_check::{Classification, classify_point, lumps};
 
 use super::pieces::{Alias, ERef, EdgeOnFace, PieceUse, SplitFace, SubEdge, VRef, split_face};
 use super::{Interferences, VertexSource};
@@ -697,9 +698,11 @@ impl<'m> Build<'m> {
         }
     }
 
-    /// The surviving pieces grouped by shared edges: one group or the
-    /// typed refusal.
-    fn one_shell(&self) -> Result<(), OpError> {
+    /// The surviving pieces grouped into shells by the edges they share:
+    /// each shell its pieces' indices into `kept`, ascending, and the
+    /// shells in the order of their first piece. No piece at all is the
+    /// typed refusal of a result with no material.
+    fn shells(&self) -> Result<Vec<Vec<usize>>, OpError> {
         let entities = || {
             vec![
                 Shape::new(self.bodies[0].id, self.bodies[0].orientation),
@@ -738,16 +741,19 @@ impl<'m> Build<'m> {
                 }
             }
         }
-        let shells = (0..self.kept.len())
-            .filter(|&k| root(&mut parent, k) == k)
-            .count();
-        if shells > 1 {
-            return Err(OpError::Degenerate {
-                entities: entities(),
-                reason: Reason::MultiShell { shells },
-            });
+        let mut shell_of_root: BTreeMap<usize, usize> = BTreeMap::new();
+        let mut shells: Vec<Vec<usize>> = Vec::new();
+        for k in 0..self.kept.len() {
+            let r = root(&mut parent, k);
+            let shell = *shell_of_root.entry(r).or_insert(shells.len());
+            if shell == shells.len() {
+                shells.push(Vec::new());
+            }
+            if let Some(pieces) = shells.get_mut(shell) {
+                pieces.push(k);
+            }
         }
-        Ok(())
+        Ok(shells)
     }
 
     /// `true` when the vertex is appended rather than kept by id: a
@@ -794,6 +800,17 @@ pub(super) fn boolean(
             .map(|e| e.id)
             .collect();
         faces[side] = m.faces(bodies[side]).map_err(of(side))?;
+    }
+    // The shell of each operand face: what a result shell's provenance is
+    // written against.
+    let mut shell_of: [BTreeMap<FaceId, ShellId>; 2] = [BTreeMap::new(), BTreeMap::new()];
+    for side in 0..2 {
+        for shell in m.shells(bodies[side]).map_err(of(side))? {
+            let entity = m.shell(shell.id).map_err(of(side))?;
+            for face in entity.faces() {
+                shell_of[side].entry(face.id).or_insert(shell.id);
+            }
+        }
     }
     let precision = m.precision();
 
@@ -861,8 +878,11 @@ pub(super) fn boolean(
         b.raise_tolerances()?;
         b.contacts()?;
         b.select()?;
-        b.one_shell()?;
-        let plan = b.assembly()?;
+        let mut shells = b.shells()?;
+        if shells.len() > 1 {
+            shells = b.lump_order(shells)?;
+        }
+        let plan = b.assembly(&shells)?;
         let Build {
             face_pieces,
             vref_of,
@@ -885,7 +905,14 @@ pub(super) fn boolean(
         for (e, &id) in plan.new_edges.iter().zip(built.edges.values()) {
             out_edge.insert(*e, id);
         }
-        let out_faces: Vec<FaceId> = built.faces.values().copied().collect();
+        // Face slots follow the assembly's shells; `plan.faces` is the kept
+        // piece behind each.
+        let out_faces: BTreeMap<usize, FaceId> = plan
+            .faces
+            .iter()
+            .copied()
+            .zip(built.faces.values().copied())
+            .collect();
         let vertex_id = |v: VRef| -> Option<VertexId> {
             match v {
                 VRef::Existing(id) if plan.kept_vertices.contains(&id) => Some(id),
@@ -944,19 +971,19 @@ pub(super) fn boolean(
             for f in &faces[side] {
                 let images: Vec<Shape> = face_pieces
                     .get(&f.id)
-                    .map(|(_, pieces)| pieces.iter().map(|&k| forward(out_faces[k])).collect())
+                    .map(|(_, pieces)| {
+                        pieces
+                            .iter()
+                            .filter_map(|k| out_faces.get(k))
+                            .map(|&id| forward(id))
+                            .collect()
+                    })
                     .unwrap_or_default();
                 record(&mut p, forward(f.id), images);
             }
-            let shells: Vec<Shape> = closures[side].shells.iter().map(|&s| forward(s)).collect();
-            for s in shells {
-                match policy {
-                    Policy::Reuse => {
-                        for &out in &built.shells {
-                            p.add_modified(s, forward(out));
-                        }
-                    }
-                    Policy::Regenerate => p.add_deleted(s),
+            if policy == Policy::Regenerate {
+                for &s in &closures[side].shells {
+                    p.add_deleted(forward(s));
                 }
             }
             match policy {
@@ -964,11 +991,46 @@ pub(super) fn boolean(
                 Policy::Regenerate => p.add_deleted(forward(body.id)),
             }
         }
+        // A result shell is `Modified` from every shell of a kept-by-id
+        // operand a piece of it came from, and one made of a cut tool's
+        // pieces alone is `Generated` from the tool's shell; a shell of a
+        // kept-by-id operand no result shell came from is gone.
+        let mut reached: BTreeSet<ShellId> = BTreeSet::new();
+        for (pieces, &out) in shells.iter().zip(&built.shells) {
+            let mut from: [BTreeSet<ShellId>; 2] = [BTreeSet::new(), BTreeSet::new()];
+            for piece in pieces.iter().filter_map(|&k| kept.get(k)) {
+                if let Some(&s) = shell_of[piece.side].get(&piece.face.id) {
+                    from[piece.side].insert(s);
+                }
+            }
+            let reused: Vec<ShellId> = (0..2)
+                .filter(|&side| op.policy(side) == Policy::Reuse)
+                .flat_map(|side| from[side].iter().copied())
+                .collect();
+            if reused.is_empty() {
+                for s in from.iter().flatten() {
+                    p.add_generated(forward(*s), forward(out));
+                }
+            }
+            for s in reused {
+                p.add_modified(forward(s), forward(out));
+                reached.insert(s);
+            }
+        }
+        for side in (0..2).filter(|&side| op.policy(side) == Policy::Reuse) {
+            for &s in closures[side]
+                .shells
+                .iter()
+                .filter(|s| !reached.contains(s))
+            {
+                p.add_deleted(forward(s));
+            }
+        }
         // A piece kept once from a coincident pair stands for the other
         // operand's face too.
         for (k, piece) in kept.iter().enumerate() {
-            if let Some(g) = piece.stands_for {
-                p.add_generated(forward(g), forward(out_faces[k]));
+            if let (Some(g), Some(&id)) = (piece.stands_for, out_faces.get(&k)) {
+                p.add_generated(forward(g), forward(id));
             }
         }
         for (k, v) in i.vertices.iter().enumerate() {
@@ -1011,6 +1073,8 @@ pub(super) fn boolean(
 /// The assembly and the order its new slots were given in.
 struct Plan {
     assembly: Assembly,
+    /// The kept piece behind each face spec, shell by shell in order.
+    faces: Vec<usize>,
     /// The `VRef` behind each `VertexSpec::New`, in order.
     new_vertices: Vec<VRef>,
     /// The `ERef` behind each `EdgeSpec::New`, in order.
@@ -1022,11 +1086,42 @@ struct Plan {
 }
 
 impl Build<'_> {
+    /// `shells` reordered lump by lump — each outer shell, then the voids
+    /// whose innermost container it is (ADR-0006) — by assembling them once
+    /// into a copy of the model and reading `arris_check::lumps` of that
+    /// body: the order B1 proves, from the code that proves it. The copy
+    /// is dropped; the model is only read. Errors: the builder's refusal,
+    /// and [`Fault::Lumps`] when the shells do not nest or the nesting is
+    /// undecided.
+    fn lump_order(&self, shells: Vec<Vec<usize>>) -> Result<Vec<Vec<usize>>, OpError> {
+        let plan = self.assembly(&shells)?;
+        let mut scratch = self.m.clone();
+        let built = Builder::assemble(&scratch, self.precision.default_tolerance, plan.assembly)?
+            .finish(&mut scratch, BodyKind::Solid)?;
+        let found = lumps(&scratch, built.body).map_err(|e| OpError::Internal(Fault::Lumps(e)))?;
+        let index: BTreeMap<ShellId, usize> = built
+            .shells
+            .iter()
+            .enumerate()
+            .map(|(i, &s)| (s, i))
+            .collect();
+        let mut shells: Vec<Option<Vec<usize>>> = shells.into_iter().map(Some).collect();
+        // `lumps` names every shell once, as an outer shell or a void of
+        // one, so every shell is taken.
+        Ok(found
+            .iter()
+            .flat_map(|lump| core::iter::once(&lump.outer).chain(&lump.voids))
+            .filter_map(|s| index.get(&s.id))
+            .filter_map(|&i| shells.get_mut(i).and_then(Option::take))
+            .collect())
+    }
+
     /// The assembly of the kept pieces: a vertex spec for every new
     /// vertex they reach, an edge spec for every new edge piece, a face
     /// spec per piece — `Keep` for a whole untouched face of a `Reuse`
-    /// operand — in a deterministic order.
-    fn assembly(&self) -> Result<Plan, OpError> {
+    /// operand — shell by shell in `shells`' order, in a deterministic
+    /// order.
+    fn assembly(&self, shells: &[Vec<usize>]) -> Result<Plan, OpError> {
         let m = self.m;
         let mut used_edges: BTreeSet<ERef> = BTreeSet::new();
         for piece in &self.kept {
@@ -1152,46 +1247,54 @@ impl Build<'_> {
             new_edges.push(r);
         }
 
-        let mut faces = Vec::with_capacity(self.kept.len());
-        for piece in &self.kept {
-            if piece.whole {
-                faces.push(FaceSpec::Keep(FaceHandle::new(
-                    piece.face.id,
-                    piece.orientation,
-                )));
-                continue;
+        let mut face_pieces = Vec::with_capacity(self.kept.len());
+        for shell in shells {
+            let mut faces = Vec::with_capacity(shell.len());
+            for &k in shell {
+                let Some(piece) = self.kept.get(k) else {
+                    continue;
+                };
+                face_pieces.push(k);
+                if piece.whole {
+                    faces.push(FaceSpec::Keep(FaceHandle::new(
+                        piece.face.id,
+                        piece.orientation,
+                    )));
+                    continue;
+                }
+                let entity = m
+                    .face(piece.face.id)
+                    .map_err(|_| self.not_found(piece.side))?;
+                let loops = piece
+                    .loops
+                    .iter()
+                    .map(|l| {
+                        let mut uses: Vec<UseSpec> = l
+                            .iter()
+                            .map(|u| UseSpec {
+                                edge: ekey[&u.edge],
+                                orientation: piece.orientation.compose(u.orientation),
+                                pcurve: u.pcurve,
+                            })
+                            .collect();
+                        if piece.orientation.is_reversed() {
+                            uses.reverse();
+                        }
+                        uses
+                    })
+                    .collect();
+                faces.push(FaceSpec::New {
+                    surface: entity.surface(),
+                    orientation: piece.orientation,
+                    loops,
+                    tolerance: entity.tolerance(),
+                });
             }
-            let entity = m
-                .face(piece.face.id)
-                .map_err(|_| self.not_found(piece.side))?;
-            let loops = piece
-                .loops
-                .iter()
-                .map(|l| {
-                    let mut uses: Vec<UseSpec> = l
-                        .iter()
-                        .map(|u| UseSpec {
-                            edge: ekey[&u.edge],
-                            orientation: piece.orientation.compose(u.orientation),
-                            pcurve: u.pcurve,
-                        })
-                        .collect();
-                    if piece.orientation.is_reversed() {
-                        uses.reverse();
-                    }
-                    uses
-                })
-                .collect();
-            faces.push(FaceSpec::New {
-                surface: entity.surface(),
-                orientation: piece.orientation,
-                loops,
-                tolerance: entity.tolerance(),
-            });
+            assembly.shells.push(faces);
         }
-        assembly.shells = vec![faces];
         Ok(Plan {
             assembly,
+            faces: face_pieces,
             new_vertices,
             new_edges,
             kept_vertices,

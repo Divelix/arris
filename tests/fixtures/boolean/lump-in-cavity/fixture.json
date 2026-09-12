@@ -1,0 +1,26 @@
+{
+  "description": "a box of 30 hollowed by a box of 20 in its middle, fused with a box of 10 inside the cavity, clear of its walls: two lumps of one solid, the hollow box with its void and the box inside it — Open CASCADE builds two solids of three shells (ADR-0006)",
+  "steps": [
+    {"name": "outer", "op": "box", "min": [0, 0, 0], "max": [30, 30, 30]},
+    {"name": "cavity", "op": "box", "min": [5, 5, 5], "max": [25, 25, 25]},
+    {"name": "hollow", "op": "cut", "target": "outer", "tool": "cavity"},
+    {"name": "core", "op": "box", "min": [10, 10, 10], "max": [20, 20, 20]},
+    {"name": "result", "op": "fuse", "a": "hollow", "b": "core"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "in_wall", "point": [2, 15, 15], "expect": "in"},
+    {"label": "in_cavity", "point": [7, 15, 15], "expect": "out"},
+    {"label": "in_core", "point": [15, 15, 15], "expect": "in"},
+    {"label": "outside", "point": [35, 15, 15], "expect": "out"},
+    {"label": "on_cavity_face", "point": [5, 15, 15], "expect": "on"},
+    {"label": "on_core_face", "point": [20, 15, 15], "expect": "on"}
+  ],
+  "analytic": {
+    "volume": "30^3 - 20^3 + 10^3",
+    "area": "6 * 30^2 + 6 * 20^2 + 6 * 10^2",
+    "centroid": [15, 15, 15],
+    "counts": {"vertices": 24, "edges": 36, "faces": 18, "loops": 18, "shells": 3, "solids": 2},
+    "genus": 0
+  }
+}

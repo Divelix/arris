@@ -274,9 +274,6 @@ impl Refusal {
     fn expected(self) -> String {
         match self {
             Refusal::Degenerate => "OpError::Degenerate".into(),
-            Refusal::Error(ExpectError::MultiShell) => {
-                "OpError::Degenerate with Reason::MultiShell".into()
-            }
             Refusal::Error(ExpectError::TangentContact) => {
                 "OpError::Degenerate with Reason::TangentContact".into()
             }
@@ -298,9 +295,6 @@ impl Refusal {
             }) => {
                 let matches = match self {
                     Refusal::Degenerate => true,
-                    Refusal::Error(ExpectError::MultiShell) => {
-                        matches!(reason, Reason::MultiShell { .. })
-                    }
                     Refusal::Error(ExpectError::TangentContact) => reason == Reason::TangentContact,
                 };
                 if matches {
