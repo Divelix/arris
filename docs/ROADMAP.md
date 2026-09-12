@@ -286,6 +286,35 @@ under the same origin across three parameter sets.
 
 *Goal: a sketched profile becomes a solid, and C1 closes on its numbers.*
 
+**Status: done 2026-09-12.** Retired the sketch as topology: a consumer's
+profile is a `geom::Profile` value — lines and arcs, an outer loop and
+holes, validated and oriented once by `Profile::edges` — and there is no
+`planar_face` operation, a one-face sheet being C7's. A sweep's faces are
+known outright, so `ops::extrude` and `ops::revolve` enter the builder
+through `Builder::assemble` in one fixed order, ids a function of the
+profile alone, every entity `Generated` from a `SweepPart` naming the
+consumer's own loop, segment or vertex. The surfaces of revolution share
+one frame — origin on the axis, `X` the radial into the profile's plane,
+so `u = 0` is that plane and every seam lies in it — with a cone
+narrowing along the axis placed at `Z = −axis`, and `pcurve_on` gained
+the six exact arms a revolve makes on a cone, a sphere and a torus.
+Pappus's theorems, integrated in the profile's plane, are the oracle the
+sweeps' volume and area are held to at a thousand random profiles, an
+independent path from `measure`'s flux. A profile touching or crossing
+its axis is a typed refusal until C2's apex, and one refusal was found
+rather than designed: a full revolve of a profile with holes is
+`Reason::MultiShell`, each hole a cavity. What stays unchecked: S5 and B1
+have no arm against a cone, sphere or torus face, so the quadric-faced
+revolves are held to closed forms and to the oracle's reading of their
+STEP rather than to corpus fixtures, and an extrude of two arcs whose
+cylinders' boxes overlap leaves that pair to C2's quadric-curve arm.
+Accepted with every `sweep/*` fixture passing every corpus stage, the
+corpus lint failing any fixture under `primitive/`, `transform/`,
+`boolean/`, `sweep/` or `provenance/` without its blessed dump (a
+failure waiting for its fix lives under `regression/`), CI running the
+corpus's ignored tests, `parallel` byte-identical, the oracle's
+self-test, the layer check and the wasm build green. No ADRs.
+
 - `ops::planar_face` from a `Profile` of lines and arcs with holes;
   `ops::extrude` (planes and cylinders); `ops::revolve` (planes, cylinders,
   and cones/spheres/tori as *surfaces* where the profile demands them —
@@ -365,8 +394,9 @@ with their `#[ignore]`d twins — green.*
   quadric-curve `⚠ OPEN` with an ADR.
 - Results of more than one shell — an enclosed cavity, a disjoint `fuse`,
   a `cut` that splits its target — which M4 refuses as
-  `Reason::MultiShell`; the revolve profile touching its axis (apex and
-  degenerate edges), a `Degenerate` for a profile crossing it.
+  `Reason::MultiShell`, a full revolve of a profile with holes among them;
+  the revolve profile touching its axis (apex and degenerate edges), which
+  M5 refuses as `Reason::ProfileTouchesAxis`.
 - `Model::retain` semantics (the compaction `⚠ OPEN`), the `f32`
   boundary `⚠ OPEN`, the origin-name helper `⚠ OPEN` — each an ADR with
   the consumer's adapter as the test.

@@ -23,20 +23,17 @@ cargo install cargo-nextest --locked  # the hook runs the suite under nextest
 
 ## Current state
 
-**M4 done (2026-09-11).** Two bodies cut, fuse and intersect. `ops::
-{fuse, common, cut}` are three selections over one General Fuse
-decomposition (ADR-0004): paves shared between the operands, every face
-split in its own (u, v) through the pcurves, each piece classified by
-`arris_check::classify::classify_point`, the result assembled through
-`Builder::assemble` with every untouched entity keeping its id.
-Coincident and tangent faces are named cases, and what a manifold `Solid`
-cannot hold is a typed refusal — `Reason::{Empty, MultiShell,
-TangentContact, ZeroThickness}`. Beside them `ops::transform`, the query
-`ops::boolean::interferences` (the decomposition as a printable value),
-and ADR-0005 (a ruled direction flattened before the triangulation).
-Every `primitive/*`, `transform/*`, `boolean/*` and `provenance/*`
-fixture passes every corpus stage; only the three `sweep/*` are ignored.
-**Next:** `/plan m5-sweeps` (roadmap §M5).
+**M5 done (2026-09-12); C1's vertical slice is complete.** A sketch is a
+`geom::Profile` value, validated and oriented by `Profile::edges`;
+`ops::{extrude, revolve}` sweep it through `Builder::assemble`, every
+entity `Generated` from a `SweepPart` in the consumer's own indices. The
+revolve makes planes, cylinders, and cones, spheres and tori as surfaces
+(their booleans and S5/B1 arms are C2–C3's), held to Pappus at a thousand
+random profiles. Beside M4's booleans, every `primitive/*`, `transform/*`,
+`boolean/*`, `sweep/*` and `provenance/*` fixture passes every corpus
+stage; the lint fails one without its blessed dump, and a failure waiting
+for its fix lives under `tests/fixtures/regression/`.
+**Next:** `/close-cycle` (tags `m5`, `c1` are the human's), then C2.
 
 ## Rules that are not derivable from the code
 

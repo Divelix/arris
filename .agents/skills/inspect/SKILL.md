@@ -19,6 +19,21 @@ has no better tool than you do until Arris sits behind a CAD application.
 | Where does a boolean go wrong? | pave model — `arris_ops::boolean::interferences(&model, a, b)` (a query: `&Model`, no body, no provenance) | The decomposition every boolean is a selection over (ADR-0004), as a value with a `Display`: every face pair whose boxes overlap with its `SurfaceIntersection`, every edge-on-face hit with its `Landing` (interior, or which edge or vertex of the face it crossed) and the section vertex it merged into, the section vertices with their tolerances, the paves on every edge and every section curve, the section edges with their range, ends and a pcurve on each face, the contacts of every `Tangent` pair (a block of the tangent ruling interior to both faces, with its midpoint and (u, v) on each — the segment the boolean decides by the curvature rule, and refuses as `TangentContact` when both pieces through it would survive), the coincident edge–face pairs, and for every `Coincident` face pair its edge–edge crossings, the images (a piece of one face's edge inside the other face, with its pcurve there) and the common blocks (a piece of `b`'s edge that is a piece of `a`'s, held once). Print it with `{}` and read the pave, not the result: a missing section edge is a block whose midpoint was not `Inside` both faces, a wrong count is a hit the face's polygons decided differently from the other face's; a flush face that survived is a piece whose interior point classified `Inside` or `Outside` where it should have been `On` — an image missing from that face's list — and a `BuildError::EdgeUses` after a flush operation is a common block that was not found (`Fault::CommonBlock` when the paves disagree). To draw it, `polyline_of(&i.curves[s.curve].curve, s.range, n)` over each section edge `s` and `render_png` them over `mesh_of` one operand — the section curves lie on the operand's faces where the other one crosses them. A pair or an edge–face pair with no closed form is `OpError::Unsupported` naming both; a section edge crossing a seam without a pave is `Fault::Seam`, a kernel bug. |
 | Is it right? | oracle — `arris_debug::oracle::compare("<area>/<slug>", &step_text, variant, tag)` from Rust, or `uv run --project tools/oracle tools/oracle/compare.py <fixture-dir> <file.step> [--variant NAME]` on a file from `arris_io::step::write(&model, &[body])` | Arris's volume, area, centroid, counts, genus and probe classifications (read from the STEP it wrote) against Open CASCADE's `expected.json`, within the fixture's tolerances; a table, exit 1 on mismatch (`OracleError::Mismatch` with the table from Rust). `expected.py <dir>` regenerates the oracle's answer, `selftest.py` proves the oracle against itself. The whole chain for one fixture — checker at `Full`, counts, oracle, provenance accounting, dump diff — is `cargo test -p arris --test corpus <name>`; `ARRIS_BLESS=1` writes `dump.txt` instead of diffing it. |
 
+A sketch that `Profile::edges` refuses has no edges to dump or render, and
+its `ProfileError` names a loop and a segment in the consumer's own
+indices (`loop_index` 0 the outer, holes from 1). Draw the raw loops in
+the sketch's own plane: `Profile`'s fields are public, so walk
+`outer` and `holes`, map each (u, v) to `[u, v, 0.0]` — a line segment
+its two ends, an arc its start, `via()` and `end()`, a circle loop a
+ring sampled about its centre — build one `Polyline::new(points)` per loop,
+and `render_png(&TriMesh::new(), &polylines, View::Top,
+Some(Highlight::Point([u, v, 0.0])), "name")` with the named segment's
+start as the highlight. `View::Top` looks down the sketch's normal, so the
+picture is the sketch as it was drawn. For a revolve's axis refusal
+(`Reason::ProfileTouchesAxis`, `ProfileCrossesAxis`, `SpindleTorus`) add
+the axis as one more polyline, its origin and a far point taken into the
+plane's (u, v) by dotting their offset from `plane` with its `X` and `Y`.
+
 For the human: `arris_debug::rerun::{spawn, log}` (the `rerun` feature)
 spawns a Rerun viewer and streams a body's mesh to it — a `Mesh3D` per
 face under `<body>/faces/<face>`, a `LineStrips3D` per edge under
