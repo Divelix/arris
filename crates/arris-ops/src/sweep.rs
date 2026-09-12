@@ -7,13 +7,15 @@
 //! §Provenance).
 
 use core::f64::consts::TAU;
+use std::collections::BTreeMap;
 
 use arris_check::arris_topo::arris_geom::{
     Curve, Curve2, GeomError, GeomKind, Profile, ProfileEdge, Surface, pcurve_on,
 };
 use arris_check::arris_topo::arris_math::nalgebra::UnitQuaternion;
 use arris_check::arris_topo::arris_math::{
-    Axis, Frame, Interval, Isometry, Point2, Point3, Tolerance, UnitVec3, Vec2, Vec3, wrap_angle,
+    Axis, Frame, Interval, Isometry, Point2, Point3, Tolerance, UnitVec2, UnitVec3, Vec2, Vec3,
+    wrap_angle,
 };
 use arris_check::arris_topo::builder::{
     Assembly, Builder, Built, EdgeKey, EdgeSpec, FaceSpec, UseSpec, VertexKey, VertexSpec,
@@ -228,10 +230,15 @@ fn swept_surface(
                         -base.z().into_inner(),
                     )?
                 };
+                // A start on the axis is the apex itself.
                 Ok((
                     Surface::Cone {
                         frame,
-                        radius: rho_s,
+                        radius: if rho_s.abs() <= tol.linear {
+                            0.0
+                        } else {
+                            rho_s
+                        },
                         half_angle: d_rho.abs().atan2(d_t.abs()),
                     },
                     false,
@@ -272,6 +279,25 @@ fn swept_surface(
         }
         // `Profile::edges` makes lines and circles and nothing else.
         Curve::Ellipse { .. } | Curve::Nurbs(_) => Err(profile_curve_fault(edge)),
+    }
+}
+
+/// The pcurve of the degenerate edge where a side of revolution closes at
+/// the axis — a cone's apex, a sphere's pole: the line at the singular `v`
+/// over the rise's range, its `u` running as a rise there would, with the
+/// axis along the surface's `Z` and against it otherwise.
+fn apex_pcurve(surface: &Surface, axis: &Axis, v: f64) -> Curve2 {
+    let along = match surface {
+        Surface::Plane { frame }
+        | Surface::Cylinder { frame, .. }
+        | Surface::Cone { frame, .. }
+        | Surface::Sphere { frame, .. }
+        | Surface::Torus { frame, .. } => frame.z().dot(&axis.direction),
+        Surface::Nurbs(_) => 1.0,
+    };
+    Curve2::Line {
+        origin: Point2::new(0.0, v),
+        direction: UnitVec2::new_unchecked(Vec2::new(if along < 0.0 { -1.0 } else { 1.0 }, 0.0)),
     }
 }
 
@@ -495,7 +521,11 @@ fn record(
 /// and sweeps no rise — one vertex, shared by both flat ends of a partial
 /// turn and not made in a full turn — and a line segment with both ends
 /// on it lies *along* it and sweeps no face: in a partial turn it is the
-/// one edge both flat ends share, in a full turn nothing. The surfaces of revolution share one frame: origin on the
+/// one edge both flat ends share, in a full turn nothing. A face closing
+/// at a vertex on the axis — a cone's apex, a sphere's pole — holds a
+/// degenerate edge there in place of the rise, its pcurve the line at the
+/// singular `v`, one per face and each `Generated` from the vertex's
+/// `Rise`; a full turn keeps the vertex for it. The surfaces of revolution share one frame: origin on the
 /// axis, `X` the radial into the profile's plane, so `u = 0` is the
 /// profile plane and every seam lies in it, `Z` the axis (`−axis` for a
 /// cone narrowing along it). The flat ends of a partial turn are the
@@ -523,9 +553,9 @@ fn record(
 /// [`Reason::ProfileCrossesAxis`] when the profile has points on both
 /// sides of the axis, [`Reason::ZeroThickness`] when it lies within
 /// `default_tolerance` of the axis everywhere,
-/// [`Reason::ProfileTouchesAxis`] when a cone's apex or a sphere's pole
-/// would lie on the axis or a full turn's loop lies along it more than
-/// once, and [`Reason::SpindleTorus`] when an arc's circle crosses it off
+/// [`Reason::ProfileTouchesAxis`] when a full turn's loop lies along the
+/// axis more than once or touches it at a vertex with no segment along
+/// it, and [`Reason::SpindleTorus`] when an arc's circle crosses it off
 /// its centre.
 ///
 /// ```
@@ -638,24 +668,34 @@ pub fn revolve(
         }
         surfaces.push(row);
     }
-    // Not yet built: a cone's apex or a sphere's pole on the axis, which
-    // needs a degenerate edge, and a full turn along the axis more than
-    // once in one loop, which makes several shells of one loop.
-    for (li, edges) in loops.iter().enumerate() {
-        let n = edges.len();
-        let singular = |j: usize| {
-            matches!(
-                surfaces[li][j],
-                Some((Surface::Cone { .. } | Surface::Sphere { .. }, _))
-            )
-        };
-        let runs = (0..n)
-            .filter(|&j| along[li][j] && !along[li][(j + n - 1) % n])
-            .count();
-        if (0..n).any(|j| on_axis[li][j] && (singular(j) || singular((j + n - 1) % n)))
-            || (full && runs > 1)
-        {
-            return Err(degenerate(Reason::ProfileTouchesAxis));
+    // Which faces close at a vertex on the axis — a cone's apex, a
+    // sphere's pole — each holding a degenerate edge there in place of the
+    // rise: the face ending at vertex `v`, then the one starting there.
+    let singular = |li: usize, j: usize| {
+        matches!(
+            surfaces[li][j],
+            Some((Surface::Cone { .. } | Surface::Sphere { .. }, _))
+        )
+    };
+    let closes_at = |li: usize, v: usize| -> [bool; 2] {
+        let n = loops[li].len();
+        let on = on_axis[li][v];
+        [on && singular(li, (v + n - 1) % n), on && singular(li, v)]
+    };
+    // Not yet built in a full turn: a loop along the axis more than once,
+    // which makes several shells of one loop, and a vertex on the axis
+    // with no segment along it, where the surface touches itself.
+    if full {
+        for (li, edges) in loops.iter().enumerate() {
+            let n = edges.len();
+            let runs = (0..n)
+                .filter(|&j| along[li][j] && !along[li][(j + n - 1) % n])
+                .count();
+            let pinch =
+                (0..n).any(|j| on_axis[li][j] && !along[li][j] && !along[li][(j + n - 1) % n]);
+            if runs > 1 || pinch {
+                return Err(degenerate(Reason::ProfileTouchesAxis));
+            }
         }
     }
 
@@ -682,14 +722,15 @@ pub fn revolve(
 
         // The start ring, then the end ring; slot (loop, walk index). A
         // vertex on the axis is one vertex, with no end copy, and a full
-        // turn does not make it, since no face keeps it there.
+        // turn makes it only where a face closes there on a degenerate
+        // edge, since no other face keeps it.
         let mut start_vertex: Vec<Vec<Option<usize>>> = Vec::with_capacity(loops.len());
         let mut end_vertex: Vec<Vec<Option<usize>>> = Vec::with_capacity(loops.len());
         for (li, edges_of) in loops.iter().enumerate() {
             let n = edges_of.len();
             let mut ring = Vec::with_capacity(n);
             for (j, edge) in edges_of.iter().enumerate() {
-                if full && on_axis[li][j] {
+                if full && on_axis[li][j] && closes_at(li, j) == [false, false] {
                     ring.push(None);
                     continue;
                 }
@@ -803,13 +844,34 @@ pub fn revolve(
             end_curves.push(curves);
         }
         let mut rises: Vec<Vec<Option<Curve>>> = Vec::with_capacity(loops.len());
+        // The degenerate edges, by (loop, side, whether at the side's start).
+        let mut apex: BTreeMap<(usize, usize, bool), usize> = BTreeMap::new();
         for (li, edges_of) in loops.iter().enumerate() {
             let n = edges_of.len();
             let mut row = Vec::with_capacity(n);
             let mut curves = Vec::with_capacity(n);
             for (j, edge) in edges_of.iter().enumerate() {
-                // A vertex on the axis sweeps no rise.
+                // A vertex on the axis sweeps no rise; each face closing
+                // there holds a degenerate edge at it instead.
                 if on_axis[li][j] {
+                    let before = (j + n - 1) % n;
+                    for (side, closes) in [before, j].into_iter().zip(closes_at(li, j)) {
+                        if !closes {
+                            continue;
+                        }
+                        let at = key(start_vertex[li][j], edge)?;
+                        apex.insert((li, side, side == j), edges.len());
+                        edges.push(EdgeSpec::New {
+                            geometry: EdgeGeometry::Degenerate { range: rise_range },
+                            start: at,
+                            end: at,
+                            tolerance,
+                        });
+                        edge_roles.push(part(SweepPart::Rise {
+                            loop_index: edge.loop_index,
+                            vertex: vertex_index(edge, n),
+                        }));
+                    }
                     row.push(None);
                     curves.push(None);
                     continue;
@@ -908,6 +970,12 @@ pub fn revolve(
                 };
                 let start_pcurve = on(&edge.curve, edge.range)?;
                 let orientation = side_orientation(edge, normal, surface, &start_pcurve)?;
+                // Where the side's own start edge meets the axis, if it
+                // does: the singular `v` of a degenerate edge there.
+                let (v_start, v_end) = (
+                    start_pcurve.point(edge.range.lo()).y,
+                    start_pcurve.point(edge.range.hi()).y,
+                );
                 let mut cycle: Vec<SideUse> = Vec::with_capacity(4);
                 if let Some(slot) = start_edge[li][j] {
                     cycle.push(SideUse {
@@ -922,6 +990,13 @@ pub fn revolve(
                         edge: slot,
                         orientation: Orientation::Forward,
                         pcurve: on(rise, rise_range)?,
+                        range: rise_range,
+                    });
+                } else if let Some(&slot) = apex.get(&(li, j, false)) {
+                    cycle.push(SideUse {
+                        edge: slot,
+                        orientation: Orientation::Forward,
+                        pcurve: apex_pcurve(surface, &axis, v_end),
                         range: rise_range,
                     });
                 }
@@ -951,6 +1026,13 @@ pub fn revolve(
                         edge: slot,
                         orientation: Orientation::Reversed,
                         pcurve: on(rise, rise_range)?,
+                        range: rise_range,
+                    });
+                } else if let Some(&slot) = apex.get(&(li, j, true)) {
+                    cycle.push(SideUse {
+                        edge: slot,
+                        orientation: Orientation::Reversed,
+                        pcurve: apex_pcurve(surface, &axis, v_start),
                         range: rise_range,
                     });
                 }

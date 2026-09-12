@@ -22,11 +22,11 @@ use arris_topo::{Body, EdgeId, FaceId, Model, Orientation, VertexId};
 type Solid = (&'static str, fn(&mut Model) -> Body);
 
 /// The bodies every round trip is run over, each in its own model: every
-/// `sample` body an Euler operator sequence could have made. `patch` is a
-/// sheet and `finish` makes solids; `sphere`'s two degenerate pole edges
-/// are used once each, which `finish` has always refused — that is why
-/// `sample::sphere` goes through the raw insert, and `assemble` inherits
-/// the rule rather than widening it.
+/// `sample` body an Euler operator sequence could have made, and the
+/// sphere. `patch` is a sheet and `finish` makes solids. `sphere`'s two
+/// degenerate pole edges are used once each: singular points, which
+/// `assemble` and `finish` take since a revolve makes them at an apex or a
+/// pole (`sample::sphere` predates that and goes through the raw insert).
 fn solids() -> Vec<Solid> {
     vec![
         ("unit_box", |m| sample::unit_box(m).unwrap()),
@@ -49,6 +49,9 @@ fn solids() -> Vec<Solid> {
         }),
         ("torus", |m| {
             sample::torus(m, Point3::origin(), 5.0, 2.0).unwrap()
+        }),
+        ("sphere", |m| {
+            sample::sphere(m, Point3::new(1.0, -2.0, 0.5), 3.0).unwrap()
         }),
         ("primitive_box", |m| {
             arris_ops::primitive_box(m, Point3::origin(), Point3::new(40.0, 30.0, 10.0))
@@ -360,6 +363,14 @@ fn the_counts_and_the_genus_are_the_bodys() {
     let torus = sample::torus(&mut m, Point3::origin(), 5.0, 2.0).unwrap();
     let b = assemble(&m, describe(&m, torus, true)).unwrap();
     assert_eq!(b.counts().to_string(), "1/2/1/1/1 g1 = 0");
+    let mut m = Model::default();
+    let sphere = sample::sphere(&mut m, Point3::origin(), 3.0).unwrap();
+    let b = assemble(&m, describe(&m, sphere, true)).unwrap();
+    assert_eq!(
+        b.counts().to_string(),
+        "2/1/1/1/1 g0 = 0",
+        "the two pole edges, each used once, are not counted"
+    );
     let mut m = Model::default();
     let frame = sample::frame(
         &mut m,

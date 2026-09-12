@@ -51,6 +51,11 @@ with no segment along it — a pinch — is a typed refusal.
   `expected.json` or `dump.txt` moves; `sample::sphere`'s printed line
   becomes `2/1/1/1/1 g0 = 0` (the seam alone). Retires the backlog line on the Euler line
   counting degenerate edges.
+- `arris-topo` builder (found at step 3): `Builder::assemble` and
+  `finish` take a degenerate edge used by one coedge — S2's singular
+  point — and `Builder::counts` and each shell's closure leave it out.
+  Both refused one before, which is why `sample::sphere` goes through the
+  raw insert; a revolve's apex has to assemble.
 - `arris-ops` revolve (`docs/ARCHITECTURE.md` §Operations): a vertex
   within `default_tolerance` of the axis is *on* it, and a line segment
   with both ends on it lies along it. `orient` refuses only a profile
@@ -112,7 +117,7 @@ bound has to be established here.
   variants `quarter` (`π/2`, `6/9/5/5/1`) and `three-quarter` (a reflex
   edge on the axis), each passing every corpus stage. Revolve tests: the
   provenance parts a touching profile does and does not make.
-- [ ] Step 3 **[2]** — a cone's apex and a sphere's pole on the axis:
+- [x] Step 3 **[2]** — a cone's apex and a sphere's pole on the axis:
   degenerate edges in revolve, through the checker at `Full` (E6, L2 across
   the degenerate edge, V3), `measure`, `tessellate` (closed, triangles
   collapsing at the apex dropped) and STEP (the coedge left out, Open

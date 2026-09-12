@@ -343,9 +343,14 @@ and not made in a full turn, since no face keeps it there — and a line
 segment with both ends on it lies *along* it and sweeps no face: in a
 partial turn the one edge both flat ends share, in a full turn nothing,
 so a rectangle with a side on the axis turns into a solid cylinder of
-three faces. A cone's apex or a sphere's pole on the axis, and a full
-turn along the axis more than once in one loop, are still
-`Reason::ProfileTouchesAxis`. Every other segment sweeps one face: a segment
+three faces. A face closing at a vertex on the axis — a cone's apex, a
+sphere's pole — holds a degenerate edge there in place of the rise, its
+pcurve the line at the singular `v` over the rise's range, one per face
+closing there, and a full turn keeps the vertex for it: the first
+degenerate edges an operation makes, which `Builder::assemble` takes used
+once and the Euler line leaves out. A full turn along the axis more than
+once in one loop, or touching it at a vertex with no segment along it, is
+still `Reason::ProfileTouchesAxis`. Every other segment sweeps one face: a segment
 parallel to the axis a cylinder, perpendicular a plane (an annulus, or a
 sector of one), oblique a cone with its apex on the axis; an arc centred
 on the axis a sphere, elsewhere a torus of `R` its centre's distance and
@@ -408,7 +413,7 @@ involved, so the message a consumer shows — or the agent reads — says
 |---|---|---|
 | `InvalidInput` | an input body fails the checker (checked in debug builds before the operation starts, and in release when the `paranoid` feature is on) | `Body`, the `Report` |
 | `Unsupported` | the exhaustive dispatch reached a surface or curve pair the kernel has no formula for yet | the two `GeomKind`s with their entities |
-| `Degenerate` | the requested result has no valid representation: a parameter that makes no geometry (`Reason::NonFinite`, `Reason::NotPositive` naming it — a zero radius, a box whose `min` is not below its `max`, a revolve angle at or below zero, a zero extrude direction; `Reason::AngleAboveTurn` past `2π`), a zero-thickness intersection or an extrude of zero length (`Reason::ZeroThickness`), a revolve whose axis is off the profile's plane (`Reason::AxisNotInProfilePlane`), whose profile crosses its axis (`Reason::ProfileCrossesAxis`), lies within the tolerance of it everywhere (`Reason::ZeroThickness`) or touches it at a cone's apex, a sphere's pole or along it more than once in one loop of a full turn (`Reason::ProfileTouchesAxis`), or whose arc's circle crosses it (`Reason::SpindleTorus`); an extrude off its plane's normal (`Reason::DirectionNotNormal`); a boolean that selects no material (`Reason::Empty`: a target inside its tool, a `common` of disjoint operands); result shells that would touch along an edge or at a vertex (`Reason::NonManifold`, naming the shared edges or vertices); faces touching along a curve interior to both result faces (`Reason::TangentContact`); a query on a body that is not a `Solid` (`Reason::NotSolid`) | the entities (none for a primitive or a sweep) and a `Reason` enum |
+| `Degenerate` | the requested result has no valid representation: a parameter that makes no geometry (`Reason::NonFinite`, `Reason::NotPositive` naming it — a zero radius, a box whose `min` is not below its `max`, a revolve angle at or below zero, a zero extrude direction; `Reason::AngleAboveTurn` past `2π`), a zero-thickness intersection or an extrude of zero length (`Reason::ZeroThickness`), a revolve whose axis is off the profile's plane (`Reason::AxisNotInProfilePlane`), whose profile crosses its axis (`Reason::ProfileCrossesAxis`), lies within the tolerance of it everywhere (`Reason::ZeroThickness`) or, in a full turn, touches it along more than one run of a loop or at a vertex with no segment along it (`Reason::ProfileTouchesAxis`), or whose arc's circle crosses it (`Reason::SpindleTorus`); an extrude off its plane's normal (`Reason::DirectionNotNormal`); a boolean that selects no material (`Reason::Empty`: a target inside its tool, a `common` of disjoint operands); result shells that would touch along an edge or at a vertex (`Reason::NonManifold`, naming the shared edges or vertices); faces touching along a curve interior to both result faces (`Reason::TangentContact`); a query on a body that is not a `Solid` (`Reason::NotSolid`) | the entities (none for a primitive or a sweep) and a `Reason` enum |
 | `Profile` | a sweep's sketch is not a valid profile: `Profile::edges` refused it (data-model §Profiles). An invalid profile has no entities to name, so it is neither `InvalidInput` nor `Degenerate` | the `ProfileError`, naming the loop and segment |
 | `Tolerance` | the result would need an entity tolerance above `Precision::max_tolerance` | the entity, the tolerance it wanted |
 | `NotFound` | a handle does not resolve in this model (wrong model, or compacted away) | the `Shape` |

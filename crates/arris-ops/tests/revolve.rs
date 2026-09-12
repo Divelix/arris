@@ -94,7 +94,15 @@ fn recorded_parts(
                 "{e}: generated from {origin}, not a revolve part"
             )));
         };
-        prop_assert!(parts.insert(part), "{:?} names two entities", part);
+        // A `Rise` names the degenerate edge of every face closing at a
+        // vertex on the axis, so at a pinch it names two.
+        let degenerate =
+            matches!(e.id, EntityId::Edge(id) if m.edge(id).is_ok_and(|x| x.is_degenerate()));
+        prop_assert!(
+            parts.insert(part) || (degenerate && matches!(part, SweepPart::Rise { .. })),
+            "{:?} names two entities",
+            part
+        );
         prop_assert!(p.modified_from(origin).is_empty());
         prop_assert!(!p.is_deleted(e));
     }
@@ -402,7 +410,8 @@ fn the_profile_is_held_clear_of_the_axis_and_the_axis_to_the_plane() {
         Err(OpError::Degenerate { reason, .. }) => reason,
         other => panic!("{other:?}"),
     };
-    // A vertex on the axis.
+    // A vertex on the axis with no segment along it: a full turn's surface
+    // would touch itself there (a partial turn builds it).
     let apex = sketch(ProfileLoop::Path {
         start: p(0.0, 0.0),
         segments: vec![
@@ -411,7 +420,13 @@ fn the_profile_is_held_clear_of_the_axis_and_the_axis_to_the_plane() {
             ProfileSegment::LineTo(p(0.0, 0.0)),
         ],
     });
-    assert_eq!(reason(&mut m, &apex, z), Reason::ProfileTouchesAxis);
+    assert!(matches!(
+        revolve(&mut m, &apex, z, TAU),
+        Err(OpError::Degenerate {
+            reason: Reason::ProfileTouchesAxis,
+            ..
+        })
+    ));
     // Straddling it.
     let across = sketch(rectangle(-1.0, 1.0, -1.0, 1.0, false));
     assert_eq!(reason(&mut m, &across, z), Reason::ProfileCrossesAxis);
@@ -617,9 +632,15 @@ fn the_general_profile_sweeps_every_surface_kind() {
     }
 }
 
-/// The recipe of a profile in the `xz` plane revolved a full turn about
+/// The recipe of a profile in the `xz` plane revolved `angle_deg` about
 /// `z`, for a scratch fixture the oracle answers.
-fn revolved_recipe(description: &str, outer: Loop, volume: &str, area: &str) -> Recipe {
+fn revolved_recipe(
+    description: &str,
+    angle_deg: f64,
+    outer: Loop,
+    volume: &str,
+    area: &str,
+) -> Recipe {
     let n = |v: f64| Num::Literal(v);
     Recipe {
         description: description.to_string(),
@@ -643,7 +664,7 @@ fn revolved_recipe(description: &str, outer: Loop, volume: &str, area: &str) -> 
                     origin: [n(0.0), n(0.0), n(0.0)],
                     direction: [n(0.0), n(0.0), n(1.0)],
                 },
-                angle_deg: n(360.0),
+                angle_deg: n(angle_deg),
             },
         ],
         result: "result".into(),
@@ -692,6 +713,7 @@ fn the_frustum_the_zone_and_the_ring_have_their_closed_forms_and_the_oracles_vol
         let (lo, hi) = if widening { (2.0, 4.0) } else { (4.0, 2.0) };
         revolved_recipe(
             "a trapezoid revolved: a frustum less its bore",
+            360.0,
             Loop::Path {
                 start: [Num::Literal(1.0), Num::Literal(-1.0)],
                 segments: vec![
@@ -712,6 +734,7 @@ fn the_frustum_the_zone_and_the_ring_have_their_closed_forms_and_the_oracles_vol
     let a = 8f64.sqrt();
     let zone = revolved_recipe(
         "an arc centred on the axis revolved: a spherical zone less its bore",
+        360.0,
         Loop::Path {
             start: [Num::Literal(1.0), Num::Literal(-1.0)],
             segments: vec![
@@ -810,9 +833,138 @@ fn the_frustum_the_zone_and_the_ring_have_their_closed_forms_and_the_oracles_vol
     assert_eq!(counts(&m, ring), counts(&n, torus));
 }
 
+/// A face closing at the axis (`docs/plans/revolve-touching-axis.md` step
+/// 3): a right triangle with a leg on the axis turns into a cone, its apex
+/// a degenerate edge, in a full turn and a quarter; a half disc on the
+/// axis into a ball with a degenerate edge at each pole — `sample::sphere`
+/// as a revolve builds it; and a quarter turn of a kite touching the axis
+/// at one vertex into two cones closing there, each on a degenerate edge
+/// of its own. Each is clean at `Full` with every unchecked row a pair on
+/// a quadric, closes its Euler line at genus 0 without the degenerate
+/// edges, has its closed-form volume and area, meshes closed with every
+/// degenerate edge one index, accounts for every entity — a `Rise` naming
+/// the degenerate edge of each face closing there — and is read back from
+/// Arris's STEP by the oracle, whose reader rebuilds the degenerate edges
+/// the writer leaves out.
+#[test]
+fn a_cone_a_ball_and_a_pinch_close_on_degenerate_edges_at_the_axis() {
+    let z = Axis::z_at(Point3::origin());
+    let at = |u: f64, v: f64| [Num::Literal(u), Num::Literal(v)];
+    let triangle = || Loop::Path {
+        start: at(0.0, 0.0),
+        segments: vec![line_to(1.0, 0.0), line_to(0.0, 1.0), line_to(0.0, 0.0)],
+    };
+    let half_disc = Loop::Path {
+        start: at(0.0, -1.0),
+        segments: vec![
+            Segment::Arc {
+                arc_to: at(0.0, 1.0),
+                via: at(1.0, 0.0),
+            },
+            line_to(0.0, -1.0),
+        ],
+    };
+    let kite = Loop::Path {
+        start: at(0.0, 0.0),
+        segments: vec![
+            line_to(1.0, -1.0),
+            line_to(2.0, 0.0),
+            line_to(1.0, 1.0),
+            line_to(0.0, 0.0),
+        ],
+    };
+    let cone_area = PI * (1.0 + 2f64.sqrt());
+    // (name, angle, profile, closed forms as the recipe states them and as
+    // numbers, the Euler line, the degenerate edges)
+    let cases = [
+        (
+            "revolve-apex-cone",
+            360.0,
+            triangle(),
+            ("pi / 3", "pi * (1 + sqrt(2))"),
+            (PI / 3.0, cone_area),
+            "2/2/2/2/1 g0 = 0",
+            1,
+        ),
+        (
+            "revolve-apex-cone-quarter",
+            90.0,
+            triangle(),
+            ("pi / 12", "pi * (1 + sqrt(2)) / 4 + 1"),
+            (PI / 12.0, cone_area / 4.0 + 1.0),
+            "4/6/4/4/1 g0 = 0",
+            1,
+        ),
+        (
+            "revolve-ball",
+            360.0,
+            half_disc,
+            ("4 * pi / 3", "4 * pi"),
+            (4.0 * PI / 3.0, 4.0 * PI),
+            "2/1/1/1/1 g0 = 0",
+            2,
+        ),
+        (
+            "revolve-pinch-quarter",
+            90.0,
+            kite,
+            ("pi", "2 * sqrt(2) * pi + 4"),
+            (PI, 2.0 * 2f64.sqrt() * PI + 4.0),
+            "7/11/6/6/1 g0 = 0",
+            2,
+        ),
+    ];
+    for (name, angle_deg, outer, (volume_expr, area_expr), (volume, area), line, singular) in cases
+    {
+        let recipe = revolved_recipe(name, angle_deg, outer, volume_expr, area_expr);
+        let mut m = Model::default();
+        let (body, p) = revolve(&mut m, &profile_of(&recipe), z, angle_deg.to_radians())
+            .unwrap_or_else(|e| panic!("{name}: {e}"));
+        let report = check(&m, body, Level::Full);
+        assert!(
+            report.is_ok(),
+            "{name}\n{report}\n{}",
+            dump_text(&m, body).unwrap()
+        );
+        assert!(
+            report.unchecked().iter().all(on_a_quadric),
+            "{name}\n{report}"
+        );
+        assert_eq!(report.euler().unwrap().to_string(), line, "{name}");
+        let degenerate: Vec<_> = m
+            .edges(body)
+            .unwrap()
+            .into_iter()
+            .filter(|e| m.edge(e.id).unwrap().is_degenerate())
+            .collect();
+        assert_eq!(degenerate.len(), singular, "{name}");
+
+        let props = mass_properties(&m, body).unwrap();
+        assert!(close(props.volume, volume), "{name}: {}", props.volume);
+        assert!(close(props.area, area), "{name}: {}", props.area);
+        let mesh = tessellate(&m, body, MESH_CHORD).unwrap();
+        let meshed = mesh
+            .signed_volume()
+            .unwrap_or_else(|| panic!("{name}: the mesh is not closed"));
+        assert!(
+            (meshed - volume).abs() <= MESH_CHORD * area,
+            "{name}: mesh volume {meshed} vs {volume}"
+        );
+        for e in &degenerate {
+            assert_eq!(mesh.edge_polyline(e.id).unwrap().len(), 1, "{name}");
+        }
+        recorded_parts(&m, body, &p).unwrap();
+
+        let dir = oracle::scratch_fixture(name, &recipe).unwrap();
+        oracle::compare_dir(&dir, &step::write(&m, &[body]).unwrap(), None, name)
+            .unwrap_or_else(|e| panic!("{name}: {e}"));
+    }
+}
+
 fn ring_recipe() -> Recipe {
     revolved_recipe(
         "a circle revolved: a ring torus",
+        360.0,
         Loop::Circle {
             circle: fixtures::Circle {
                 center: [Num::Literal(5.0), Num::Literal(0.0)],

@@ -394,7 +394,8 @@ pub struct Join {
 pub struct Counts {
     /// Live vertices.
     pub vertices: usize,
-    /// Live edges.
+    /// Live edges, less every degenerate edge used once: a singular point
+    /// of its face, which the Euler–Poincaré line does not count.
     pub edges: usize,
     /// Live faces.
     pub faces: usize,
@@ -644,7 +645,9 @@ pub enum BuildError {
         /// The coedge.
         position: Position,
     },
-    /// An edge not used by exactly two coedges, which a solid needs. The
+    /// An edge not used by exactly two coedges, which a solid needs — or,
+    /// for a degenerate edge, by one: the singular point of the one face
+    /// that closes on it (`docs/DATA-MODEL.md` §Invariants, S2). The
     /// operators never make one; the check is the contract, stated.
     #[error("{edge} is used by {uses} coedge(s); a solid needs two")]
     EdgeUses {
@@ -1045,9 +1048,26 @@ impl Builder {
         self.faces.len() == 0 && self.edges.len() == 0 && self.vertices.len() == 0
     }
 
-    /// The counts and the Euler line they make.
+    /// The counts and the Euler line they make. A degenerate edge used
+    /// once — a singular point of the one face that closes on it — is not
+    /// counted, as the checker's Euler line counts no degenerate edge.
     pub fn counts(&self) -> Counts {
         let loops = self.faces.iter().map(|(_, f)| f.loops.len()).sum();
+        let mut degenerate_uses: BTreeMap<EdgeRef, usize> = BTreeMap::new();
+        for u in self
+            .faces
+            .iter()
+            .flat_map(|(_, f)| f.loops.iter().flat_map(|l| l.uses.iter()))
+        {
+            if self
+                .edges
+                .get(u.edge.0)
+                .is_some_and(|e| matches!(e.geometry, EdgeGeometry::Degenerate { .. }))
+            {
+                *degenerate_uses.entry(u.edge).or_default() += 1;
+            }
+        }
+        let singular = degenerate_uses.values().filter(|&&n| n == 1).count();
         let shells = self
             .faces
             .iter()
@@ -1056,7 +1076,7 @@ impl Builder {
             .len();
         Counts {
             vertices: self.vertices.len(),
-            edges: self.edges.len(),
+            edges: self.edges.len() - singular,
             faces: self.faces.len(),
             loops,
             shells,
@@ -1860,8 +1880,8 @@ impl Builder {
     /// any kind but `Solid` (the operators build closed surfaces, and no
     /// operation of cycle 1 returns a sheet, wire or general body);
     /// [`BuildError::Empty`]; an [`BuildError::EmptyLoop`]; a
-    /// [`BuildError::MissingPcurve`]; an edge not used exactly twice
-    /// ([`BuildError::EdgeUses`]) or used twice the same way
+    /// [`BuildError::MissingPcurve`]; an edge not used exactly twice, nor
+    /// a degenerate one once ([`BuildError::EdgeUses`]) or used twice the same way
     /// ([`BuildError::SameDirection`]); a curve, surface, pcurve or kept
     /// entity id that does not resolve ([`BuildError::NotFound`]).
     pub fn finish(self, model: &mut Model, kind: BodyKind) -> Result<Built, BuildError> {
@@ -1902,7 +1922,7 @@ impl Builder {
         for (ei, e) in self.edges.iter() {
             let edge = EdgeRef(ei);
             let list = uses.get(&edge).map_or(&[][..], Vec::as_slice);
-            if list.len() != 2 {
+            if !(list.len() == 2 || singular(e, list.len())) {
                 return Err(BuildError::EdgeUses {
                     edge,
                     uses: list.len(),
@@ -2032,7 +2052,9 @@ impl Builder {
     /// What `assemble` proves, so that the result is a body each of whose
     /// shells the operators could have built: every loop has coedges and
     /// closes through effective vertices; every edge is used exactly twice
-    /// and in opposite directions; no arena entity is kept twice; no shell
+    /// and in opposite directions, or once when it is degenerate — a
+    /// singular point, which the Euler–Poincaré line below does not count;
+    /// no arena entity is kept twice; no shell
     /// is empty; no edge is used by, and no vertex is an end of edges of,
     /// two shells; the faces of each shell are one edge-connected
     /// component; and the Euler–Poincaré line of each shell closes at a
@@ -2344,16 +2366,16 @@ impl Builder {
                 }
             }
         }
-        for (ei, _) in self.edges.iter() {
+        for (ei, e) in self.edges.iter() {
             let edge = EdgeRef(ei);
             let list = uses.get(&edge).map_or(&[][..], Vec::as_slice);
-            if list.len() != 2 {
+            if !(list.len() == 2 || singular(e, list.len())) {
                 return Err(BuildError::EdgeUses {
                     edge,
                     uses: list.len(),
                 });
             }
-            if list[0].0 == list[1].0 {
+            if matches!(list, [a, b] if a.0 == b.0) {
                 return Err(BuildError::SameDirection { edge });
             }
         }
@@ -2429,7 +2451,15 @@ impl Builder {
             }
             let counts = Counts {
                 vertices: vertex_shell.values().filter(|&&s| s == shell).count(),
-                edges: edge_shell.values().filter(|&&s| s == shell).count(),
+                edges: edge_shell
+                    .iter()
+                    .filter(|&(&e, &s)| {
+                        s == shell
+                            && !self.edges.get(e.0).is_some_and(|staged| {
+                                singular(staged, uses.get(&e).map_or(0, Vec::len))
+                            })
+                    })
+                    .count(),
                 faces: faces.len(),
                 loops: faces
                     .iter()
@@ -2461,6 +2491,15 @@ impl Builder {
         }
         Ok(genus)
     }
+}
+
+/// Whether an edge with `uses` coedges is a degenerate one used once: the
+/// singular point of the one face that closes on it — a cone's apex, a
+/// sphere's pole — which is not a boundary between two faces
+/// (`docs/DATA-MODEL.md` §Invariants, S2) and which the Euler–Poincaré
+/// line does not count.
+fn singular(edge: &StagedEdge, uses: usize) -> bool {
+    uses == 1 && matches!(edge.geometry, EdgeGeometry::Degenerate { .. })
 }
 
 #[cfg(test)]

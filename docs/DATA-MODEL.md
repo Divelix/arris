@@ -570,6 +570,9 @@ test scaffolding that stores a dangling reference as given), the builder
   exists only to give the face's loop a pcurve across the singularity; it
   carries the parameter range of its pcurves itself, since there is no
   curve to take one from (`Edge::range()` is the range of either kind).
+  It is used by the one face that closes on it, never as a boundary
+  between two (S2), and a revolve makes one per face at a cone's apex or
+  a sphere's pole on its axis.
 - A **face** is a surface trimmed by one or more loops. The face's natural
   normal is its surface's normal.
 - A **loop** is a closed ring of coedges. A **coedge** is one use of an edge
@@ -698,7 +701,7 @@ which use it is drawing; `mef` takes the curve, the range, the new face's
 moves to a face on another surface keeps a pcurve id that is no longer
 its own, and a strut in a face it will leave has none worth giving.
 `finish` refuses a coedge without a pcurve, a loop without coedges, an
-edge not used exactly twice or twice the same way, a geometry id that
+edge not used exactly twice (a degenerate edge: once) or twice the same way, a geometry id that
 does not resolve, and any kind but `Solid` — each a typed `BuildError`,
 and the model exactly as it was — and never evaluates geometry: the
 checker, above this crate, is where the finished body is proven.
@@ -725,7 +728,8 @@ and `finish` appends that slot instead, so the two entry points compose;
 `Builder::dump` writes ` kept f3` on a slot that still carries a mark.
 `assemble` proves what the operators would have kept true of each shell:
 every loop has coedges and closes through effective vertices, every edge
-is used exactly twice and in opposite directions, no arena entity is kept
+is used exactly twice and in opposite directions — a degenerate edge once,
+the singular point of its face, which the line below does not count — no arena entity is kept
 twice, no shell is empty, no edge is used by and no vertex is an end of
 edges of two shells, the faces of each shell are one edge-connected
 component, and each shell's Euler–Poincaré line closes at a whole genus,
@@ -929,8 +933,10 @@ pub struct Provenance {
   full revolve has no `EndCap`, `EndEdge` or `EndVertex` — its start
   edges are the seams — and in one a segment perpendicular to the axis,
   which sweeps an annulus of two closed rises, has no `StartEdge` at all.
-  A revolve's vertex on the axis sweeps no `Rise` and has no
-  `EndVertex`, and in a full turn no `StartVertex` either; a line
+  A revolve's vertex on the axis sweeps no rise and has no
+  `EndVertex`; its `Rise` names instead the degenerate edge of each face
+  closing there at a cone's apex or a sphere's pole, and in a full turn
+  it has a `StartVertex` only where such a face keeps it; a line
   segment along the axis sweeps no `Side` and has no `EndEdge`, its
   `StartEdge` being in a partial turn the edge both flat ends share and
   nothing in a full turn.
