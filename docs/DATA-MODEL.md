@@ -90,7 +90,10 @@ The cone's radius grows along `+Z` and nowhere else — `α` is never
 obtuse — so a sweep that needs a cone narrowing along its axis places
 the cone with `Z` against the axis (`ops::revolve`, 01 §Operations): the
 same surface, its `u` running the other way about the axis, which the
-pcurves of the rises that cross it carry (§Pcurves).
+pcurves of the rises that cross it carry (§Pcurves). Every surface a
+revolve makes shares that one frame's origin on the axis and its `X`
+into the profile's plane, so `u = 0` is the profile plane and every seam
+lies in it.
 
 A surface's parametric domain is unbounded where the table says ℝ; a face
 trims it with loops. Periodic directions are stored as a period, and a
@@ -248,7 +251,9 @@ with STEP export fitting a B-spline at write time) or the intersector fits
 `Curve::Nurbs` to the edge's tolerance and the exact form is never stored.
 `SEED.md` §10 lists this as the first kickoff question; it is decided by the
 ADR that lands cylinder–cylinder intersection (cycle 2), and cycle 1's
-plane–cylinder pairs produce only lines, circles and ellipses.
+plane–cylinder pairs produce only lines, circles and ellipses. Until then
+S5 reports a cylinder–cylinder pair that is not coaxial as unchecked,
+which an extrude of two arcs whose cylinders' boxes overlap makes.
 
 ### Pcurves (`Curve2`)
 
@@ -293,7 +298,7 @@ projection of the curve with `u` unwrapped along `t`, so a seam crossing
 stays continuous and `u` may leave `[0, 2π)`. The rule: exact where a
 variant exists, fitted otherwise, and in both cases the checker verifies
 the pcurve against the 3D curve (§Invariants E4). A curve farther than
-`tol.linear` from the surface at any of `PCURVE_SAMPLES` parameters over
+`tol.linear` from the surface at any of `PCURVE_SAMPLES + 1` parameters over
 the range is `GeomError::NotOnSurface` naming the parameter and the
 distance.
 
@@ -398,7 +403,7 @@ quadrics, a knot span on a NURBS, `f64::INFINITY` (one interval, exact
 for a polynomial `f`) on a plane.
 
 `project_to_plane(curve, plane)` is the orthogonal projection onto a plane
-for a consumer's sketch (architecture §Facade): a point-set projection
+for a consumer's sketch (architecture §How a consumer's kernel facade maps on): a point-set projection
 whose parameter is the variant's own — a line stays a `Line`, a circle
 becomes a `Circle` when parallel and an `Ellipse` otherwise (its
 semi-axes the singular values of the projected axes, its parameter the
@@ -449,8 +454,8 @@ from `1` — in walking order:
 
 | Check | Error |
 |---|---|
-| a path loop's last segment ends where the loop started, within `tol.linear` | `NotClosed { loop_index, gap }` |
 | a path loop has at least two segments | `TooFewSegments` |
+| a path loop's last segment ends where the loop started, within `tol.linear` | `NotClosed { loop_index, gap }` |
 | a segment is longer than `tol.linear` — its length for a line, the distance between its ends for an arc, so an arc back to its own start is refused rather than taken for a full circle | `ShortSegment { loop_index, segment }` |
 | an arc's `via` is off its chord by more than `tol.linear` | `DegenerateArc` |
 | a loop's mean width — twice its area over its perimeter: the width of a long thin rectangle, the radius of a disc — is above `tol.linear` | `ZeroArea { loop_index }` |
@@ -459,9 +464,11 @@ from `1` — in walking order:
 | every hole is inside the outer loop | `HoleOutside { hole }` |
 | no hole is inside another | `NestedHoles { holes }` |
 
-The checks run loop by loop in the table's order, so the error reported is
-the first fault in loop order, and every one names the loop and the
-segment the consumer wrote. The area, self-intersection and containment
+Each loop's structural checks — the first four rows — run before the next
+loop's, then each loop's area and self-intersection, then the checks
+between loops, so the error reported is the first fault in that order;
+each names its loop or loops, and the segment where one is at fault, by
+the indices the consumer wrote. The area, self-intersection and containment
 checks are made on each loop's polygon at `region2`'s *minimum* segment
 counts, whose arcs are their chords. `GeomError` reaches the caller as
 `ProfileError::Geometry` — an inconsistent tolerance, and the curve-in-its-
@@ -481,8 +488,7 @@ circle loop is one closed edge over `[0, 2π]` whose one vertex sits at
 
 `Profile::area_and_centroid(tol)` is the region's area and (u, v) centroid
 by `integrate::region_integral` over those oriented edges, so the holes
-subtract themselves: what a sweep is held to by Pappus's theorems and what
-it reads to know which side of a segment its material is on.
+subtract themselves.
 
 ### NURBS
 
@@ -583,8 +589,9 @@ test scaffolding that stores a dangling reference as given), the builder
   mix, including a face used by two shells (a face separating two regions
   of one body) and an edge used by more than two coedges.
   Non-manifold structure is thus representable from day one (`SEED.md`
-  §9); cycle-1 operations produce and accept `Solid` only and return
-  `OpError::Unsupported` for the rest.
+  §9); cycle-1 operations produce and accept `Solid` only: the builder's
+  `finish` builds no other kind (`BuildError::Kind`), and `measure`
+  refuses one as `OpError::Degenerate` with `Reason::NotSolid`.
 
 ### Orientation
 
@@ -690,8 +697,8 @@ and the model exactly as it was — and never evaluates geometry: the
 checker, above this crate, is where the finished body is proven.
 
 **Assembly, and kept ids.** An operation that computes its result's faces
-outright rather than reaching them by a sequence of edits — a boolean —
-enters the builder through `assemble(&Model, tolerance, Assembly) ->
+outright rather than reaching them by a sequence of edits — a boolean, a
+sweep, a transform — enters the builder through `assemble(&Model, tolerance, Assembly) ->
 Result<Builder, BuildError>` instead (ADR-0004). An `Assembly` is a list
 of `VertexSpec`s, a list of `EdgeSpec`s and a list of `FaceSpec`s, each
 spec `Keep` (an entity the model already holds) or `New`, with
@@ -714,7 +721,7 @@ twice and in opposite directions, no arena entity is kept twice, the
 faces are one edge-connected component, and the Euler–Poincaré line
 closes at a whole genus, which becomes the builder's — each failure a
 typed `BuildError` (`LoopOpen`, `EdgeUses`, `SameDirection`, `Duplicate`,
-`Disconnected`, `NotClosed`, `NoSpec`), and the model is only read.
+`Disconnected`, `NotClosed`, `EmptyLoop`, `NoSpec`, `NotFound`), and the model is only read.
 
 ### Adjacency and iteration
 
@@ -899,8 +906,8 @@ pub struct Provenance {
   from one vertex, `vertex` the index of the segment that starts there
   (a circle loop has segment `0` and vertex `0`); `Shell` and `Body`. A
   full revolve has no `EndCap`, `EndEdge` or `EndVertex` — its start
-  edges are the seams — and a segment perpendicular to its axis, which
-  sweeps an annulus of two closed rises, has no `StartEdge`.
+  edges are the seams — and in one a segment perpendicular to the axis,
+  which sweeps an annulus of two closed rises, has no `StartEdge` at all.
 - **Modified**: the output is a trimmed, split or re-tolerated piece of the
   input, same kind — the box's top face with a circle cut out of it, each
   half of a face split by an intersection curve (one input, several
@@ -972,7 +979,7 @@ roadmap's acceptance corpus asserts that function is constant across
 parameter changes.
 
 `⚠ OPEN:` how a consumer's persistent topological references map onto
-provenance ids — architecture §Facade.
+provenance ids — architecture §How a consumer's kernel facade maps on.
 
 ## Native format
 
@@ -1017,4 +1024,4 @@ skipped, so the dump of an invalid body says where.
 - `⚠ OPEN:` quadric–quadric intersection curves, exact variant or fitted
   NURBS (§Curves).
 - `⚠ OPEN:` consumer references onto provenance (§Provenance,
-  architecture §Facade).
+  architecture §How a consumer's kernel facade maps on).

@@ -1950,8 +1950,8 @@ impl Builder {
     /// A builder holding the body `assembly` describes: the builder's
     /// second entry point beside [`Builder::new`] and the operators, and
     /// the one an operation that computes its result's faces outright —
-    /// a boolean — uses (`docs/DATA-MODEL.md` §Euler operators,
-    /// ADR-0004).
+    /// a boolean, a sweep, a transform — uses (`docs/DATA-MODEL.md`
+    /// §Euler operators, ADR-0004).
     ///
     /// Every entity is `Keep` or `New`. A `Keep` slot *is* the arena's
     /// entity: its geometry is read from `model`, [`Builder::finish`]

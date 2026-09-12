@@ -2,9 +2,8 @@
 //!
 //! Rows implemented here: M1–M3, V1–V3 and E1–E7 (`docs/DATA-MODEL.md`
 //! §Invariants); the loop, face, shell and body rows are in
-//! `crate::topology` and the `Full` rows follow in
-//! `docs/plans/m2-topology.md` step 8, so `level` selects nothing yet
-//! beyond what exists. Every row walks the body's closure in sorted id
+//! `crate::topology` and the `Full` rows in `crate::full`, which `level`
+//! selects. Every row walks the body's closure in sorted id
 //! order and reports through `Report::new`, so the report is the same on
 //! every run and platform.
 

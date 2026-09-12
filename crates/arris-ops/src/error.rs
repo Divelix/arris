@@ -106,9 +106,10 @@ impl core::fmt::Display for Reason {
 }
 
 /// A kernel bug an operation caught in its own output or its own
-/// sequence, rather than a fault of the input. Returned only in release
-/// builds with the `paranoid` feature on; a debug build panics with the
-/// same content.
+/// sequence, rather than a fault of the input. `Checker` is returned only
+/// in release builds with the `paranoid` feature on, a debug build
+/// panicking with the same report; every other fault is returned in any
+/// build.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Fault {
     /// The checker rejected the operation's output.

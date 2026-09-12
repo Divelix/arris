@@ -17,11 +17,11 @@ re-exports the public API. Lower crates never name types from upper ones.
 
 | Crate | Owns | External deps | Layer |
 |---|---|---|---|
-| `arris-math` | `Point3`/`Vec3`/`UnitVec3` (over `nalgebra`, ADR-0001), `Frame`, `Frame2`, `Isometry`, `Interval`, `Aabb`, `wrap_angle`, exact orientation predicates (over `robust`), polynomial and interval-guarded Newton root finding, `Precision` and `Tolerance` | `nalgebra`, `robust`, `serde` (feature) | 0 — representation |
-| `arris-geom` | `Surface`, `Curve`, `Curve2` (analytic + NURBS): evaluation, derivatives, point projection, curve/curve, curve/surface and surface/surface intersection, bounding boxes over a parameter range, pcurves and the NURBS fit behind them; the (u, v) toolkit `region2` and `integrate` shared by the checker, tessellation, mass properties and classification; `GeomError` | `arris-math`, `thiserror`, `serde` (feature) | 0 — representation |
+| `arris-math` | `Point3`/`Vec3`/`UnitVec3` (over `nalgebra`, ADR-0001), `Frame`, `Frame2`, `Axis`, `Isometry`, `Interval`, `Aabb`, `wrap_angle`, exact orientation predicates (over `robust`), polynomial and interval-guarded Newton root finding, `Precision` and `Tolerance` | `nalgebra`, `robust`, `serde` (feature) | 0 — representation |
+| `arris-geom` | `Surface`, `Curve`, `Curve2` (analytic + NURBS): evaluation, derivatives, point projection, curve/curve, curve/surface and surface/surface intersection, bounding boxes over a parameter range, pcurves and the NURBS fit behind them; the (u, v) toolkit `region2` and `integrate` shared by the checker, tessellation, mass properties and classification; `Profile`, the planar sketch of lines and arcs a sweep takes, validated and oriented by `Profile::edges`; `GeomError` | `arris-math`, `thiserror`, `serde` (feature) | 0 — representation |
 | `arris-topo` | `Model` (the arena), typed ids, `Shape`/`Body`/`Face`/… handles, orientation, entities, pcurves, per-entity tolerances, Euler operators, adjacency and iteration, `Provenance`; re-exports `arris-geom` and `arris-math` | `arris-geom`, `arris-math`, `thiserror`, `serde` (feature) | 0 — representation |
 | `arris-check` | The invariant checker: `check(&Model, Body, Level) -> Report` and the `Violation` list of data-model §Invariants; re-exports `arris-topo` | `arris-topo` | 1 |
-| `arris-ops` | Primitives, planar profiles, extrude, revolve, transform, booleans, later blends; `measure` (mass properties); each returns `Provenance` | `arris-check`, `thiserror`, `rayon` (feature) | 2 — algorithms |
+| `arris-ops` | Primitives, extrude and revolve of a `Profile`, transform, booleans, later blends; `measure` (mass properties); each returns `Provenance` | `arris-check`, `thiserror`, `rayon` (feature) | 2 — algorithms |
 | `arris-mesh` | `TriMesh`, `Polyline`, the constrained Delaunay triangulation in (u, v) (`cdt`, ADR-0003), tessellation of faces and edges with shared edge discretisation; re-exports `arris-math`'s `Aabb` | `arris-check`, `arris-topo`, `thiserror`, `rayon` (feature) | 2 — algorithms |
 | `arris-io` | STEP AP214 Part 21 writer (later reader), the native format (`native`); re-exports `arris-check` | `arris-check`, `thiserror`, `serde`, `serde_json`, `postcard` (the last three behind the `serde` feature) | 2 — algorithms |
 | `arris-debug` | Text dump, the hand-built sample bodies (`sample`), PNG render (own software rasteriser over `image`), Rerun stream (feature), the fixture loader and corpus lint, the corpus runner (`corpus`) and the oracle seam (`oracle`), the seeded property-test runner and strategies | `arris-ops`, `arris-mesh`, `arris-io`, `arris-topo`, `arris-geom`, `arris-math`, `image`, `serde`, `serde_json`, `sha2`, `thiserror`, `proptest` (not on `wasm32`), `rerun` (feature) | 3 — dev-facing |
@@ -36,9 +36,11 @@ B-Rep, not over a mesh; a consumer that wants mesh-based inertia integrates
 `arris-mesh`'s output itself.
 
 The rule is enforced, not remembered: `tools/check-layers.sh` walks the
-declared edges of `cargo metadata` with a layer number per crate and fails
-on any edge that does not go strictly downward; dev-dependencies are exempt
-so a lower crate's tests may use `arris-debug`, which is itself a
+declared edges of `cargo metadata` with a layer number per crate — its
+place in the chain `math` ← `geom` ← `topo` ← `check` ←
+`ops`/`mesh`/`io` ← `debug` ← `arris`, finer than the table's tiers — and
+fails on any edge that does not go strictly downward; dev-dependencies
+are exempt so a lower crate's tests may use `arris-debug`, which is itself a
 dev-dependency of the facade and never reaches a consumer. CI runs the
 script and its self-test (a scratch copy with a forbidden edge must fail);
 the pre-commit hook runs the script.
@@ -301,7 +303,7 @@ surviving piece `Generated` from its parent (data-model §Provenance).
 A `fuse` and a `common` have no tool: both operands are kept by id, so
 an untouched face of either keeps it, and the result's shell and body
 are `Modified` from both operands' where a `cut`'s are `Modified` from
-the target's alone. Tolerances follow §Tolerances' growth rule and a
+the target's alone. Tolerances follow data-model §Tolerances' growth rule and a
 piece keeps its parent's.
 
 Sweeps take a planar `geom::Profile` — an outer loop and holes of lines
@@ -332,7 +334,9 @@ parallel to the axis a cylinder, perpendicular a plane (an annulus, or a
 sector of one), oblique a cone with its apex on the axis; an arc centred
 on the axis a sphere, elsewhere a torus of `R` its centre's distance and
 `r` its radius (the quadric faces are cycle 1's *as surfaces*; their
-booleans are C3's, and the checker's S5 stays unchecked on them). The
+booleans, and the checker's S5 and B1 arms against them, are C2–C3's, so
+those rows report the pairs unchecked and `classify_point` refuses a ray
+against them). The
 surfaces of revolution share one frame: origin on the axis, `X` the unit
 radial from the axis into the profile's plane — so `u = 0` *is* the
 profile plane and every seam lies in it — `Z` the axis direction, except
@@ -386,14 +390,15 @@ involved, so the message a consumer shows — or the agent reads — says
 |---|---|---|
 | `InvalidInput` | an input body fails the checker (checked in debug builds before the operation starts, and in release when the `paranoid` feature is on) | `Body`, the `Report` |
 | `Unsupported` | the exhaustive dispatch reached a surface or curve pair the kernel has no formula for yet | the two `GeomKind`s with their entities |
-| `Degenerate` | the requested result has no valid representation: a parameter that makes no geometry (`Reason::NonFinite`, `Reason::NotPositive` naming it — a zero radius, a box whose `min` is not below its `max`, a revolve angle at or below zero; `Reason::AngleAboveTurn` past `2π`), a zero-thickness intersection, a revolve whose axis is off the profile's plane (`Reason::AxisNotInProfilePlane`), whose profile crosses (`Reason::ProfileCrossesAxis`) or touches (`Reason::ProfileTouchesAxis`) its axis, or whose arc's circle crosses it (`Reason::SpindleTorus`); an extrude off its plane's normal (`Reason::DirectionNotNormal`); a boolean that selects no material (`Reason::Empty`: a target inside its tool, a `common` of disjoint operands); a result of more than one shell (`Reason::MultiShell { shells }`: a split target, a disjoint fuse, a cavity — a full revolve of a profile with holes); faces touching along a curve interior to both result faces (`Reason::TangentContact`) | the entities (none for a primitive or a sweep) and a `Reason` enum |
+| `Degenerate` | the requested result has no valid representation: a parameter that makes no geometry (`Reason::NonFinite`, `Reason::NotPositive` naming it — a zero radius, a box whose `min` is not below its `max`, a revolve angle at or below zero, a zero extrude direction; `Reason::AngleAboveTurn` past `2π`), a zero-thickness intersection or an extrude of zero length (`Reason::ZeroThickness`), a revolve whose axis is off the profile's plane (`Reason::AxisNotInProfilePlane`), whose profile crosses (`Reason::ProfileCrossesAxis`) or touches (`Reason::ProfileTouchesAxis`) its axis, or whose arc's circle crosses it (`Reason::SpindleTorus`); an extrude off its plane's normal (`Reason::DirectionNotNormal`); a boolean that selects no material (`Reason::Empty`: a target inside its tool, a `common` of disjoint operands); a result of more than one shell (`Reason::MultiShell { shells }`: a split target, a disjoint fuse, a cavity — a full revolve of a profile with holes); faces touching along a curve interior to both result faces (`Reason::TangentContact`); a query on a body that is not a `Solid` (`Reason::NotSolid`) | the entities (none for a primitive or a sweep) and a `Reason` enum |
 | `Profile` | a sweep's sketch is not a valid profile: `Profile::edges` refused it (data-model §Profiles). An invalid profile has no entities to name, so it is neither `InvalidInput` nor `Degenerate` | the `ProfileError`, naming the loop and segment |
 | `Tolerance` | the result would need an entity tolerance above `Precision::max_tolerance` | the entity, the tolerance it wanted |
 | `NotFound` | a handle does not resolve in this model (wrong model, or compacted away) | the `Shape` |
 | `Internal` | a kernel bug the operation caught: the checker rejected its own output, the builder refused a step of its fixed sequence, a frame could not be placed from inputs it had validated, a point it had to classify could not be, a geometry query failed on validated input for a reason other than a missing closed form, a section edge crossed a seam the seam's own hit should have paved, a piece of a coincident face pair's edge matched no piece of the edge it lies along, the (u, v) arrangement of a face was not the subdivision the pave model promised (`SplitFault`: a dangling section edge, a cycle not turning once, a hole inside no piece, a piece with no interior point, a pave at an edge's end) | a `Fault` — the `Report`, the `BuildError`, the `FrameError`, the `ClassifyError`, the `GeomError`, the two faces of the seam crossing, the edge and face of the unmatched common block, or the `SplitFault` naming the face |
 
-`Internal` is returned only in release builds with `paranoid` on; in debug
-builds the same condition panics (below). A degenerate *result* that the
+`Internal(Fault::Checker)` is returned only in release builds with
+`paranoid` on, since a debug build panics on the same report (below);
+every other fault is returned as `Internal` in any build. A degenerate *result* that the
 consumer might reasonably want anyway (the flush intersection that is a
 face, not a solid) is `Degenerate` with a reason, never a silently empty
 body: the kernel does not decide what fail-soft means. Every operation
@@ -640,7 +645,8 @@ mesh-based mass properties (`ops::measure` integrates the B-Rep).
   (`classify_point`, exactly: both sides have their own tolerance for
   "on" and a probe is placed so the two agree, so a disagreement is a
   finding and never something a band is widened to cover), provenance
-  accounting, the dump; `ARRIS_BLESS=1` writing `dump.txt`; a result the
+  accounting, the dump; `ARRIS_BLESS=1` writing `dump.txt` (`dump.<variant>.txt` for another
+  variant); a result the
   oracle recorded no solid for must fail with `OpError::Degenerate`, and
   one the recipe marks `analytic.expect_error` with that typed refusal,
   the run ending there with the oracle's numbers kept as the record of
@@ -648,9 +654,9 @@ mesh-based mass properties (`ops::measure` integrates the B-Rep).
   does not follow, `analytic.counts_differ`, held to the recipe's own
   counts with the oracle's kept as the record)
   over the
-  oracle seam (`oracle::compare`: STEP under `target/inspect/`, named
-  after the fixture, and after the fixture plus a digest of its directory
-  for a scratch copy of one, so two runs of a recipe never write one file;
+  oracle seam (`oracle::compare`: STEP under `target/inspect/`, which the runner
+  names `<area>-<slug>-<variant>`, plus a digest of the directory for a
+  scratch copy of a fixture, so two runs of a recipe never write one file;
   then `compare.py` through `uv`, a missing environment a loud error;
   `oracle::scratch_fixture`: a test's own recipe written under
   `target/inspect/<name>/` with its `expected.json` from `expected.py`,
@@ -663,7 +669,7 @@ mesh-based mass properties (`ops::measure` integrates the B-Rep).
   orientation; `rectilinear`, a staircase of segments parallel and
   perpendicular to an axis beside it, and `general`, a convex polygon
   beside an axis whose segments sweep cones both ways, spheres and tori,
-  each given as a `Sweep` with the axis, a revolve angle and an extrude
+  the last two each given as a `Sweep` with the axis, a revolve angle and an extrude
   length; and `prop::sweep`, Pappus's
   theorems as the oracle a sweep's volume and area are held to, taken
   in the profile's plane by `region_integral` and a quadrature over its
@@ -697,12 +703,12 @@ facade needs Arris types above it.
 | Transform (geometry only, topology and index order preserved) | `ops::transform` — new ids, provenance `Modified` one-to-one in iteration order |
 | Fillet / chamfer of named edges, one call for all edges | `ops::fillet`, `ops::chamfer` (cycle 2) |
 | Tessellation into a render mesh with per-face and per-edge ranges | `arris_mesh::tessellate` → `TriMesh` with `FaceRange`/`EdgeRange` keyed by `FaceId`/`EdgeId` |
-| A planar face's frame | `Face::surface()` is `Surface::Plane { frame }`; the frame *is* the answer, and it is stable across re-evaluation because the primitive's frame is |
+| A planar face's frame | `model.surface(model.face(id)?.surface())` is `Surface::Plane { frame }`; the frame *is* the answer, and it is stable across re-evaluation because a primitive's frame, or a sweep's profile plane, is |
 | Mass properties (volume, area, centroid, inertia) | `ops::measure::mass_properties` → `MassProperties` (exact over the B-Rep, the tensor about the centroid); or the consumer's own integrator over `TriMesh` |
 | STEP export of several bodies | `io::step::write(&model, &[bodies])` |
 | Projecting an edge or vertex onto a sketch plane | `geom::project_to_plane` on the edge's `Curve` — a line stays a line, a circle becomes a circle or an ellipse, an ellipse stays an ellipse, a NURBS a `Curve2::Nurbs`; a point-set projection with the variant's own parameter (02 §Pcurves) |
 | Persistent topological names (origin-based) | Emitted by the consumer from `Provenance`: an output face is named after the input face it was `Modified` from, `Split(k)` when one input yields several outputs, and after the tool face when `Generated`; edges and vertices derive from their faces exactly as today. No centroid matching. `⚠ OPEN:` whether Arris ships the origin-name grammar as a helper (`arris-topo::naming`) or leaves it to the consumer; the seed lists this among the kickoff questions. Decided in cycle 2 with the consumer's adapter |
-| Memoising shapes by content, dropping unreferenced ones | Memoisation stays in the consumer (it is about features, not geometry); dropping is `Model::retain` (§Compaction, `⚠ OPEN`) |
+| Memoising shapes by content, dropping unreferenced ones | Memoisation stays in the consumer (it is about features, not geometry); dropping is `Model::retain` (§The model, `⚠ OPEN`) |
 | Units | Arris is unit-agnostic. The consumer sets `Precision` for its unit (metres: `default_tolerance` at the micrometre scale) when it creates the `Model` |
 
 What the facade has today that Arris will not have: a tolerance nudge
@@ -715,4 +721,5 @@ Collected from this document; each closes with an ADR.
 
 - `⚠ OPEN:` compaction renumbers slots or keeps them sparse (§The model).
 - `⚠ OPEN:` `f32` positions at the tessellation boundary (§Threading).
-- `⚠ OPEN:` origin-name helper in Arris or in the consumer (§Facade).
+- `⚠ OPEN:` origin-name helper in Arris or in the consumer (§How a consumer's kernel
+  facade maps on).

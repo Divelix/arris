@@ -88,7 +88,7 @@ fn degenerate(kind: GeomKind, reason: impl Into<String>) -> GeomError {
 /// all exact. NURBS surfaces are an `Unsupported` arm.
 ///
 /// Errors: [`GeomError::NotOnSurface`] when the curve is farther than
-/// `tol.linear` from the surface at any of [`PCURVE_SAMPLES`] parameters
+/// `tol.linear` from the surface at any of [`PCURVE_SAMPLES`] + 1 parameters
 /// over the range; [`GeomError::Fit`] when the fitted arm cannot reach
 /// `tol.linear`; [`GeomError::Degenerate`] for an unbounded or empty
 /// range, or a curve winding faster than the sampling resolves;

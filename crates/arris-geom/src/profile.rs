@@ -367,9 +367,7 @@ impl Profile {
     /// The area the profile's loops enclose in its plane and the (u, v)
     /// centroid of that region, by `integrate::region_integral` over the
     /// oriented edges, so the holes subtract themselves. The area is
-    /// positive; it is what a sweep measures its result against
-    /// (Pappus) and what it reads to decide which side of a segment the
-    /// material is on.
+    /// positive.
     ///
     /// Errors: as [`Profile::edges`], which validates the profile first.
     ///

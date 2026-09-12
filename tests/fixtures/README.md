@@ -120,9 +120,8 @@ of the step that made the fixture pass, and a later change to it is a
   `expect_error: "multi-shell" | "tangent-contact"` says Open CASCADE
   builds a result Arris refuses by design (`boolean/split-cut`: two
   solids, `Reason::MultiShell`; the tangent cases, `Reason::TangentContact`
-  — `docs/plans/m4-booleans.md` `⚠ OPEN` 1 and 2): the oracle's numbers
-  are recorded and the lint still cross-checks them against the other
-  `analytic` values, but the runner asserts the typed error and compares
+  — ADR-0004): the oracle's numbers are recorded and the lint still
+  cross-checks them against the other `analytic` values, but the runner asserts the typed error and compares
   nothing — and the oracle's self-test records the result without
   round-tripping it through STEP, since nothing ever reads it back
   (`boolean/tangent-hole`'s slit carries the tangent ruling as an edge of

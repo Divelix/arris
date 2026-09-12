@@ -22,10 +22,11 @@ use crate::verify;
 /// kind is kept.
 ///
 /// Built over `assemble`, so it reaches exactly as far as that does: a
-/// body reduced entirely to shells of faces (a `Solid` or a `Sheet`, what
-/// every operation in the kernel today produces) moves whole; one that is
-/// not one connected shell comes back as [`OpError::Internal`] naming the
-/// builder's refusal, the same as `assemble`'s own.
+/// body reduced entirely to shells of faces (a `Solid`, the one kind
+/// [`Builder::finish`] builds and every operation produces today) moves
+/// whole; one that is not one connected shell comes back as
+/// [`OpError::Internal`] naming the builder's refusal, the same as
+/// `assemble`'s own.
 ///
 /// Errors: [`OpError::InvalidInput`] when `body` fails the checker (debug
 /// builds, and release with the `paranoid` feature); [`OpError::NotFound`]

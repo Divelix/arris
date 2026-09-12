@@ -23,17 +23,14 @@ cargo install cargo-nextest --locked  # the hook runs the suite under nextest
 
 ## Current state
 
-**M5 done (2026-09-12); C1's vertical slice is complete.** A sketch is a
-`geom::Profile` value, validated and oriented by `Profile::edges`;
-`ops::{extrude, revolve}` sweep it through `Builder::assemble`, every
-entity `Generated` from a `SweepPart` in the consumer's own indices. The
-revolve makes planes, cylinders, and cones, spheres and tori as surfaces
-(their booleans and S5/B1 arms are C2–C3's), held to Pappus at a thousand
-random profiles. Beside M4's booleans, every `primitive/*`, `transform/*`,
-`boolean/*`, `sweep/*` and `provenance/*` fixture passes every corpus
-stage; the lint fails one without its blessed dump, and a failure waiting
-for its fix lives under `tests/fixtures/regression/`.
-**Next:** `/close-cycle` (tags `m5`, `c1` are the human's), then C2.
+**C1 done (2026-09-12): the vertical slice.** Primitives, transform,
+booleans on plane and cylinder with typed refusals, extrude and revolve of
+a `geom::Profile`, tessellation, mass properties and STEP, every
+`primitive/*`, `transform/*`, `boolean/*`, `sweep/*` and `provenance/*`
+fixture passing every corpus stage against Open CASCADE; a failure waiting
+for its fix lives under `tests/fixtures/regression/`. ADR-0001 to 0005.
+**Next:** C2, the application gate — `/idea` or `/plan` its lines one at a
+time (tags `m5`, `c1` are the human's).
 
 ## Rules that are not derivable from the code
 
