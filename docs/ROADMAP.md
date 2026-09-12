@@ -279,25 +279,34 @@ with their `#[ignore]`d twins — green.*
 
 - Single-edge fillet and chamfer, several edges in one call: box edges
   (cylinder blends), hole edges (torus blends), the consumer's fixtures.
+  A second fillet on an already-filleted body. A vertical and a cap edge
+  of a box in one call meet at a corner, which is a vertex blend (C6's):
+  whether C2 blends that one corner or refuses it with a typed error is
+  the fillet idea's decision.
 - Cone, sphere and torus in the intersector as far as the blends and the
   probe corpus need: plane–cone, plane–sphere, plane–torus, cylinder–torus
-  at the hole-edge fillet.
+  at the hole-edge fillet. The fillet idea's construction decides the
+  exact pairs.
 - The checker's S5 and B1 arms against cone, sphere and torus faces over
   that intersector, so M5's quadric-faced revolves become corpus fixtures
   (`sweep/revolve-frustum`, `revolve-barrel`, `revolve-ring`) instead of
   closed-form tests with the oracle reading a scratch STEP.
-- Cylinder–cylinder booleans (transversal and coaxial), closing the
-  quadric-curve `⚠ OPEN` with an ADR.
+- Cylinder–cylinder booleans. Parallel axes (rulings, a tangent line)
+  are what the transversal probe needs; coaxial already passes
+  (`boolean/coaxial-cut`, `coaxial-fuse`). Crossing axes, a quartic, close
+  the quadric-curve `⚠ OPEN` with an ADR; no probe forces them.
 - Results of more than one shell — an enclosed cavity, a disjoint `fuse`,
   a `cut` that splits its target — which M4 refuses as
   `Reason::MultiShell`, a full revolve of a profile with holes among them;
   the revolve profile touching its axis (apex and degenerate edges), which
-  M5 refuses as `Reason::ProfileTouchesAxis`.
+  M5 refuses as `Reason::ProfileTouchesAxis`. The probe is a rectangle
+  with one side on the axis: plane and cylinder faces only.
 - `Model::retain` semantics (the compaction `⚠ OPEN`), the `f32`
   boundary `⚠ OPEN`, the origin-name helper `⚠ OPEN` — each an ADR with
   the consumer's adapter as the test.
 - Projection of edges and vertices to a plane; face frames; mass
-  properties with inertia matched to the consumer's integrator.
+  properties with inertia matched to the consumer's integrator; STL and
+  OBJ export from the tessellation, beside STEP.
 
 **Out:** NURBS–NURBS intersection, sweep along a path, loft, shell, healing,
 the STEP reader.
@@ -305,7 +314,10 @@ the STEP reader.
 **Accept:** the consumer's probe corpus in its own units — through hole
 (8.7434e-5), blind hole (1.8743e-4), enclosed cavity (9.36e-4, two shells),
 cylinder − cylinder transversal (2.2079e-5), flush union (2.0), revolve
-touching the axis (2π) — every twin un-ignored and every probe deleted;
+touching the axis (2π), a fillet on a filleted body, a vertical and a cap
+edge filleted in one call — every twin un-ignored and every probe deleted
+(through hole, blind hole and flush union already pass as C1 fixtures at
+another scale);
 `sweep/revolve-frustum`, `revolve-barrel` and `revolve-ring` passing every
 corpus stage with nothing left unchecked; the consumer's naming fixtures
 pass through provenance with no matcher; the consumer's facade compiles
