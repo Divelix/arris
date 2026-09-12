@@ -541,6 +541,65 @@ fn a_swallowed_target_is_a_typed_refusal() {
     assert_eq!(m.faces(a).unwrap().len(), faces);
 }
 
+/// Two boxes touching along an edge, and two touching at a corner, fused:
+/// the two lumps would share the edge — used by four faces — or the
+/// vertex, which a manifold solid's shells never do (ADR-0006, plan
+/// `⚠ OPEN` 2). Each is `Reason::NonManifold` naming exactly what is
+/// shared, before anything is assembled, and the model is as it was.
+#[test]
+fn boxes_touching_along_an_edge_or_at_a_corner_are_non_manifold() {
+    let corner = Point3::new(10.0, 10.0, 10.0);
+    for (what, min, max) in [
+        (
+            "edge",
+            Point3::new(10.0, 10.0, 0.0),
+            Point3::new(20.0, 20.0, 10.0),
+        ),
+        ("vertex", corner, Point3::new(20.0, 20.0, 20.0)),
+    ] {
+        let mut m = Model::default();
+        let (a, _) = primitive_box(&mut m, Point3::origin(), corner).unwrap();
+        let (b, _) = primitive_box(&mut m, min, max).unwrap();
+        let before = arris_debug::dump_text(&m, a).unwrap();
+        let entities = match fuse(&mut m, a, b) {
+            Err(OpError::Degenerate {
+                reason: Reason::NonManifold,
+                entities,
+            }) => entities,
+            other => panic!("{what}: {other:?}"),
+        };
+        // Where the entity sits: the edge along x = y = 10, or the corner.
+        let on_the_touch = |p: Point3| (p.x - 10.0).abs() < 1e-9 && (p.y - 10.0).abs() < 1e-9;
+        match (what, entities.as_slice()) {
+            (
+                "edge",
+                [
+                    Shape {
+                        id: EntityId::Edge(e),
+                        ..
+                    },
+                ],
+            ) => {
+                let edge = m.edge(*e).unwrap();
+                for v in [edge.start(), edge.end()] {
+                    assert!(on_the_touch(m.vertex(v).unwrap().point()), "{what}");
+                }
+            }
+            (
+                "vertex",
+                [
+                    Shape {
+                        id: EntityId::Vertex(v),
+                        ..
+                    },
+                ],
+            ) => assert_eq!(m.vertex(*v).unwrap().point(), corner),
+            other => panic!("{what}: {other:?}"),
+        }
+        assert_eq!(arris_debug::dump_text(&m, a).unwrap(), before, "{what}");
+    }
+}
+
 /// A tool that splits its target leaves two lumps of one solid
 /// (ADR-0006): two shells, clean at `Full`, the plate's volume less the
 /// slab's, the plate's shell `Modified` into both result shells and the

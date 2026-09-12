@@ -442,7 +442,9 @@ pub fn interferences(m: &Model, a: Body, b: Body) -> Result<Interferences, OpErr
 /// [`crate::Reason::Empty`] when nothing survives (the target inside the
 /// tool), [`crate::Reason::ZeroThickness`] when nothing survives and
 /// what was dropped lay on the other operand (two solids touching along
-/// a face), [`crate::Reason::TangentContact`] when two faces touch along a
+/// a face), [`crate::Reason::NonManifold`] naming the shared edges or
+/// vertices when two shells of the result would touch along an edge or at
+/// a vertex, [`crate::Reason::TangentContact`] when two faces touch along a
 /// ruling interior to both and both pieces through it would survive —
 /// a hole wall tangent to a side face — or a section edge is tangent to
 /// a loop edge at a vertex;

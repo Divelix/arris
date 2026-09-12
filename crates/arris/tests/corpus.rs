@@ -136,6 +136,14 @@ fn boolean_lump_in_cavity() {
     run("boolean/lump-in-cavity");
 }
 
+/// Two boxes touching along an edge: Open CASCADE builds two solids that
+/// share it, Arris refuses with `Reason::NonManifold` — the runner's
+/// expected-error path.
+#[test]
+fn boolean_edge_touching_fuse() {
+    run("boolean/edge-touching-fuse");
+}
+
 #[test]
 fn boolean_boss() {
     run("boolean/boss");

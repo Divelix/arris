@@ -1,0 +1,16 @@
+{
+  "description": "box [0,0,0]–[10,10,10] ∪ box [10,10,0]–[20,20,10], touching along the edge x = 10, y = 10: two lumps sharing an edge of four faces, which a manifold solid does not hold — Arris refuses with OpError::Degenerate and Reason::NonManifold naming the edge, Open CASCADE builds a compound of two solids sharing it (ADR-0006)",
+  "steps": [
+    {"name": "a", "op": "box", "min": [0, 0, 0], "max": [10, 10, 10]},
+    {"name": "b", "op": "box", "min": [10, 10, 0], "max": [20, 20, 10]},
+    {"name": "result", "op": "fuse", "a": "a", "b": "b"}
+  ],
+  "result": "result",
+  "probes": [],
+  "analytic": {
+    "expect_error": "non-manifold",
+    "volume": "2 * 10^3",
+    "area": "2 * 6 * 10^2",
+    "counts": {"vertices": 14, "edges": 23, "faces": 12, "loops": 12, "shells": 2, "solids": 2}
+  }
+}

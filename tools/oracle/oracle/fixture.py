@@ -47,10 +47,13 @@ def compute_expected(fixture: dict) -> dict:
     if fixture_kind(fixture) == "geometry":
         return {"occt": occt_version(), "recipe_sha256": recipe_hash(fixture), "kind": "geometry", **compute_geometry(fixture)}
     tol = {**DEFAULT_TOLERANCES, **fixture.get("tolerances", {})}
+    # A result Arris refuses as non-manifold is Open CASCADE's compound of
+    # solids sharing an edge or a vertex, whose Euler characteristic is odd.
+    manifold = fixture.get("analytic", {}).get("expect_error") != "non-manifold"
     results = {}
     for variant in variant_names(fixture):
         shape, _ = build(fixture, variant)
-        results[variant] = measure(shape, probes(fixture, variant), tol["probe"])
+        results[variant] = measure(shape, probes(fixture, variant), tol["probe"], manifold)
     return {"occt": occt_version(), "recipe_sha256": recipe_hash(fixture), "results": results}
 
 

@@ -69,6 +69,12 @@ pub enum Reason {
     /// a section curve tangent to a loop edge at a vertex — which a
     /// manifold `Solid` cannot represent (ADR-0004, plan `⚠ OPEN` 1).
     TangentContact,
+    /// The result's shells would touch along an edge or at a vertex — an
+    /// edge used by four faces, a vertex two lumps share — which a manifold
+    /// `Solid`'s shells never do (ADR-0006); the error's entities are the
+    /// shared edges or vertices. A body that touches itself so is a
+    /// `General` one, which no operation builds yet.
+    NonManifold,
 }
 
 impl core::fmt::Display for Reason {
@@ -99,6 +105,9 @@ impl core::fmt::Display for Reason {
             Reason::TangentContact => {
                 f.write_str("the faces touch along a curve interior to both result faces")
             }
+            Reason::NonManifold => f.write_str(
+                "the result's shells would touch along an edge or at a vertex, which a solid does not hold",
+            ),
         }
     }
 }

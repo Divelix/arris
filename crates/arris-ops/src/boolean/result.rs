@@ -753,7 +753,101 @@ impl<'m> Build<'m> {
                 pieces.push(k);
             }
         }
+
+        // A manifold solid uses every edge twice and its shells share no
+        // vertex (ADR-0006): an edge of more uses is two lumps touching
+        // along it — the grouping above has already joined them — and a
+        // vertex two shells reach is two touching at a point. Either is
+        // named before anything is assembled.
+        let mut uses: BTreeMap<ERef, usize> = BTreeMap::new();
+        for u in self.kept.iter().flat_map(|p| p.loops.iter().flatten()) {
+            *uses.entry(u.edge).or_default() += 1;
+        }
+        let mut shared: BTreeSet<Shape> = uses
+            .iter()
+            .filter(|&(_, &n)| n > 2)
+            .flat_map(|(&e, _)| self.edge_entities(e))
+            .collect();
+        if shared.is_empty() {
+            let mut shell_at: BTreeMap<VRef, usize> = BTreeMap::new();
+            for (shell, pieces) in shells.iter().enumerate() {
+                let edges = pieces
+                    .iter()
+                    .filter_map(|&k| self.kept.get(k))
+                    .flat_map(|p| p.loops.iter().flatten())
+                    .map(|u| u.edge);
+                for v in edges.flat_map(|e| self.edge_ends(e)).flatten() {
+                    match shell_at.get(&v) {
+                        Some(&s) if s != shell => shared.extend(self.vertex_entities(v)),
+                        Some(_) => {}
+                        None => {
+                            shell_at.insert(v, shell);
+                        }
+                    }
+                }
+            }
+        }
+        if !shared.is_empty() {
+            return Err(OpError::Degenerate {
+                entities: shared.into_iter().collect(),
+                reason: Reason::NonManifold,
+            });
+        }
         Ok(shells)
+    }
+
+    /// The vertices at the two ends of an edge piece, `None` for a piece
+    /// the decomposition does not hold.
+    fn edge_ends(&self, e: ERef) -> Option<[VRef; 2]> {
+        match e {
+            ERef::Sub { edge, index } => {
+                let s = self.sub_edges.get(&edge)?.get(index)?;
+                Some([s.start, s.end])
+            }
+            ERef::Section(k) => {
+                let s = self.i.sections.get(k)?;
+                Some([*self.vref_of.get(s.start)?, *self.vref_of.get(s.end)?])
+            }
+        }
+    }
+
+    /// What an error names for an edge piece: the operand edge it is a
+    /// piece of, or the two faces a section edge was cut along.
+    fn edge_entities(&self, e: ERef) -> Vec<Shape> {
+        match e {
+            ERef::Sub { edge, .. } => vec![forward(edge)],
+            ERef::Section(k) => self
+                .i
+                .sections
+                .get(k)
+                .and_then(|s| self.i.curves.get(s.curve))
+                .and_then(|c| self.i.pairs.get(c.pair))
+                .map_or_else(Vec::new, |p| vec![forward(p.a), forward(p.b)]),
+        }
+    }
+
+    /// What an error names for a vertex: the operand vertex it is, or the
+    /// edges and faces whose hits and crossings made a section vertex.
+    fn vertex_entities(&self, v: VRef) -> Vec<Shape> {
+        match v {
+            VRef::Existing(id) => vec![forward(id)],
+            VRef::Section(k) => {
+                let Some(sv) = self.i.vertices.get(k) else {
+                    return Vec::new();
+                };
+                let hits = sv
+                    .hits
+                    .iter()
+                    .filter_map(|&h| self.i.hits.get(h))
+                    .flat_map(|h| [forward(h.edge), forward(h.face)]);
+                let crossings = sv
+                    .crossings
+                    .iter()
+                    .filter_map(|&x| self.i.crossings.get(x))
+                    .flat_map(|x| [forward(x.a), forward(x.b)]);
+                hits.chain(crossings).collect()
+            }
+        }
     }
 
     /// `true` when the vertex is appended rather than kept by id: a

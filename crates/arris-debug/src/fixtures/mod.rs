@@ -378,6 +378,11 @@ pub enum ExpectError {
     /// `OpError::Degenerate` with `Reason::TangentContact`: two faces
     /// touch along a curve interior to both.
     TangentContact,
+    /// `OpError::Degenerate` with `Reason::NonManifold`: two shells of the
+    /// result would share an edge or a vertex (ADR-0006). The oracle's
+    /// compound of solids sharing it has an odd Euler characteristic, so
+    /// it records no genus and the recipe states none.
+    NonManifold,
 }
 
 /// The closed forms a fixture's author states, cross-checking the oracle.
@@ -740,9 +745,9 @@ pub fn lint(dir: &Path) -> Vec<String> {
                 dump.file_name().unwrap_or_default().to_string_lossy()
             ));
         }
-        let (Some(chi), Some(genus)) = (m.euler_characteristic, m.genus) else {
+        let Some(chi) = m.euler_characteristic else {
             problem(format!(
-                "[{variant}] expected.json lacks euler_characteristic or genus"
+                "[{variant}] expected.json lacks euler_characteristic"
             ));
             continue;
         };
@@ -754,7 +759,24 @@ pub fn lint(dir: &Path) -> Vec<String> {
                 "[{variant}] euler_characteristic {chi} does not match the counts ({chi_from_counts})"
             ));
         }
-        if let Some(g) = a.genus {
+        let non_manifold = a.expect_error == Some(ExpectError::NonManifold);
+        let genus = match (m.genus, non_manifold) {
+            (Some(genus), _) => Some(genus),
+            // Solids sharing an edge or a vertex close no Euler line.
+            (None, true) => {
+                if a.genus.is_some() {
+                    problem(format!(
+                        "[{variant}] analytic.genus is set for a non-manifold result, which has none"
+                    ));
+                }
+                None
+            }
+            (None, false) => {
+                problem(format!("[{variant}] expected.json lacks genus"));
+                continue;
+            }
+        };
+        if let (Some(g), Some(genus)) = (a.genus, genus) {
             // The Euler line: V − E + F − (L − F) − 2(S − G) = 0.
             let line = chi - 2 * (c.shells as i64 - g);
             if line != 0 {

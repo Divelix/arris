@@ -118,9 +118,13 @@ of the step that made the fixture pass, and a later change to it is a
   says the result has no volume (`boolean/flush-common`,
   `boolean/swallow-cut`, `boolean/disjoint-common`), and then nothing
   else is compared.
-  `expect_error: "tangent-contact"` says Open CASCADE builds a result
-  Arris refuses by design (the tangent cases, `Reason::TangentContact` —
-  ADR-0004): the oracle's numbers are recorded and the lint still
+  `expect_error: "tangent-contact" | "non-manifold"` says Open CASCADE
+  builds a result Arris refuses by design (the tangent cases,
+  `Reason::TangentContact` — ADR-0004; `boolean/edge-touching-fuse`, two
+  solids sharing an edge, `Reason::NonManifold` — ADR-0006, whose
+  compound has an odd Euler characteristic, so the oracle records no
+  genus for it and the recipe states none): the oracle's numbers are
+  recorded and the lint still
   cross-checks them against the other `analytic` values, but the runner asserts the typed error and compares
   nothing — and the oracle's self-test records the result without
   round-tripping it through STEP, since nothing ever reads it back

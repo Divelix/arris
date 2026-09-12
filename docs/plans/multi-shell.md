@@ -117,11 +117,18 @@ bound has to be established here.
   `boolean/lump-in-cavity` (a hollow box fused with a box inside its
   cavity). `boolean_prop`: the piercing pair's `cylinder − box` holds
   `V(A − B) + V(A ∩ B) = V(A)` at every pose instead of refusing.
-- [ ] Step 5 **[2]** — two result shells touching along an edge or at a
+- [x] Step 5 **[2]** — two result shells touching along an edge or at a
   vertex are `Reason::NonManifold` naming the shared entities, before
-  anything is assembled. Fixture `boolean/edge-touching-cut` (a cut that
-  leaves two boxes sharing an edge) with `expect_error: "non-manifold"`;
-  the corpus grammar and lint learn it.
+  anything is assembled. Fixture `boolean/edge-touching-fuse` (two boxes
+  sharing an edge) with `expect_error: "non-manifold"`; the corpus grammar
+  and lint learn it. Found at step 5: the `edge-touching-cut` first
+  planned does not exist — a cut leaving two boxes that share an edge
+  inside the target needs a tool filling the other two quadrants around
+  that edge, which is itself non-manifold — so the fixture is the fuse of
+  two such boxes, and the corner case is a unit test beside it. Open
+  CASCADE's compound of two solids sharing an edge or a vertex has an odd
+  Euler characteristic, so the oracle records no genus for a
+  `non-manifold` recipe and the lint asks none.
 - [ ] Step 6 **[2]** — a full revolve of a profile with holes: one void
   shell per hole, `SweepPart::Cavity { loop_index }`; `Reason::MultiShell`
   removed. Fixture
@@ -159,9 +166,15 @@ naming `multi-shell`.
   body as ADR-0004 foresaw, versus several bodies per operation.
   **Decided at step 1 (the human delegated it): lumps in one `Solid`,
   ADR-0006.**
-- `⚠ OPEN 2:` two lumps meeting at a single vertex: `NonManifold`
+- ~~`⚠ OPEN 2:`~~ two lumps meeting at a single vertex: `NonManifold`
   (preferred, what a manifold `Solid` promises) or allowed — agent, step 5,
   checked against what Open CASCADE's `BRepCheck` says of the same shape.
+  **Decided at step 5: `NonManifold`.** Run through the oracle,
+  `BRepCheck_Analyzer` rejects a `TopoDS_Solid` of two outer shells
+  whether they are apart or share a vertex or an edge, and accepts a
+  compound of the same two solids in all three cases (ADR-0006): its
+  solid is Arris's lump, its compound is where touching lives, so the
+  check does not make the vertex case manifold and the refusal stands.
 - ~~`⚠ OPEN 3:`~~ lumps derived by B1 and `lumps()` (preferred: no entity
   or format change) versus stored on `Body` — agent, step 2; storing
   becomes worth it only if `lumps()` shows up as a cost. **Decided at

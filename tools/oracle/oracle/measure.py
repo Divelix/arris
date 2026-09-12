@@ -8,7 +8,9 @@
                                  faces, loops (wires), shells, solids
     euler_characteristic         V − E + 2F − L: 2(S − G) for closed shells
     genus                        S − χ/2, what the fixture's analytic genus
-                                 is checked against (the "Euler line")
+                                 is checked against (the "Euler line");
+                                 None for a non-manifold result, whose
+                                 shared edge or vertex makes χ odd
     degenerate                   no solid in the result
     probes                       in / out / on for each probe point
 """
@@ -88,8 +90,11 @@ def inertia(props: GProp_GProps) -> list[list[float]]:
     return [[m.Value(i, j) for j in range(1, 4)] for i in range(1, 4)]
 
 
-def measure(shape: TopoDS_Shape, probes: list[dict], probe_tolerance: float) -> dict:
-    """Everything expected.json records for one result."""
+def measure(shape: TopoDS_Shape, probes: list[dict], probe_tolerance: float, manifold: bool = True) -> dict:
+    """Everything expected.json records for one result. `manifold` false
+    admits an odd Euler characteristic — solids of a compound sharing an
+    edge or a vertex, what a recipe expecting `non-manifold` builds — and
+    records no genus for it; otherwise an odd one is an error."""
     counts = {
         "vertices": _count(shape, TopAbs_VERTEX),
         "edges": _count(shape, TopAbs_EDGE),
@@ -109,7 +114,7 @@ def measure(shape: TopoDS_Shape, probes: list[dict], probe_tolerance: float) -> 
     BRepGProp.SurfaceProperties_s(shape, sp)
     c = vp.CentreOfMass()
     chi = counts["vertices"] - counts["edges"] + 2 * counts["faces"] - counts["loops"]
-    if chi % 2 != 0:
+    if chi % 2 != 0 and manifold:
         raise OracleError(f"Euler characteristic {chi} is odd: the shape is not a closed surface")
     out.update(
         {
@@ -118,7 +123,7 @@ def measure(shape: TopoDS_Shape, probes: list[dict], probe_tolerance: float) -> 
             "centroid": [c.X(), c.Y(), c.Z()],
             "inertia": inertia(vp),
             "euler_characteristic": chi,
-            "genus": counts["shells"] - chi // 2,
+            "genus": counts["shells"] - chi // 2 if chi % 2 == 0 else None,
             "probes": [
                 {
                     "label": p.get("label", str(i)),

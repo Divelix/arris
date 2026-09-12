@@ -277,6 +277,9 @@ impl Refusal {
             Refusal::Error(ExpectError::TangentContact) => {
                 "OpError::Degenerate with Reason::TangentContact".into()
             }
+            Refusal::Error(ExpectError::NonManifold) => {
+                "OpError::Degenerate with Reason::NonManifold".into()
+            }
         }
     }
 
@@ -296,6 +299,7 @@ impl Refusal {
                 let matches = match self {
                     Refusal::Degenerate => true,
                     Refusal::Error(ExpectError::TangentContact) => reason == Reason::TangentContact,
+                    Refusal::Error(ExpectError::NonManifold) => reason == Reason::NonManifold,
                 };
                 if matches {
                     return Ok(());
