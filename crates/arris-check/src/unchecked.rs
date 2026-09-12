@@ -29,14 +29,26 @@ pub enum Unchecked {
         /// Their surfaces' kinds, in that order.
         kinds: (SurfaceKind, SurfaceKind),
     },
-    /// **B1** — no ray from this shell could be classified against the
-    /// solid's outer shell, so whether it is a void inside it is not
-    /// known.
+    /// **B1** — no ray from this shell could be classified against another
+    /// shell of the solid, so which shell it lies inside is not known.
     ShellNesting {
         /// The body.
         body: BodyId,
         /// The shell that could not be placed.
         shell: ShellId,
+    },
+    /// **B1** — the intersector has no closed form for a face of one shell
+    /// against a face of another, so whether the two shells meet is not
+    /// known.
+    ShellFacePair {
+        /// The body.
+        body: BodyId,
+        /// The face of the first shell.
+        face_a: FaceId,
+        /// The face of the second.
+        face_b: FaceId,
+        /// Their surfaces' kinds, in that order.
+        kinds: (SurfaceKind, SurfaceKind),
     },
 }
 
@@ -45,7 +57,7 @@ impl Unchecked {
     pub const fn code(&self) -> &'static str {
         match self {
             Unchecked::FacePair { .. } => "S5",
-            Unchecked::ShellNesting { .. } => "B1",
+            Unchecked::ShellNesting { .. } | Unchecked::ShellFacePair { .. } => "B1",
         }
     }
 
@@ -54,7 +66,9 @@ impl Unchecked {
     pub fn entity(&self) -> EntityId {
         match *self {
             Unchecked::FacePair { shell, .. } => shell.into(),
-            Unchecked::ShellNesting { body, .. } => body.into(),
+            Unchecked::ShellNesting { body, .. } | Unchecked::ShellFacePair { body, .. } => {
+                body.into()
+            }
         }
     }
 }
@@ -77,6 +91,16 @@ impl fmt::Display for Unchecked {
             Unchecked::ShellNesting { shell, .. } => {
                 write!(f, "no ray from {shell} could be classified")
             }
+            Unchecked::ShellFacePair {
+                face_a,
+                face_b,
+                kinds,
+                ..
+            } => write!(
+                f,
+                "no closed form for {face_a} ({}) against {face_b} ({}), of two shells",
+                kinds.0, kinds.1
+            ),
         }
     }
 }

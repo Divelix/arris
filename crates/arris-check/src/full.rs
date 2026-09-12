@@ -3,10 +3,11 @@
 //!
 //! These rows are not linear in the body: L5 sweeps every loop of a face
 //! against every other, S5 every face of a shell against every other, and
-//! B1 casts a ray from each void shell against the outer one. Each face's
-//! loops are discretised once, at a chord tolerance that is the model's
-//! parametric tolerance scaled to the surface's speed, and the polygons
-//! are kept for the row that needs them next.
+//! B1 every face of one shell against every face of another and a ray from
+//! each shell against every other (`crate::lumps`). Each face's loops are
+//! discretised once, at a chord tolerance that is the model's parametric
+//! tolerance scaled to the surface's speed, and the polygons are kept for
+//! the row that needs them next.
 //!
 //! A pair the geometry kernel has no closed form for is never guessed at:
 //! it is recorded through [`crate::Unchecked`], which is neither a
@@ -16,7 +17,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use arris_topo::arris_geom::integrate::{inner_step, region_integral};
 use arris_topo::arris_geom::region2::{Piece, Polygon2, Side, discretise, point_side};
-use arris_topo::arris_geom::{Curve, Surface, SurfaceIntersection, intersect_surfaces};
+use arris_topo::arris_geom::{
+    Curve, Surface, SurfaceIntersection, SurfaceKind, intersect_surfaces,
+};
 use arris_topo::arris_math::{Aabb, Interval, Point2, Point3};
 use arris_topo::entity::{BodyKind, Face};
 use arris_topo::{EdgeId, FaceId, Orientation, ShellId, VertexId};
@@ -25,6 +28,10 @@ use crate::check::{Checker, coedges, samples};
 use crate::classify::Classifier;
 use crate::unchecked::Unchecked;
 use crate::violation::{ShellNestingFault, Violation};
+
+/// Every face's box, or `None` for one no box bounds: what S5 and B1
+/// reject face pairs by before any intersector is asked.
+pub(crate) type FaceBoxes = BTreeMap<FaceId, Option<Aabb>>;
 
 impl<'m> Checker<'m> {
     /// E8, L5, S5, B1 and B2.
@@ -38,7 +45,7 @@ impl<'m> Checker<'m> {
 
     /// Every face's loops as polygons in (u, v), within the model's
     /// parametric tolerance of the pcurves: what L5, S5 and B1 all ask.
-    fn discretise_faces(&mut self) {
+    pub(crate) fn discretise_faces(&mut self) {
         let model = self.model;
         let mut fine: BTreeMap<FaceId, Vec<Polygon2>> = BTreeMap::new();
         for &face_id in &self.closure.faces {
@@ -235,15 +242,10 @@ impl<'m> Checker<'m> {
         bounds.map(|b| b.inflated(face.tolerance()))
     }
 
-    /// S5: two faces of a shell meet only along the edges and vertices
-    /// they share. A pair whose boxes ([`Checker::face_bounds`]) are
-    /// apart shares no point and is decided without an intersector; the
-    /// rest are intersected, and a pair with no closed form is unchecked.
-    fn s5_face_pairs(&mut self) {
+    /// Every face's box ([`Checker::face_bounds`]).
+    pub(crate) fn face_boxes(&self) -> FaceBoxes {
         let model = self.model;
-        let mut found = Vec::new();
-        let mut undecided = Vec::new();
-        let mut boxes: BTreeMap<FaceId, Option<Aabb>> = BTreeMap::new();
+        let mut boxes = FaceBoxes::new();
         for &face_id in &self.closure.faces {
             let b = model.face(face_id).ok().and_then(|face| {
                 let surface = model.surface(face.surface()).ok()?;
@@ -251,6 +253,54 @@ impl<'m> Checker<'m> {
             });
             boxes.insert(face_id, b);
         }
+        boxes
+    }
+
+    /// Whether faces `a` and `b` meet away from the edges and vertices
+    /// they share — S5's test, and B1's between two shells, which share
+    /// none. A pair whose boxes are apart shares no point and is decided
+    /// without an intersector; a pair that does not resolve is M1's and
+    /// meets nowhere here. Errors: the intersector has no closed form for
+    /// the pair's surfaces, whose kinds it names.
+    pub(crate) fn faces_meet(
+        &self,
+        a: FaceId,
+        b: FaceId,
+        boxes: &FaceBoxes,
+    ) -> Result<bool, (SurfaceKind, SurfaceKind)> {
+        let model = self.model;
+        let (Ok(fa), Ok(fb)) = (model.face(a), model.face(b)) else {
+            return Ok(false);
+        };
+        let (Ok(sa), Ok(sb)) = (model.surface(fa.surface()), model.surface(fb.surface())) else {
+            return Ok(false);
+        };
+        if let (Some(Some(ba)), Some(Some(bb))) = (boxes.get(&a), boxes.get(&b)) {
+            if !ba.intersects(bb) {
+                return Ok(false);
+            }
+        }
+        Ok(
+            match intersect_surfaces(sa, sb, self.precision.tolerance()) {
+                Err(_) => return Err((sa.kind(), sb.kind())),
+                Ok(SurfaceIntersection::Empty) => false,
+                Ok(SurfaceIntersection::Coincident) => self.regions_overlap(a, sa, b, sb),
+                Ok(SurfaceIntersection::Transversal(curves))
+                | Ok(SurfaceIntersection::Tangent(curves)) => curves
+                    .iter()
+                    .any(|c| self.curve_is_interior_to_both(a, sa, b, sb, c)),
+            },
+        )
+    }
+
+    /// S5: two faces of a shell meet only along the edges and vertices
+    /// they share ([`Checker::faces_meet`]); a pair with no closed form is
+    /// unchecked.
+    fn s5_face_pairs(&mut self) {
+        let model = self.model;
+        let mut found = Vec::new();
+        let mut undecided = Vec::new();
+        let boxes = self.face_boxes();
         for &shell_id in &self.closure.shells {
             let Ok(shell) = model.shell(shell_id) else {
                 continue;
@@ -264,42 +314,19 @@ impl<'m> Checker<'m> {
                 .collect();
             for (i, &a) in faces.iter().enumerate() {
                 for &b in faces.iter().skip(i + 1) {
-                    let (Ok(fa), Ok(fb)) = (model.face(a), model.face(b)) else {
-                        continue;
-                    };
-                    let (Ok(sa), Ok(sb)) =
-                        (model.surface(fa.surface()), model.surface(fb.surface()))
-                    else {
-                        continue;
-                    };
-                    if let (Some(Some(ba)), Some(Some(bb))) = (boxes.get(&a), boxes.get(&b)) {
-                        if !ba.intersects(bb) {
-                            continue;
-                        }
-                    }
-                    let meets = match intersect_surfaces(sa, sb, self.precision.tolerance()) {
-                        Err(_) => {
-                            undecided.push(Unchecked::FacePair {
-                                shell: shell_id,
-                                face_a: a,
-                                face_b: b,
-                                kinds: (sa.kind(), sb.kind()),
-                            });
-                            continue;
-                        }
-                        Ok(SurfaceIntersection::Empty) => false,
-                        Ok(SurfaceIntersection::Coincident) => self.regions_overlap(a, sa, b, sb),
-                        Ok(SurfaceIntersection::Transversal(curves))
-                        | Ok(SurfaceIntersection::Tangent(curves)) => curves
-                            .iter()
-                            .any(|c| self.curve_is_interior_to_both(a, sa, b, sb, c)),
-                    };
-                    if meets {
-                        found.push(Violation::FacesIntersect {
+                    match self.faces_meet(a, b, &boxes) {
+                        Ok(false) => {}
+                        Ok(true) => found.push(Violation::FacesIntersect {
                             shell: shell_id,
                             face_a: a,
                             face_b: b,
-                        });
+                        }),
+                        Err(kinds) => undecided.push(Unchecked::FacePair {
+                            shell: shell_id,
+                            face_a: a,
+                            face_b: b,
+                            kinds,
+                        }),
                     }
                 }
             }
@@ -503,7 +530,7 @@ impl<'m> Checker<'m> {
 
     /// The signed volume a shell encloses, its face uses composed with
     /// `outer` (the body handle's orientation and the shell use's).
-    fn shell_volume(&self, shell_id: ShellId, outer: Orientation) -> Option<f64> {
+    pub(crate) fn shell_volume(&self, shell_id: ShellId, outer: Orientation) -> Option<f64> {
         let shell = self.model.shell(shell_id).ok()?;
         let mut total = 0.0;
         for face_use in shell.faces() {
@@ -512,7 +539,7 @@ impl<'m> Checker<'m> {
         Some(total)
     }
 
-    /// B1 (one outer shell with voids inside it) and B2 (positive
+    /// B1 (the shells nest into lumps, `crate::lumps`) and B2 (positive
     /// enclosed volume), for a `Solid` body.
     fn b1_b2_shells(&mut self) {
         let model = self.model;
@@ -522,81 +549,40 @@ impl<'m> Checker<'m> {
         if body.kind() != BodyKind::Solid {
             return;
         }
-        let shells: Vec<(ShellId, Orientation)> = body
-            .shells()
-            .iter()
-            .map(|s| (s.id, self.body.orientation.compose(s.orientation)))
-            .collect();
-        if shells.is_empty() {
+        if body.shells().is_empty() {
             self.push(Violation::ShellNesting {
                 body: self.body.id,
                 fault: ShellNestingFault::NoShells,
             });
             return;
         }
-        let mut volumes = Vec::with_capacity(shells.len());
-        for &(shell, orientation) in &shells {
-            let Some(volume) = self.shell_volume(shell, orientation) else {
-                return;
-            };
-            volumes.push((shell, orientation, volume));
-        }
+        let Ok(shells) = self.shell_volumes() else {
+            return;
+        };
         // B2 first: the body's volume is the sum over its shells.
-        let total: f64 = volumes.iter().map(|&(_, _, v)| v).sum();
+        let total: f64 = shells.iter().map(|&(_, v)| v).sum();
         if !(total.is_finite() && total > 0.0) {
             self.push(Violation::NonPositiveVolume {
                 body: self.body.id,
                 volume: total,
             });
         }
-        // B1: exactly one shell is outermost, and every other is a void
-        // inside it with its normals turned into the void.
-        let outer: Vec<ShellId> = volumes
-            .iter()
-            .filter(|&&(_, _, v)| v > 0.0)
-            .map(|&(s, _, _)| s)
-            .collect();
-        let mut faults = Vec::new();
-        match outer.as_slice() {
-            [] => faults.push(ShellNestingFault::NoOuter),
-            [_] => {}
-            _ => faults.push(ShellNestingFault::MultipleOuter {
-                shells: outer.clone(),
-            }),
-        }
-        if let [outer_shell] = outer.as_slice() {
-            for &(shell, _, volume) in &volumes {
-                if shell == *outer_shell {
-                    continue;
-                }
-                if volume >= 0.0 {
-                    faults.push(ShellNestingFault::InsideOut { shell });
-                    continue;
-                }
-                match self.void_is_inside(*outer_shell, shell) {
-                    Some(true) => {}
-                    Some(false) => faults.push(ShellNestingFault::VoidOutside { shell }),
-                    None => self.unchecked.push(Unchecked::ShellNesting {
-                        body: self.body.id,
-                        shell,
-                    }),
-                }
-            }
-        }
-        for fault in faults {
+        let nesting = self.nesting(&shells);
+        for fault in nesting.faults {
             self.push(Violation::ShellNesting {
                 body: self.body.id,
                 fault,
             });
         }
+        self.unchecked.extend(nesting.unchecked);
     }
 
-    /// Whether `void`'s first vertex lies inside `outer`, by a ray cast.
-    /// `None` when no direction could be classified.
-    fn void_is_inside(&self, outer: ShellId, void: ShellId) -> Option<bool> {
+    /// A point of `shell`: the start vertex of the first edge of its first
+    /// face that resolves. `None` when nothing does.
+    pub(crate) fn shell_point(&self, shell: ShellId) -> Option<Point3> {
         let model = self.model;
-        let from = model
-            .shell(void)
+        model
+            .shell(shell)
             .ok()?
             .faces()
             .iter()
@@ -605,8 +591,7 @@ impl<'m> Checker<'m> {
             .filter_map(|(_, _, c)| model.edge(c.edge()).ok())
             .filter_map(|e| model.vertex(e.start()).ok())
             .map(|v| v.point())
-            .next()?;
-        self.shell_contains(outer, from)
+            .next()
     }
 
     /// Whether `point` is inside the closed shell `shell`, by
@@ -615,7 +600,7 @@ impl<'m> Checker<'m> {
     /// never disagree about a point (ADR-0004). `None` when every
     /// direction was abandoned or a surface has no closed form against a
     /// ray, which is what the row records as unchecked.
-    fn shell_contains(&self, shell_id: ShellId, point: Point3) -> Option<bool> {
+    pub(crate) fn shell_contains(&self, shell_id: ShellId, point: Point3) -> Option<bool> {
         let faces = self
             .model
             .shell(shell_id)

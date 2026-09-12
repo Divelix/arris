@@ -190,24 +190,42 @@ pub enum EdgeUseFault {
     Orientation,
 }
 
-/// Why a solid's shells do not nest (B1).
+/// Why a solid's shells do not nest into lumps (B1, ADR-0006).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ShellNestingFault {
     /// No shells at all.
     NoShells,
-    /// No shell is outermost with outward normals.
+    /// No shell encloses positive volume: every one is a void of nothing.
     NoOuter,
-    /// Several shells are outermost.
-    MultipleOuter {
-        /// The shells.
-        shells: Vec<ShellId>,
-    },
-    /// A void shell is not inside the outer shell.
+    /// A void shell — one enclosing negative volume — is inside no shell.
     VoidOutside {
         /// The shell.
         shell: ShellId,
     },
-    /// A shell's effective normals point the wrong way for its role.
+    /// A void shell's innermost container is another void, not the outer
+    /// shell of a lump.
+    VoidInVoid {
+        /// The void.
+        shell: ShellId,
+        /// Its innermost container, a void too.
+        container: ShellId,
+    },
+    /// An outer shell's innermost container is another outer shell: one
+    /// region of material inside another with no cavity between them.
+    OuterInOuter {
+        /// The inner shell.
+        shell: ShellId,
+        /// Its innermost container, an outer shell too.
+        container: ShellId,
+    },
+    /// Two shells of the body meet: a face of one intersects a face of the
+    /// other, which shells that share no edge never may.
+    Overlap {
+        /// The two shells, ascending.
+        shells: [ShellId; 2],
+    },
+    /// A shell encloses no volume, or one that is not finite, so it has
+    /// no role: neither outer nor void.
     InsideOut {
         /// The shell.
         shell: ShellId,
@@ -475,8 +493,9 @@ pub enum Violation {
         /// The second face.
         face_b: FaceId,
     },
-    /// **B1** — a solid body's shells do not nest as one outer shell and
-    /// inward-facing voids inside it.
+    /// **B1** — a solid body's shells do not nest into lumps: outer shells
+    /// enclosing positive volume, each with the voids whose innermost
+    /// container it is, and no two shells meeting.
     ShellNesting {
         /// The body.
         body: BodyId,
@@ -583,6 +602,34 @@ impl Violation {
             Violation::ShellNesting { body, .. }
             | Violation::NonPositiveVolume { body, .. }
             | Violation::WireMalformed { body, .. } => body.into(),
+        }
+    }
+}
+
+impl fmt::Display for ShellNestingFault {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ShellNestingFault::NoShells => f.write_str("solid with no shell"),
+            ShellNestingFault::NoOuter => f.write_str("no outer shell"),
+            ShellNestingFault::VoidOutside { shell } => {
+                write!(f, "void {shell} is inside no shell")
+            }
+            ShellNestingFault::VoidInVoid { shell, container } => {
+                write!(f, "void {shell} is inside void {container}")
+            }
+            ShellNestingFault::OuterInOuter { shell, container } => write!(
+                f,
+                "outer shell {shell} is inside outer shell {container} with no void between"
+            ),
+            ShellNestingFault::Overlap { shells } => {
+                write!(f, "shells {} and {} meet", shells[0], shells[1])
+            }
+            ShellNestingFault::InsideOut { shell } => {
+                write!(
+                    f,
+                    "{shell} encloses no volume, so it is neither outer nor void"
+                )
+            }
         }
     }
 }
@@ -751,26 +798,7 @@ impl fmt::Display for Violation {
                     "{face_a} and {face_b} intersect away from their shared edges"
                 )
             }
-            Violation::ShellNesting { fault, .. } => match fault {
-                ShellNestingFault::NoShells => f.write_str("solid with no shell"),
-                ShellNestingFault::NoOuter => f.write_str("no outer shell"),
-                ShellNestingFault::MultipleOuter { shells } => {
-                    write!(f, "several outer shells: ")?;
-                    for (i, s) in shells.iter().enumerate() {
-                        if i > 0 {
-                            f.write_str(", ")?;
-                        }
-                        write!(f, "{s}")?;
-                    }
-                    Ok(())
-                }
-                ShellNestingFault::VoidOutside { shell } => {
-                    write!(f, "void {shell} is not inside the outer shell")
-                }
-                ShellNestingFault::InsideOut { shell } => {
-                    write!(f, "{shell}'s normals point the wrong way for its role")
-                }
-            },
+            Violation::ShellNesting { fault, .. } => write!(f, "{fault}"),
             Violation::NonPositiveVolume { volume, .. } => {
                 write!(f, "encloses volume {volume}")
             }

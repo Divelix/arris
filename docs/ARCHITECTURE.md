@@ -446,6 +446,15 @@ can never disagree about a point (ADR-0004). It lives in `check` because
 that is where B1 already was, and `ops` depends on `check`; the facade
 re-exports it.
 
+`arris_check::lumps(&model, body) -> Result<Vec<Lump>, LumpError>` is
+B1's nesting as a value (ADR-0006): each outer shell of a solid with the
+voids whose innermost container it is, in the order the body stores the
+outer shells — what the STEP writer writes a solid entity per and the
+corpus counts as `solids`. It runs B1's own code over the body and nothing
+else, so it is `Ok` exactly where B1 passes and decides, and otherwise
+names B1's first fault or its undecided rows; a body of one shell is one
+lump and casts no ray. Lumps are derived, never stored on the body.
+
 A `Full` row the kernel has no closed form for — a face pair whose
 surfaces the intersector cannot intersect, a shell no containment ray
 could be classified against — is never guessed at and never quietly

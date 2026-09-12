@@ -13,7 +13,7 @@ use arris_topo::arris_geom::{Curve, Curve2, Surface};
 use arris_topo::arris_math::{Frame, Frame2, Interval, Point2, Point3, Precision, is_negligible};
 use arris_topo::entity::{BodyKind, Coedge, Edge, EdgeGeometry, Face};
 use arris_topo::{
-    Body, Closure, CoedgeRef, EdgeId, EntityId, FaceId, Model, Orientation, VertexId,
+    Body, Closure, CoedgeRef, EdgeId, EntityId, FaceId, Model, NotFound, Orientation, VertexId,
 };
 
 use crate::report::Report;
@@ -40,53 +40,11 @@ use crate::violation::{
 /// assert!(check(&m, body, Level::Fast).is_ok());
 /// ```
 pub fn check(model: &Model, body: Body, level: Level) -> Report {
-    let Ok(closure) = model.closure(body) else {
+    let Ok(mut c) = Checker::new(model, body) else {
         return Report::new(vec![Violation::Unresolved {
             from: body.id.into(),
             to: Reference::Entity(body.id.into()),
         }]);
-    };
-    // Adjacency is read off the closure's own entities, not the arena's
-    // indices, so every row stands on its own and M2 is the only row that
-    // says anything about the indices.
-    let mut uses: BTreeMap<EdgeId, Vec<(CoedgeRef, Coedge)>> = BTreeMap::new();
-    for &face_id in &closure.faces {
-        let Ok(face) = model.face(face_id) else {
-            continue;
-        };
-        for (loop_index, coedge_index, coedge) in coedges(face) {
-            uses.entry(coedge.edge()).or_default().push((
-                CoedgeRef {
-                    face: face_id,
-                    loop_index,
-                    coedge_index,
-                },
-                coedge,
-            ));
-        }
-    }
-    let mut vertex_edges: BTreeMap<VertexId, Vec<EdgeId>> = BTreeMap::new();
-    for &edge_id in &closure.edges {
-        let Ok(edge) = model.edge(edge_id) else {
-            continue;
-        };
-        for v in [edge.start(), edge.end()] {
-            let list = vertex_edges.entry(v).or_default();
-            if list.last() != Some(&edge_id) {
-                list.push(edge_id);
-            }
-        }
-    }
-    let mut c = Checker {
-        model,
-        precision: model.precision(),
-        body,
-        closure,
-        uses,
-        vertex_edges,
-        violations: Vec::new(),
-        faces_fine: BTreeMap::new(),
-        unchecked: Vec::new(),
     };
     c.references();
     c.indices();
@@ -126,6 +84,57 @@ pub(crate) struct Checker<'m> {
     pub(crate) faces_fine: BTreeMap<FaceId, Vec<arris_topo::arris_geom::region2::Polygon2>>,
     /// The `Full` rows this body could not be decided on.
     pub(crate) unchecked: Vec<Unchecked>,
+}
+
+impl<'m> Checker<'m> {
+    /// A checker over `body`'s closure with no row run yet: what [`check`]
+    /// runs the rows on and `crate::lumps` runs B1's nesting on. Errors:
+    /// the body handle does not resolve.
+    pub(crate) fn new(model: &'m Model, body: Body) -> Result<Self, NotFound> {
+        let closure = model.closure(body)?;
+        // Adjacency is read off the closure's own entities, not the arena's
+        // indices, so every row stands on its own and M2 is the only row
+        // that says anything about the indices.
+        let mut uses: BTreeMap<EdgeId, Vec<(CoedgeRef, Coedge)>> = BTreeMap::new();
+        for &face_id in &closure.faces {
+            let Ok(face) = model.face(face_id) else {
+                continue;
+            };
+            for (loop_index, coedge_index, coedge) in coedges(face) {
+                uses.entry(coedge.edge()).or_default().push((
+                    CoedgeRef {
+                        face: face_id,
+                        loop_index,
+                        coedge_index,
+                    },
+                    coedge,
+                ));
+            }
+        }
+        let mut vertex_edges: BTreeMap<VertexId, Vec<EdgeId>> = BTreeMap::new();
+        for &edge_id in &closure.edges {
+            let Ok(edge) = model.edge(edge_id) else {
+                continue;
+            };
+            for v in [edge.start(), edge.end()] {
+                let list = vertex_edges.entry(v).or_default();
+                if list.last() != Some(&edge_id) {
+                    list.push(edge_id);
+                }
+            }
+        }
+        Ok(Checker {
+            model,
+            precision: model.precision(),
+            body,
+            closure,
+            uses,
+            vertex_edges,
+            violations: Vec::new(),
+            faces_fine: BTreeMap::new(),
+            unchecked: Vec::new(),
+        })
+    }
 }
 
 /// `(face, loop index, coedge index, coedge)` for every coedge of a face.

@@ -15,6 +15,7 @@
 mod check;
 pub mod classify;
 mod full;
+mod lumps;
 mod report;
 mod topology;
 mod unchecked;
@@ -24,6 +25,7 @@ pub use arris_topo;
 
 pub use check::check;
 pub use classify::{Classification, ClassifyError, classify_point};
+pub use lumps::{Lump, LumpError, lumps};
 pub use report::{EulerLine, Report};
 pub use unchecked::Unchecked;
 pub use violation::{

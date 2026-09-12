@@ -3,7 +3,9 @@
 //! `Full`, and a pair the geometry kernel has no closed form for landing
 //! under `Report::unchecked` rather than passing or failing.
 
-use arris_check::{Level, Report, ShellNestingFault, Unchecked, Violation, check};
+use arris_check::{
+    Level, Lump, LumpError, Report, ShellNestingFault, Unchecked, Violation, check, lumps,
+};
 use arris_debug::sample;
 use arris_topo::arris_geom::{Curve, Curve2, NurbsCurve, Surface, SurfaceKind};
 use arris_topo::arris_math::{Frame, Interval, Point2, Point3, UnitVec2, UnitVec3, Vec2, Vec3};
@@ -433,32 +435,186 @@ fn the_gauss_volume_of_a_clean_solid_is_its_volume() {
     }
 }
 
-/// B1: two shells that both enclose positive volume, so neither is the
-/// void of the other.
-#[test]
-fn b1_two_outer_shells() {
-    let mut m = Model::default();
-    let near = sample::cuboid(&mut m, Point3::origin(), Point3::new(10.0, 10.0, 10.0)).unwrap();
-    let far = sample::cuboid(
-        &mut m,
-        Point3::new(100.0, 100.0, 100.0),
-        Point3::new(110.0, 110.0, 110.0),
+/// The shell of a sample cuboid from `min` to `max`, its normals out of
+/// it (`void` false) or turned into it (`void` true).
+fn cuboid_shell(m: &mut Model, min: [f64; 3], max: [f64; 3], void: bool) -> ShellId {
+    let body = sample::cuboid(
+        m,
+        Point3::new(min[0], min[1], min[2]),
+        Point3::new(max[0], max[1], max[2]),
     )
     .unwrap();
-    let shells: Vec<ShellId> = [near, far]
-        .iter()
-        .map(|&b| m.shells(b).unwrap()[0].id)
-        .collect();
-    let body = solid_of(&mut m, shells.clone());
+    if void {
+        inverted_shell(m, body)
+    } else {
+        m.shells(body).unwrap()[0].id
+    }
+}
+
+/// The B1 line of `report`, the only line it has.
+fn only_nesting_fault(report: &Report) -> ShellNestingFault {
+    let [Violation::ShellNesting { fault, .. }] = report.violations() else {
+        panic!("{report}")
+    };
+    fault.clone()
+}
+
+/// B1: two shells enclosing positive volume apart from each other are two
+/// lumps of one solid (ADR-0006), each with no void.
+#[test]
+fn b1_two_disjoint_outer_shells_are_two_lumps() {
+    let mut m = Model::default();
+    let near = cuboid_shell(&mut m, [0.0; 3], [10.0; 3], false);
+    let far = cuboid_shell(&mut m, [100.0; 3], [110.0; 3], false);
+    let body = solid_of(&mut m, vec![near, far]);
     let report = check(&m, body, Level::Full);
-    assert_lines(&report, &[("B1", body.id.to_string())]);
+    assert!(report.is_ok(), "{report}");
+    assert!(report.unchecked().is_empty(), "{report}");
     assert_eq!(
-        report.violations()[0],
-        Violation::ShellNesting {
-            body: body.id,
-            fault: ShellNestingFault::MultipleOuter { shells },
+        lumps(&m, body).unwrap(),
+        [
+            Lump {
+                outer: ShellHandle::forward(near),
+                voids: Vec::new(),
+            },
+            Lump {
+                outer: ShellHandle::forward(far),
+                voids: Vec::new(),
+            },
+        ]
+    );
+}
+
+/// B1: two outer shells that overlap — the faces of one cross the faces
+/// of the other — are no lumps, whichever vertex each would be placed by.
+#[test]
+fn b1_two_overlapping_outer_shells_meet() {
+    let mut m = Model::default();
+    let a = cuboid_shell(&mut m, [0.0; 3], [10.0; 3], false);
+    let b = cuboid_shell(&mut m, [5.0; 3], [15.0; 3], false);
+    let body = solid_of(&mut m, vec![a, b]);
+    let report = check(&m, body, Level::Full);
+    assert_eq!(
+        only_nesting_fault(&report),
+        ShellNestingFault::Overlap { shells: [a, b] }
+    );
+    assert!(matches!(
+        lumps(&m, body),
+        Err(LumpError::Nesting {
+            fault: ShellNestingFault::Overlap { .. },
+            ..
+        })
+    ));
+}
+
+/// B1: a hollow box — an outer shell with a void inside it — and a box
+/// sitting in the cavity, clear of its walls, are two lumps: the hollow
+/// box with its void, and the box inside, whose innermost container is
+/// the void.
+#[test]
+fn b1_a_box_in_the_cavity_of_a_hollow_box_is_two_lumps() {
+    let mut m = Model::default();
+    let outer = cuboid_shell(&mut m, [0.0; 3], [10.0; 3], false);
+    let void = cuboid_shell(&mut m, [2.0; 3], [8.0; 3], true);
+    let inside = cuboid_shell(&mut m, [4.0; 3], [6.0; 3], false);
+    let body = solid_of(&mut m, vec![outer, void, inside]);
+    let report = check(&m, body, Level::Full);
+    assert!(report.is_ok(), "{report}");
+    assert!(report.unchecked().is_empty(), "{report}");
+    assert_eq!(
+        lumps(&m, body).unwrap(),
+        [
+            Lump {
+                outer: ShellHandle::forward(outer),
+                voids: vec![ShellHandle::forward(void)],
+            },
+            Lump {
+                outer: ShellHandle::forward(inside),
+                voids: Vec::new(),
+            },
+        ]
+    );
+}
+
+/// B1: a void whose innermost container is another void — a cavity
+/// inside a cavity with no material between — is no lump's.
+#[test]
+fn b1_a_void_inside_a_void() {
+    let mut m = Model::default();
+    let outer = cuboid_shell(&mut m, [0.0; 3], [10.0; 3], false);
+    let void = cuboid_shell(&mut m, [1.0; 3], [9.0; 3], true);
+    let inner = cuboid_shell(&mut m, [3.0; 3], [7.0; 3], true);
+    let body = solid_of(&mut m, vec![outer, void, inner]);
+    assert_eq!(
+        only_nesting_fault(&check(&m, body, Level::Full)),
+        ShellNestingFault::VoidInVoid {
+            shell: inner,
+            container: void,
         }
     );
+}
+
+/// B1: an outer shell whose innermost container is another outer shell —
+/// material inside material with no cavity between.
+#[test]
+fn b1_an_outer_shell_inside_another() {
+    let mut m = Model::default();
+    let big = cuboid_shell(&mut m, [0.0; 3], [10.0; 3], false);
+    let small = cuboid_shell(&mut m, [3.0; 3], [7.0; 3], false);
+    let body = solid_of(&mut m, vec![big, small]);
+    assert_eq!(
+        only_nesting_fault(&check(&m, body, Level::Full)),
+        ShellNestingFault::OuterInOuter {
+            shell: small,
+            container: big,
+        }
+    );
+}
+
+/// B1: a void inside the B-spline probe box. No ray has a closed form
+/// against its NURBS face, so where the void lies is not known: an
+/// unchecked row, never a pass and never a violation, and `lumps` says
+/// the same.
+#[test]
+fn b1_a_shell_no_ray_classifies_is_unchecked() {
+    let mut m = Model::default();
+    let probe =
+        sample::cuboid_nurbs(&mut m, Point3::origin(), Point3::new(40.0, 30.0, 10.0)).unwrap();
+    let outer = m.shells(probe).unwrap()[0].id;
+    let void = cuboid_shell(&mut m, [10.0, 10.0, 2.0], [20.0, 20.0, 8.0], true);
+    let body = solid_of(&mut m, vec![outer, void]);
+    let report = check(&m, body, Level::Full);
+    assert!(report.is_ok(), "{report}");
+    assert!(
+        report.unchecked().iter().any(|u| u.code() == "B1"),
+        "{report}"
+    );
+    assert!(matches!(lumps(&m, body), Err(LumpError::Undecided { .. })));
+}
+
+/// `lumps` of what is not a solid, and of a solid B1 faults, is the
+/// reason.
+#[test]
+fn lumps_of_a_sheet_and_of_a_hollow_solid_turned_inside_out() {
+    let mut m = Model::default();
+    let (sheet, _) = plate(&mut m, &[p2(0.0, 0.0), p2(1.0, 0.0), p2(1.0, 1.0)]);
+    assert!(matches!(
+        lumps(&m, sheet),
+        Err(LumpError::NotSolid {
+            kind: BodyKind::Sheet,
+            ..
+        })
+    ));
+    let c = sample::cylinder(&mut m, 4.0, 12.0).unwrap();
+    let inverted = inverted_shell(&mut m, c);
+    let body = solid_of(&mut m, vec![inverted]);
+    assert!(matches!(
+        lumps(&m, body),
+        Err(LumpError::Nesting {
+            fault: ShellNestingFault::NoOuter,
+            ..
+        })
+    ));
 }
 
 /// B1: an inward-facing shell is a void, but only where it is inside the

@@ -87,7 +87,7 @@ bound has to be established here.
   the Euler line over several shells; every caller moved to one-element
   `shells`. Tests: two boxes' faces kept into one body of two shells; an
   edge shared by two shells is `BuildError`; counts `16/24/12/12/2`.
-- [ ] Step 2 **[2]** — B1 over lumps and `arris_check::lumps`. Checker
+- [x] Step 2 **[2]** — B1 over lumps and `arris_check::lumps`. Checker
   tests, each built through the raw insert and named: two disjoint boxes
   pass; a void outside every outer shell; two overlapping outer shells; a
   box inside the cavity of a hollow box passes (two lumps, one of them
@@ -151,6 +151,14 @@ naming `multi-shell`.
 - `⚠ OPEN 2:` two lumps meeting at a single vertex: `NonManifold`
   (preferred, what a manifold `Solid` promises) or allowed — agent, step 5,
   checked against what Open CASCADE's `BRepCheck` says of the same shape.
-- `⚠ OPEN 3:` lumps derived by B1 and `lumps()` (preferred: no entity or
-  format change) versus stored on `Body` — agent, step 2; storing becomes
-  worth it only if `lumps()` shows up as a cost.
+- ~~`⚠ OPEN 3:`~~ lumps derived by B1 and `lumps()` (preferred: no entity
+  or format change) versus stored on `Body` — agent, step 2; storing
+  becomes worth it only if `lumps()` shows up as a cost. **Decided at
+  step 2: derived.** `lumps()` is B1's own code over the body; a body of
+  one shell integrates its volume and casts no ray, so every fixture of
+  C1 pays one Gauss integral per STEP write. Found at step 2: B1 needs
+  a meeting test between shells (S5's face-pair test, nothing shared)
+  before one vertex can decide containment, and a pair with no closed
+  form is `Unchecked::ShellFacePair`; `ShellNestingFault::MultipleOuter`
+  gives way to `VoidInVoid`, `OuterInOuter` and `Overlap` (**public enum
+  changes**), and `Lump`, `LumpError`, `lumps` are new.
