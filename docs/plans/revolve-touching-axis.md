@@ -135,7 +135,7 @@ bound has to be established here.
   `default` `11π`, 2 shells and 1 solid; `quarter` one shell), every
   corpus stage. Revolve tests: a pinch full turn refused and its partial
   turn built; two notches on one loop are two voids with two names.
-- [ ] Step 5 **[2]** — the property tests touch the axis: `rectilinear`
+- [x] Step 5 **[2]** — the property tests touch the axis: `rectilinear`
   and `general` draw touching profiles, and the revolve Pappus shards hold
   volume, area, the checker and the provenance accounting over them at
   the configured case count, full and partial turns alike.

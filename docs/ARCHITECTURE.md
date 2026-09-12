@@ -710,8 +710,11 @@ mesh-based mass properties (`ops::measure` integrates the B-Rep).
   clamped NURBS curves and surfaces under `prop::geom`; sketches under
   `prop::profile` — `star`, a polygon with arcs and holes in either
   orientation; `rectilinear`, a staircase of segments parallel and
-  perpendicular to an axis beside it, and `general`, a convex polygon
-  beside an axis whose segments sweep cones both ways, spheres and tori,
+  perpendicular to an axis beside it or, half the time, reaching it —
+  sides along the axis and notches cut in from it — and `general`, a
+  convex polygon beside an axis or, one time in three, with a side along
+  it, the chords beside that side closing at a cone's apex or a sphere's
+  pole, whose segments sweep cones both ways, spheres and tori,
   the last two each given as a `Sweep` with the axis, a revolve angle and an extrude
   length; and `prop::sweep`, Pappus's
   theorems as the oracle a sweep's volume and area are held to, taken

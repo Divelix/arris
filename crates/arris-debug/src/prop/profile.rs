@@ -1,8 +1,8 @@
 //! Strategies for random sketches: a star polygon with arcs and holes in
 //! a random plane pose, in either orientation; a rectilinear staircase
-//! beside an axis with the sweep parameters that go with it; and a
-//! general profile beside an axis whose segments sweep every surface
-//! kind.
+//! beside an axis or reaching it, with the sweep parameters that go with
+//! it; and a general profile beside an axis or with a side along it, whose
+//! segments sweep every surface kind.
 //!
 //! Every profile a strategy here produces is a *valid* one —
 //! `Profile::edges` accepts it — so a property over sweeps never has to
@@ -192,14 +192,15 @@ fn distance_to_segment(p: Point2, a: Point2, b: Point2) -> f64 {
 }
 
 /// A profile with the parameters of the sweeps it is drawn for: an axis
-/// in its plane at a positive distance from every loop, a revolve angle
-/// in `(0, 2π]` and an extrude length. What [`rectilinear`] and
+/// in its plane, clear of every loop or touching the outer one, a revolve
+/// angle in `(0, 2π]` and an extrude length. What [`rectilinear`] and
 /// [`general`] yield and what a sweep property test builds a body from.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Sweep {
     /// The sketch.
     pub profile: Profile,
-    /// The revolve axis: in the profile's plane, clear of the profile.
+    /// The revolve axis: in the profile's plane, clear of the profile or
+    /// touching its outer loop, never crossing it.
     pub axis: Axis,
     /// The revolve angle in radians, `2π` for a full turn.
     pub angle: f64,
@@ -210,8 +211,9 @@ pub struct Sweep {
 /// The number of bars of a [`rectilinear`] staircase.
 pub const STAIRCASE_BARS: RangeInclusive<usize> = 2..=5;
 
-/// The distance of a [`rectilinear`] staircase's inner side from the
-/// axis: at least one, so the smallest radius any face has is one.
+/// The distance of a [`rectilinear`] staircase's inner sides from the
+/// axis, where they are not on it: at least one, so the smallest radius a
+/// cylinder face has is one.
 pub const STAIRCASE_CLEARANCE: RangeInclusive<f64> = 1.0..=3.0;
 
 /// How far the bars of a staircase reach beyond its inner side, at most.
@@ -238,16 +240,18 @@ fn angle() -> impl Strategy<Value = f64> {
 /// The raw draw of [`rectilinear`].
 type StaircaseDraw = (
     (Frame, f64, f64, f64, bool),
-    (f64, usize, Vec<f64>, Vec<f64>, Vec<f64>),
+    (f64, usize, Vec<f64>, Vec<f64>, Vec<f64>, Vec<bool>, bool),
     (bool, bool, f64, f64),
 );
 
 /// A staircase polygon beside an axis, both in a random plane pose: a
 /// histogram of `STAIRCASE_BARS` bars stacked along the axis, every
-/// segment parallel or perpendicular to it, the inner side at
-/// `STAIRCASE_CLEARANCE` from the axis and the bars' outer sides at
-/// distinct radii in a random order, with — half the time — a
-/// rectangular hole inside the first bar; the axis in a random in-plane
+/// segment parallel or perpendicular to it, each bar's inner side at
+/// `STAIRCASE_CLEARANCE` from the axis — or, half the time, some of them
+/// (at least one) on it, so a side lies along the axis and a bar clear of
+/// it between two on it is a notch cut in from the axis — and the bars'
+/// outer sides at distinct radii in a random order, with — half the time
+/// — a rectangular hole inside the first bar; the axis in a random in-plane
 /// direction through a random point, the profile on either side of it,
 /// every loop written in either orientation. A revolve of it makes
 /// planes and cylinders only, every pair of which the checker's S5 row
@@ -269,6 +273,8 @@ pub fn rectilinear() -> impl Strategy<Value = Sweep> {
             proptest::collection::vec(finite_f64(BAR_JITTER), bars),
             proptest::collection::vec(finite_f64(BAR_HEIGHT), bars),
             proptest::collection::vec(finite_f64(0.0..=1.0), bars),
+            proptest::collection::vec(any::<bool>(), bars),
+            any::<bool>(),
         ),
         (
             any::<bool>(),
@@ -283,7 +289,7 @@ pub fn rectilinear() -> impl Strategy<Value = Sweep> {
 fn build_staircase(
     (
         (plane, beta, au, av, left),
-        (clearance, bars, jitter, heights, keys),
+        (clearance, bars, jitter, heights, keys, on_axis, touch),
         (hole, flipped, angle, length),
     ): StaircaseDraw,
 ) -> Sweep {
@@ -294,7 +300,23 @@ fn build_staircase(
     let origin = Point2::new(au, av);
     let at = |rho: f64, t: f64| origin + t * along + rho * radial;
     // The bars' outer radii: distinct by construction, in a random order.
-    let n = bars.min(jitter.len()).min(heights.len()).min(keys.len());
+    let n = bars
+        .min(jitter.len())
+        .min(heights.len())
+        .min(keys.len())
+        .min(on_axis.len());
+    // Each bar's inner radius: the clearance, or on the axis where the
+    // draw touches it — the first bar when the draw names none.
+    let named = on_axis.iter().take(n).any(|&b| b);
+    let inner: Vec<f64> = (0..n)
+        .map(|k| {
+            if touch && (on_axis[k] || (!named && k == 0)) {
+                0.0
+            } else {
+                clearance
+            }
+        })
+        .collect();
     let mut levels: Vec<(f64, f64)> = (0..n)
         .map(|k| {
             let share = STAIRCASE_REACH / n as f64;
@@ -307,20 +329,28 @@ fn build_staircase(
     for k in 0..n {
         t.push(t[k] + heights[k]);
     }
-    // The histogram: up the inner side is the closing segment.
-    let mut points = vec![at(clearance, t[0])];
+    // The histogram: up the outer sides, then down the inner sides with a
+    // step wherever two bars' inner sides differ; down the first bar's
+    // inner side is the closing segment.
+    let mut points = vec![at(inner[0], t[0])];
     for k in 0..n {
         points.push(at(rho[k], t[k]));
         points.push(at(rho[k], t[k + 1]));
     }
-    points.push(at(clearance, t[n]));
+    points.push(at(inner[n - 1], t[n]));
+    for k in (1..n).rev() {
+        if inner[k] != inner[k - 1] {
+            points.push(at(inner[k], t[k]));
+            points.push(at(inner[k - 1], t[k]));
+        }
+    }
     let no_arcs = vec![None; points.len()];
     let outer = path_loop(&points, &no_arcs, flipped);
     let holes = if hole {
         // A rectangle in the middle of the first bar.
         let (ra, rb) = (
-            clearance + 0.25 * (rho[0] - clearance),
-            clearance + 0.75 * (rho[0] - clearance),
+            inner[0] + 0.25 * (rho[0] - inner[0]),
+            inner[0] + 0.75 * (rho[0] - inner[0]),
         );
         let (ta, tb) = (t[0] + 0.25 * heights[0], t[0] + 0.75 * heights[0]);
         let corners = [at(ra, ta), at(rb, ta), at(rb, tb), at(ra, tb)];
@@ -384,11 +414,15 @@ pub const AXIS_DISTANCE: RangeInclusive<f64> = 30.0..=40.0;
 /// to the model's tolerance, so the segment stays a line instead.
 pub const SPHERE_MIN_SLOPE: f64 = 0.5;
 
+/// How clear of the axis a [`general`] profile with a side along it keeps
+/// a torus arc's circle: a chord whose arc would come nearer stays a line.
+pub const TORUS_CLEARANCE: f64 = 1.0;
+
 /// The raw draw of [`general`].
 type GeneralDraw = (
-    (Frame, f64, f64, bool),
+    (Frame, f64, f64, bool, bool),
     (f64, Vec<f64>, Vec<Sweeps>),
-    (usize, Vec<bool>, f64, f64),
+    (usize, Vec<bool>, f64, f64, usize),
 );
 
 /// A profile beside an axis whose segments sweep every surface kind, both
@@ -401,9 +435,15 @@ type GeneralDraw = (
 /// the distance's bound) or by the arc centred on the axis through its
 /// ends (a sphere; a line where the chord is within [`SPHERE_MIN_SLOPE`]
 /// of perpendicular to the axis), with zero, one or two holes as
-/// [`star`] draws them and every loop written in either orientation. The
-/// angle is a full turn one time in four, otherwise partial and clear of
-/// both ends of `(0, 2π)`; the extrude length is random.
+/// [`star`] draws them and every loop written in either orientation. One
+/// time in three the axis runs instead through one side of the polygon,
+/// which then lies along it: the two chords beside that side close at the
+/// axis, a line as a cone's apex and an arc centred on the axis as a
+/// sphere's pole (a torus arc there is drawn as a line), no other chord
+/// takes a sphere arc, and a torus arc whose circle would come within
+/// [`TORUS_CLEARANCE`] of the axis is a line. The angle is a full turn one
+/// time in four, otherwise partial and clear of both ends of `(0, 2π)`;
+/// the extrude length is random.
 ///
 /// The polygon is convex, unlike [`star`]'s, because the torus arcs are
 /// deep: two outward arcs meeting at a notch would cross. On a convex
@@ -415,7 +455,10 @@ type GeneralDraw = (
 /// is the foot of the vertex on the third side). A sphere arc is shallow
 /// — its radius is at least the profile's distance from the axis — and
 /// bulges away from the axis, inward on the axis side of the polygon,
-/// where the holes' disc is shrunk by its sagitta.
+/// where the holes' disc is shrunk by its sagitta. With a side along the
+/// axis a pole's arc leaves the axis square to it, into the polygon, and
+/// turns by less than the convex corner at its other end leaves room for,
+/// which is why no other chord may bulge inward too.
 pub fn general() -> impl Strategy<Value = Sweep> {
     let vertices = GENERAL_VERTICES;
     let kind = prop_oneof![
@@ -429,6 +472,7 @@ pub fn general() -> impl Strategy<Value = Sweep> {
             finite_f64(0.0..=TAU),
             finite_f64(-5.0..=5.0),
             any::<bool>(),
+            proptest::bool::weighted(1.0 / 3.0),
         ),
         (
             finite_f64(AXIS_DISTANCE),
@@ -440,22 +484,21 @@ pub fn general() -> impl Strategy<Value = Sweep> {
             proptest::collection::vec(any::<bool>(), 2),
             angle(),
             finite_f64(1.0..=10.0),
+            0usize..*GENERAL_VERTICES.end(),
         ),
     )
         .prop_map(build_general)
 }
 
 fn build_general(
-    ((plane, beta, slide, left), (distance, jitter, kinds), (holes, flipped, angle, length)): GeneralDraw,
+    (
+        (plane, beta, slide, left, touch),
+        (distance, jitter, kinds),
+        (holes, flipped, angle, length, side),
+    ): GeneralDraw,
 ) -> Sweep {
     let n = jitter.len().min(kinds.len());
     let centre = Point2::origin();
-    let along = Vec2::new(beta.cos(), beta.sin());
-    let left_normal = Vec2::new(-along.y, along.x);
-    let radial = if left { left_normal } else { -left_normal };
-    // The axis `distance` from the centre, the profile on its `radial` side.
-    let axis_origin = centre - distance * radial + slide * along;
-    let rho = |p: Point2| (p - axis_origin).dot(&radial);
     let share = TAU / n as f64;
     let points: Vec<Point2> = (0..n)
         .map(|k| {
@@ -463,20 +506,53 @@ fn build_general(
             Point2::new(PROFILE_RADIUS * a.cos(), PROFILE_RADIUS * a.sin())
         })
         .collect();
+    // The side along the axis, when the draw touches it.
+    let touching = touch.then_some(side % n);
+    let (axis_origin, along, radial) = match touching {
+        Some(s) => {
+            // The polygon runs counter-clockwise, so it lies on the left of
+            // its side `s`, whichever way the axis runs along that side.
+            let d = (points[(s + 1) % n] - points[s]).normalize();
+            let along = if left { d } else { -d };
+            (points[s], along, Vec2::new(-d.y, d.x))
+        }
+        None => {
+            let along = Vec2::new(beta.cos(), beta.sin());
+            let left_normal = Vec2::new(-along.y, along.x);
+            let radial = if left { left_normal } else { -left_normal };
+            // The axis `distance` from the centre, the profile on its
+            // `radial` side.
+            (centre - distance * radial + slide * along, along, radial)
+        }
+    };
+    let rho = |p: Point2| (p - axis_origin).dot(&radial);
+    // Whether chord `k` has an end on the side along the axis.
+    let beside = |k: usize| touching.is_some_and(|s| k == (s + 1) % n || (k + 1) % n == s);
     let vias: Vec<Option<Point2>> = (0..n)
         .map(|k| {
             let (a, b) = (points[k], points[(k + 1) % n]);
             let chord = b - a;
             let mid = a + chord / 2.0;
+            if touching == Some(k) {
+                return None;
+            }
             match kinds[k] {
                 Sweeps::Line => None,
                 Sweeps::Torus(fraction) => {
                     let outward = (mid - centre).normalize();
-                    Some(mid + fraction * chord.norm() * outward)
+                    let via = mid + fraction * chord.norm() * outward;
+                    // The arc's circle, its centre `radius` back from the
+                    // via along the chord's bisector.
+                    let (half, sagitta) = (chord.norm() / 2.0, fraction * chord.norm());
+                    let radius = (half * half + sagitta * sagitta) / (2.0 * sagitta);
+                    let clear = rho(via - radius * outward) - radius;
+                    let near = touching.is_some() && (beside(k) || clear < TORUS_CLEARANCE);
+                    (!near).then_some(via)
                 }
                 Sweeps::Sphere => {
                     let g = chord.normalize();
-                    if g.dot(&along).abs() < SPHERE_MIN_SLOPE {
+                    if g.dot(&along).abs() < SPHERE_MIN_SLOPE || (touching.is_some() && !beside(k))
+                    {
                         return None;
                     }
                     // The chord's bisector meets the axis where ρ vanishes.

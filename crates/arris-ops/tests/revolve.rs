@@ -1,5 +1,6 @@
-//! `ops::revolve` (`docs/plans/m5-sweeps.md` steps 3 and 4): a thousand
-//! rectilinear staircases beside an axis in random poses — the checker
+//! `ops::revolve` (`docs/plans/m5-sweeps.md` steps 3 and 4,
+//! `docs/plans/revolve-touching-axis.md`): a thousand rectilinear
+//! staircases beside an axis or reaching it in random poses — the checker
 //! at `Full` with nothing violated and nothing unchecked, volume and
 //! area to Pappus's theorems, the mesh closed and within its chord of
 //! the exact volume, one `Generated` per entity and every part of the
@@ -22,10 +23,10 @@ use arris_debug::{corpus, dump_text, euler_line, fixtures, oracle, prop, prop_sh
 use arris_io::step;
 use arris_mesh::tessellate;
 use arris_ops::arris_check::arris_topo::arris_geom::{
-    Profile, ProfileError, ProfileLoop, ProfileSegment, Surface, SurfaceKind,
+    Curve2, Profile, ProfileEdge, ProfileError, ProfileLoop, ProfileSegment, Surface, SurfaceKind,
 };
 use arris_ops::arris_check::arris_topo::arris_math::{
-    Axis, Frame, Point2, Point3, Tolerance, Vec3,
+    Axis, Frame, Point2, Point3, Tolerance, Vec2, Vec3,
 };
 use arris_ops::arris_check::arris_topo::provenance::SweepPart;
 use arris_ops::arris_check::arris_topo::{
@@ -111,57 +112,131 @@ fn recorded_parts(
     Ok(parts)
 }
 
+/// A chain of a loop's segments off the axis, as the sketch alone gives
+/// it: the loop, the lowest segment, and where along the axis its first
+/// and last vertices lie (`None` for a loop never along the axis).
+type ChainOf = (usize, usize, Option<(f64, f64)>);
+
 /// The parts a revolve of `sweep` makes, from the sketch alone: the
-/// vertex indices by the segment that starts there, no `StartEdge` for a
-/// segment perpendicular to the axis in a full turn, no end parts in a
-/// full turn, and a `Cavity` per hole in a full turn.
+/// vertex indices by the segment that starts there; no end parts in a
+/// full turn, and no `StartEdge` there for a segment perpendicular to the
+/// axis; for a segment along the axis nothing but, in a partial turn, its
+/// `StartEdge`; for a vertex on the axis no `EndVertex`, a `Rise` only
+/// where a cone or a sphere closes there on a degenerate edge, and in a
+/// full turn a `StartVertex` only then too; and in a full turn a `Cavity`
+/// for every chain of segments off the axis but the one whose ends span
+/// the others, named by its loop and lowest segment.
 fn expected_parts(sweep: &Sweep, tol: Tolerance) -> BTreeSet<SweepPart> {
     let full = (sweep.angle - TAU).abs() <= tol.angular;
-    let a = sweep
-        .profile
-        .plane
-        .vec_to_local(sweep.axis.direction.into_inner());
-    let along = Point2::new(a.x, a.y).coords.normalize();
+    let plane = &sweep.profile.plane;
+    let a = plane.vec_to_local(sweep.axis.direction.into_inner());
+    let along = Vec2::new(a.x, a.y).normalize();
+    let o = plane.to_local(sweep.axis.origin);
+    let origin = Point2::new(o.x, o.y);
+    let rho = |p: Point2| (p - origin).dot(&Vec2::new(-along.y, along.x));
+    let t = |p: Point2| (p - origin).dot(&along);
+    let on_axis = |p: Point2| rho(p).abs() <= tol.linear;
+    let perpendicular =
+        |e: &ProfileEdge| (e.end - e.start).normalize().dot(&along).abs() <= tol.angular;
+    let is_along = |e: &ProfileEdge| {
+        matches!(e.pcurve, Curve2::Line { .. }) && on_axis(e.start) && on_axis(e.end)
+    };
+    // A segment with an end on the axis closes there on a degenerate edge
+    // unless it is a plane: an arc there sweeps a sphere, an oblique line a
+    // cone.
+    let closes = |e: &ProfileEdge| {
+        !is_along(e) && (matches!(e.pcurve, Curve2::Circle { .. }) || !perpendicular(e))
+    };
+
     let mut parts = BTreeSet::from([SweepPart::Body, SweepPart::Shell]);
     if !full {
         parts.insert(SweepPart::StartCap);
         parts.insert(SweepPart::EndCap);
     }
+    let mut chains: Vec<ChainOf> = Vec::new();
     for edges in sweep.profile.edges(tol).unwrap() {
-        if let Some(first) = edges.first().filter(|e| full && e.loop_index > 0) {
-            parts.insert(SweepPart::Cavity {
-                loop_index: first.loop_index,
-                segment: 0,
-            });
-        }
         let n = edges.len();
-        for e in &edges {
+        for (j, e) in edges.iter().enumerate() {
             let (loop_index, segment) = (e.loop_index, e.segment);
             let vertex = if e.reversed {
                 (segment + 1) % n
             } else {
                 segment
             };
-            let g = (e.end - e.start).normalize();
-            let perpendicular = g.dot(&along).abs() <= tol.angular;
-            parts.insert(SweepPart::Side {
-                loop_index,
-                segment,
-            });
-            parts.insert(SweepPart::Rise { loop_index, vertex });
-            parts.insert(SweepPart::StartVertex { loop_index, vertex });
-            if !(full && perpendicular) {
+            if !is_along(e) {
+                parts.insert(SweepPart::Side {
+                    loop_index,
+                    segment,
+                });
+            }
+            if !(full && (perpendicular(e) || is_along(e))) {
                 parts.insert(SweepPart::StartEdge {
                     loop_index,
                     segment,
                 });
             }
-            if !full {
+            if !(full || is_along(e)) {
                 parts.insert(SweepPart::EndEdge {
                     loop_index,
                     segment,
                 });
-                parts.insert(SweepPart::EndVertex { loop_index, vertex });
+            }
+            let before = &edges[(j + n - 1) % n];
+            let (rise, start) = if on_axis(e.start) {
+                let singular = closes(e) || closes(before);
+                (singular, singular || !full)
+            } else {
+                if !full {
+                    parts.insert(SweepPart::EndVertex { loop_index, vertex });
+                }
+                (true, true)
+            };
+            if rise {
+                parts.insert(SweepPart::Rise { loop_index, vertex });
+            }
+            if start {
+                parts.insert(SweepPart::StartVertex { loop_index, vertex });
+            }
+        }
+        // The loop's chains, walked from just past its first segment along
+        // the axis.
+        let first = (0..n).find(|&j| is_along(&edges[j]));
+        let from = first.map_or(0, |j| j + 1);
+        let mut current: Option<usize> = None;
+        for e in edges.iter().cycle().skip(from).take(n) {
+            if is_along(e) {
+                current = None;
+                continue;
+            }
+            let c = *current.get_or_insert_with(|| {
+                chains.push((
+                    e.loop_index,
+                    e.segment,
+                    first.map(|_| (t(e.start), t(e.start))),
+                ));
+                chains.len() - 1
+            });
+            let chain = &mut chains[c];
+            chain.1 = chain.1.min(e.segment);
+            if let Some(span) = &mut chain.2 {
+                span.1 = t(e.end);
+            }
+        }
+    }
+    if full {
+        let width = |c: &ChainOf| c.2.map_or(f64::INFINITY, |(a, b)| (b - a).abs());
+        let outer = chains
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| c.0 == 0)
+            .max_by(|a, b| width(a.1).total_cmp(&width(b.1)))
+            .map(|(i, _)| i);
+        for (i, &(loop_index, segment, _)) in chains.iter().enumerate() {
+            if Some(i) != outer {
+                parts.insert(SweepPart::Cavity {
+                    loop_index,
+                    segment,
+                });
             }
         }
     }
@@ -169,7 +244,8 @@ fn expected_parts(sweep: &Sweep, tol: Tolerance) -> BTreeSet<SweepPart> {
 }
 
 /// The property every random sweep is held to: it revolves — a full turn
-/// of a profile with holes into one lump with a void per hole — is clean
+/// into one lump with a void per hole and per notch cut in from the
+/// axis — is clean
 /// at `Fast`, has no violation at `Full` and no unchecked row but those
 /// `undecidable` admits, has Pappus's volume and area, a closed mesh
 /// within its chord of the exact volume, one `Generated` per entity and
@@ -731,6 +807,80 @@ fn the_general_profile_sweeps_every_surface_kind() {
     ] {
         assert!(seen.contains(&kind), "{kind:?} never swept; seen {seen:?}");
     }
+}
+
+/// The profile strategies reach the axis, so the properties above hold
+/// over every case of `docs/plans/revolve-touching-axis.md` rather than
+/// merely admit them: over the configured cases a staircase's full turn
+/// closes a notch cut in from the axis into a void and its partial turn
+/// shares an edge on the axis between the flat ends, and a general
+/// profile's revolve closes on a degenerate edge at a cone's apex and at a
+/// sphere's pole.
+#[test]
+fn the_profile_strategies_touch_the_axis() {
+    let seen: RefCell<BTreeSet<&'static str>> = RefCell::new(BTreeSet::new());
+    prop::check(prop::profile::rectilinear(), |sweep| {
+        let mut m = Model::default();
+        let (body, p) = revolve(&mut m, &sweep.profile, sweep.axis, sweep.angle).map_err(fail)?;
+        let parts = recorded_parts(&m, body, &p)?;
+        let mut seen = seen.borrow_mut();
+        if parts
+            .iter()
+            .any(|part| matches!(part, SweepPart::Cavity { loop_index: 0, .. }))
+        {
+            seen.insert("a notch closed into a void");
+        }
+        let shared = parts.iter().any(|&part| match part {
+            SweepPart::StartEdge {
+                loop_index,
+                segment,
+            } => {
+                parts.contains(&SweepPart::StartCap)
+                    && !parts.contains(&SweepPart::EndEdge {
+                        loop_index,
+                        segment,
+                    })
+            }
+            _ => false,
+        });
+        if shared {
+            seen.insert("an edge on the axis shared by the flat ends");
+        }
+        Ok(())
+    });
+    prop::check(prop::profile::general(), |sweep| {
+        let mut m = Model::default();
+        let (body, _) = revolve(&mut m, &sweep.profile, sweep.axis, sweep.angle).map_err(fail)?;
+        for f in m.faces(body).map_err(fail)? {
+            let face = m.face(f.id).map_err(fail)?;
+            let degenerate = face
+                .loops()
+                .iter()
+                .flat_map(|l| l.coedges())
+                .any(|c| m.edge(c.edge()).is_ok_and(|e| e.is_degenerate()));
+            if degenerate {
+                let kind = m.surface(face.surface()).map_err(fail)?.kind();
+                seen.borrow_mut().insert(if kind == SurfaceKind::Cone {
+                    "a cone's apex"
+                } else if kind == SurfaceKind::Sphere {
+                    "a sphere's pole"
+                } else {
+                    "a degenerate edge on another surface"
+                });
+            }
+        }
+        Ok(())
+    });
+    let seen = seen.into_inner();
+    assert_eq!(
+        seen,
+        BTreeSet::from([
+            "a notch closed into a void",
+            "an edge on the axis shared by the flat ends",
+            "a cone's apex",
+            "a sphere's pole",
+        ])
+    );
 }
 
 /// The recipe of a profile in the `xz` plane revolved `angle_deg` about
