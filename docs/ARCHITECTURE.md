@@ -626,14 +626,20 @@ mesh-based mass properties (`ops::measure` integrates the B-Rep).
   oracle seam (`oracle::compare`: STEP under `target/inspect/`, named
   after the fixture, and after the fixture plus a digest of its directory
   for a scratch copy of one, so two runs of a recipe never write one file;
-  then `compare.py` through `uv`, a missing environment a loud error), and
+  then `compare.py` through `uv`, a missing environment a loud error;
+  `oracle::scratch_fixture`: a test's own recipe written under
+  `target/inspect/<name>/` with its `expected.json` from `expected.py`,
+  for a body the corpus cannot run yet — the quadric-faced revolves of
+  M5 — held to the oracle's reading of its STEP all the same), and
   the seeded property-test runner and strategies (`prop`,
   with every analytic surface and curve in a random pose and random
   clamped NURBS curves and surfaces under `prop::geom`; sketches under
   `prop::profile` — `star`, a polygon with arcs and holes in either
-  orientation, and `rectilinear`, a staircase of segments parallel and
-  perpendicular to an axis beside it, given as a `Sweep` with the axis,
-  a revolve angle and an extrude length; and `prop::sweep`, Pappus's
+  orientation; `rectilinear`, a staircase of segments parallel and
+  perpendicular to an axis beside it, and `general`, a convex polygon
+  beside an axis whose segments sweep cones both ways, spheres and tori,
+  each given as a `Sweep` with the axis, a revolve angle and an extrude
+  length; and `prop::sweep`, Pappus's
   theorems as the oracle a sweep's volume and area are held to, taken
   in the profile's plane by `region_integral` and a quadrature over its
   boundary, an independent path from `measure`'s flux). `prop` runs a

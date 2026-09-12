@@ -1,10 +1,13 @@
 //! Running the Open CASCADE oracle on a STEP file Arris wrote
-//! (`tools/oracle/README.md`): the seam between a test and `compare.py`.
-//! A missing environment is a loud error naming the command that creates
-//! it, never a skip.
+//! (`tools/oracle/README.md`): the seam between a test and `compare.py`,
+//! and between a test's own recipe and `expected.py` for a body the
+//! corpus has no fixture for. A missing environment is a loud error
+//! naming the command that creates it, never a skip.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+use crate::fixtures::Recipe;
 
 /// Why the oracle did not answer, or answered no.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -17,8 +20,9 @@ pub enum OracleError {
         /// The cause.
         message: String,
     },
-    /// `uv` could not be run, or `compare.py` refused: no environment, a
-    /// stale `expected.json`, an unknown variant.
+    /// `uv` could not be run, or `compare.py` or `expected.py` refused:
+    /// no environment, a stale `expected.json`, an unknown variant, a
+    /// recipe the oracle cannot build.
     #[error(
         "the oracle could not run: {message}\nrun `uv sync --project tools/oracle` (tools/oracle/README.md)"
     )]
@@ -51,6 +55,52 @@ pub fn workspace_root() -> PathBuf {
 /// failure so the file can be looked at).
 pub fn scratch_dir() -> PathBuf {
     workspace_root().join("target/inspect")
+}
+
+/// Writes `recipe` as `target/inspect/<name>/fixture.json` and has
+/// `expected.py` write its `expected.json` beside it: a scratch fixture
+/// for a test that holds a body to the oracle's reading of its STEP
+/// through [`compare_dir`] without a fixture in the corpus — a body whose
+/// fixture the corpus cannot yet run, held to closed forms and to the
+/// oracle's volume here instead. Returns the directory. Errors:
+/// [`OracleError::Write`]; [`OracleError::Environment`] when `uv` or
+/// `expected.py` could not run or the oracle refused the recipe.
+pub fn scratch_fixture(name: &str, recipe: &Recipe) -> Result<PathBuf, OracleError> {
+    let dir = scratch_dir().join(name);
+    let file = dir.join("fixture.json");
+    let text = serde_json::to_string_pretty(recipe).map_err(|e| OracleError::Write {
+        path: file.clone(),
+        message: e.to_string(),
+    })?;
+    std::fs::create_dir_all(&dir)
+        .and_then(|()| std::fs::write(&file, text))
+        .map_err(|e| OracleError::Write {
+            path: file.clone(),
+            message: e.to_string(),
+        })?;
+    let output = Command::new("uv")
+        .current_dir(workspace_root())
+        .args([
+            "run",
+            "--project",
+            "tools/oracle",
+            "tools/oracle/expected.py",
+        ])
+        .arg(&dir)
+        .output()
+        .map_err(|e| OracleError::Environment {
+            message: format!("could not run `uv`: {e}"),
+        })?;
+    if !output.status.success() {
+        return Err(OracleError::Environment {
+            message: format!(
+                "{}{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            ),
+        });
+    }
+    Ok(dir)
 }
 
 /// Writes `step_text` as `target/inspect/<tag>.step` and runs

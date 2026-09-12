@@ -266,7 +266,7 @@ bound has to be established here.
   segment is `ProfileTouchesAxis`, one straddling it `ProfileCrossesAxis`,
   an axis tilted out of the plane `AxisNotInProfilePlane` — the model
   untouched after each.
-- [ ] Step 4 **[3]** — `ops::revolve` over cones, spheres and tori: the
+- [x] Step 4 **[3]** — `ops::revolve` over cones, spheres and tori: the
   oblique segment (both cone orientations, the `Z = −axis` case), the arc
   centred on the axis and off it, `SpindleTorus` — the arms step 3 wrote
   unexercised (Findings), proven here and fixed where the proof fails.
@@ -470,3 +470,31 @@ deltas above, not a new decision.
   (`.agents/rules/git.md`); the `planar_face` sentence is already gone.
   `arris-mesh` is a dev-dependency of `arris-ops` for the property's mesh
   check.
+- **Step 4.** The cone, sphere and torus arms held as written: nothing
+  in `swept_surface`, `place_in_domain` or the seam layout changed; the
+  step is their proof. `prop::profile::general`'s polygon is *convex*,
+  not a star: a torus arc has to be deep enough (sagitta 0.2–0.5 of the
+  chord, the centre 30–40 from the axis) for its whole circle to clear
+  the axis, and two such arcs meeting at a notch would cross; on a
+  convex polygon whose chords each subtend under a right angle the
+  half-discs on the chords stay in their sectors and meet only at the
+  shared vertices. A sphere arc is only drawn on a chord with
+  `|chord · axis| ≥ 0.5`: below that its centre runs off along the axis
+  and three points no longer place the flattening circle within the
+  model's tolerance, so the circumcentre lands off the axis and the arm
+  would refuse a spindle torus that is not there.
+- **Step 4.** A *circle loop* whose circle crosses the axis is the
+  profile crossing it, `Reason::ProfileCrossesAxis` — the loop *is* its
+  circle — so `SpindleTorus` is witnessed by an arc that stays clear
+  while its circle does not, and the design deltas' "circle loop"
+  reads as that. The unchecked-row rule is stated for S5 pairs only: a
+  revolve is one shell, so B1 never casts, and a B1 row could not name
+  a face anyway.
+- **Step 4.** `oracle::scratch_fixture(name, &Recipe)` — a recipe
+  written under `target/inspect/<name>/` with its `expected.json` from
+  `expected.py`, then `compare_dir` — is how the quadric-faced revolves
+  reach the oracle without a corpus fixture (`⚠ OPEN` 2); the widening
+  frustum is a fourth closed form beside the plan's three, so both cone
+  orientations meet the oracle. `docs/ARCHITECTURE.md` §Formats and
+  tools and `docs/DATA-MODEL.md` §Surfaces (the cone's `Z` rule) were
+  written in the step.

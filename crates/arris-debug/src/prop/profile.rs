@@ -1,6 +1,8 @@
 //! Strategies for random sketches: a star polygon with arcs and holes in
-//! a random plane pose, in either orientation, and a rectilinear
-//! staircase beside an axis with the sweep parameters that go with it.
+//! a random plane pose, in either orientation; a rectilinear staircase
+//! beside an axis with the sweep parameters that go with it; and a
+//! general profile beside an axis whose segments sweep every surface
+//! kind.
 //!
 //! Every profile a strategy here produces is a *valid* one —
 //! `Profile::edges` accepts it — so a property over sweeps never has to
@@ -11,7 +13,8 @@
 //! whose sagitta stays a small fraction of the chord, which keeps it
 //! inside the angular sector the chord spans and keeps the region
 //! star-shaped. The holes are placed inside the largest disc about the
-//! centre that the chords leave free.
+//! centre that the chords leave free. [`general`] needs deeper arcs, so
+//! its polygon is convex (see there).
 
 use core::f64::consts::TAU;
 use core::ops::RangeInclusive;
@@ -112,29 +115,36 @@ fn build((plane, vertices, arcs, holes, flipped): Draw) -> Profile {
     let free = (0..n)
         .map(|k| distance_to_segment(Point2::from(centre), points[k], points[(k + 1) % n]))
         .fold(f64::INFINITY, f64::min);
-    let outer = path_loop(&points, &vias, flipped[0]);
+    Profile {
+        plane,
+        outer: path_loop(&points, &vias, flipped[0]),
+        holes: holes_within(free, holes, flipped[1]),
+    }
+}
+
+/// Zero, one or two holes inside the disc of radius `free` about the
+/// origin: a circle to the right of the centre, then a triangle to the
+/// left, written forwards or backwards — so both `ProfileLoop` variants
+/// appear, and never within reach of each other.
+fn holes_within(free: f64, count: usize, backwards: bool) -> Vec<ProfileLoop> {
     let mut loops = Vec::new();
-    if holes >= 1 {
+    if count >= 1 {
         loops.push(ProfileLoop::Circle {
-            center: Point2::from(centre + Vec2::new(HOLE_OFFSET_FRACTION * free, 0.0)),
+            center: Point2::new(HOLE_OFFSET_FRACTION * free, 0.0),
             radius: HOLE_RADIUS_FRACTION * free,
         });
     }
-    if holes >= 2 {
-        let c = centre + Vec2::new(-HOLE_OFFSET_FRACTION * free, 0.0);
+    if count >= 2 {
+        let c = Vec2::new(-HOLE_OFFSET_FRACTION * free, 0.0);
         let r = HOLE_RADIUS_FRACTION * free;
         let corner = |i: usize| {
-            let a = core::f64::consts::TAU * i as f64 / 3.0;
+            let a = TAU * i as f64 / 3.0;
             Point2::from(c + r * Vec2::new(a.cos(), a.sin()))
         };
         let triangle: Vec<Point2> = (0..3).map(corner).collect();
-        loops.push(path_loop(&triangle, &[None, None, None], flipped[1]));
+        loops.push(path_loop(&triangle, &[None, None, None], backwards));
     }
-    Profile {
-        plane,
-        outer,
-        holes: loops,
-    }
+    loops
 }
 
 /// The loop through `points`, segment `k` running from `points[k]` to the
@@ -183,8 +193,8 @@ fn distance_to_segment(p: Point2, a: Point2, b: Point2) -> f64 {
 
 /// A profile with the parameters of the sweeps it is drawn for: an axis
 /// in its plane at a positive distance from every loop, a revolve angle
-/// in `(0, 2π]` and an extrude length. What [`rectilinear`] yields and
-/// what a sweep property test builds a body from.
+/// in `(0, 2π]` and an extrude length. What [`rectilinear`] and
+/// [`general`] yield and what a sweep property test builds a body from.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Sweep {
     /// The sketch.
@@ -327,6 +337,177 @@ fn build_staircase(
         },
         axis: Axis {
             origin: plane.to_world(Point3::new(au, av, 0.0)),
+            direction: UnitVec3::new_normalize(direction),
+        },
+        angle,
+        length,
+    }
+}
+
+/// What one segment of a [`general`] profile sweeps about the axis.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Sweeps {
+    /// A line: a cone with its apex on the axis, in either orientation
+    /// (a cylinder or a plane only where the draw happens to align it).
+    Line,
+    /// An arc bulging outward by this fraction of its chord: a torus.
+    Torus(f64),
+    /// An arc centred on the axis: a sphere (a line where the chord is
+    /// too nearly perpendicular to the axis, see [`SPHERE_MIN_SLOPE`]).
+    Sphere,
+}
+
+/// Vertices of a [`general`] profile's outer loop: with [`JITTER`], at
+/// least six keeps every chord under a right angle as seen from the
+/// centre, which is what keeps the deep outward arcs inside their chords'
+/// sectors (see [`general`]).
+pub const GENERAL_VERTICES: RangeInclusive<usize> = 6..=9;
+
+/// The sagitta of a [`general`] profile's torus arc as a fraction of its
+/// chord: deep enough that the arc's whole circle stays clear of the
+/// axis at [`AXIS_DISTANCE`], at most a semicircle.
+pub const GENERAL_SAGITTA_FRACTION: RangeInclusive<f64> = 0.2..=0.5;
+
+/// The distance of a [`general`] profile's centre from the axis. Its
+/// vertices lie within [`PROFILE_RADIUS`] of the centre, a torus arc's
+/// circle has its centre within `PROFILE_RADIUS + 0.525·chord` of it and
+/// a radius at most `0.725·chord` (the ends of [`GENERAL_SAGITTA_FRACTION`]),
+/// and a chord under a right angle is at most `√2·PROFILE_RADIUS`, so the
+/// least distance here leaves every such circle more than two units clear
+/// of the axis.
+pub const AXIS_DISTANCE: RangeInclusive<f64> = 30.0..=40.0;
+
+/// The least `|chord · axis|` a sphere arc is drawn on. The arc's centre
+/// is where the chord's bisector meets the axis, at most
+/// `ρ(midpoint) / slope` along it; below this slope the centre runs away
+/// and the arc flattens until three points no longer place its circle
+/// to the model's tolerance, so the segment stays a line instead.
+pub const SPHERE_MIN_SLOPE: f64 = 0.5;
+
+/// The raw draw of [`general`].
+type GeneralDraw = (
+    (Frame, f64, f64, bool),
+    (f64, Vec<f64>, Vec<Sweeps>),
+    (usize, Vec<bool>, f64, f64),
+);
+
+/// A profile beside an axis whose segments sweep every surface kind, both
+/// in a random plane pose: a convex polygon of [`GENERAL_VERTICES`]
+/// vertices on the circle of [`PROFILE_RADIUS`] about the centre, the
+/// centre at [`AXIS_DISTANCE`] from the axis on either side of it, each
+/// chord kept as a line (a cone, its apex on the axis, widening or
+/// narrowing as the draw falls), replaced by an outward arc of
+/// [`GENERAL_SAGITTA_FRACTION`] (a torus, its circle clear of the axis by
+/// the distance's bound) or by the arc centred on the axis through its
+/// ends (a sphere; a line where the chord is within [`SPHERE_MIN_SLOPE`]
+/// of perpendicular to the axis), with zero, one or two holes as
+/// [`star`] draws them and every loop written in either orientation. The
+/// angle is a full turn one time in four, otherwise partial and clear of
+/// both ends of `(0, 2π)`; the extrude length is random.
+///
+/// The polygon is convex, unlike [`star`]'s, because the torus arcs are
+/// deep: two outward arcs meeting at a notch would cross. On a convex
+/// polygon an outward arc of at most a semicircle lies in the half-disc
+/// on its chord, which lies in the chord's sector from the centre while
+/// the chord subtends less than a right angle, so arcs on different
+/// chords never meet away from their shared vertex, and the half-discs
+/// on adjacent chords meet only there (their circles' other common point
+/// is the foot of the vertex on the third side). A sphere arc is shallow
+/// — its radius is at least the profile's distance from the axis — and
+/// bulges away from the axis, inward on the axis side of the polygon,
+/// where the holes' disc is shrunk by its sagitta.
+pub fn general() -> impl Strategy<Value = Sweep> {
+    let vertices = GENERAL_VERTICES;
+    let kind = prop_oneof![
+        Just(Sweeps::Line),
+        finite_f64(GENERAL_SAGITTA_FRACTION).prop_map(Sweeps::Torus),
+        Just(Sweeps::Sphere),
+    ];
+    (
+        (
+            frame(),
+            finite_f64(0.0..=TAU),
+            finite_f64(-5.0..=5.0),
+            any::<bool>(),
+        ),
+        (
+            finite_f64(AXIS_DISTANCE),
+            proptest::collection::vec(finite_f64(-JITTER..=JITTER), vertices.clone()),
+            proptest::collection::vec(kind, vertices),
+        ),
+        (
+            0usize..=2,
+            proptest::collection::vec(any::<bool>(), 2),
+            angle(),
+            finite_f64(1.0..=10.0),
+        ),
+    )
+        .prop_map(build_general)
+}
+
+fn build_general(
+    ((plane, beta, slide, left), (distance, jitter, kinds), (holes, flipped, angle, length)): GeneralDraw,
+) -> Sweep {
+    let n = jitter.len().min(kinds.len());
+    let centre = Point2::origin();
+    let along = Vec2::new(beta.cos(), beta.sin());
+    let left_normal = Vec2::new(-along.y, along.x);
+    let radial = if left { left_normal } else { -left_normal };
+    // The axis `distance` from the centre, the profile on its `radial` side.
+    let axis_origin = centre - distance * radial + slide * along;
+    let rho = |p: Point2| (p - axis_origin).dot(&radial);
+    let share = TAU / n as f64;
+    let points: Vec<Point2> = (0..n)
+        .map(|k| {
+            let a = (k as f64 + jitter[k]) * share;
+            Point2::new(PROFILE_RADIUS * a.cos(), PROFILE_RADIUS * a.sin())
+        })
+        .collect();
+    let vias: Vec<Option<Point2>> = (0..n)
+        .map(|k| {
+            let (a, b) = (points[k], points[(k + 1) % n]);
+            let chord = b - a;
+            let mid = a + chord / 2.0;
+            match kinds[k] {
+                Sweeps::Line => None,
+                Sweeps::Torus(fraction) => {
+                    let outward = (mid - centre).normalize();
+                    Some(mid + fraction * chord.norm() * outward)
+                }
+                Sweeps::Sphere => {
+                    let g = chord.normalize();
+                    if g.dot(&along).abs() < SPHERE_MIN_SLOPE {
+                        return None;
+                    }
+                    // The chord's bisector meets the axis where ρ vanishes.
+                    let bisector = Vec2::new(-g.y, g.x);
+                    let on_axis = mid - rho(mid) / bisector.dot(&radial) * bisector;
+                    let r = (a - on_axis).norm();
+                    Some(on_axis + r * (mid - on_axis).normalize())
+                }
+            }
+        })
+        .collect();
+    // The largest disc about the centre the chords and the inward arcs
+    // leave free.
+    let free = (0..n)
+        .map(|k| {
+            let (a, b) = (points[k], points[(k + 1) % n]);
+            let mid = a + (b - a) / 2.0;
+            let toward_centre = (centre - mid).normalize();
+            let inward = vias[k].map_or(0.0, |via| (via - mid).dot(&toward_centre).max(0.0));
+            distance_to_segment(centre, a, b) - inward
+        })
+        .fold(f64::INFINITY, f64::min);
+    let direction = plane.vec_to_world(Vec3::new(along.x, along.y, 0.0));
+    Sweep {
+        profile: Profile {
+            plane,
+            outer: path_loop(&points, &vias, flipped[0]),
+            holes: holes_within(free, holes, flipped[1]),
+        },
+        axis: Axis {
+            origin: plane.to_world(Point3::new(axis_origin.x, axis_origin.y, 0.0)),
             direction: UnitVec3::new_normalize(direction),
         },
         angle,

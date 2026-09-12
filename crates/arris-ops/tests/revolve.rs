@@ -1,21 +1,28 @@
-//! `ops::revolve` over planes and cylinders (`docs/plans/m5-sweeps.md`
-//! step 3): a thousand rectilinear staircases beside an axis in random
-//! poses — the checker at `Full` with nothing violated and nothing
-//! unchecked, volume and area to Pappus's theorems, the mesh closed and
-//! within its chord of the exact volume, one `Generated` per entity and
-//! every part of the sketch present, the dump identical on two runs;
-//! the tube's numbers equal to `boolean/coaxial-cut`'s; a profile given
-//! clockwise the same body as counter-clockwise; the angle's bounds; and
-//! every typed refusal with the model untouched.
+//! `ops::revolve` (`docs/plans/m5-sweeps.md` steps 3 and 4): a thousand
+//! rectilinear staircases beside an axis in random poses — the checker
+//! at `Full` with nothing violated and nothing unchecked, volume and
+//! area to Pappus's theorems, the mesh closed and within its chord of
+//! the exact volume, one `Generated` per entity and every part of the
+//! sketch present, the dump identical on two runs; a thousand general
+//! profiles whose segments sweep cones, spheres and tori — the same,
+//! with every unchecked row a face pair on one of those three and
+//! nothing else; the closed forms of a frustum, a spherical zone and a
+//! ring, each read back from Arris's STEP by the oracle; the tube's
+//! numbers equal to `boolean/coaxial-cut`'s; a profile given clockwise
+//! the same body as counter-clockwise; the angle's bounds; and every
+//! typed refusal with the model untouched.
 
+use std::cell::RefCell;
 use std::collections::BTreeSet;
 
+use arris_debug::fixtures::{Analytic, Loop, Num, Plane, Recipe, Segment, Step};
 use arris_debug::prop::profile::Sweep;
 use arris_debug::prop::sweep;
-use arris_debug::{corpus, dump_text, fixtures, prop, prop_shards};
+use arris_debug::{corpus, dump_text, euler_line, fixtures, oracle, prop, prop_shards, sample};
+use arris_io::step;
 use arris_mesh::tessellate;
 use arris_ops::arris_check::arris_topo::arris_geom::{
-    Profile, ProfileError, ProfileLoop, ProfileSegment,
+    Profile, ProfileError, ProfileLoop, ProfileSegment, Surface, SurfaceKind,
 };
 use arris_ops::arris_check::arris_topo::arris_math::{
     Axis, Frame, Point2, Point3, Tolerance, Vec3,
@@ -24,10 +31,10 @@ use arris_ops::arris_check::arris_topo::provenance::SweepPart;
 use arris_ops::arris_check::arris_topo::{
     Body, Model, Orientation, Origin, Provenance, Relation, Role, Shape,
 };
-use arris_ops::arris_check::{Level, check};
+use arris_ops::arris_check::{Level, Unchecked, check};
 use arris_ops::measure::mass_properties;
 use arris_ops::{OpError, Reason, revolve};
-use core::f64::consts::TAU;
+use core::f64::consts::{PI, TAU};
 use proptest::prelude::*;
 
 /// The relative tolerance the Pappus identities hold to.
@@ -147,6 +154,108 @@ fn expected_parts(sweep: &Sweep, tol: Tolerance) -> BTreeSet<SweepPart> {
     parts
 }
 
+/// The property every random sweep is held to. A full turn of a profile
+/// with holes is the designed `MultiShell` refusal with the model as it
+/// was; every other sweep revolves, is clean at `Fast`, has no violation
+/// at `Full` and no unchecked row but those `undecidable` admits, has
+/// Pappus's volume and area, a closed mesh within its chord of the exact
+/// volume, one `Generated` per entity and every part of the sketch, and
+/// the same dump on a second run.
+fn revolves_to_pappus(
+    sweep: &Sweep,
+    undecidable: impl Fn(&Unchecked) -> bool,
+) -> Result<(), TestCaseError> {
+    let mut m = Model::default();
+    let tol = m.precision().tolerance();
+    let full = (sweep.angle - TAU).abs() <= tol.angular;
+    if full && !sweep.profile.holes.is_empty() {
+        // The hole would close into a cavity: the designed refusal,
+        // with the model as it was.
+        match revolve(&mut m, &sweep.profile, sweep.axis, sweep.angle) {
+            Err(OpError::Degenerate {
+                reason: Reason::MultiShell { shells },
+                ..
+            }) => prop_assert_eq!(shells, 1 + sweep.profile.holes.len()),
+            Ok(_) => return Err(fail("a full turn with a hole is two shells")),
+            Err(e) => return Err(fail(format!("revolve: {e}"))),
+        }
+        let (body, _) = revolve(&mut m, &sweep.profile, sweep.axis, 1.0).map_err(fail)?;
+        let mut fresh = Model::default();
+        let (again, _) = revolve(&mut fresh, &sweep.profile, sweep.axis, 1.0).map_err(fail)?;
+        prop_assert_eq!(
+            dump_text(&m, body).map_err(fail)?,
+            dump_text(&fresh, again).map_err(fail)?,
+            "the model is as it was"
+        );
+        return Ok(());
+    }
+    let (body, p) = revolve(&mut m, &sweep.profile, sweep.axis, sweep.angle)
+        .map_err(|e| fail(format!("revolve: {e}")))?;
+    let fast = check(&m, body, Level::Fast);
+    prop_assert!(fast.is_ok(), "not clean at Fast\n{}", fast);
+    let report = check(&m, body, Level::Full);
+    let undecided: Vec<&Unchecked> = report
+        .unchecked()
+        .iter()
+        .filter(|u| !undecidable(u))
+        .collect();
+    prop_assert!(
+        report.is_ok() && undecided.is_empty(),
+        "not clean at Full\n{}\n{}",
+        report,
+        dump_text(&m, body).map_err(fail)?
+    );
+    let props = mass_properties(&m, body).map_err(fail)?;
+    let pappus = sweep::revolved(&sweep.profile, &sweep.axis, sweep.angle, tol).map_err(fail)?;
+    prop_assert!(
+        close(props.volume, pappus.volume),
+        "volume {} vs Pappus {}",
+        props.volume,
+        pappus.volume
+    );
+    prop_assert!(
+        close(props.area, pappus.area),
+        "area {} vs Pappus {}",
+        props.area,
+        pappus.area
+    );
+    let mesh = tessellate(&m, body, MESH_CHORD).map_err(fail)?;
+    let Some(volume) = mesh.signed_volume() else {
+        return Err(fail("the mesh is not closed"));
+    };
+    prop_assert!(
+        (volume - props.volume).abs() <= MESH_CHORD * props.area,
+        "mesh volume {} vs {} at chord {}",
+        volume,
+        props.volume,
+        MESH_CHORD
+    );
+    let parts = recorded_parts(&m, body, &p)?;
+    prop_assert_eq!(parts, expected_parts(sweep, tol));
+    let dump = dump_text(&m, body).map_err(fail)?;
+    let mut again = Model::default();
+    let (twice, _) = revolve(&mut again, &sweep.profile, sweep.axis, sweep.angle).map_err(fail)?;
+    prop_assert_eq!(dump_text(&again, twice).map_err(fail)?, dump);
+    Ok(())
+}
+
+/// Whether an unchecked row is one the plan admits on a general profile:
+/// an S5 pair with a cone, sphere or torus in it (the intersector has no
+/// closed form against those until cycle 2). Never a pair of planes and
+/// cylinders, never a B1 cast — a revolve is one shell.
+fn on_a_quadric(row: &Unchecked) -> bool {
+    let quadric = |k: SurfaceKind| {
+        matches!(
+            k,
+            SurfaceKind::Cone | SurfaceKind::Sphere | SurfaceKind::Torus
+        )
+    };
+    match row {
+        Unchecked::FacePair { kinds, .. } => quadric(kinds.0) || quadric(kinds.1),
+        _ => false,
+    }
+}
+
 prop_shards! {
     /// A staircase of segments parallel and perpendicular to the axis,
     /// every face a plane or a cylinder the checker decides every pair
@@ -154,73 +263,19 @@ prop_shards! {
     /// area, a closed mesh, complete provenance, a deterministic dump.
     rectilinear_profiles_revolve_to_pappus [shard_0 shard_1 shard_2 shard_3]
         (sweep) = prop::profile::rectilinear() => {
-            let mut m = Model::default();
-            let tol = m.precision().tolerance();
-            let full = (sweep.angle - TAU).abs() <= tol.angular;
-            if full && !sweep.profile.holes.is_empty() {
-                // The hole would close into a cavity: the designed refusal,
-                // with the model as it was.
-                match revolve(&mut m, &sweep.profile, sweep.axis, sweep.angle) {
-                    Err(OpError::Degenerate {
-                        reason: Reason::MultiShell { shells },
-                        ..
-                    }) => prop_assert_eq!(shells, 1 + sweep.profile.holes.len()),
-                    Ok(_) => return Err(fail("a full turn with a hole is two shells")),
-                    Err(e) => return Err(fail(format!("revolve: {e}"))),
-                }
-                let (body, _) = revolve(&mut m, &sweep.profile, sweep.axis, 1.0).map_err(fail)?;
-                let mut fresh = Model::default();
-                let (again, _) = revolve(&mut fresh, &sweep.profile, sweep.axis, 1.0).map_err(fail)?;
-                prop_assert_eq!(
-                    dump_text(&m, body).map_err(fail)?,
-                    dump_text(&fresh, again).map_err(fail)?,
-                    "the model is as it was"
-                );
-                return Ok(());
-            }
-            let (body, p) = revolve(&mut m, &sweep.profile, sweep.axis, sweep.angle)
-                .map_err(|e| fail(format!("revolve: {e}")))?;
-            let report = check(&m, body, Level::Full);
-            prop_assert!(
-                report.is_ok() && report.unchecked().is_empty(),
-                "not clean at Full\n{}\n{}",
-                report,
-                dump_text(&m, body).map_err(fail)?
-            );
-            let props = mass_properties(&m, body).map_err(fail)?;
-            let pappus = sweep::revolved(&sweep.profile, &sweep.axis, sweep.angle, tol)
-                .map_err(fail)?;
-            prop_assert!(
-                close(props.volume, pappus.volume),
-                "volume {} vs Pappus {}",
-                props.volume,
-                pappus.volume
-            );
-            prop_assert!(
-                close(props.area, pappus.area),
-                "area {} vs Pappus {}",
-                props.area,
-                pappus.area
-            );
-            let mesh = tessellate(&m, body, MESH_CHORD).map_err(fail)?;
-            let Some(volume) = mesh.signed_volume() else {
-                return Err(fail("the mesh is not closed"));
-            };
-            prop_assert!(
-                (volume - props.volume).abs() <= MESH_CHORD * props.area,
-                "mesh volume {} vs {} at chord {}",
-                volume,
-                props.volume,
-                MESH_CHORD
-            );
-            let parts = recorded_parts(&m, body, &p)?;
-            prop_assert_eq!(parts, expected_parts(&sweep, tol));
-            let dump = dump_text(&m, body).map_err(fail)?;
-            let mut again = Model::default();
-            let (twice, _) = revolve(&mut again, &sweep.profile, sweep.axis, sweep.angle)
-                .map_err(fail)?;
-            prop_assert_eq!(dump_text(&again, twice).map_err(fail)?, dump);
-            Ok(())
+            revolves_to_pappus(&sweep, |_| false)
+        }
+}
+
+prop_shards! {
+    /// A profile whose segments sweep cones in both orientations, spheres
+    /// and tori beside planes and cylinders: clean at `Fast`, no
+    /// violation at `Full` and every unchecked row a pair on one of the
+    /// three, Pappus's volume and area, a closed mesh, complete
+    /// provenance, a deterministic dump.
+    general_profiles_revolve_to_pappus [shard_0 shard_1 shard_2 shard_3]
+        (sweep) = prop::profile::general() => {
+            revolves_to_pappus(&sweep, on_a_quadric)
         }
 }
 
@@ -421,6 +476,315 @@ fn the_profile_is_held_clear_of_the_axis_and_the_axis_to_the_plane() {
     let mut fresh = Model::default();
     revolve(&mut fresh, &holed, z, 1.0).unwrap();
     let (body, _) = revolve(&mut m, &tube, z, TAU).unwrap();
+    let (again, _) = revolve(&mut fresh, &tube, z, TAU).unwrap();
+    assert_eq!(
+        dump_text(&m, body).unwrap(),
+        dump_text(&fresh, again).unwrap(),
+        "the model is as it was"
+    );
+}
+
+/// The surface kind of every face of `body`, with a cone's `Z` against
+/// `axis` — `true` where they agree, the cone widening along the axis.
+fn surfaces_of(m: &Model, body: Body, axis: &Axis) -> Vec<(SurfaceKind, Option<bool>)> {
+    m.faces(body)
+        .unwrap()
+        .iter()
+        .map(|f| {
+            let surface = m.surface(m.face(f.id).unwrap().surface()).unwrap();
+            let widening = match surface {
+                Surface::Cone { frame, .. } => Some(frame.z().dot(&axis.direction) > 0.0),
+                _ => None,
+            };
+            (surface.kind(), widening)
+        })
+        .collect()
+}
+
+/// `prop::profile::general` earns its name: over the configured cases it
+/// sweeps a cone widening along the axis, one narrowing, a sphere and a
+/// torus — so the property above has exercised every arm, not merely
+/// admitted it.
+#[test]
+fn the_general_profile_sweeps_every_surface_kind() {
+    let seen: RefCell<BTreeSet<(SurfaceKind, Option<bool>)>> = RefCell::new(BTreeSet::new());
+    prop::check(prop::profile::general(), |sweep| {
+        let mut m = Model::default();
+        // A partial turn: a full turn of a profile with holes is refused.
+        let (body, _) = revolve(&mut m, &sweep.profile, sweep.axis, 1.0).map_err(fail)?;
+        seen.borrow_mut().extend(surfaces_of(&m, body, &sweep.axis));
+        Ok(())
+    });
+    let seen = seen.into_inner();
+    for kind in [
+        (SurfaceKind::Plane, None),
+        (SurfaceKind::Cone, Some(true)),
+        (SurfaceKind::Cone, Some(false)),
+        (SurfaceKind::Sphere, None),
+        (SurfaceKind::Torus, None),
+    ] {
+        assert!(seen.contains(&kind), "{kind:?} never swept; seen {seen:?}");
+    }
+}
+
+/// The recipe of a profile in the `xz` plane revolved a full turn about
+/// `z`, for a scratch fixture the oracle answers.
+fn revolved_recipe(description: &str, outer: Loop, volume: &str, area: &str) -> Recipe {
+    let n = |v: f64| Num::Literal(v);
+    Recipe {
+        description: description.to_string(),
+        params: Default::default(),
+        variants: Default::default(),
+        steps: vec![
+            Step::Profile {
+                name: "sketch".into(),
+                plane: Plane {
+                    origin: [n(0.0), n(0.0), n(0.0)],
+                    x: [n(1.0), n(0.0), n(0.0)],
+                    y: [n(0.0), n(0.0), n(1.0)],
+                },
+                outer,
+                holes: Vec::new(),
+            },
+            Step::Revolve {
+                name: "result".into(),
+                profile: "sketch".into(),
+                axis: fixtures::Axis {
+                    origin: [n(0.0), n(0.0), n(0.0)],
+                    direction: [n(0.0), n(0.0), n(1.0)],
+                },
+                angle_deg: n(360.0),
+            },
+        ],
+        result: "result".into(),
+        probes: Vec::new(),
+        tolerances: Default::default(),
+        analytic: Analytic {
+            volume: Some(Num::Expr(volume.into())),
+            area: Some(Num::Expr(area.into())),
+            ..Default::default()
+        },
+    }
+}
+
+fn line_to(u: f64, v: f64) -> Segment {
+    Segment::Line {
+        line_to: [Num::Literal(u), Num::Literal(v)],
+    }
+}
+
+/// The profile of a recipe's `profile` step, as `ops::revolve` takes it.
+fn profile_of(recipe: &Recipe) -> Profile {
+    let Some(Step::Profile {
+        name,
+        plane,
+        outer,
+        holes,
+    }) = recipe.steps.first()
+    else {
+        panic!("no profile step");
+    };
+    fixtures::geom::build_profile(name, plane, outer, holes, &Default::default()).unwrap()
+}
+
+/// The three quadric-faced revolves the corpus cannot run yet (`⚠ OPEN`
+/// 2 of the plan: S5 has no arm against a cone, sphere or torus), held
+/// to their closed forms and to the oracle's reading of Arris's STEP
+/// through a scratch fixture: a trapezoid's frustum less its bore, an
+/// arc's spherical zone less its bore, and a circle's ring — the last
+/// with the counts and the Euler line of `sample::torus`.
+#[test]
+fn the_frustum_the_zone_and_the_ring_have_their_closed_forms_and_the_oracles_volume() {
+    let z = Axis::z_at(Point3::origin());
+    // x ∈ [1, 4] at z = −1 narrowing to x ∈ [1, 2] at z = 1: the cone's
+    // Z is −z; and the same widening, the cone's Z is +z.
+    let frustum = |widening: bool| {
+        let (lo, hi) = if widening { (2.0, 4.0) } else { (4.0, 2.0) };
+        revolved_recipe(
+            "a trapezoid revolved: a frustum less its bore",
+            Loop::Path {
+                start: [Num::Literal(1.0), Num::Literal(-1.0)],
+                segments: vec![
+                    line_to(lo, -1.0),
+                    line_to(hi, 1.0),
+                    line_to(1.0, 1.0),
+                    line_to(1.0, -1.0),
+                ],
+            },
+            "2 * pi * (16 + 8 + 4) / 3 - 2 * pi",
+            "15 * pi + 3 * pi + 6 * sqrt(8) * pi + 4 * pi",
+        )
+    };
+    let frustum_volume = 2.0 * PI * (16.0 + 8.0 + 4.0) / 3.0 - 2.0 * PI;
+    let frustum_area = 15.0 * PI + 3.0 * PI + 6.0 * 8f64.sqrt() * PI + 4.0 * PI;
+    // The arc of radius 3 about the origin from z = −1 to z = 1, at
+    // x = √8: a zone of height 2 between two discs of radius √8.
+    let a = 8f64.sqrt();
+    let zone = revolved_recipe(
+        "an arc centred on the axis revolved: a spherical zone less its bore",
+        Loop::Path {
+            start: [Num::Literal(1.0), Num::Literal(-1.0)],
+            segments: vec![
+                line_to(a, -1.0),
+                Segment::Arc {
+                    arc_to: [Num::Literal(a), Num::Literal(1.0)],
+                    via: [Num::Literal(3.0), Num::Literal(0.0)],
+                },
+                line_to(1.0, 1.0),
+                line_to(1.0, -1.0),
+            ],
+        },
+        "pi * 2 * (3 * 8 + 3 * 8 + 4) / 6 - 2 * pi",
+        "12 * pi + 14 * pi + 4 * pi",
+    );
+    let zone_volume = PI * 2.0 * (3.0 * 8.0 + 3.0 * 8.0 + 4.0) / 6.0 - 2.0 * PI;
+    let zone_area = 12.0 * PI + 14.0 * PI + 4.0 * PI;
+    // A circle of radius 2 centred 5 from the axis.
+    let ring = ring_recipe();
+    let ring_volume = 2.0 * PI * PI * 5.0 * 4.0;
+    let ring_area = 4.0 * PI * PI * 5.0 * 2.0;
+
+    let cases = [
+        (
+            "revolve-frustum",
+            frustum(false),
+            frustum_volume,
+            frustum_area,
+            (4, 6, 4),
+            false,
+        ),
+        (
+            "revolve-frustum-widening",
+            frustum(true),
+            frustum_volume,
+            frustum_area,
+            (4, 6, 4),
+            true,
+        ),
+        (
+            "revolve-zone",
+            zone,
+            zone_volume,
+            zone_area,
+            (4, 6, 4),
+            false,
+        ),
+        (
+            "revolve-ring",
+            ring,
+            ring_volume,
+            ring_area,
+            (1, 2, 1),
+            false,
+        ),
+    ];
+    for (name, recipe, volume, area, expected_counts, widening) in cases {
+        let mut m = Model::default();
+        let profile = profile_of(&recipe);
+        let (body, _) = revolve(&mut m, &profile, z, TAU).unwrap();
+        let report = check(&m, body, Level::Full);
+        assert!(report.is_ok(), "{name}\n{report}");
+        assert!(
+            report.unchecked().iter().all(on_a_quadric),
+            "{name}\n{report}"
+        );
+        let props = mass_properties(&m, body).unwrap();
+        assert!(
+            close(props.volume, volume),
+            "{name}: {} vs {volume}",
+            props.volume
+        );
+        assert!(close(props.area, area), "{name}: {} vs {area}", props.area);
+        assert_eq!(counts(&m, body), expected_counts, "{name}");
+        let surfaces = surfaces_of(&m, body, &z);
+        if name.starts_with("revolve-frustum") {
+            assert!(
+                surfaces.contains(&(SurfaceKind::Cone, Some(widening))),
+                "{name}: {surfaces:?}"
+            );
+        }
+        let dir = oracle::scratch_fixture(name, &recipe).unwrap();
+        oracle::compare_dir(&dir, &step::write(&m, &[body]).unwrap(), None, name).unwrap();
+    }
+
+    // The ring is `sample::torus` as a revolve builds it: one face, two
+    // seams, one vertex, genus 1.
+    let mut m = Model::default();
+    let (ring, _) = revolve(&mut m, &profile_of(&ring_recipe()), z, TAU).unwrap();
+    let mut n = Model::default();
+    let torus = sample::torus(&mut n, Point3::origin(), 5.0, 2.0).unwrap();
+    assert_eq!(
+        euler_line(&m, ring).unwrap(),
+        euler_line(&n, torus).unwrap()
+    );
+    assert_eq!(counts(&m, ring), counts(&n, torus));
+}
+
+fn ring_recipe() -> Recipe {
+    revolved_recipe(
+        "a circle revolved: a ring torus",
+        Loop::Circle {
+            circle: fixtures::Circle {
+                center: [Num::Literal(5.0), Num::Literal(0.0)],
+                radius: Num::Literal(2.0),
+            },
+        },
+        "2 * pi * pi * 5 * 4",
+        "4 * pi * pi * 5 * 2",
+    )
+}
+
+/// An arc that stays clear of the axis while its circle crosses it would
+/// sweep a spindle torus, which the data model does not hold: refused by
+/// name, the model untouched. A whole circle crossing the axis is the
+/// profile crossing it, refused as that.
+#[test]
+fn an_arc_whose_circle_crosses_the_axis_is_a_spindle_torus() {
+    let z = Axis::z_at(Point3::origin());
+    let p = |u, v| Point2::new(u, v);
+    // From (2, −1) through (2.2, 0) to (2, 1): radius 2.6 about (−0.4, 0).
+    let bulge = Profile {
+        plane: xz_plane(),
+        outer: ProfileLoop::Path {
+            start: p(2.0, -1.0),
+            segments: vec![
+                ProfileSegment::ArcTo {
+                    to: p(2.0, 1.0),
+                    via: p(2.2, 0.0),
+                },
+                ProfileSegment::LineTo(p(1.0, 1.0)),
+                ProfileSegment::LineTo(p(1.0, -1.0)),
+                ProfileSegment::LineTo(p(2.0, -1.0)),
+            ],
+        },
+        holes: Vec::new(),
+    };
+    let mut m = Model::default();
+    assert!(matches!(
+        revolve(&mut m, &bulge, z, TAU),
+        Err(OpError::Degenerate {
+            reason: Reason::SpindleTorus,
+            ..
+        })
+    ));
+    let circle = Profile {
+        plane: xz_plane(),
+        outer: ProfileLoop::Circle {
+            center: p(1.0, 0.0),
+            radius: 2.0,
+        },
+        holes: Vec::new(),
+    };
+    assert!(matches!(
+        revolve(&mut m, &circle, z, TAU),
+        Err(OpError::Degenerate {
+            reason: Reason::ProfileCrossesAxis,
+            ..
+        })
+    ));
+    let tube = tube_profile(false);
+    let (body, _) = revolve(&mut m, &tube, z, TAU).unwrap();
+    let mut fresh = Model::default();
     let (again, _) = revolve(&mut fresh, &tube, z, TAU).unwrap();
     assert_eq!(
         dump_text(&m, body).unwrap(),

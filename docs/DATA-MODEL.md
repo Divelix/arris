@@ -86,6 +86,12 @@ that is: plane `Z`; cylinder, cone and sphere radially outward; torus
 outward from the tube. It is the *surface's* normal; a face's normal is the
 surface's composed with the face use's orientation (§Orientation).
 
+The cone's radius grows along `+Z` and nowhere else — `α` is never
+obtuse — so a sweep that needs a cone narrowing along its axis places
+the cone with `Z` against the axis (`ops::revolve`, 01 §Operations): the
+same surface, its `u` running the other way about the axis, which the
+pcurves of the rises that cross it carry (§Pcurves).
+
 A surface's parametric domain is unbounded where the table says ℝ; a face
 trims it with loops. Periodic directions are stored as a period, and a
 pcurve on a periodic surface may run outside `[0, 2π)` — a loop that crosses
