@@ -70,7 +70,9 @@ probe (0.1³ − 0.04³ = 9.36e-4, two shells) passes as a fixture.
 - `arris-io` STEP: one `MANIFOLD_SOLID_BREP` per lump without voids, a
   `BREP_WITH_VOIDS` over its `CLOSED_SHELL` and `ORIENTED_CLOSED_SHELL`s per
   lump with them, all in the product's one shape representation;
-  `Unsupported::Shells` removed.
+  `Unsupported::Shells` removed. Found at step 3: `StepError::Lumps`
+  for a solid whose shells do not nest, and the runner's
+  `CorpusError::Lumps` (**public enum changes**).
 - `arris-debug` corpus: `solids` is the lump count, not `1`; `expect_error`
   gains `non-manifold` and loses `multi-shell`.
 
@@ -93,7 +95,7 @@ bound has to be established here.
   box inside the cavity of a hollow box passes (two lumps, one of them
   nested); a void inside a void fails; a shell no ray classifies is
   unchecked.
-- [ ] Step 3 **[2]** — STEP writes lumps and voids. The corpus runner's
+- [x] Step 3 **[2]** — STEP writes lumps and voids. The corpus runner's
   `solids` from `lumps`. Test: a hand-assembled hollow box and a
   two-box body written, read back by Open CASCADE (`arris_debug::oracle`)
   with the volume, the shell and solid counts of the closed form.

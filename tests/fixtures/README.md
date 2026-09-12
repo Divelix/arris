@@ -33,7 +33,8 @@ committed `expected.json` and round-trips each result through STEP.
 The corpus **runner** (`arris_debug::corpus::run(dir, variant)`, one
 `#[test]` per fixture in `crates/arris/tests/corpus.rs`) is the fixture
 test itself: it builds the recipe in Arris, runs the checker at `Full`
-(nothing violated, nothing undecided), compares counts and genus against
+(nothing violated, nothing undecided), compares counts — `solids` as the
+result's lumps, `arris_check::lumps` — and genus against
 `expected.json`, writes STEP under `target/inspect/` and has the oracle
 read it back (`compare.py`), measures it over the B-Rep
 (`ops::measure::mass_properties`) and holds its volume, area, centroid

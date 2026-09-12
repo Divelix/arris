@@ -3,8 +3,14 @@
 //! reader takes the model's own trimming instead of recomputing it. The
 //! Open CASCADE oracle reads the result (`tools/oracle/compare.py`).
 //!
-//! What is written, per solid body of one shell: a `MANIFOLD_SOLID_BREP`
-//! over a `CLOSED_SHELL` of `ADVANCED_FACE`s; per face its surface entity
+//! What is written, per lump of a solid body (`arris_check::lumps`,
+//! ADR-0006): a `MANIFOLD_SOLID_BREP` over a `CLOSED_SHELL` of
+//! `ADVANCED_FACE`s for a lump without voids, and for one with them a
+//! `BREP_WITH_VOIDS` over the outer `CLOSED_SHELL` and an
+//! `ORIENTED_CLOSED_SHELL` of orientation false per void, whose
+//! `CLOSED_SHELL` holds the void's faces turned — the reversed shell the
+//! reference tree's writer emits and its reader turns back into a hole;
+//! per face its surface entity
 //! (shared by every face and pcurve that references the same
 //! `SurfaceId`), `same_sense` from the shell's use of the face, one
 //! `FACE_OUTER_BOUND` for the loop of positive winding in (u, v) and a
@@ -55,9 +61,10 @@ use arris_check::arris_topo::arris_geom::{
 use arris_check::arris_topo::arris_math::{Frame, Frame2, Point2, Point3, Vec2, Vec3};
 use arris_check::arris_topo::entity::{BodyKind, Coedge, Loop};
 use arris_check::arris_topo::{
-    AnyId, Body, CoedgeRef, Curve2Id, CurveId, EdgeId, FaceId, Model, NotFound, Orientation,
+    AnyId, Body, CoedgeRef, Curve2Id, CurveId, EdgeId, FaceId, Model, NotFound, Orientation, Shell,
     SurfaceId, VertexId,
 };
+use arris_check::{LumpError, lumps};
 
 /// Why a body could not be written.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
@@ -73,6 +80,16 @@ pub enum StepError {
         body: Body,
         /// What could not be written.
         what: Unsupported,
+    },
+    /// A solid body's shells could not be read as lumps: they do not nest,
+    /// or the nesting could not be decided (`arris_check::lumps`) — a body
+    /// the checker does not pass at `Full`.
+    #[error("{body}: {source}")]
+    Lumps {
+        /// The body.
+        body: Body,
+        /// Why.
+        source: LumpError,
     },
     /// A coordinate, parameter, knot, weight or tolerance is not finite,
     /// and Part 21 has no spelling for it.
@@ -91,9 +108,6 @@ pub enum StepError {
 pub enum Unsupported {
     /// Only a `Solid` is written in cycle 1.
     Kind(BodyKind),
-    /// A solid of several shells (an outer shell with voids) is not written
-    /// yet; the number of shells found.
-    Shells(usize),
     /// A loop whose every coedge is degenerate has no `EDGE_LOOP`.
     DegenerateLoop {
         /// The face.
@@ -115,7 +129,6 @@ impl core::fmt::Display for Unsupported {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Unsupported::Kind(kind) => write!(f, "a {kind} body has no STEP form yet"),
-            Unsupported::Shells(n) => write!(f, "a solid of {n} shells has no STEP form yet"),
             Unsupported::DegenerateLoop { face, loop_index } => write!(
                 f,
                 "loop {loop_index} of {face} has only degenerate edges, which STEP cannot hold"
@@ -131,13 +144,16 @@ impl core::fmt::Display for Unsupported {
 }
 
 /// The STEP AP214 Part 21 text of `bodies` in the order given, as one
-/// product whose shape representation lists one `MANIFOLD_SOLID_BREP` per
-/// body (module docs for the entity subset and the conventions). Errors:
+/// product whose shape representation lists one solid entity per lump of
+/// each body, bodies in order and each body's lumps in `lumps`' order — a
+/// `MANIFOLD_SOLID_BREP`, or a `BREP_WITH_VOIDS` for a lump with voids
+/// (module docs for the entity subset and the conventions). Errors:
 /// [`StepError::NoBodies`] for an empty slice; [`StepError::Unsupported`]
-/// for a body that is not a solid of one shell, a loop of degenerate
-/// edges only, or an edge with more than two uses; [`StepError::NotFound`]
-/// for a reference that does not resolve; [`StepError::NonFinite`] for a
-/// number Part 21 cannot spell. The model is read only.
+/// for a body that is not a solid, a loop of degenerate edges only, or an
+/// edge with more than two uses; [`StepError::Lumps`] for a solid whose
+/// shells do not nest into lumps; [`StepError::NotFound`] for a reference
+/// that does not resolve; [`StepError::NonFinite`] for a number Part 21
+/// cannot spell. The model is read only.
 ///
 /// ```
 /// use arris_debug::sample;
@@ -163,7 +179,7 @@ pub fn write(model: &Model, bodies: &[Body]) -> Result<String, StepError> {
     let mut w = Writer::new(model, faces_written, bodies[0].id.into())?;
     let mut solids = Vec::with_capacity(bodies.len());
     for &body in bodies {
-        solids.push(w.solid(body)?);
+        solids.extend(w.solids(body)?);
     }
     let representation = w.shape_representation;
     let text = format!(
@@ -358,8 +374,9 @@ impl<'m> Writer<'m> {
         out
     }
 
-    /// A body as a `MANIFOLD_SOLID_BREP`.
-    fn solid(&mut self, body: Body) -> Result<usize, StepError> {
+    /// A solid body as one solid entity per lump: a `MANIFOLD_SOLID_BREP`
+    /// for a lump without voids, a `BREP_WITH_VOIDS` for one with them.
+    fn solids(&mut self, body: Body) -> Result<Vec<usize>, StepError> {
         let entity = self.model.body(body.id)?;
         if entity.kind() != BodyKind::Solid {
             return Err(StepError::Unsupported {
@@ -367,24 +384,56 @@ impl<'m> Writer<'m> {
                 what: Unsupported::Kind(entity.kind()),
             });
         }
-        let shells = self.model.shells(body)?;
-        let [shell] = shells.as_slice() else {
-            return Err(StepError::Unsupported {
-                body,
-                what: Unsupported::Shells(shells.len()),
-            });
+        let found = lumps(self.model, body).map_err(|source| match source {
+            LumpError::NotFound(e) => StepError::NotFound(e),
+            source => StepError::Lumps { body, source },
+        })?;
+        let mut solids = Vec::with_capacity(found.len());
+        for lump in found {
+            let solid = self.reserve();
+            let outer = self.closed_shell(body, lump.outer, false)?;
+            if lump.voids.is_empty() {
+                self.set(solid, format!("MANIFOLD_SOLID_BREP('',#{outer})"));
+            } else {
+                let mut voids = Vec::with_capacity(lump.voids.len());
+                for void in lump.voids {
+                    let oriented = self.reserve();
+                    let shell = self.closed_shell(body, void, true)?;
+                    self.set(
+                        oriented,
+                        format!("ORIENTED_CLOSED_SHELL('',*,#{shell},.F.)"),
+                    );
+                    voids.push(oriented);
+                }
+                self.set(
+                    solid,
+                    format!("BREP_WITH_VOIDS('',#{outer},({}))", refs(voids)),
+                );
+            }
+            solids.push(solid);
+        }
+        Ok(solids)
+    }
+
+    /// A shell use as a `CLOSED_SHELL` of its face uses seen through it,
+    /// every face turned when `turned`: a void's, which STEP holds
+    /// reversed under an `ORIENTED_CLOSED_SHELL` of orientation false.
+    fn closed_shell(&mut self, body: Body, shell: Shell, turned: bool) -> Result<usize, StepError> {
+        let model = self.model;
+        let number = self.reserve();
+        let entity = model.shell(shell.id)?;
+        let through = if turned {
+            shell.orientation.flipped()
+        } else {
+            shell.orientation
         };
-        let solid = self.reserve();
-        let shell_number = self.reserve();
-        let shell_entity = self.model.shell(shell.id)?;
-        let mut faces = Vec::with_capacity(shell_entity.faces().len());
-        for face_use in shell_entity.faces() {
-            let face = face_use.oriented_by(shell.orientation);
+        let mut faces = Vec::with_capacity(entity.faces().len());
+        for face_use in entity.faces() {
+            let face = face_use.oriented_by(through);
             faces.push(self.face(body, face.id, face.orientation)?);
         }
-        self.set(shell_number, format!("CLOSED_SHELL('',({}))", refs(faces)));
-        self.set(solid, format!("MANIFOLD_SOLID_BREP('',#{shell_number})"));
-        Ok(solid)
+        self.set(number, format!("CLOSED_SHELL('',({}))", refs(faces)));
+        Ok(number)
     }
 
     /// A face use as an `ADVANCED_FACE`.

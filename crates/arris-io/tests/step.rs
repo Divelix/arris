@@ -3,13 +3,16 @@
 //! match the `primitive/*` fixtures' numbers; the file is deterministic;
 //! what the writer cannot hold is a typed error.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use arris_debug::sample;
-use arris_io::arris_check::arris_topo;
+use arris_debug::fixtures::{self, Num, Recipe, Step};
+use arris_debug::{oracle, sample};
+use arris_io::arris_check::{Level, LumpError, arris_topo, check};
 use arris_io::step::{self, StepError, Unsupported};
 use arris_topo::arris_math::Point3;
+use arris_topo::builder::{Assembly, Builder, FaceSpec};
 use arris_topo::entity::{Body as BodyEntity, BodyKind};
 use arris_topo::{Body, Model};
 
@@ -137,6 +140,158 @@ fn several_bodies_share_one_shape_representation() {
         1
     );
     assert_eq!(text.matches("PRODUCT(").count(), 1);
+}
+
+/// A recipe of two boxes combined by `combine` into `result`: the oracle
+/// builds from it the shape a hand-assembled body of lumps stands for.
+fn boxes_recipe(
+    description: &str,
+    a: ([f64; 3], [f64; 3]),
+    b: ([f64; 3], [f64; 3]),
+    combine: Step,
+) -> Recipe {
+    let n = |v: [f64; 3]| v.map(Num::Literal);
+    Recipe {
+        description: description.to_string(),
+        params: BTreeMap::new(),
+        variants: BTreeMap::new(),
+        steps: vec![
+            Step::Box {
+                name: "a".into(),
+                min: n(a.0),
+                max: n(a.1),
+            },
+            Step::Box {
+                name: "b".into(),
+                min: n(b.0),
+                max: n(b.1),
+            },
+            combine,
+        ],
+        result: "result".into(),
+        probes: Vec::new(),
+        tolerances: Default::default(),
+        analytic: Default::default(),
+    }
+}
+
+/// A solid over the faces of each body in order, one shell per body, the
+/// faces of a body marked `true` turned into it — a void.
+fn solid_of_shells(m: &mut Model, shells: &[(Body, bool)]) -> Body {
+    let shells = shells
+        .iter()
+        .map(|&(body, turned)| {
+            m.faces(body)
+                .unwrap()
+                .into_iter()
+                .map(|f| {
+                    FaceSpec::Keep(if turned {
+                        arris_topo::Face::new(f.id, f.orientation.flipped())
+                    } else {
+                        f
+                    })
+                })
+                .collect()
+        })
+        .collect();
+    let assembly = Assembly {
+        shells,
+        ..Assembly::default()
+    };
+    Builder::assemble(m, m.precision().default_tolerance, assembly)
+        .unwrap()
+        .finish(m, BodyKind::Solid)
+        .unwrap()
+        .body
+}
+
+/// A hollow box is one lump with a void and two boxes apart are two lumps:
+/// each is written as that many solid entities, and the oracle reads each
+/// file back with the counts and the volume of the closed form — one solid
+/// of two shells enclosing 10³ − 4³, two solids of one shell each
+/// enclosing 2 · 10³.
+#[test]
+fn lumps_and_voids_are_read_back_as_solids_and_shells() {
+    let mut m = Model::default();
+    let outer = sample::cuboid(&mut m, Point3::origin(), Point3::new(10.0, 10.0, 10.0)).unwrap();
+    let inner = sample::cuboid(
+        &mut m,
+        Point3::new(3.0, 3.0, 3.0),
+        Point3::new(7.0, 7.0, 7.0),
+    )
+    .unwrap();
+    let hollow = solid_of_shells(&mut m, &[(outer, false), (inner, true)]);
+    let report = check(&m, hollow, Level::Full);
+    assert!(report.is_ok() && report.unchecked().is_empty(), "{report}");
+    let text = step::write(&m, &[hollow]).unwrap();
+    assert_eq!(text.matches("BREP_WITH_VOIDS(").count(), 1);
+    assert_eq!(text.matches("ORIENTED_CLOSED_SHELL(").count(), 1);
+    assert_eq!(text.matches("MANIFOLD_SOLID_BREP(").count(), 0);
+    let recipe = boxes_recipe(
+        "a box of 10 less a box of 4 in its middle: one solid of two shells",
+        ([0.0; 3], [10.0; 3]),
+        ([3.0; 3], [7.0; 3]),
+        Step::Cut {
+            name: "result".into(),
+            target: "a".into(),
+            tool: "b".into(),
+        },
+    );
+    let dir = oracle::scratch_fixture("step-hollow-box", &recipe).unwrap();
+    let expected = &fixtures::load(&dir).unwrap().expected.results["default"];
+    assert_eq!((expected.counts.solids, expected.counts.shells), (1, 2));
+    assert!((expected.volume.unwrap() - (1000.0 - 64.0)).abs() < 1e-9 * 1000.0);
+    oracle::compare_dir(&dir, &text, None, "step-hollow-box").unwrap();
+
+    let a = sample::cuboid(&mut m, Point3::origin(), Point3::new(10.0, 10.0, 10.0)).unwrap();
+    let b = sample::cuboid(
+        &mut m,
+        Point3::new(20.0, 0.0, 0.0),
+        Point3::new(30.0, 10.0, 10.0),
+    )
+    .unwrap();
+    let apart = solid_of_shells(&mut m, &[(a, false), (b, false)]);
+    let report = check(&m, apart, Level::Full);
+    assert!(report.is_ok() && report.unchecked().is_empty(), "{report}");
+    let text = step::write(&m, &[apart]).unwrap();
+    assert_eq!(text.matches("MANIFOLD_SOLID_BREP(").count(), 2);
+    assert_eq!(text.matches("BREP_WITH_VOIDS(").count(), 0);
+    let recipe = boxes_recipe(
+        "two boxes of 10, 10 apart, fused: two solids",
+        ([0.0; 3], [10.0; 3]),
+        ([20.0, 0.0, 0.0], [30.0, 10.0, 10.0]),
+        Step::Fuse {
+            name: "result".into(),
+            a: "a".into(),
+            b: "b".into(),
+        },
+    );
+    let dir = oracle::scratch_fixture("step-two-boxes", &recipe).unwrap();
+    let expected = &fixtures::load(&dir).unwrap().expected.results["default"];
+    assert_eq!((expected.counts.solids, expected.counts.shells), (2, 2));
+    assert!((expected.volume.unwrap() - 2000.0).abs() < 1e-9 * 2000.0);
+    oracle::compare_dir(&dir, &text, None, "step-two-boxes").unwrap();
+}
+
+/// A solid whose shells do not nest has no lumps to write.
+#[test]
+fn a_solid_of_two_outer_shells_one_inside_the_other_is_a_typed_error() {
+    let mut m = Model::default();
+    let big = sample::cuboid(&mut m, Point3::origin(), Point3::new(10.0, 10.0, 10.0)).unwrap();
+    let small = sample::cuboid(
+        &mut m,
+        Point3::new(3.0, 3.0, 3.0),
+        Point3::new(7.0, 7.0, 7.0),
+    )
+    .unwrap();
+    let nested = solid_of_shells(&mut m, &[(big, false), (small, false)]);
+    assert!(matches!(
+        step::write(&m, &[nested]),
+        Err(StepError::Lumps {
+            source: LumpError::Nesting { .. },
+            ..
+        })
+    ));
 }
 
 #[test]

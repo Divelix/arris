@@ -30,7 +30,7 @@ use arris_io::arris_check::arris_topo::arris_math::{
 };
 use arris_io::arris_check::arris_topo::{Body, Model, Orientation, Origin, Provenance, Shape};
 use arris_io::arris_check::classify::{Classification, classify_point};
-use arris_io::arris_check::{Level, Report, check};
+use arris_io::arris_check::{Level, LumpError, Report, check, lumps};
 use arris_io::step::{self, StepError};
 use arris_mesh::tessellate;
 use arris_ops::measure::mass_properties;
@@ -138,6 +138,15 @@ pub enum CorpusError {
         fixture: String,
         /// The report.
         report: Box<Report>,
+    },
+    /// The result's lumps could not be read (`arris_check::lumps`), which
+    /// for a result the checker passed at `Full` is a kernel bug.
+    #[error("{fixture}: lumps: {source}")]
+    Lumps {
+        /// The fixture.
+        fixture: String,
+        /// Why.
+        source: LumpError,
     },
     /// Arris classifies a probe point differently from the oracle.
     #[error(
@@ -496,18 +505,24 @@ pub fn run(dir: &Path, variant: &str) -> Result<(), CorpusError> {
         });
     }
 
-    // Counts and genus.
+    // Counts and genus; a solid per lump, as the oracle counts them.
     let line = report.euler().ok_or_else(|| CorpusError::Check {
         fixture: name.clone(),
         report: Box::new(report.clone()),
     })?;
+    let solids = lumps(&m, body)
+        .map_err(|source| CorpusError::Lumps {
+            fixture: name.clone(),
+            source,
+        })?
+        .len();
     let found = Counts {
         vertices: line.vertices,
         edges: line.edges,
         faces: line.faces,
         loops: line.loops,
         shells: line.shells,
-        solids: 1,
+        solids,
     };
     // The oracle's counts, unless the recipe states a convention Arris
     // does not follow and gives its own.

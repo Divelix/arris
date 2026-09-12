@@ -582,8 +582,13 @@ mesh-based mass properties (`ops::measure` integrates the B-Rep).
 - **STEP AP214** (`arris_io::step::write(&model, &[bodies]) -> Result<
   String, StepError>`): the writer is a cycle-1 deliverable because the
   oracle reads Arris's output through it. One product whose shape
-  representation lists a `MANIFOLD_SOLID_BREP` per solid body of one
-  shell; per face an `ADVANCED_FACE` whose `same_sense` is the shell's use
+  representation lists a solid entity per lump of each solid body
+  (`arris_check::lumps`, ADR-0006): a `MANIFOLD_SOLID_BREP` over its
+  `CLOSED_SHELL`, or for a lump with voids a `BREP_WITH_VOIDS` adding an
+  `ORIENTED_CLOSED_SHELL` of orientation false per void, whose
+  `CLOSED_SHELL` holds the void's faces turned — the reversed shell the
+  reference tree's writer emits and its reader turns back into a hole;
+  per face an `ADVANCED_FACE` whose `same_sense` is the shell's use
   of it, a `FACE_OUTER_BOUND` for the loop of positive winding and
   `FACE_BOUND`s for the rest, each with the same flag as `same_sense`
   (the stored loop is counter-clockwise about the surface normal, STEP's
@@ -602,8 +607,8 @@ mesh-based mass properties (`ops::measure` integrates the B-Rep).
   `StepError::Unsupported`), and a left-handed pcurve conic is written on
   the direct placement STEP has, losing the traversal sense (the reader
   reprojects, and ignores plane pcurves anyway). Sheet, wire and general
-  bodies and solids with voids are `Unsupported` until an operation
-  produces them.
+  bodies are `Unsupported` until an operation produces them, and a solid
+  whose shells do not nest into lumps is `StepError::Lumps`.
 - **Native format** (`arris_io::native::{to_json, from_json, to_bytes,
   from_bytes}`): `serde` of the model under a version header, JSON for
   diffs and `postcard` bytes for storage; data-model §Native format.
@@ -648,7 +653,8 @@ mesh-based mass properties (`ops::measure` integrates the B-Rep).
   once it has a dump), the corpus runner (`corpus::run`, the fixture test of
   roadmap §Fixtures — a `profile` step built into a `geom::Profile` kept
   beside the bodies for the sweep steps that name it, no body and no
-  accounting of its own; checker, counts and genus, the oracle's reading
+  accounting of its own; checker, counts — a solid per lump — and genus,
+  the oracle's reading
   of the STEP, the mass properties against the oracle's within the
   fixture's tolerances, the mesh closed and within `mesh_volume_rel`,
   every probe classified as the oracle classifies it
