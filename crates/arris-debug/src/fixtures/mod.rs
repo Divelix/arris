@@ -638,6 +638,11 @@ pub fn load(dir: &Path) -> Result<Fixture, FixtureError> {
     })
 }
 
+/// The areas of the corpus whose comparable solid fixtures must carry a
+/// committed dump per variant: every area a corpus test runs, so a
+/// fixture there has passed and been blessed, and none is `#[ignore]`d.
+pub const DUMPED_AREAS: [&str; 5] = ["primitive", "transform", "boolean", "sweep", "provenance"];
+
 /// Relative tolerance the corpus lint holds `analytic` to the oracle at.
 /// Looser than the fixture's comparison tolerance on purpose: a closed form
 /// typed by hand is a cross-check of conventions, not a second oracle.
@@ -648,7 +653,11 @@ pub const ANALYTIC_REL: f64 = 1e-6;
 /// every variant has a result, the Euler line is zero (`χ = 2(S − G)`
 /// with the oracle's counts and the fixture's `analytic.genus`), and
 /// every `analytic` value matches the oracle within [`ANALYTIC_REL`]
-/// (counts, degeneracy and probe expectations exactly). A geometry
+/// (counts, degeneracy and probe expectations exactly); and a solid in
+/// one of [`DUMPED_AREAS`] that the runner compares — the oracle built a
+/// solid and the recipe expects no refusal — has its dump committed for
+/// every variant (`corpus::dump_path`), which a fixture only has once it
+/// passed and was blessed. A geometry
 /// fixture: [`geom::lint`] — presence, hash and shape, the values being
 /// the geometry oracle test's to compare. Returns every problem found,
 /// empty when clean.
@@ -681,6 +690,7 @@ pub fn lint(dir: &Path) -> Vec<String> {
         problem(format!("result {:?} is not a step", r.result));
     }
     let rel = |a: f64, b: f64| (a - b).abs() <= ANALYTIC_REL * a.abs().max(b.abs()).max(1e-300);
+    let dumped = DUMPED_AREAS.contains(&name.split('/').next().unwrap_or_default());
     for variant in r.variant_names() {
         let Some(m) = x.results.get(&variant) else {
             problem(format!(
@@ -712,6 +722,15 @@ pub fn lint(dir: &Path) -> Vec<String> {
         }
         if m.degenerate {
             continue;
+        }
+        if dumped && a.expect_error.is_none() {
+            let dump = crate::corpus::dump_path(dir, &variant);
+            if !dump.is_file() {
+                problem(format!(
+                    "[{variant}] {} is not committed: a fixture the runner compares carries its blessed dump (ARRIS_BLESS=1), so an #[ignore]d one fails here",
+                    dump.file_name().unwrap_or_default().to_string_lossy()
+                ));
+            }
         }
         let (Some(chi), Some(genus)) = (m.euler_characteristic, m.genus) else {
             problem(format!(

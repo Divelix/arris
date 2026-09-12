@@ -298,7 +298,7 @@ bound has to be established here.
   and counts at 200 poses; `DirectionNotNormal` for a direction 1° off
   the normal, `NotPositive` for a zero length, every `ProfileError`
   surfacing as `OpError::Profile` with the model untouched.
-- [ ] Step 6 **[1]** — The corpus in CI with nothing ignored. `ci.yml`
+- [x] Step 6 **[1]** — The corpus in CI with nothing ignored. `ci.yml`
   runs the suite with ignored tests included; `corpus_lint` holds every
   comparable solid fixture in the four areas to a committed dump per
   variant, with a scratch fixture missing its dump failing the lint;
@@ -359,8 +359,9 @@ the new fixtures; the layer check and the wasm build pass; CI green on
 
 ## Open questions
 
-All three decided by the human on 2026-09-11 as recommended; kept here
-so the reasoning stays with the plan until retirement.
+The first three decided by the human on 2026-09-11 as recommended; kept
+here so the reasoning stays with the plan until retirement. The fourth was
+found at step 6 and is open.
 
 - `⚠ OPEN 1:` **`planar_face`'s public surface.** *Decided: the
   recommendation.* The roadmap lists
@@ -395,6 +396,19 @@ so the reasoning stays with the plan until retirement.
   with `Reason::DirectionNotNormal` rather than support line-only
   profiles obliquely and arcs not; C5's sweep along a path is where the
   general case belongs.
+- `⚠ OPEN 4:` **Where a failure fixture waits.** *Open, the human's.*
+  `.agents/rules/kernel.md` §Testing commits a failure shrunk to a fixture
+  `#[ignore]`d until it passes; step 6's lint fails every fixture the
+  runner compares under `primitive/`, `transform/`, `boolean/`, `sweep/`
+  and `provenance/` that has no blessed dump — so such a fixture can no
+  longer wait in its own area. Recommendation: a failure fixture that
+  does not pass yet lives under `regression/<slug>/`, outside the lint's
+  areas, and moves into its area with its dump in the commit that fixes
+  it; the kernel rule and `tests/fixtures/README.md` say so at
+  retirement. Alternatives: an `"ignored": "why"` recipe field the lint
+  and the runner both honour, making the ignore data and the zero-ignored
+  line a count of it; or a failure is a hand-picked test beside its
+  property, never a corpus fixture, until it passes.
 
 ## Findings
 
@@ -525,3 +539,14 @@ deltas above, not a new decision.
 - **Step 5.** `docs/ARCHITECTURE.md` §Operations (the extrude paragraph)
   and `tests/fixtures/README.md` (the retired `Unsupported` sentence) were
   written in the step.
+- **Step 6.** The dump rule holds `transform/` as well as the four areas
+  the deltas named: `transform/posed-cylinder` is a corpus test like any
+  other, and an area left out would be the one place an ignored fixture
+  could hide. `fixtures::DUMPED_AREAS` names the five. Every nextest run
+  in `ci.yml` includes the ignored tests, the feature runs too.
+- **Step 6.** The rule meets the kernel rule that a failure fixture is
+  committed ignored until it passes: `⚠ OPEN` 4, recorded rather than
+  decided, and marked `⚠ OPEN:` in `tests/fixtures/README.md`.
+  `docs/ROADMAP.md` §Fixtures, `docs/ARCHITECTURE.md` §Formats and tools
+  and the README were written in the step; §C1 acceptance corpus already
+  holds all six `sweep/*` rows (step 5).

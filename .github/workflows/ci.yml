@@ -39,6 +39,11 @@ jobs:
   # does not run doctests, so those are their own step — together the two
   # are the whole suite, and a plain `cargo test --workspace` beside them
   # would only pay for the same work twice.
+  #
+  # Every run includes the ignored tests (docs/ROADMAP.md §M5): the C1
+  # corpus closes with none, and the corpus lint fails a comparable
+  # fixture that has no blessed dump, so an ignored fixture fails CI
+  # either way.
   test:
     runs-on: ubuntu-latest
     env:
@@ -52,18 +57,18 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --project tools/oracle
-      - run: cargo nextest run --workspace
+      - run: cargo nextest run --workspace --run-ignored all
       - run: cargo test --workspace --doc
       # arris-mesh's `parallel` feature: the same tests, so every sample
       # body's and primitive's mesh is byte-identical with faces
       # triangulated in parallel.
-      - run: cargo nextest run -p arris-mesh --features parallel
+      - run: cargo nextest run -p arris-mesh --features parallel --run-ignored all
       # arris-ops's, and the corpus through the facade with both on: every
       # boolean fixture's dump and every property test's result
       # byte-identical with the face pairs intersected and the faces split
       # in parallel.
-      - run: cargo nextest run -p arris-ops --features parallel
-      - run: cargo nextest run -p arris --features parallel
+      - run: cargo nextest run -p arris-ops --features parallel --run-ignored all
+      - run: cargo nextest run -p arris --features parallel --run-ignored all
 
   # A library's docs are part of its API: a broken intra-doc link or a
   # missing doc on a public item fails the build.

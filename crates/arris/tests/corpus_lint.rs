@@ -1,10 +1,12 @@
 //! The corpus lint (`docs/ROADMAP.md` §Fixtures): every fixture directory
 //! has a recipe and the oracle's answer, the answer is not stale, the Euler
-//! line is zero, and the closed forms agree with the oracle.
+//! line is zero, the closed forms agree with the oracle, and every
+//! fixture the runner compares in the corpus's areas carries its blessed
+//! dump — zero ignored fixtures there as a test, not a grep.
 
 use std::path::Path;
 
-use arris_debug::fixtures::{Kind, corpus, kind_of, lint, load};
+use arris_debug::fixtures::{Kind, corpus, corpus_root, kind_of, lint, load};
 
 #[test]
 fn every_fixture_directory_is_clean() {
@@ -100,6 +102,56 @@ fn a_wrong_analytic_value_fails_the_lint() {
     );
 
     assert!(lint(Path::new("/nonexistent/fixture")).len() == 1);
+}
+
+/// A comparable solid fixture in one of the corpus's areas without its
+/// committed dump fails the lint, one problem per variant missing one;
+/// a result the oracle built no solid for, a recipe expecting a refusal,
+/// and a copy outside the areas need none.
+#[test]
+fn a_comparable_fixture_without_its_dump_fails_the_lint() {
+    let root = tempdir("missing-dump");
+    let scratch = root.join("sweep/revolve-tube");
+    std::fs::create_dir_all(&scratch).unwrap();
+    copy_fixture("sweep/revolve-tube", &scratch);
+    let problems = lint(&scratch);
+    assert_eq!(problems.len(), 1, "{problems:?}");
+    assert!(
+        problems[0].contains("[default] dump.txt is not committed"),
+        "{problems:?}"
+    );
+    std::fs::copy(
+        corpus_root().join("sweep/revolve-tube/dump.txt"),
+        scratch.join("dump.txt"),
+    )
+    .unwrap();
+    assert!(lint(&scratch).is_empty(), "{:?}", lint(&scratch));
+
+    let scratch = root.join("provenance/bolt-pattern-rebuild");
+    std::fs::create_dir_all(&scratch).unwrap();
+    copy_fixture("provenance/bolt-pattern-rebuild", &scratch);
+    std::fs::copy(
+        corpus_root().join("provenance/bolt-pattern-rebuild/dump.txt"),
+        scratch.join("dump.txt"),
+    )
+    .unwrap();
+    let problems = lint(&scratch);
+    assert_eq!(problems.len(), 2, "{problems:?}");
+    for variant in ["thicker-wider", "tighter"] {
+        let file = format!("[{variant}] dump.{variant}.txt is not committed");
+        assert!(problems.iter().any(|p| p.contains(&file)), "{problems:?}");
+    }
+
+    for name in ["boolean/flush-common", "boolean/split-cut"] {
+        let scratch = root.join(name);
+        std::fs::create_dir_all(&scratch).unwrap();
+        copy_fixture(name, &scratch);
+        assert!(lint(&scratch).is_empty(), "{name}: {:?}", lint(&scratch));
+    }
+
+    let outside = tempdir("outside-the-areas");
+    copy_fixture("sweep/revolve-tube", &outside);
+    assert!(lint(&outside).is_empty(), "{:?}", lint(&outside));
 }
 
 /// The geometry kind is linted for presence, hash and shape: a stale

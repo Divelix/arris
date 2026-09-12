@@ -626,7 +626,9 @@ mesh-based mass properties (`ops::measure` integrates the B-Rep).
   operators (`sample::frame`, the genus-1 twin of `boolean/frame-cut`), the rasteriser (`render_png`) and the samplers
   that feed it a curve or a surface without a body (`polyline_of`,
   `wireframe_of`), the Rerun stream, the fixture loader and corpus lint
-  (`fixtures`), the corpus runner (`corpus::run`, the fixture test of
+  (`fixtures`; a solid fixture the runner compares under `primitive/`,
+  `transform/`, `boolean/`, `sweep/` or `provenance/` without its committed
+  dump per variant fails the lint, so an ignored fixture there does), the corpus runner (`corpus::run`, the fixture test of
   roadmap §Fixtures — a `profile` step built into a `geom::Profile` kept
   beside the bodies for the sweep steps that name it, no body and no
   accounting of its own; checker, counts and genus, the oracle's reading

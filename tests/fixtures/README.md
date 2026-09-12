@@ -10,14 +10,20 @@ intersected; §Geometry fixtures below) — holding:
 |---|---|---|
 | `fixture.json` | a person or the agent | the **recipe**: operands and operations both sides evaluate, probe points, tolerances, and the closed-form `analytic` values |
 | `expected.json` | `tools/oracle/expected.py`, never by hand | the **oracle's answer** per variant: volume, area, centroid, the inertia tensor about the centroid, counts, Euler characteristic and genus, probe classifications, plus the OCCT version and the recipe hash |
-| `dump.txt` | Arris, through the corpus runner under `ARRIS_BLESS=1`, once the fixture passes | the text dump of the result, the regression guard for ids and provenance (absent while the fixture is `#[ignore]`d); `dump.<variant>.txt` for a variant other than `default` |
+| `dump.txt` | Arris, through the corpus runner under `ARRIS_BLESS=1`, once the fixture passes | the text dump of the result, the regression guard for ids and provenance, committed once the fixture passes and required by the lint of every fixture the runner compares; `dump.<variant>.txt` for a variant other than `default` |
 
 The Rust reading of both files is `arris_debug::fixtures`; the Python one
 is `tools/oracle/oracle/recipe.py` and `fixture.py`. The corpus lint
 (`crates/arris/tests/corpus_lint.rs`, run by `cargo test`) checks every
 directory: both files present and parseable, `expected.json` not stale, the
 Euler line zero, every `analytic` value matching the oracle to 1e-6
-relative, counts and probe expectations exactly. The oracle's own self-test
+relative, counts and probe expectations exactly — and every solid under
+`primitive/`, `transform/`, `boolean/`, `sweep/` or `provenance/` that the
+runner compares (the oracle built a solid, the recipe expects no refusal)
+carrying its committed dump per variant, which a fixture only has once it
+passed and was blessed. An `#[ignore]`d fixture in those areas therefore
+fails the lint: they hold zero ignored fixtures by test, and CI runs the
+suite with ignored tests included. The oracle's own self-test
 (`uv run --project tools/oracle tools/oracle/selftest.py`) reproduces every
 committed `expected.json` and round-trips each result through STEP.
 
@@ -45,7 +51,9 @@ ends the run there, nothing later compared, no `dump.txt`. Every op of
 the recipe grammar has its operation; a fixture that does not pass yet —
 a failure shrunk to one — is `#[ignore = "why"]`d in `corpus.rs` and
 fails at the stage that differs under `--include-ignored`, so the day it
-passes the test says so. `ARRIS_BLESS=1 cargo test -p arris --test corpus
+passes the test says so. `⚠ OPEN:` it has no dump, so in the lint's areas
+it fails the lint — where such a fixture waits is
+`docs/plans/m5-sweeps.md` `⚠ OPEN` 4. `ARRIS_BLESS=1 cargo test -p arris --test corpus
 <name>` writes the dump instead of diffing it; commit the file as part
 of the step that made the fixture pass, and a later change to it is a
 `fixtures:` commit that says why the ids or the geometry moved.
