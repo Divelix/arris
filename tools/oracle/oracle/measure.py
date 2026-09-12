@@ -4,8 +4,9 @@
     inertia                      the 3x3 inertia tensor about the centroid,
                                  unit density, physical convention (the
                                  products of inertia carried negated)
-    counts                       unique vertices, edges (a seam once),
-                                 faces, loops (wires), shells, solids
+    counts                       unique vertices, edges (a seam once, a
+                                 degenerate edge not at all), faces, loops
+                                 (wires), shells, solids
     euler_characteristic         V − E + 2F − L: 2(S − G) for closed shells
     genus                        S − χ/2, what the fixture's analytic genus
                                  is checked against (the "Euler line");
@@ -54,6 +55,16 @@ def _count(shape: TopoDS_Shape, kind) -> int:
     return m.Extent()
 
 
+def _count_edges(shape: TopoDS_Shape) -> int:
+    """Unique edges that are not degenerate. A degenerate edge (a cone's
+    apex, a sphere's pole) is a singular point of its surface, not a
+    boundary between faces, so the Euler line leaves it out, as Arris's
+    `Report::euler` does (docs/DATA-MODEL.md §Euler–Poincaré)."""
+    m = IndexedMapOfShape()
+    TopExp.MapShapes_s(shape, TopAbs_EDGE, m)
+    return sum(1 for i in range(1, m.Extent() + 1) if not BRep_Tool.Degenerated_s(TopoDS.Edge(m.FindKey(i))))
+
+
 def solids(shape: TopoDS_Shape) -> list:
     out = []
     ex = TopExp_Explorer(shape, TopAbs_SOLID)
@@ -97,7 +108,7 @@ def measure(shape: TopoDS_Shape, probes: list[dict], probe_tolerance: float, man
     records no genus for it; otherwise an odd one is an error."""
     counts = {
         "vertices": _count(shape, TopAbs_VERTEX),
-        "edges": _count(shape, TopAbs_EDGE),
+        "edges": _count_edges(shape),
         "faces": _count(shape, TopAbs_FACE),
         "loops": _count(shape, TopAbs_WIRE),
         "shells": _count(shape, TopAbs_SHELL),

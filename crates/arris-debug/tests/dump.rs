@@ -1,9 +1,16 @@
 //! The text dump and the sample bodies (`docs/DATA-MODEL.md` §Native
 //! format, last paragraph; §Seams).
 
+use core::f64::consts::{FRAC_PI_4, SQRT_2, TAU};
+
 use arris_debug::{dump_text, euler_line, sample};
-use arris_math::Point3;
-use arris_topo::{BodyId, Curve2Id, CurveId, EdgeId, FaceId, Model, ShellId, SurfaceId, VertexId};
+use arris_geom::{Curve, Curve2, Surface};
+use arris_io::arris_check::{Level, check};
+use arris_math::{Frame, Frame2, Interval, Point2, Point3, UnitVec3, Vec2, Vec3};
+use arris_topo::entity::{Coedge, Edge, EdgeGeometry, Face, Loop, Vertex};
+use arris_topo::{
+    BodyId, Curve2Id, CurveId, EdgeId, FaceId, Model, Orientation, ShellId, SurfaceId, VertexId,
+};
 
 fn cylinder_dump() -> (Model, String) {
     let mut m = Model::default();
@@ -149,6 +156,128 @@ fn a_dangling_reference_is_marked_not_hidden() {
     assert!(text.contains("    face +f9 ?\n"), "{text}");
     assert!(text.ends_with("euler 0/0/0/0/1 g1 = 0\n"), "{text}");
     assert!(dump_text(&m, arris_topo::Body::forward(BodyId::new(3, 0))).is_err());
+}
+
+/// A cone of radius 1 at `z = 0` narrowing to its apex at `(0, 0, −1)`,
+/// built by hand: the wall's loop walks the (u, v) rectangle
+/// `[0, 2π] × [−√2, 0]` counter-clockwise — the apex's degenerate edge
+/// along `v = −√2`, the seam up at `u = 2π`, the rim back along `v = 0`,
+/// the seam down at `u = 0` — and the disc on `z = 0` closes it.
+fn apex_cone(m: &mut Model) -> arris_topo::Body {
+    use arris_topo::entity::{Body, Shell};
+    let tol = m.precision().default_tolerance;
+    // Radius `1 + v sin 45°` at height `v cos 45°`: the apex at `v = −√2`.
+    let apex_v = -SQRT_2;
+    let wall = m.add_surface(Surface::Cone {
+        frame: Frame::world(),
+        radius: 1.0,
+        half_angle: FRAC_PI_4,
+    });
+    let disc = m.add_surface(Surface::Plane {
+        frame: Frame::world(),
+    });
+    let seam = m.add_curve(Curve::Line {
+        origin: Point3::new(0.0, 0.0, -1.0),
+        direction: UnitVec3::new_normalize(Vec3::new(1.0, 0.0, 1.0)),
+    });
+    let rim = m.add_curve(Curve::Circle {
+        frame: Frame::world(),
+        radius: 1.0,
+    });
+    let apex = m
+        .raw()
+        .add_vertex(Vertex::new(Point3::new(0.0, 0.0, -1.0), tol));
+    let corner = m
+        .raw()
+        .add_vertex(Vertex::new(Point3::new(1.0, 0.0, 0.0), tol));
+    let e_apex = m.raw().add_edge(Edge::new(
+        EdgeGeometry::Degenerate {
+            range: Interval::TURN,
+        },
+        apex,
+        apex,
+        tol,
+    ));
+    let e_seam = m.raw().add_edge(Edge::new(
+        EdgeGeometry::Curve {
+            curve: seam,
+            range: Interval::new(0.0, SQRT_2).unwrap(),
+        },
+        apex,
+        corner,
+        tol,
+    ));
+    let e_rim = m.raw().add_edge(Edge::new(
+        EdgeGeometry::Curve {
+            curve: rim,
+            range: Interval::TURN,
+        },
+        corner,
+        corner,
+        tol,
+    ));
+    let mut line = |u: f64, v: f64, along_u: bool| {
+        m.add_curve2(Curve2::Line {
+            origin: Point2::new(u, v),
+            direction: if along_u {
+                Vec2::x_axis()
+            } else {
+                Vec2::y_axis()
+            },
+        })
+    };
+    let wall_loop = Loop::new(vec![
+        Coedge::new(e_apex, Orientation::Forward, line(0.0, apex_v, true)),
+        Coedge::new(e_seam, Orientation::Forward, line(TAU, apex_v, false)),
+        Coedge::new(e_rim, Orientation::Reversed, line(0.0, 0.0, true)),
+        Coedge::new(e_seam, Orientation::Reversed, line(0.0, apex_v, false)),
+    ]);
+    let wall_face = m.raw().add_face(Face::new(wall, vec![wall_loop], tol));
+    let p_disc = m.add_curve2(Curve2::Circle {
+        frame: Frame2::identity(),
+        radius: 1.0,
+    });
+    let disc_face = m.raw().add_face(Face::new(
+        disc,
+        vec![Loop::new(vec![Coedge::new(
+            e_rim,
+            Orientation::Forward,
+            p_disc,
+        )])],
+        tol,
+    ));
+    let shell = m.raw().add_shell(Shell::new(vec![
+        arris_topo::Face::forward(wall_face),
+        arris_topo::Face::forward(disc_face),
+    ]));
+    let body = m
+        .raw()
+        .add_body(Body::solid(vec![arris_topo::Shell::forward(shell)]));
+    arris_topo::Body::forward(body)
+}
+
+/// A degenerate edge is a singular point of its surface, not a boundary
+/// between faces, so the Euler line leaves it out: a sphere with two pole
+/// edges and a cone with an apex edge close at genus 0, in the dump and
+/// in the checker's report alike, while the closure still holds every
+/// edge (`docs/DATA-MODEL.md` §Euler–Poincaré).
+#[test]
+fn a_sphere_and_a_cone_close_at_genus_0_without_their_degenerate_edges() {
+    let mut m = Model::default();
+    let sphere = sample::sphere(&mut m, Point3::origin(), 3.0).unwrap();
+    let cone = apex_cone(&mut m);
+    for (body, line) in [(sphere, "2/1/1/1/1 g0 = 0"), (cone, "2/2/2/2/1 g0 = 0")] {
+        let report = check(&m, body, Level::Fast);
+        assert!(report.is_ok(), "{report}\n{}", dump_text(&m, body).unwrap());
+        assert_eq!(report.euler().unwrap().to_string(), line);
+        assert_eq!(euler_line(&m, body).unwrap(), format!("euler {line}"));
+        assert!(
+            dump_text(&m, body)
+                .unwrap()
+                .ends_with(&format!("euler {line}\n"))
+        );
+        assert_eq!(m.edges(body).unwrap().len(), 3);
+    }
 }
 
 #[test]

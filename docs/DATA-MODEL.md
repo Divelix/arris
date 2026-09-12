@@ -876,7 +876,11 @@ reference tree) mapped onto this representation.
 
 **Euler–Poincaré** (every level, reported as one line, never a violation on
 its own): `V − E + F − (L − F) − 2(S − G) = 0` with `L` the number of loops
-and `S` the number of shells. The genus `G` is *derived* from the counts,
+and `S` the number of shells. `E` leaves degenerate edges out: a cone's apex
+or a sphere's pole is a singular point of the surface, not a boundary
+between faces (S2's exemption), and counting it would give a sphere genus 1
+and a cone an odd line; the oracle leaves out the edges Open CASCADE marks
+degenerate, so both sides count alike. The genus `G` is *derived* from the counts,
 as the oracle derives it, so the line cannot fail on its genus; what it
 checks is its parity — a count set that leaves a residual of one cannot
 come from any closed orientable surface, whatever its genus. `Report::euler`

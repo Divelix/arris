@@ -11,7 +11,10 @@ use crate::violation::{Level, Violation};
 /// *derived*, as the oracle derives it, so the line is not a violation on
 /// its own; what it checks is its parity — a count set that leaves a
 /// [`EulerLine::residual`] of one cannot come from any closed orientable
-/// surface, whatever its genus.
+/// surface, whatever its genus. A degenerate edge is not counted: it is a
+/// singular point of its surface (a cone's apex, a sphere's pole), not a
+/// boundary between faces — S2's reading of it — and counting it would
+/// give a sphere genus 1 and a cone an odd line.
 ///
 /// ```
 /// use arris_check::{Level, check};
@@ -28,7 +31,7 @@ use crate::violation::{Level, Violation};
 pub struct EulerLine {
     /// Vertices in the closure.
     pub vertices: usize,
-    /// Edges in the closure.
+    /// Edges in the closure that are not degenerate.
     pub edges: usize,
     /// Faces in the closure.
     pub faces: usize,

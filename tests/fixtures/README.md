@@ -250,5 +250,6 @@ strategy changes (`.agents/rules/kernel.md` §Testing, `inspect` skill).
 
 Open CASCADE's, which Arris matches (`docs/DATA-MODEL.md`
 §Conventions): a full revolve or a cylinder has one seam edge, counted
-once; a fuse of flush boxes drops the shared face and does not merge the
+once; a degenerate edge (a cone's apex, a sphere's pole) is not counted
+at all, on either side, so the Euler line closes on its genus; a fuse of flush boxes drops the shared face and does not merge the
 coplanar neighbours; a common with no volume is degenerate.

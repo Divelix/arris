@@ -262,8 +262,42 @@ def check_analytic(name: str, result: dict, analytic: dict) -> bool:
     return ok
 
 
+def check_degenerate_edge_smoke(tmp: Path) -> bool:
+    """Open CASCADE's own cone and sphere carry degenerate edges at the apex
+    and the poles. Left out of the edge count, both derive genus 0 with an
+    even characteristic, before and after a STEP round trip."""
+    from OCP.BRepPrimAPI import BRepPrimAPI_MakeCone, BRepPrimAPI_MakeSphere
+
+    print("smoke: degenerate edges are not counted (BRepPrimAPI cone and sphere)")
+    ok = True
+    shapes = {
+        # V apex and rim, E seam and rim (the apex's degenerate edge not
+        # counted), F wall and base, one wire each.
+        "cone": (BRepPrimAPI_MakeCone(1.0, 0.0, 1.0).Shape(), (2, 2, 2, 2)),
+        # V the poles, E the seam (two degenerate pole edges not counted).
+        "sphere": (BRepPrimAPI_MakeSphere(1.0).Shape(), (2, 1, 1, 1)),
+    }
+    for name, (shape, counts) in shapes.items():
+        path = tmp / f"degenerate-{name}.step"
+        step.write(shape, path)
+        for label, s in (("built", shape), ("read back", step.read(path))):
+            try:
+                result = measure(s, [], DEFAULT_TOLERANCES["probe"])
+            except OracleError as e:
+                print(f"  {name} {label}: {e}")
+                ok = False
+                continue
+            c = result["counts"]
+            got = (c["vertices"], c["edges"], c["faces"], c["loops"])
+            if got != counts or result["genus"] != 0 or result["euler_characteristic"] % 2 != 0:
+                print(f"  {name} {label}: V/E/F/L {got} genus {result['genus']} differ from {counts} genus 0")
+                ok = False
+    return ok
+
+
 def run_smokes(tmp: Path) -> bool:
     ok = check_geometry_smoke()
+    ok &= check_degenerate_edge_smoke(tmp)
     for smoke in SMOKES:
         recipe = smoke["recipe"]
         print(f"smoke: {smoke['name']}")

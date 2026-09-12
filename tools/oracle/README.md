@@ -38,7 +38,8 @@ commit that says so (`.agents/rules/git.md`).
   the module docstring and `tests/fixtures/README.md`.
 - `oracle/measure.py` — volume, area, centroid and the inertia tensor
   (`GProp`), counts by unique
-  sub-shape (a seam edge once), loops, shells, solids, the Euler
+  sub-shape (a seam edge once, an edge `BRep_Tool::Degenerated` names not
+  at all), loops, shells, solids, the Euler
   characteristic `V − E + 2F − L` and the genus it implies, in/out/on
   classification of probe points (`BRepClass3d`), and the comparison with
   its tolerances.

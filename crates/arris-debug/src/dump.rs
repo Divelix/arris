@@ -172,7 +172,8 @@ pub fn dump_text(model: &Model, body: Body) -> Result<String, NotFound> {
 /// genus the counts imply through `V − E + F − (L − F) − 2(S − G) = 0`
 /// and the residual what is left once `G` is rounded down to an integer —
 /// `0` for a line that closes, `1` for one that does not
-/// (`docs/DATA-MODEL.md` §Euler–Poincaré). Errors: the body does not
+/// (`docs/DATA-MODEL.md` §Euler–Poincaré). `E` leaves degenerate edges
+/// out, as `arris_check::Report::euler` does. Errors: the body does not
 /// resolve.
 pub fn euler_line(model: &Model, body: Body) -> Result<String, NotFound> {
     let c = model.closure(body)?;
@@ -182,9 +183,14 @@ pub fn euler_line(model: &Model, body: Body) -> Result<String, NotFound> {
         .filter_map(|&f| model.face(f).ok())
         .map(|f| f.loops().len())
         .sum();
+    let edges = c
+        .edges
+        .iter()
+        .filter(|&&e| !model.edge(e).is_ok_and(|e| e.is_degenerate()))
+        .count();
     let (v, e, f, l, s) = (
         c.vertices.len() as i64,
-        c.edges.len() as i64,
+        edges as i64,
         c.faces.len() as i64,
         loops as i64,
         c.shells.len() as i64,

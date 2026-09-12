@@ -49,7 +49,7 @@ with no segment along it — a pinch — is a typed refusal.
   — and counting it is what makes a sphere derive genus 1 and a cone an
   odd characteristic. No committed fixture has a degenerate edge, so no
   `expected.json` or `dump.txt` moves; `sample::sphere`'s printed line
-  becomes `2/2/1/1/1 g0 = 0`. Retires the backlog line on the Euler line
+  becomes `2/1/1/1/1 g0 = 0` (the seam alone). Retires the backlog line on the Euler line
   counting degenerate edges.
 - `arris-ops` revolve (`docs/ARCHITECTURE.md` §Operations): a vertex
   within `default_tolerance` of the axis is *on* it, and a line segment
@@ -99,7 +99,7 @@ mechanical; **[2]** careful — a geometric or numeric case to get right
 within a given design; **[3]** unproven — an algorithm whose robustness or
 bound has to be established here.
 
-- [ ] Step 1 **[1]** — degenerate edges out of the Euler line and the
+- [x] Step 1 **[1]** — degenerate edges out of the Euler line and the
   counts, both sides. Tests: `sample::sphere` and
   a hand-built cone with an apex edge print a closing line at genus 0;
   the oracle's self-test builds Open CASCADE's own cone and sphere

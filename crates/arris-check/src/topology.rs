@@ -23,7 +23,8 @@ use crate::violation::{
 };
 
 /// The Euler–Poincaré line of the closure: the five counts and the genus
-/// they imply. Linear in the closure, so it is taken at every level.
+/// they imply, degenerate edges left out. Linear in the closure, so it is
+/// taken at every level.
 pub(crate) fn euler_line(model: &Model, closure: &Closure) -> EulerLine {
     let loops: usize = closure
         .faces
@@ -31,9 +32,14 @@ pub(crate) fn euler_line(model: &Model, closure: &Closure) -> EulerLine {
         .filter_map(|&f| model.face(f).ok())
         .map(|f| f.loops().len())
         .sum();
+    let edges = closure
+        .edges
+        .iter()
+        .filter(|&&e| !model.edge(e).is_ok_and(|e| e.is_degenerate()))
+        .count();
     EulerLine::new(
         closure.vertices.len(),
-        closure.edges.len(),
+        edges,
         closure.faces.len(),
         loops,
         closure.shells.len(),
