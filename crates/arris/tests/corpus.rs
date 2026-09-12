@@ -2,11 +2,7 @@
 //! (`docs/ROADMAP.md` §Fixtures, `docs/plans/m2-topology.md` step 13):
 //! the recipe built in Arris, the checker at `Full`, counts and genus
 //! against the oracle, STEP read back by the oracle, provenance
-//! accounting, the dump diffed against `dump.txt`. The `primitive/*`,
-//! `transform/*`, `boolean/*`, `provenance/*` and `revolve` fixtures are
-//! live; every fixture that needs an operation of a later step or
-//! milestone is `#[ignore]`d naming it, and `--include-ignored` runs it
-//! anyway, so the day the operation lands the test says so.
+//! accounting, the dump diffed against `dump.txt`. Every fixture is live.
 
 use arris_debug::corpus::{self, CorpusError};
 use arris_debug::fixtures;
@@ -191,10 +187,25 @@ fn boolean_sliver_common() {
     run("boolean/sliver-common");
 }
 
+/// A rectangle with a circular hole extruded: `boolean/through-hole`'s
+/// solid and numbers by the other path.
 #[test]
-#[ignore = "M5: needs ops::extrude (plans/m5-sweeps step 5)"]
 fn sweep_extrude_plate_with_hole() {
     run("sweep/extrude-plate-with-hole");
+}
+
+/// A stadium with a hole: two half-cylinder faces with no seam beside the
+/// seamed bore, their boxes apart so the checker decides every pair.
+#[test]
+fn sweep_extrude_slot() {
+    run("sweep/extrude-slot");
+}
+
+/// The plate-with-hole profile on `z = 10` extruded down: the same solid
+/// again, the profile face on top keeping its frame.
+#[test]
+fn sweep_extrude_downward() {
+    run("sweep/extrude-downward");
 }
 
 /// A rectangle revolved a full turn about z: two seamed walls and two
@@ -237,42 +248,15 @@ fn provenance_bolt_pattern_rebuild_tighter() {
     run_variant("provenance/bolt-pattern-rebuild", "tighter");
 }
 
-/// A recipe with an op the kernel has no operation for fails naming it:
-/// `extrude`, the one op left (plans/m5-sweeps step 5 retires this test
-/// with it).
+/// A variant the recipe does not have fails naming it.
 #[test]
-fn an_unsupported_op_fails_with_its_name() {
-    let dir = tempdir("unsupported-op");
-    std::fs::write(
-        dir.join("fixture.json"),
-        r#"{
-            "description": "a profile swept by an op the kernel does not have yet",
-            "steps": [
-                {"name": "base", "op": "profile", "plane": {"origin": [0, 0, 0], "x": [1, 0, 0], "y": [0, 1, 0]},
-                 "outer": {"start": [0, 0], "segments": [{"line_to": [1, 0]}, {"line_to": [1, 1]}, {"line_to": [0, 0]}]}},
-                {"name": "result", "op": "extrude", "profile": "base", "direction": [0, 0, 1], "length": 1}
-            ],
-            "result": "result"
-        }"#,
-    )
-    .unwrap();
-    std::fs::write(
-        dir.join("expected.json"),
-        r#"{
-            "occt": "n/a",
-            "recipe_sha256": "0",
-            "results": {"default": {"degenerate": false, "counts": {"vertices": 0, "edges": 0, "faces": 0, "loops": 0}}}
-        }"#,
-    )
-    .unwrap();
-    let err = corpus::run(&dir, "default").unwrap_err();
+fn an_unknown_variant_fails_with_its_name() {
+    let dir = fixtures::corpus_root().join("primitive/box");
+    let err = corpus::run(&dir, "nope").unwrap_err();
     assert!(
-        matches!(&err, CorpusError::Unsupported { step, op: "extrude", .. } if step == "result"),
+        matches!(&err, CorpusError::Variant { variant, .. } if variant == "nope"),
         "{err}"
     );
-    assert!(err.to_string().contains("op \"extrude\""), "{err}");
-    let err = corpus::run(&dir, "nope").unwrap_err();
-    assert!(matches!(err, CorpusError::Variant { .. }), "{err}");
 }
 
 /// A committed dump that differs by one id fails with the diff, and a

@@ -351,9 +351,30 @@ on), since `pcurve_on` reports a periodic parameter in `[0, 2π)`. A full
 turn of a profile with holes is `Reason::MultiShell`: each hole closes
 into a cavity, a shell of its own, which the one-shell `Solid` of cycle 1
 does not hold; a partial turn's holes open onto its flat ends and are one
-shell with the rest. `ops::extrude` is the plan's next step; there is no
-`planar_face` operation — a sheet of one face is C7's sheet bodies, and
-the cap construction is the sweeps' private helper.
+shell with the rest.
+
+`ops::extrude(m, &profile, direction: Vec3, length)` sweeps the profile
+along its plane's normal, either way: `direction` is the normal or its
+opposite within `angular_tolerance` (`Reason::DirectionNotNormal`
+otherwise — an oblique extrusion of an arc is a cylinder of elliptical
+section, a sweep along a path and cycle 5's), `length` finite and above
+`default_tolerance` (`NotPositive` at or below zero, `ZeroThickness`
+within the tolerance). The sweep is the plane's exact normal, never the
+caller's rounding of it. The profile face keeps its plane's frame
+whichever way the sweep goes — a planar face's frame *is* the answer a
+consumer reads back — and is the cap whose outward normal opposes the
+sweep; the other cap is its copy translated by the sweep. A line segment
+sweeps a plane whose `X` is the segment and `Y` the sweep, an arc a
+cylinder whose frame is the arc's centre with `Z` the sweep and `X` the
+profile plane's, so a circle loop's seam stands at its vertex's rise as
+Open CASCADE's does; every vertex sweeps a straight rise. Each side
+face's loop is start edge, rise, end edge, rise — a circle loop's one
+rise its seam, used twice — walked that way when the sweep runs along the
+profile's normal and the other way otherwise, with the face use and the
+pcurves decided as for a revolve. Both sweeps share the cap, side-face
+and provenance construction. There is no `planar_face` operation — a
+sheet of one face is C7's sheet bodies, and the cap construction is the
+sweeps' private helper.
 
 ### Errors
 

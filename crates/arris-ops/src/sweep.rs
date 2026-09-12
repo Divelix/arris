@@ -1,5 +1,5 @@
-//! The sweeps: a planar [`Profile`] becomes a solid by `revolve` (and, in
-//! a later step of the plan, `extrude`). A sweep's faces are known
+//! The sweeps: a planar [`Profile`] becomes a solid by `extrude` or
+//! `revolve`. A sweep's faces are known
 //! outright, so both enter the builder through `Builder::assemble`
 //! (ADR-0004's entry, as `transform` uses it) and record every entity
 //! `Generated` from a [`SweepPart`] naming the part of the sketch it came
@@ -16,7 +16,7 @@ use arris_check::arris_topo::arris_math::{
     Axis, Frame, Interval, Isometry, Point2, Point3, Tolerance, UnitVec3, Vec2, Vec3, wrap_angle,
 };
 use arris_check::arris_topo::builder::{
-    Assembly, Builder, EdgeKey, EdgeSpec, FaceSpec, UseSpec, VertexKey, VertexSpec,
+    Assembly, Builder, Built, EdgeKey, EdgeSpec, FaceSpec, UseSpec, VertexKey, VertexSpec,
 };
 use arris_check::arris_topo::entity::{BodyKind, EdgeGeometry};
 use arris_check::arris_topo::provenance::SweepPart;
@@ -358,6 +358,115 @@ fn vertex_index(edge: &ProfileEdge, segments: usize) -> usize {
     }
 }
 
+/// A flat end of a sweep on the plane `frame`: every loop of the profile
+/// walked as oriented, each use `Forward`, and turned round when the face
+/// is used `Reversed`, so the material stays on the walk's left seen from
+/// outside. A rigid motion carries the parametrisation, so an end moved
+/// off the profile's plane has the profile's own pcurves. `slots` holds
+/// each edge's slot, `None` for an edge the end does not hold.
+fn cap_face(
+    m: &mut Model,
+    loops: &[Vec<ProfileEdge>],
+    frame: Frame,
+    orientation: Orientation,
+    slots: &[Vec<Option<usize>>],
+    tolerance: f64,
+) -> FaceSpec {
+    let surface = m.add_surface(Surface::Plane { frame });
+    let mut cap_loops = Vec::with_capacity(loops.len());
+    for (li, edges_of) in loops.iter().enumerate() {
+        let mut uses: Vec<UseSpec> = edges_of
+            .iter()
+            .enumerate()
+            .filter_map(|(j, edge)| {
+                Some(UseSpec {
+                    edge: EdgeKey::New(slots[li][j]?),
+                    orientation: Orientation::Forward,
+                    pcurve: m.add_curve2(edge.pcurve.clone()),
+                })
+            })
+            .collect();
+        if orientation.is_reversed() {
+            uses.reverse();
+            for u in &mut uses {
+                u.orientation = u.orientation.flipped();
+            }
+        }
+        cap_loops.push(uses);
+    }
+    FaceSpec::New {
+        surface,
+        orientation,
+        loops: cap_loops,
+        tolerance,
+    }
+}
+
+/// A side face of a sweep on `surface`: its cycle of uses placed in the
+/// surface's domain and written as one loop — or, with `split`, one loop
+/// per use, as an annulus of a full turn keeps its two closed rises.
+fn side_face(
+    m: &mut Model,
+    surface: &Surface,
+    orientation: Orientation,
+    cycle: Vec<SideUse>,
+    split: bool,
+    tolerance: f64,
+) -> FaceSpec {
+    let mut side_loops: Vec<Vec<SideUse>> = if split {
+        cycle.into_iter().map(|u| vec![u]).collect()
+    } else {
+        vec![cycle]
+    };
+    let surface_id = m.add_surface(surface.clone());
+    let mut spec_loops = Vec::with_capacity(side_loops.len());
+    for uses in &mut side_loops {
+        place_in_domain(surface, uses);
+        spec_loops.push(
+            uses.iter()
+                .map(|u| UseSpec {
+                    edge: EdgeKey::New(u.edge),
+                    orientation: u.orientation,
+                    pcurve: m.add_curve2(u.pcurve.clone()),
+                })
+                .collect::<Vec<_>>(),
+        );
+    }
+    FaceSpec::New {
+        surface: surface_id,
+        orientation,
+        loops: spec_loops,
+        tolerance,
+    }
+}
+
+/// The roles of an assembled sweep, running parallel to its specs, as
+/// one `Generated` per entity. `assemble` makes one slot per spec in spec
+/// order and the built maps are ordered by slot, so the vertex, edge and
+/// face maps zip with the role lists.
+fn record(
+    built: &Built,
+    vertex_roles: &[Role],
+    edge_roles: &[Role],
+    face_roles: &[Role],
+    part: impl Fn(SweepPart) -> Role,
+) -> Provenance {
+    let mut provenance = Provenance::new();
+    let forward = |id: EntityId| Shape::new(id, Orientation::Forward);
+    for (&id, &role) in built.vertices.values().zip(vertex_roles) {
+        provenance.add_generated(role, forward(id.into()));
+    }
+    for (&id, &role) in built.edges.values().zip(edge_roles) {
+        provenance.add_generated(role, forward(id.into()));
+    }
+    for (&id, &role) in built.faces.values().zip(face_roles) {
+        provenance.add_generated(role, forward(id.into()));
+    }
+    provenance.add_generated(part(SweepPart::Shell), forward(built.shell.into()));
+    provenance.add_generated(part(SweepPart::Body), built.body);
+    provenance
+}
+
 /// Revolves `profile` about `axis` by `angle` into a solid: a partial
 /// turn with two flat ends, or a full turn with seams when `angle` is
 /// within `angular_tolerance` of `2π`. Every segment of the profile
@@ -645,66 +754,29 @@ pub fn revolve(
         // motion carries the parametrisation, so the rotated edges have
         // the profile's own pcurves on the rotated plane.
         if !full {
-            let cap = |m: &mut Model,
-                       faces: &mut Vec<FaceSpec>,
-                       face_roles: &mut Vec<Role>,
-                       frame: Frame,
-                       orientation: Orientation,
-                       slots: &[Vec<Option<usize>>],
-                       role: SweepPart| {
-                let surface = m.add_surface(Surface::Plane { frame });
-                let mut cap_loops = Vec::with_capacity(loops.len());
-                for (li, edges_of) in loops.iter().enumerate() {
-                    let mut uses: Vec<UseSpec> = edges_of
-                        .iter()
-                        .enumerate()
-                        .filter_map(|(j, edge)| {
-                            Some(UseSpec {
-                                edge: EdgeKey::New(slots[li][j]?),
-                                orientation: Orientation::Forward,
-                                pcurve: m.add_curve2(edge.pcurve.clone()),
-                            })
-                        })
-                        .collect();
-                    if orientation.is_reversed() {
-                        uses.reverse();
-                        for u in &mut uses {
-                            u.orientation = u.orientation.flipped();
-                        }
-                    }
-                    cap_loops.push(uses);
-                }
-                faces.push(FaceSpec::New {
-                    surface,
-                    orientation,
-                    loops: cap_loops,
-                    tolerance,
-                });
-                face_roles.push(part(role));
-            };
             let (start_use, end_use) = if turn_along_normal {
                 (Orientation::Reversed, Orientation::Forward)
             } else {
                 (Orientation::Forward, Orientation::Reversed)
             };
-            cap(
+            faces.push(cap_face(
                 m,
-                &mut faces,
-                &mut face_roles,
+                &loops,
                 *plane,
                 start_use,
                 &start_edge,
-                SweepPart::StartCap,
-            );
-            cap(
+                tolerance,
+            ));
+            face_roles.push(part(SweepPart::StartCap));
+            faces.push(cap_face(
                 m,
-                &mut faces,
-                &mut face_roles,
+                &loops,
                 plane.transformed(&about_axis),
                 end_use,
                 &end_edge,
-                SweepPart::EndCap,
-            );
+                tolerance,
+            ));
+            face_roles.push(part(SweepPart::EndCap));
         }
 
         // The sides: start edge, rise up, end edge back, rise down — the
@@ -772,31 +844,14 @@ pub fn revolve(
                         u.orientation = u.orientation.flipped();
                     }
                 }
-                let mut side_loops: Vec<Vec<SideUse>> = if full && *annulus {
-                    cycle.into_iter().map(|u| vec![u]).collect()
-                } else {
-                    vec![cycle]
-                };
-                let surface_id = m.add_surface(surface.clone());
-                let mut spec_loops = Vec::with_capacity(side_loops.len());
-                for uses in &mut side_loops {
-                    place_in_domain(surface, uses);
-                    spec_loops.push(
-                        uses.iter()
-                            .map(|u| UseSpec {
-                                edge: EdgeKey::New(u.edge),
-                                orientation: u.orientation,
-                                pcurve: m.add_curve2(u.pcurve.clone()),
-                            })
-                            .collect::<Vec<_>>(),
-                    );
-                }
-                faces.push(FaceSpec::New {
-                    surface: surface_id,
+                faces.push(side_face(
+                    m,
+                    surface,
                     orientation,
-                    loops: spec_loops,
+                    cycle,
+                    full && *annulus,
                     tolerance,
-                });
+                ));
                 face_roles.push(part(SweepPart::Side {
                     loop_index: edge.loop_index,
                     segment: edge.segment,
@@ -812,21 +867,363 @@ pub fn revolve(
         let b = Builder::assemble(m, tolerance, assembly)?;
         let built = b.finish(m, BodyKind::Solid)?;
         verify(m, built.body)?;
-        // `assemble` makes one slot per spec in spec order and the built
-        // maps are ordered by slot, so they run parallel to the role lists.
-        let mut provenance = Provenance::new();
-        let forward = |id: EntityId| Shape::new(id, Orientation::Forward);
-        for (&id, &role) in built.vertices.values().zip(&vertex_roles) {
-            provenance.add_generated(role, forward(id.into()));
+        let provenance = record(&built, &vertex_roles, &edge_roles, &face_roles, part);
+        Ok((built.body, provenance))
+    })
+}
+
+/// Extrudes `profile` along its plane's normal by `length` into a solid:
+/// `direction` says which way, and must be the normal or its opposite
+/// within `angular_tolerance`. Every segment of the profile sweeps one side
+/// face — a line a plane whose `X` is the segment and `Y` the sweep, an arc
+/// a cylinder whose frame is the arc's centre, `Z` the sweep and `X` the
+/// profile plane's, so a circle loop's seam stands at its vertex's rise —
+/// and every vertex a straight *rise* along the sweep; every pcurve is
+/// exact through `pcurve_on`. The profile face keeps its plane's frame
+/// whichever way the sweep goes and is the cap whose outward normal opposes
+/// it; the other cap is its copy translated by the sweep. Entities are
+/// appended in one fixed order — vertices per loop in walking order (the
+/// start ring, then the end ring), edges (start, end, rises), faces (start
+/// cap, end cap, sides per loop per segment) — so the ids are a function of
+/// the profile alone; every tolerance is `default_tolerance`. Provenance is
+/// one `Generated` per entity from a [`Role::Extrude`] naming the part of
+/// the sketch it came from.
+///
+/// Errors, the model untouched: [`OpError::Profile`] when
+/// `Profile::edges` refuses the sketch; [`OpError::Degenerate`] with
+/// [`Reason::NonFinite`] for a non-finite length or direction,
+/// [`Reason::NotPositive`] for a length at or below zero or a zero
+/// direction, [`Reason::ZeroThickness`] for a length within
+/// `default_tolerance` of zero, and [`Reason::DirectionNotNormal`] for a
+/// direction off the plane's normal — an oblique extrusion of an arc is a
+/// cylinder of elliptical section, a sweep along a path (cycle 5).
+///
+/// ```
+/// use arris_ops::extrude;
+/// use arris_ops::arris_check::arris_topo::Model;
+/// use arris_ops::arris_check::arris_topo::arris_geom::{Profile, ProfileLoop, ProfileSegment};
+/// use arris_ops::arris_check::arris_topo::arris_math::{Frame, Point2, Vec3};
+/// use arris_ops::arris_check::arris_topo::provenance::{Role, SweepPart};
+///
+/// // A plate 40×30 with a hole of radius 4, extruded 10 up the z axis.
+/// let p = |u, v| Point2::new(u, v);
+/// let profile = Profile {
+///     plane: Frame::world(),
+///     outer: ProfileLoop::Path {
+///         start: p(0.0, 0.0),
+///         segments: vec![
+///             ProfileSegment::LineTo(p(40.0, 0.0)),
+///             ProfileSegment::LineTo(p(40.0, 30.0)),
+///             ProfileSegment::LineTo(p(0.0, 30.0)),
+///             ProfileSegment::LineTo(p(0.0, 0.0)),
+///         ],
+///     },
+///     holes: vec![ProfileLoop::Circle { center: p(20.0, 15.0), radius: 4.0 }],
+/// };
+/// let mut m = Model::default();
+/// let (body, provenance) = extrude(&mut m, &profile, Vec3::z(), 10.0).unwrap();
+/// assert_eq!(m.faces(body).unwrap().len(), 7, "two caps, four walls and the bore");
+/// assert_eq!(m.edges(body).unwrap().len(), 15, "the bore's seam once");
+/// let bore = Role::Extrude(SweepPart::Side { loop_index: 1, segment: 0 });
+/// assert_eq!(provenance.generated_from(bore).len(), 1);
+/// ```
+pub fn extrude(
+    m: &mut Model,
+    profile: &Profile,
+    direction: Vec3,
+    length: f64,
+) -> Result<(Body, Provenance), OpError> {
+    let precision = m.precision();
+    let tol = precision.tolerance();
+    if !length.is_finite() {
+        return Err(degenerate(Reason::NonFinite { what: "length" }));
+    }
+    if length <= 0.0 {
+        return Err(degenerate(Reason::NotPositive {
+            what: "length",
+            value: length,
+        }));
+    }
+    if length <= tol.linear {
+        return Err(degenerate(Reason::ZeroThickness));
+    }
+    if !direction.iter().all(|c| c.is_finite()) {
+        return Err(degenerate(Reason::NonFinite { what: "direction" }));
+    }
+    let Some(d) = UnitVec3::try_new(direction, 0.0) else {
+        return Err(degenerate(Reason::NotPositive {
+            what: "direction's length",
+            value: direction.norm(),
+        }));
+    };
+    let plane = &profile.plane;
+    let normal = plane.z().into_inner();
+    let dn = d.dot(&normal);
+    let off_normal = d.cross(&normal).norm().atan2(dn.abs());
+    if off_normal > tol.angular {
+        return Err(degenerate(Reason::DirectionNotNormal));
+    }
+    let loops = profile.edges(tol)?;
+    // The sweep is the exact normal, never the caller's rounding of it.
+    let along_normal = dn > 0.0;
+    let sweep = if along_normal { plane.z() } else { -plane.z() };
+    let shift = Isometry::from_translation(sweep.into_inner() * length);
+
+    // Every segment's surface, before anything is written.
+    let mut surfaces: Vec<Vec<Surface>> = Vec::with_capacity(loops.len());
+    for edges in &loops {
+        let mut row = Vec::with_capacity(edges.len());
+        for edge in edges {
+            row.push(match &edge.curve {
+                Curve::Line { direction, .. } => Surface::Plane {
+                    frame: Frame::new(
+                        edge.curve.point(edge.range.lo()),
+                        direction.cross(&sweep),
+                        direction.into_inner(),
+                    )?,
+                },
+                &Curve::Circle { ref frame, radius } => Surface::Cylinder {
+                    frame: Frame::new(frame.origin(), sweep.into_inner(), plane.x().into_inner())?,
+                    radius,
+                },
+                // `Profile::edges` makes lines and circles and nothing else.
+                Curve::Ellipse { .. } | Curve::Nurbs(_) => return Err(profile_curve_fault(edge)),
+            });
         }
-        for (&id, &role) in built.edges.values().zip(&edge_roles) {
-            provenance.add_generated(role, forward(id.into()));
+        surfaces.push(row);
+    }
+
+    let tolerance = precision.default_tolerance;
+    let rise_range = Interval::new(0.0, length).map_err(|_| {
+        degenerate(Reason::NotPositive {
+            what: "length",
+            value: length,
+        })
+    })?;
+    let part = |p: SweepPart| Role::Extrude(p);
+
+    m.transaction(|m| {
+        let mut vertices: Vec<VertexSpec> = Vec::new();
+        let mut vertex_roles: Vec<Role> = Vec::new();
+        let mut edges: Vec<EdgeSpec> = Vec::new();
+        let mut edge_roles: Vec<Role> = Vec::new();
+        let mut faces: Vec<FaceSpec> = Vec::new();
+        let mut face_roles: Vec<Role> = Vec::new();
+
+        // The start ring, then the end ring; slot (loop, walk index).
+        let mut start_vertex: Vec<Vec<usize>> = Vec::with_capacity(loops.len());
+        let mut end_vertex: Vec<Vec<usize>> = Vec::with_capacity(loops.len());
+        for edges_of in &loops {
+            let n = edges_of.len();
+            let mut ring = Vec::with_capacity(n);
+            for edge in edges_of {
+                ring.push(vertices.len());
+                vertices.push(VertexSpec::New {
+                    point: edge.curve.point(edge.range.lo()),
+                    tolerance,
+                });
+                vertex_roles.push(part(SweepPart::StartVertex {
+                    loop_index: edge.loop_index,
+                    vertex: vertex_index(edge, n),
+                }));
+            }
+            start_vertex.push(ring);
         }
-        for (&id, &role) in built.faces.values().zip(&face_roles) {
-            provenance.add_generated(role, forward(id.into()));
+        for edges_of in &loops {
+            let n = edges_of.len();
+            let mut ring = Vec::with_capacity(n);
+            for edge in edges_of {
+                ring.push(vertices.len());
+                vertices.push(VertexSpec::New {
+                    point: shift.apply(edge.curve.point(edge.range.lo())),
+                    tolerance,
+                });
+                vertex_roles.push(part(SweepPart::EndVertex {
+                    loop_index: edge.loop_index,
+                    vertex: vertex_index(edge, n),
+                }));
+            }
+            end_vertex.push(ring);
         }
-        provenance.add_generated(part(SweepPart::Shell), forward(built.shell.into()));
-        provenance.add_generated(part(SweepPart::Body), built.body);
+
+        // The start edges, the end edges, then the rises.
+        let mut start_edge: Vec<Vec<usize>> = Vec::with_capacity(loops.len());
+        let mut end_edge: Vec<Vec<usize>> = Vec::with_capacity(loops.len());
+        let mut end_curves: Vec<Vec<Curve>> = Vec::with_capacity(loops.len());
+        for (li, edges_of) in loops.iter().enumerate() {
+            let n = edges_of.len();
+            let mut row = Vec::with_capacity(n);
+            for (j, edge) in edges_of.iter().enumerate() {
+                row.push(edges.len());
+                edges.push(EdgeSpec::New {
+                    geometry: EdgeGeometry::Curve {
+                        curve: m.add_curve(edge.curve.clone()),
+                        range: edge.range,
+                    },
+                    start: VertexKey::New(start_vertex[li][j]),
+                    end: VertexKey::New(start_vertex[li][(j + 1) % n]),
+                    tolerance,
+                });
+                edge_roles.push(part(SweepPart::StartEdge {
+                    loop_index: edge.loop_index,
+                    segment: edge.segment,
+                }));
+            }
+            start_edge.push(row);
+        }
+        for (li, edges_of) in loops.iter().enumerate() {
+            let n = edges_of.len();
+            let mut row = Vec::with_capacity(n);
+            let mut curves = Vec::with_capacity(n);
+            for (j, edge) in edges_of.iter().enumerate() {
+                let curve = edge.curve.transformed(&shift);
+                row.push(edges.len());
+                edges.push(EdgeSpec::New {
+                    geometry: EdgeGeometry::Curve {
+                        curve: m.add_curve(curve.clone()),
+                        range: edge.range,
+                    },
+                    start: VertexKey::New(end_vertex[li][j]),
+                    end: VertexKey::New(end_vertex[li][(j + 1) % n]),
+                    tolerance,
+                });
+                edge_roles.push(part(SweepPart::EndEdge {
+                    loop_index: edge.loop_index,
+                    segment: edge.segment,
+                }));
+                curves.push(curve);
+            }
+            end_edge.push(row);
+            end_curves.push(curves);
+        }
+        let mut rise_edge: Vec<Vec<usize>> = Vec::with_capacity(loops.len());
+        let mut rises: Vec<Vec<Curve>> = Vec::with_capacity(loops.len());
+        for (li, edges_of) in loops.iter().enumerate() {
+            let n = edges_of.len();
+            let mut row = Vec::with_capacity(n);
+            let mut curves = Vec::with_capacity(n);
+            for (j, edge) in edges_of.iter().enumerate() {
+                let rise = Curve::Line {
+                    origin: edge.curve.point(edge.range.lo()),
+                    direction: sweep,
+                };
+                row.push(edges.len());
+                edges.push(EdgeSpec::New {
+                    geometry: EdgeGeometry::Curve {
+                        curve: m.add_curve(rise.clone()),
+                        range: rise_range,
+                    },
+                    start: VertexKey::New(start_vertex[li][j]),
+                    end: VertexKey::New(end_vertex[li][j]),
+                    tolerance,
+                });
+                edge_roles.push(part(SweepPart::Rise {
+                    loop_index: edge.loop_index,
+                    vertex: vertex_index(edge, n),
+                }));
+                curves.push(rise);
+            }
+            rise_edge.push(row);
+            rises.push(curves);
+        }
+
+        // The caps: the profile face on its own plane, its outward normal
+        // against the sweep, and its translated copy.
+        let slots = |edges: &[Vec<usize>]| -> Vec<Vec<Option<usize>>> {
+            edges
+                .iter()
+                .map(|row| row.iter().copied().map(Some).collect())
+                .collect()
+        };
+        let (start_use, end_use) = if along_normal {
+            (Orientation::Reversed, Orientation::Forward)
+        } else {
+            (Orientation::Forward, Orientation::Reversed)
+        };
+        faces.push(cap_face(
+            m,
+            &loops,
+            *plane,
+            start_use,
+            &slots(&start_edge),
+            tolerance,
+        ));
+        face_roles.push(part(SweepPart::StartCap));
+        faces.push(cap_face(
+            m,
+            &loops,
+            plane.transformed(&shift),
+            end_use,
+            &slots(&end_edge),
+            tolerance,
+        ));
+        face_roles.push(part(SweepPart::EndCap));
+
+        // The sides: start edge, rise up, end edge back, rise down —
+        // walked that way when the sweep runs along the profile's normal
+        // and the other way otherwise, so the material is on the walk's
+        // left seen from outside. A circle loop's one rise is its seam,
+        // used twice.
+        for (li, edges_of) in loops.iter().enumerate() {
+            let n = edges_of.len();
+            for (j, edge) in edges_of.iter().enumerate() {
+                let surface = &surfaces[li][j];
+                let next = (j + 1) % n;
+                let on = |curve: &Curve, range: Interval| -> Result<Curve2, OpError> {
+                    pcurve_on(curve, range, surface, tol)
+                        .map_err(|e| OpError::Internal(Fault::Geometry(e)))
+                };
+                let start_pcurve = on(&edge.curve, edge.range)?;
+                let orientation = side_orientation(edge, normal, surface, &start_pcurve)?;
+                let mut cycle = vec![
+                    SideUse {
+                        edge: start_edge[li][j],
+                        orientation: Orientation::Forward,
+                        pcurve: start_pcurve,
+                        range: edge.range,
+                    },
+                    SideUse {
+                        edge: rise_edge[li][next],
+                        orientation: Orientation::Forward,
+                        pcurve: on(&rises[li][next], rise_range)?,
+                        range: rise_range,
+                    },
+                    SideUse {
+                        edge: end_edge[li][j],
+                        orientation: Orientation::Reversed,
+                        pcurve: on(&end_curves[li][j], edge.range)?,
+                        range: edge.range,
+                    },
+                    SideUse {
+                        edge: rise_edge[li][j],
+                        orientation: Orientation::Reversed,
+                        pcurve: on(&rises[li][j], rise_range)?,
+                        range: rise_range,
+                    },
+                ];
+                if !along_normal {
+                    cycle.reverse();
+                    for u in &mut cycle {
+                        u.orientation = u.orientation.flipped();
+                    }
+                }
+                faces.push(side_face(m, surface, orientation, cycle, false, tolerance));
+                face_roles.push(part(SweepPart::Side {
+                    loop_index: edge.loop_index,
+                    segment: edge.segment,
+                }));
+            }
+        }
+
+        let assembly = Assembly {
+            vertices,
+            edges,
+            faces,
+        };
+        let b = Builder::assemble(m, tolerance, assembly)?;
+        let built = b.finish(m, BodyKind::Solid)?;
+        verify(m, built.body)?;
+        let provenance = record(&built, &vertex_roles, &edge_roles, &face_roles, part);
         Ok((built.body, provenance))
     })
 }

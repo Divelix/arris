@@ -282,7 +282,7 @@ bound has to be established here.
   `sample::torus`); each written to STEP and read back by the oracle's
   reader with its volume (`oracle::compare` over a scratch fixture); a
   circle loop whose circle crosses the axis is `SpindleTorus`.
-- [ ] Step 5 **[2]** — `ops::extrude`, its fixtures, the runner's
+- [x] Step 5 **[2]** — `ops::extrude`, its fixtures, the runner's
   `extrude` arm, the unsupported-op test and `CorpusError::Unsupported`
   retired. Fixtures: `extrude-plate-with-hole` un-ignored and blessed;
   `extrude-slot` and `extrude-downward` authored, oracles generated,
@@ -497,4 +497,31 @@ deltas above, not a new decision.
   frustum is a fourth closed form beside the plan's three, so both cone
   orientations meet the oracle. `docs/ARCHITECTURE.md` §Formats and
   tools and `docs/DATA-MODEL.md` §Surfaces (the cone's `Z` rule) were
+  written in the step.
+- **Step 5.** `extrude` refuses more than the deltas named, each by an
+  existing `Reason`: a length above zero but within `default_tolerance`
+  is `ZeroThickness` (its rises would be shorter than their own
+  tolerance), a zero direction `NotPositive` and a non-finite one
+  `NonFinite`. The deltas left a side plane's frame open: `X` is the
+  segment and `Y` the sweep, so `v` runs over `[0, length]` on planes and
+  cylinders alike.
+- **Step 5.** The cap, side-face and provenance construction became
+  three private helpers in `ops::sweep` (`cap_face`, `side_face`,
+  `record`) that both sweeps call; the revolve's committed dumps are
+  unchanged byte for byte, which is the refactor's proof.
+- **Step 5.** The runner's `build_step` now builds a `profile` step too,
+  into the profiles map, and returns `Option<Made>`, so no arm is left
+  for a caller that forgot to ask first; `CorpusError::Unsupported` is
+  gone from `arris-debug`'s public API, and the unsupported-op test is
+  replaced by `an_unknown_variant_fails_with_its_name`, which keeps the
+  `CorpusError::Variant` coverage it carried. `prop::sweep::extruded`
+  sits beside `revolved` and shares its boundary quadrature.
+- **Step 5.** The cut cross-check draws its own strategy — a star polygon
+  of lines with one round hole — in the test file, and runs its 200 poses
+  through a runner seeded from `prop::seed()` with the count fixed, since
+  `prop` has no per-property case count. `prop::profile::general`'s
+  sphere arcs bulge inward, so the extrude property meets side cylinders
+  used both ways.
+- **Step 5.** `docs/ARCHITECTURE.md` §Operations (the extrude paragraph)
+  and `tests/fixtures/README.md` (the retired `Unsupported` sentence) were
   written in the step.

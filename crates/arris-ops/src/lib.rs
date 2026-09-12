@@ -28,7 +28,7 @@ pub use arris_check;
 pub use boolean::{common, cut, fuse};
 pub use error::{Fault, OpError, Reason, SplitFault};
 pub use primitive::{primitive_box, primitive_cylinder};
-pub use sweep::revolve;
+pub use sweep::{extrude, revolve};
 pub use transform::transform;
 
 use arris_check::arris_topo::{Body, Model, Shape};

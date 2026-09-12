@@ -1,7 +1,11 @@
 //! Pappus's centroid theorems as the oracle of the sweeps
-//! (`docs/plans/m5-sweeps.md`): the volume and the area a revolve must
-//! have, computed in the profile's plane and never over the swept faces
-//! — an independent path from `measure`'s flux over the B-Rep.
+//! (`docs/plans/m5-sweeps.md`): the volume and the area a revolve or an
+//! extrude must have, computed in the profile's plane and never over the
+//! swept faces — an independent path from `measure`'s flux over the B-Rep.
+//!
+//! An extrude by `L` of a region of area `A` and perimeter `P` has volume
+//! `A L` and area `2A + P L`, the degenerate case of the theorems with the
+//! axis at infinity.
 //!
 //! A revolve by `θ` of a region of area `A` whose centroid is `ρ̄` from
 //! the axis has volume `θ ρ̄ A`, and its swept surface has area `θ ∮ ρ dℓ`
@@ -14,7 +18,7 @@
 use core::f64::consts::{FRAC_PI_2, TAU};
 
 use arris_geom::integrate::{gauss_legendre, region_integral};
-use arris_geom::profile::{Profile, ProfileError};
+use arris_geom::profile::{Profile, ProfileEdge, ProfileError};
 use arris_geom::region2::Piece;
 use arris_math::{Axis, Point2, Tolerance, Vec2};
 
@@ -73,9 +77,57 @@ pub fn revolved(
         .collect();
     let area = region_integral(&pieces, f64::INFINITY, |_, _| 1.0);
     let moment = region_integral(&pieces, f64::INFINITY, |u, v| rho(Point2::new(u, v)));
+    let boundary = boundary_integral(&loops, |p| rho(p).abs());
+    let full = (angle - TAU).abs() <= tol.angular;
+    let ends = if full { 0.0 } else { 2.0 * area.abs() };
+    Ok(Pappus {
+        volume: angle * moment.abs(),
+        area: angle * boundary + ends,
+    })
+}
 
+/// The volume and area of `profile` extruded by `length` along its
+/// plane's normal, either way: `A·L` and `2A + P·L`.
+///
+/// Errors: as `Profile::edges`.
+///
+/// ```
+/// use arris_debug::prop::sweep::extruded;
+/// use arris_geom::profile::{Profile, ProfileLoop};
+/// use arris_math::{Frame, Point2, Precision};
+/// use core::f64::consts::PI;
+///
+/// // A disc of radius 2 extruded 5: a cylinder, 20π and 8π + 20π.
+/// let disc = Profile {
+///     plane: Frame::world(),
+///     outer: ProfileLoop::Circle { center: Point2::new(3.0, 0.0), radius: 2.0 },
+///     holes: Vec::new(),
+/// };
+/// let p = extruded(&disc, 5.0, Precision::DEFAULT.tolerance()).unwrap();
+/// assert!((p.volume - 20.0 * PI).abs() < 1e-12 * p.volume);
+/// assert!((p.area - 28.0 * PI).abs() < 1e-12 * p.area);
+/// ```
+pub fn extruded(profile: &Profile, length: f64, tol: Tolerance) -> Result<Pappus, ProfileError> {
+    let loops = profile.edges(tol)?;
+    let pieces: Vec<Piece<'_>> = loops
+        .iter()
+        .flatten()
+        .map(|e| Piece::along(&e.pcurve, e.range))
+        .collect();
+    let area = region_integral(&pieces, f64::INFINITY, |_, _| 1.0).abs();
+    let perimeter = boundary_integral(&loops, |_| 1.0);
+    Ok(Pappus {
+        volume: area * length,
+        area: 2.0 * area + perimeter * length,
+    })
+}
+
+/// `∮ w ds` over every edge's pcurve: Gauss–Legendre in pieces of at most
+/// a quarter turn of the parameter, exact for a line and to rounding for
+/// an arc.
+fn boundary_integral(loops: &[Vec<ProfileEdge>], w: impl Fn(Point2) -> f64) -> f64 {
     let nodes = gauss_legendre();
-    let mut boundary = 0.0;
+    let mut sum = 0.0;
     for e in loops.iter().flatten() {
         let (lo, hi) = (e.range.lo(), e.range.hi());
         let steps = ((hi - lo) / FRAC_PI_2).ceil().max(1.0) as usize;
@@ -83,16 +135,11 @@ pub fn revolved(
         for i in 0..steps {
             let (a, b) = (lo + i as f64 * h, lo + (i + 1) as f64 * h);
             let (mid, half) = ((a + b) / 2.0, (b - a) / 2.0);
-            for &(x, w) in &nodes {
+            for &(x, weight) in &nodes {
                 let ev = e.pcurve.eval(mid + half * x);
-                boundary += w * half * rho(ev.point).abs() * ev.d1.norm();
+                sum += weight * half * w(ev.point) * ev.d1.norm();
             }
         }
     }
-    let full = (angle - TAU).abs() <= tol.angular;
-    let ends = if full { 0.0 } else { 2.0 * area.abs() };
-    Ok(Pappus {
-        volume: angle * moment.abs(),
-        area: angle * boundary + ends,
-    })
+    sum
 }

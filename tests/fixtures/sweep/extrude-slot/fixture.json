@@ -1,0 +1,28 @@
+{
+  "description": "a stadium of two lines and two semicircular arcs, straight length 20 and radius 5, with a hole r 2 at its centre, extruded 8: two partial cylinder faces with no seam beside the seamed bore, the three cylinders' boxes apart",
+  "steps": [
+    {
+      "name": "slot",
+      "op": "profile",
+      "plane": {"origin": [0, 0, 0], "x": [1, 0, 0], "y": [0, 1, 0]},
+      "outer": {"start": [-10, -5], "segments": [{"line_to": [10, -5]}, {"arc_to": [10, 5], "via": [15, 0]}, {"line_to": [-10, 5]}, {"arc_to": [-10, -5], "via": [-15, 0]}]},
+      "holes": [{"circle": {"center": [0, 0], "radius": 2}}]
+    },
+    {"name": "result", "op": "extrude", "profile": "slot", "direction": [0, 0, 1], "length": 8}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [5, 0, 4], "expect": "in"},
+    {"label": "outside", "point": [0, 10, 4], "expect": "out"},
+    {"label": "on_face", "point": [15, 0, 4], "expect": "on"},
+    {"label": "on_edge", "point": [0, 5, 8], "expect": "on"},
+    {"label": "on_axis", "point": [0, 0, 4], "expect": "out"}
+  ],
+  "analytic": {
+    "volume": "(200 + 21 * pi) * 8",
+    "area": "2 * (200 + 21 * pi) + (40 + 14 * pi) * 8",
+    "centroid": [0, 0, 4],
+    "counts": {"vertices": 10, "edges": 15, "faces": 7, "loops": 9, "shells": 1},
+    "genus": 1
+  }
+}

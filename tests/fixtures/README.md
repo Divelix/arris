@@ -41,11 +41,11 @@ provenance accounting, and diffs the dump against `dump.txt`. A result
 the oracle recorded no solid for (`degenerate` in `expected.json`) must
 fail with `OpError::Degenerate` at its result step, and one whose recipe
 says `analytic.expect_error` must fail with that typed refusal; either
-ends the run there, nothing later compared, no `dump.txt`. A fixture
-whose recipe needs an operation of a later step or milestone is
-`#[ignore = "M4: needs ops::fuse (step 8)"]` and fails naming the op
-under `--include-ignored`, so the day the operation lands the test says
-so. `ARRIS_BLESS=1 cargo test -p arris --test corpus
+ends the run there, nothing later compared, no `dump.txt`. Every op of
+the recipe grammar has its operation; a fixture that does not pass yet —
+a failure shrunk to one — is `#[ignore = "why"]`d in `corpus.rs` and
+fails at the stage that differs under `--include-ignored`, so the day it
+passes the test says so. `ARRIS_BLESS=1 cargo test -p arris --test corpus
 <name>` writes the dump instead of diffing it; commit the file as part
 of the step that made the fixture pass, and a later change to it is a
 `fixtures:` commit that says why the ids or the geometry moved.

@@ -41,6 +41,8 @@ fn every_row_of_the_roadmap_table_has_a_fixture() {
         "boolean/boss-flush",
         "boolean/coaxial-fuse",
         "sweep/extrude-plate-with-hole",
+        "sweep/extrude-slot",
+        "sweep/extrude-downward",
         "sweep/revolve-tube",
         "sweep/revolve-quarter",
         "sweep/revolve-l-profile",

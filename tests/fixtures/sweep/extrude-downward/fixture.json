@@ -1,0 +1,28 @@
+{
+  "description": "the plate-with-hole profile on the plane z = 10, extruded 10 along −z: through-hole's solid and numbers by a third path, the profile face on top keeping its frame",
+  "steps": [
+    {
+      "name": "sketch",
+      "op": "profile",
+      "plane": {"origin": [0, 0, 10], "x": [1, 0, 0], "y": [0, 1, 0]},
+      "outer": {"start": [0, 0], "segments": [{"line_to": [40, 0]}, {"line_to": [40, 30]}, {"line_to": [0, 30]}, {"line_to": [0, 0]}]},
+      "holes": [{"circle": {"center": [20, 15], "radius": 4}}]
+    },
+    {"name": "result", "op": "extrude", "profile": "sketch", "direction": [0, 0, -1], "length": 10}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [5, 5, 5], "expect": "in"},
+    {"label": "outside", "point": [50, 15, 5], "expect": "out"},
+    {"label": "on_face", "point": [5, 5, 10], "expect": "on"},
+    {"label": "on_edge", "point": [24, 15, 10], "expect": "on"},
+    {"label": "on_axis", "point": [20, 15, 5], "expect": "out"}
+  ],
+  "analytic": {
+    "volume": "12000 - pi * 16 * 10",
+    "area": "3800 - 2 * pi * 16 + 2 * pi * 4 * 10",
+    "centroid": [20, 15, 5],
+    "counts": {"vertices": 10, "edges": 15, "faces": 7, "loops": 9, "shells": 1},
+    "genus": 1
+  }
+}
