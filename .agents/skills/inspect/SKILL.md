@@ -48,13 +48,18 @@ Every geometry failure becomes a fixture (`.agents/rules/kernel.md`):
 2. **Shrink**: fewer faces, rounder numbers, an axis-aligned pose if the
    failure survives it. Stop when one more simplification makes it pass —
    that boundary is the bug's description.
-3. **Save** under `tests/fixtures/<area>/<slug>/`: the recipe
+3. **Save** under `tests/fixtures/regression/<slug>/`, not in its area —
+   the corpus lint holds `primitive/`, `transform/`, `boolean/`, `sweep/`
+   and `provenance/` to passing, blessed fixtures: the recipe
    (`fixture.json`, format in `tests/fixtures/README.md`), the expected
-   values (`expected.json`, from `expected.py`), and the test with the
+   values (`expected.json`, from `expected.py`), and the test
+   `regression_<slug>` in `crates/arris/tests/corpus.rs` with the
    *desired* assertion, `#[ignore = "<what fails>"]`.
 4. **Commit** it as `test(<scope>): fixture <slug>` with the failure's
    shape in the body. The fix is a plan step or a backlog line; the
-   fixture is committed either way, and un-ignored when it passes.
+   fixture is committed either way. The commit that makes it pass moves
+   the directory into its area, blesses its dump (`ARRIS_BLESS=1`) and
+   renames and un-ignores its test (`<area>_<slug>`).
 
 ## Property-test failures
 

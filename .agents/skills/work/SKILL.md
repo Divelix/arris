@@ -30,7 +30,8 @@ argument-hint: <plan slug> [step number or range]
    so in the reply — a plan is a living todo, not a contract. If the step
    revealed a geometry failure outside its scope, shrink it to a fixture
    (`inspect` skill, "From a failure to a fixture") and commit the fixture
-   `#[ignore]`d in the same step; the fix is a backlog line.
+   under `tests/fixtures/regression/`, `#[ignore]`d, in the same step; the
+   fix is a backlog line.
 6. Reply: what landed, what the commit is, what the next step is, anything
    surprising. Then stop unless a range was requested.
 

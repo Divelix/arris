@@ -40,10 +40,12 @@ jobs:
   # are the whole suite, and a plain `cargo test --workspace` beside them
   # would only pay for the same work twice.
   #
-  # Every run includes the ignored tests (docs/ROADMAP.md §M5): the C1
-  # corpus closes with none, and the corpus lint fails a comparable
-  # fixture that has no blessed dump, so an ignored fixture fails CI
-  # either way.
+  # The corpus's ignored tests run too (docs/ROADMAP.md §M5), all but the
+  # `regression_*` ones: a failure shrunk to a fixture waits under
+  # `tests/fixtures/regression/`, ignored, until its fix, and must not turn
+  # CI red meanwhile (.agents/rules/kernel.md §Testing). Every other corpus
+  # area holds no ignored fixture — the corpus lint fails one without its
+  # blessed dump — so that run finds nothing to skip there.
   test:
     runs-on: ubuntu-latest
     env:
@@ -57,18 +59,19 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --project tools/oracle
-      - run: cargo nextest run --workspace --run-ignored all
+      - run: cargo nextest run --workspace
+      - run: cargo nextest run -p arris --test corpus --run-ignored only --no-tests pass -E 'not test(/^regression_/)'
       - run: cargo test --workspace --doc
       # arris-mesh's `parallel` feature: the same tests, so every sample
       # body's and primitive's mesh is byte-identical with faces
       # triangulated in parallel.
-      - run: cargo nextest run -p arris-mesh --features parallel --run-ignored all
+      - run: cargo nextest run -p arris-mesh --features parallel
       # arris-ops's, and the corpus through the facade with both on: every
       # boolean fixture's dump and every property test's result
       # byte-identical with the face pairs intersected and the faces split
       # in parallel.
-      - run: cargo nextest run -p arris-ops --features parallel --run-ignored all
-      - run: cargo nextest run -p arris --features parallel --run-ignored all
+      - run: cargo nextest run -p arris-ops --features parallel
+      - run: cargo nextest run -p arris --features parallel
 
   # A library's docs are part of its API: a broken intra-doc link or a
   # missing doc on a public item fails the build.

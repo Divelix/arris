@@ -23,7 +23,10 @@ runner compares (the oracle built a solid, the recipe expects no refusal)
 carrying its committed dump per variant, which a fixture only has once it
 passed and was blessed. An `#[ignore]`d fixture in those areas therefore
 fails the lint: they hold zero ignored fixtures by test, and CI runs the
-suite with ignored tests included. The oracle's own self-test
+corpus's ignored tests as well, all but the `regression_*` ones. A
+fixture under `regression/` — a failure waiting for its fix, below — needs
+no dump and must have none: one with a dump passes, belongs in its area,
+and fails the lint until it moves. The oracle's own self-test
 (`uv run --project tools/oracle tools/oracle/selftest.py`) reproduces every
 committed `expected.json` and round-trips each result through STEP.
 
@@ -49,11 +52,12 @@ fail with `OpError::Degenerate` at its result step, and one whose recipe
 says `analytic.expect_error` must fail with that typed refusal; either
 ends the run there, nothing later compared, no `dump.txt`. Every op of
 the recipe grammar has its operation; a fixture that does not pass yet —
-a failure shrunk to one — is `#[ignore = "why"]`d in `corpus.rs` and
-fails at the stage that differs under `--include-ignored`, so the day it
-passes the test says so. `⚠ OPEN:` it has no dump, so in the lint's areas
-it fails the lint — where such a fixture waits is
-`docs/plans/m5-sweeps.md` `⚠ OPEN` 4. `ARRIS_BLESS=1 cargo test -p arris --test corpus
+a failure shrunk to one — lives under `regression/<slug>/`, outside the
+lint's areas, with its test `regression_<slug>` `#[ignore = "why"]`d in
+`corpus.rs`; it fails at the stage that differs under `--include-ignored`,
+so the day it passes the test says so, and the commit that fixes it moves
+the directory into its area, blesses its dump and renames the test
+`<area>_<slug>`. `ARRIS_BLESS=1 cargo test -p arris --test corpus
 <name>` writes the dump instead of diffing it; commit the file as part
 of the step that made the fixture pass, and a later change to it is a
 `fixtures:` commit that says why the ids or the geometry moved.
@@ -233,7 +237,7 @@ still the *base* seed and the total case count — that recipe reproduces the
 whole run, and the shard alone is re-run by its test name. The fixture a
 sharded failure becomes records all three in its commit body: the base
 seed, the case count and the shard. proptest's own `proptest-regressions/` files are gitignored and never
-committed: the regression is a fixture under this directory (or a
+committed: the regression is a fixture under `regression/` (or a
 hand-picked test beside the property) with the *desired* assertion,
 `#[ignore]`d until it passes, and the seed and case count in the commit
 body — so the original case stays reproducible after the shrinker or the

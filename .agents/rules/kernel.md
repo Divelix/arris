@@ -29,9 +29,12 @@ down. They apply to every crate; `SEED.md` §9 holds the reasons.
 ## Testing
 
 - **Every failure becomes a fixture.** Reproduce, shrink to the smallest
-  case that still fails, commit it under `tests/fixtures/` with the
-  *desired* assertion, `#[ignore = "…"]`d until it passes. The failure is
-  never kept as accepted behaviour, and never deleted once fixed.
+  case that still fails, commit it under `tests/fixtures/regression/<slug>/`
+  with the *desired* assertion, `#[ignore = "…"]`d until it passes. The
+  commit that fixes it moves it into its area (`boolean/`, `sweep/`, …)
+  with its blessed dump: the corpus lint holds those areas to passing
+  fixtures only. The failure is never kept as accepted behaviour, and
+  never deleted once fixed.
 - **Every fixture has an oracle.** Volume, area, centroid, counts, and
   point classifications computed by Open CASCADE (`tools/oracle/`), stored
   beside the fixture. Arris must match within the fixture's stated

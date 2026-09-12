@@ -35,7 +35,9 @@ The unit of acceptance. A fixture is a directory
   variant other than `default`). Committed once the fixture passes; the
   corpus lint fails a fixture the runner compares under `primitive/`,
   `transform/`, `boolean/`, `sweep/` or `provenance/` without one, so those
-  areas hold no ignored fixture by test.
+  areas hold no ignored fixture by test. A failure waiting for its fix is
+  a fixture under `regression/`, outside them, and moves into its area in
+  the commit that makes it pass.
 
 The test for a fixture (`arris_debug::corpus::run`, one `#[test]` per
 fixture in `crates/arris/tests/corpus.rs`) builds the recipe in Arris,

@@ -149,6 +149,24 @@ fn a_comparable_fixture_without_its_dump_fails_the_lint() {
         assert!(lint(&scratch).is_empty(), "{name}: {:?}", lint(&scratch));
     }
 
+    // A failure waiting under `regression/` needs no dump, and one that
+    // has a dump passes and has to move.
+    let scratch = root.join("regression/revolve-tube");
+    std::fs::create_dir_all(&scratch).unwrap();
+    copy_fixture("sweep/revolve-tube", &scratch);
+    assert!(lint(&scratch).is_empty(), "{:?}", lint(&scratch));
+    std::fs::copy(
+        corpus_root().join("sweep/revolve-tube/dump.txt"),
+        scratch.join("dump.txt"),
+    )
+    .unwrap();
+    let problems = lint(&scratch);
+    assert_eq!(problems.len(), 1, "{problems:?}");
+    assert!(
+        problems[0].contains("dump.txt is committed under regression/"),
+        "{problems:?}"
+    );
+
     let outside = tempdir("outside-the-areas");
     copy_fixture("sweep/revolve-tube", &outside);
     assert!(lint(&outside).is_empty(), "{:?}", lint(&outside));

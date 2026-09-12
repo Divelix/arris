@@ -361,7 +361,7 @@ the new fixtures; the layer check and the wasm build pass; CI green on
 
 The first three decided by the human on 2026-09-11 as recommended; kept
 here so the reasoning stays with the plan until retirement. The fourth was
-found at step 6 and is open.
+found at step 6 and decided on 2026-09-12 as recommended.
 
 - `⚠ OPEN 1:` **`planar_face`'s public surface.** *Decided: the
   recommendation.* The roadmap lists
@@ -396,7 +396,8 @@ found at step 6 and is open.
   with `Reason::DirectionNotNormal` rather than support line-only
   profiles obliquely and arcs not; C5's sweep along a path is where the
   general case belongs.
-- `⚠ OPEN 4:` **Where a failure fixture waits.** *Open, the human's.*
+- `⚠ OPEN 4:` **Where a failure fixture waits.** *Decided by the human
+  on 2026-09-12: the recommendation.*
   `.agents/rules/kernel.md` §Testing commits a failure shrunk to a fixture
   `#[ignore]`d until it passes; step 6's lint fails every fixture the
   runner compares under `primitive/`, `transform/`, `boolean/`, `sweep/`
@@ -404,8 +405,8 @@ found at step 6 and is open.
   longer wait in its own area. Recommendation: a failure fixture that
   does not pass yet lives under `regression/<slug>/`, outside the lint's
   areas, and moves into its area with its dump in the commit that fixes
-  it; the kernel rule and `tests/fixtures/README.md` say so at
-  retirement. Alternatives: an `"ignored": "why"` recipe field the lint
+  it; the kernel rule, the `inspect` and `work` skills and
+  `tests/fixtures/README.md` say so, written with the decision. Alternatives: an `"ignored": "why"` recipe field the lint
   and the runner both honour, making the ignore data and the zero-ignored
   line a count of it; or a failure is a hand-picked test beside its
   property, never a corpus fixture, until it passes.
@@ -550,3 +551,10 @@ deltas above, not a new decision.
   `docs/ROADMAP.md` §Fixtures, `docs/ARCHITECTURE.md` §Formats and tools
   and the README were written in the step; §C1 acceptance corpus already
   holds all six `sweep/*` rows (step 5).
+- **`⚠ OPEN` 4's decision.** Two consequences the recommendation did not
+  name. Step 6's `--run-ignored all` would run a waiting failure and turn
+  CI red, so CI runs the suite without ignored tests and the corpus's
+  ignored tests apart, all but `regression_*`; the lint already keeps the
+  corpus areas free of ignored fixtures. And the lint fails a
+  `regression/` fixture that has a dump, so one that passes cannot stay
+  behind; `fixtures::REGRESSION_AREA` names the area.
