@@ -279,10 +279,10 @@ with their `#[ignore]`d twins — green.*
 
 - Single-edge fillet and chamfer, several edges in one call: box edges
   (cylinder blends), hole edges (torus blends), the consumer's fixtures.
-  A second fillet on an already-filleted body. A vertical and a cap edge
-  of a box in one call meet at a corner, which is a vertex blend (C6's):
-  whether C2 blends that one corner or refuses it with a typed error is
-  the fillet idea's decision.
+  A second fillet on an already-filleted body. Two blended edges meeting
+  at a corner whose third edge stays sharp — a vertical and a cap edge, or
+  two cap edges, the same solid rotated — meet in a miter, two cylinders
+  and one ellipse, not a vertex blend (Open CASCADE, checked).
 - Cone, sphere and torus in the intersector as far as the blends and the
   probe corpus need: plane–cone, plane–sphere, plane–torus, cylinder–torus
   at the hole-edge fillet. The fillet idea's construction decides the
