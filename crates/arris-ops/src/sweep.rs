@@ -443,12 +443,13 @@ fn side_face(
 /// The roles of an assembled sweep, running parallel to its specs, as
 /// one `Generated` per entity. `assemble` makes one slot per spec in spec
 /// order and the built maps are ordered by slot, so the vertex, edge and
-/// face maps zip with the role lists.
+/// face maps zip with the role lists, and the shells with theirs.
 fn record(
     built: &Built,
     vertex_roles: &[Role],
     edge_roles: &[Role],
     face_roles: &[Role],
+    shell_roles: &[Role],
     part: impl Fn(SweepPart) -> Role,
 ) -> Provenance {
     let mut provenance = Provenance::new();
@@ -462,8 +463,8 @@ fn record(
     for (&id, &role) in built.faces.values().zip(face_roles) {
         provenance.add_generated(role, forward(id.into()));
     }
-    for &shell in &built.shells {
-        provenance.add_generated(part(SweepPart::Shell), forward(shell.into()));
+    for (&shell, &role) in built.shells.iter().zip(shell_roles) {
+        provenance.add_generated(role, forward(shell.into()));
     }
     provenance.add_generated(part(SweepPart::Body), built.body);
     provenance
@@ -485,10 +486,15 @@ fn record(
 /// vertices per loop in walking order (the start ring, then the end
 /// ring), edges (start, end, rises), faces (start cap, end cap, sides per
 /// loop per segment) — so the ids are a function of the profile alone;
-/// every tolerance is `default_tolerance`. Provenance is one `Generated`
+/// every tolerance is `default_tolerance`. A full turn closes each hole of
+/// the profile into a cavity: the body is one lump whose outer shell is
+/// the outer loop's sides and whose voids are each hole's (ADR-0006), the
+/// shells stored in loop order; a partial turn's holes open onto its flat
+/// ends and make one shell with the rest. Provenance is one `Generated`
 /// per entity from a [`Role::Revolve`] naming the part of the sketch it
 /// came from: a segment perpendicular to the axis in a full turn sweeps
-/// an annulus of two closed rises and has no `StartEdge`.
+/// an annulus of two closed rises and has no `StartEdge`, and a hole's
+/// void is [`SweepPart::Cavity`].
 ///
 /// Errors, the model untouched: [`OpError::Profile`] when
 /// `Profile::edges` refuses the sketch; [`OpError::Degenerate`] with
@@ -499,11 +505,7 @@ fn record(
 /// [`Reason::ProfileCrossesAxis`] when the profile has points on both
 /// sides of the axis, [`Reason::ProfileTouchesAxis`] when a vertex or a
 /// segment comes within `default_tolerance` of it,
-/// [`Reason::SpindleTorus`] when an arc's circle crosses it, and
-/// [`Reason::MultiShell`] for a full turn of a profile with holes, whose
-/// every hole closes into a cavity — a shell of its own, which the
-/// one-shell `Solid` of cycle 1 does not hold (a partial turn's holes
-/// open onto its flat ends and are one shell with the rest).
+/// and [`Reason::SpindleTorus`] when an arc's circle crosses it.
 ///
 /// ```
 /// use arris_ops::revolve;
@@ -560,13 +562,6 @@ pub fn revolve(
     let angle = if full { TAU } else { angle };
     let (axis, in_plane) = axis_in_plane(profile, axis, tol)?;
     let loops = profile.edges(tol)?;
-    // A full turn closes every hole into a cavity: a shell of its own,
-    // which the one-shell `Solid` of cycle 1 does not hold.
-    if full && loops.len() > 1 {
-        return Err(degenerate(Reason::MultiShell {
-            shells: loops.len(),
-        }));
-    }
     let in_plane = orient(&loops, in_plane, tol)?;
 
     let plane = &profile.plane;
@@ -781,6 +776,8 @@ pub fn revolve(
             face_roles.push(part(SweepPart::EndCap));
         }
 
+        // Where each loop's sides start in `faces`: a full turn's shells.
+        let mut side_start: Vec<usize> = Vec::with_capacity(loops.len());
         // The sides: start edge, rise up, end edge back, rise down — the
         // end edge the start edge's second use across the seam in a full
         // turn — walked that way when the material sweeps along the
@@ -788,6 +785,7 @@ pub fn revolve(
         // is on the walk's left seen from outside; an annulus of a full
         // turn keeps only its two closed rises, one loop each.
         for (li, edges_of) in loops.iter().enumerate() {
+            side_start.push(faces.len());
             let n = edges_of.len();
             for (j, edge) in edges_of.iter().enumerate() {
                 let (surface, annulus) = &surfaces[li][j];
@@ -861,15 +859,46 @@ pub fn revolve(
             }
         }
 
+        // A full turn has no caps, so every loop's sides close on their
+        // own: the outer loop's the lump's outer shell, each hole's a void
+        // of it. A partial turn's caps join every loop into one shell.
+        let (shells, shell_roles) = if full {
+            let mut rest = faces;
+            let mut shells = Vec::with_capacity(side_start.len());
+            for &start in side_start.iter().skip(1).rev() {
+                shells.push(rest.split_off(start));
+            }
+            shells.push(rest);
+            shells.reverse();
+            let roles = loops
+                .iter()
+                .map(|edges_of| match edges_of.first() {
+                    Some(e) if e.loop_index > 0 => part(SweepPart::Cavity {
+                        loop_index: e.loop_index,
+                    }),
+                    _ => part(SweepPart::Shell),
+                })
+                .collect();
+            (shells, roles)
+        } else {
+            (vec![faces], vec![part(SweepPart::Shell)])
+        };
         let assembly = Assembly {
             vertices,
             edges,
-            shells: vec![faces],
+            shells,
         };
         let b = Builder::assemble(m, tolerance, assembly)?;
         let built = b.finish(m, BodyKind::Solid)?;
         verify(m, built.body)?;
-        let provenance = record(&built, &vertex_roles, &edge_roles, &face_roles, part);
+        let provenance = record(
+            &built,
+            &vertex_roles,
+            &edge_roles,
+            &face_roles,
+            &shell_roles,
+            part,
+        );
         Ok((built.body, provenance))
     })
 }
@@ -1225,7 +1254,14 @@ pub fn extrude(
         let b = Builder::assemble(m, tolerance, assembly)?;
         let built = b.finish(m, BodyKind::Solid)?;
         verify(m, built.body)?;
-        let provenance = record(&built, &vertex_roles, &edge_roles, &face_roles, part);
+        let provenance = record(
+            &built,
+            &vertex_roles,
+            &edge_roles,
+            &face_roles,
+            &[part(SweepPart::Shell)],
+            part,
+        );
         Ok((built.body, provenance))
     })
 }

@@ -56,14 +56,6 @@ pub enum Reason {
     /// A boolean selected no material: a `common` of disjoint operands,
     /// a target swallowed by its tool.
     Empty,
-    /// A full revolve of a profile with holes, each of which would close
-    /// into a cavity: a result of more than one shell, which the revolve
-    /// does not build yet. A boolean returns such a result as lumps of one
-    /// solid (ADR-0006).
-    MultiShell {
-        /// How many shells the pieces make.
-        shells: usize,
-    },
     /// Two faces touch along a curve that would be interior to both
     /// result faces — a hole wall tangent to a side face along a ruling,
     /// a section curve tangent to a loop edge at a vertex — which a
@@ -99,9 +91,6 @@ impl core::fmt::Display for Reason {
             }
             Reason::NotSolid => f.write_str("the body is not a solid"),
             Reason::Empty => f.write_str("the result has no material"),
-            Reason::MultiShell { shells } => {
-                write!(f, "the result has {shells} shells, and a solid holds one")
-            }
             Reason::TangentContact => {
                 f.write_str("the faces touch along a curve interior to both result faces")
             }

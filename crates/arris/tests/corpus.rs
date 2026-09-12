@@ -41,6 +41,13 @@ fn transform_posed_cylinder() {
     run("transform/posed-cylinder");
 }
 
+/// The hollow ring moved: two shells carried whole, the cavity still the
+/// one lump's void.
+#[test]
+fn transform_moved_hollow_ring() {
+    run("transform/moved-hollow-ring");
+}
+
 #[test]
 fn boolean_through_hole() {
     run("boolean/through-hole");
@@ -262,6 +269,13 @@ fn sweep_revolve_quarter() {
 #[test]
 fn sweep_revolve_l_profile() {
     run("sweep/revolve-l-profile");
+}
+
+/// A full turn of a rectangle with a rectangular hole: the hole closes
+/// into a ring-shaped cavity, one lump of two shells.
+#[test]
+fn sweep_revolve_hollow_ring() {
+    run("sweep/revolve-hollow-ring");
 }
 
 /// The same recipe under three parameter sets, one test each so a

@@ -1,0 +1,30 @@
+{
+  "description": "the hollow ring of sweep/revolve-hollow-ring, rotated 30° about x and moved by (10, −5, 3): a body of two shells moves whole, each shell Modified from the one it moved and the cavity still a void of the one lump (ADR-0006)",
+  "steps": [
+    {
+      "name": "section",
+      "op": "profile",
+      "plane": {"origin": [0, 0, 0], "x": [1, 0, 0], "y": [0, 0, 1]},
+      "outer": {"start": [1, -2], "segments": [{"line_to": [4, -2]}, {"line_to": [4, 2]}, {"line_to": [1, 2]}, {"line_to": [1, -2]}]},
+      "holes": [
+        {"start": [2, -1], "segments": [{"line_to": [3, -1]}, {"line_to": [3, 1]}, {"line_to": [2, 1]}, {"line_to": [2, -1]}]}
+      ]
+    },
+    {"name": "ring", "op": "revolve", "profile": "section", "axis": {"origin": [0, 0, 0], "direction": [0, 0, 1]}, "angle_deg": 360},
+    {"name": "result", "op": "transform", "of": "ring", "rotate": {"axis": [1, 0, 0], "origin": [0, 0, 0], "angle_deg": 30}, "translate": [10, -5, 3]}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "in_material", "point": [11.5, -5, 3], "expect": "in"},
+    {"label": "in_cavity", "point": [12.5, -5, 3], "expect": "out"},
+    {"label": "outside", "point": [15, -5, 3], "expect": "out"},
+    {"label": "at_centre", "point": [10, -5, 3], "expect": "out"}
+  ],
+  "analytic": {
+    "volume": "pi * (16 - 1) * 4 - pi * (9 - 4) * 2",
+    "area": "2 * pi * (16 - 1) + 2 * pi * (4 + 1) * 4 + 2 * pi * (9 - 4) + 2 * pi * (3 + 2) * 2",
+    "centroid": [10, -5, 3],
+    "counts": {"vertices": 8, "edges": 12, "faces": 8, "loops": 12, "shells": 2, "solids": 1},
+    "genus": 2
+  }
+}

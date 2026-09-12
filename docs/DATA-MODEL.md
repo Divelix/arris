@@ -919,7 +919,9 @@ pub struct Provenance {
   `Side`, `StartEdge` and `EndEdge { loop_index, segment }` from one
   segment; `Rise`, `StartVertex` and `EndVertex { loop_index, vertex }`
   from one vertex, `vertex` the index of the segment that starts there
-  (a circle loop has segment `0` and vertex `0`); `Shell` and `Body`. A
+  (a circle loop has segment `0` and vertex `0`); `Shell` (the outer
+  shell) and `Body`; and `Cavity { loop_index }`, the void shell a hole
+  closes into in a full revolve (ADR-0006). A
   full revolve has no `EndCap`, `EndEdge` or `EndVertex` — its start
   edges are the seams — and in one a segment perpendicular to the axis,
   which sweeps an annulus of two closed rises, has no `StartEdge` at all.

@@ -361,9 +361,10 @@ over a face by construction. Every pcurve is exact through `pcurve_on`,
 then translated by whole periods into the copy of the domain the loop is
 written in (the profile plane at `u = 0`, a seam's second use one period
 on), since `pcurve_on` reports a periodic parameter in `[0, 2π)`. A full
-turn of a profile with holes is `Reason::MultiShell`: each hole closes
-into a cavity, a shell of its own, which the one-shell `Solid` of cycle 1
-does not hold; a partial turn's holes open onto its flat ends and are one
+turn closes each hole of the profile into a cavity: the outer loop's sides
+are the lump's outer shell and each hole's sides a void of it, stored in
+loop order and `Generated` from `SweepPart::Cavity { loop_index }`
+(ADR-0006); a partial turn's holes open onto its flat ends and are one
 shell with the rest.
 
 `ops::extrude(m, &profile, direction: Vec3, length)` sweeps the profile
@@ -399,7 +400,7 @@ involved, so the message a consumer shows — or the agent reads — says
 |---|---|---|
 | `InvalidInput` | an input body fails the checker (checked in debug builds before the operation starts, and in release when the `paranoid` feature is on) | `Body`, the `Report` |
 | `Unsupported` | the exhaustive dispatch reached a surface or curve pair the kernel has no formula for yet | the two `GeomKind`s with their entities |
-| `Degenerate` | the requested result has no valid representation: a parameter that makes no geometry (`Reason::NonFinite`, `Reason::NotPositive` naming it — a zero radius, a box whose `min` is not below its `max`, a revolve angle at or below zero, a zero extrude direction; `Reason::AngleAboveTurn` past `2π`), a zero-thickness intersection or an extrude of zero length (`Reason::ZeroThickness`), a revolve whose axis is off the profile's plane (`Reason::AxisNotInProfilePlane`), whose profile crosses (`Reason::ProfileCrossesAxis`) or touches (`Reason::ProfileTouchesAxis`) its axis, or whose arc's circle crosses it (`Reason::SpindleTorus`); an extrude off its plane's normal (`Reason::DirectionNotNormal`); a boolean that selects no material (`Reason::Empty`: a target inside its tool, a `common` of disjoint operands); a full revolve of a profile with holes, whose holes would close into cavities (`Reason::MultiShell { shells }`); result shells that would touch along an edge or at a vertex (`Reason::NonManifold`, naming the shared edges or vertices); faces touching along a curve interior to both result faces (`Reason::TangentContact`); a query on a body that is not a `Solid` (`Reason::NotSolid`) | the entities (none for a primitive or a sweep) and a `Reason` enum |
+| `Degenerate` | the requested result has no valid representation: a parameter that makes no geometry (`Reason::NonFinite`, `Reason::NotPositive` naming it — a zero radius, a box whose `min` is not below its `max`, a revolve angle at or below zero, a zero extrude direction; `Reason::AngleAboveTurn` past `2π`), a zero-thickness intersection or an extrude of zero length (`Reason::ZeroThickness`), a revolve whose axis is off the profile's plane (`Reason::AxisNotInProfilePlane`), whose profile crosses (`Reason::ProfileCrossesAxis`) or touches (`Reason::ProfileTouchesAxis`) its axis, or whose arc's circle crosses it (`Reason::SpindleTorus`); an extrude off its plane's normal (`Reason::DirectionNotNormal`); a boolean that selects no material (`Reason::Empty`: a target inside its tool, a `common` of disjoint operands); result shells that would touch along an edge or at a vertex (`Reason::NonManifold`, naming the shared edges or vertices); faces touching along a curve interior to both result faces (`Reason::TangentContact`); a query on a body that is not a `Solid` (`Reason::NotSolid`) | the entities (none for a primitive or a sweep) and a `Reason` enum |
 | `Profile` | a sweep's sketch is not a valid profile: `Profile::edges` refused it (data-model §Profiles). An invalid profile has no entities to name, so it is neither `InvalidInput` nor `Degenerate` | the `ProfileError`, naming the loop and segment |
 | `Tolerance` | the result would need an entity tolerance above `Precision::max_tolerance` | the entity, the tolerance it wanted |
 | `NotFound` | a handle does not resolve in this model (wrong model, or compacted away) | the `Shape` |

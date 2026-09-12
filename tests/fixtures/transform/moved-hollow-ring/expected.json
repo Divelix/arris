@@ -1,0 +1,81 @@
+{
+  "occt": "8.0.1.0.0",
+  "recipe_sha256": "fcc8b31efeb80d7392d5e8da8a7bef2a175fb48fdafb9c4e233c79378fce974f",
+  "results": {
+    "default": {
+      "area": 314.1592653589793,
+      "centroid": [
+        10.000000000000004,
+        -5.000000000000001,
+        3.0
+      ],
+      "counts": {
+        "edges": 12,
+        "faces": 8,
+        "loops": 12,
+        "shells": 2,
+        "solids": 1,
+        "vertices": 8
+      },
+      "degenerate": false,
+      "euler_characteristic": 0,
+      "genus": 2,
+      "inertia": [
+        [
+          939.8598021989565,
+          -3.637978807091713e-12,
+          9.094947017729282e-13
+        ],
+        [
+          -3.637978807091713e-12,
+          1054.3970343610708,
+          -198.38430546312293
+        ],
+        [
+          9.094947017729282e-13,
+          -198.38430546312293,
+          1283.4714986853323
+        ]
+      ],
+      "probes": [
+        {
+          "class": "in",
+          "label": "in_material",
+          "point": [
+            11.5,
+            -5.0,
+            3.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "in_cavity",
+          "point": [
+            12.5,
+            -5.0,
+            3.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "outside",
+          "point": [
+            15.0,
+            -5.0,
+            3.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "at_centre",
+          "point": [
+            10.0,
+            -5.0,
+            3.0
+          ]
+        }
+      ],
+      "volume": 157.0796326794896
+    }
+  }
+}

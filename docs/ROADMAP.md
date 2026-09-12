@@ -56,7 +56,7 @@ written instead under `ARRIS_BLESS=1`.
 A fixture whose result is no solid does not reach those stages: one the
 oracle recorded none for (`degenerate`) must fail with
 `OpError::Degenerate`, and one whose recipe says `analytic.expect_error`
-must fail with that typed refusal — `multi-shell` or `tangent-contact`,
+must fail with that typed refusal — `tangent-contact` or `non-manifold`,
 the oracle's numbers kept as the record of what Open CASCADE builds
 instead. A recipe may also say `analytic.counts_differ: "why"` and carry
 its own counts, for the one place Arris's convention is deliberately not

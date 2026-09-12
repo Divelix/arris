@@ -129,9 +129,13 @@ bound has to be established here.
   CASCADE's compound of two solids sharing an edge or a vertex has an odd
   Euler characteristic, so the oracle records no genus for a
   `non-manifold` recipe and the lint asks none.
-- [ ] Step 6 **[2]** — a full revolve of a profile with holes: one void
+- [x] Step 6 **[2]** — a full revolve of a profile with holes: one void
   shell per hole, `SweepPart::Cavity { loop_index }`; `Reason::MultiShell`
-  removed. Fixture
+  removed. Found at step 6: a full turn's sides close loop by loop, so the
+  shells are the faces split at each loop's first side and need no
+  nesting test to order — the outer loop's first; on a general profile a
+  void's B1 rows against a cone, sphere or torus are unchecked as its S5
+  rows are. Fixture
   `sweep/revolve-hollow-ring` (a rectangle with a rectangular hole about
   an axis clear of both: planes and cylinders only). `transform` of it
   in `provenance/` or a `transform/` fixture, so a lump body moves whole.

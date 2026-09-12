@@ -31,7 +31,7 @@ use arris_ops::arris_check::arris_topo::provenance::SweepPart;
 use arris_ops::arris_check::arris_topo::{
     Body, Model, Orientation, Origin, Provenance, Relation, Role, Shape,
 };
-use arris_ops::arris_check::{Level, Unchecked, check};
+use arris_ops::arris_check::{Level, Unchecked, check, lumps};
 use arris_ops::measure::mass_properties;
 use arris_ops::{OpError, Reason, revolve};
 use core::f64::consts::{PI, TAU};
@@ -106,7 +106,7 @@ fn recorded_parts(
 /// The parts a revolve of `sweep` makes, from the sketch alone: the
 /// vertex indices by the segment that starts there, no `StartEdge` for a
 /// segment perpendicular to the axis in a full turn, no end parts in a
-/// full turn.
+/// full turn, and a `Cavity` per hole in a full turn.
 fn expected_parts(sweep: &Sweep, tol: Tolerance) -> BTreeSet<SweepPart> {
     let full = (sweep.angle - TAU).abs() <= tol.angular;
     let a = sweep
@@ -120,6 +120,11 @@ fn expected_parts(sweep: &Sweep, tol: Tolerance) -> BTreeSet<SweepPart> {
         parts.insert(SweepPart::EndCap);
     }
     for edges in sweep.profile.edges(tol).unwrap() {
+        if let Some(first) = edges.first().filter(|e| full && e.loop_index > 0) {
+            parts.insert(SweepPart::Cavity {
+                loop_index: first.loop_index,
+            });
+        }
         let n = edges.len();
         for e in &edges {
             let (loop_index, segment) = (e.loop_index, e.segment);
@@ -154,41 +159,18 @@ fn expected_parts(sweep: &Sweep, tol: Tolerance) -> BTreeSet<SweepPart> {
     parts
 }
 
-/// The property every random sweep is held to. A full turn of a profile
-/// with holes is the designed `MultiShell` refusal with the model as it
-/// was; every other sweep revolves, is clean at `Fast`, has no violation
-/// at `Full` and no unchecked row but those `undecidable` admits, has
-/// Pappus's volume and area, a closed mesh within its chord of the exact
-/// volume, one `Generated` per entity and every part of the sketch, and
-/// the same dump on a second run.
+/// The property every random sweep is held to: it revolves — a full turn
+/// of a profile with holes into one lump with a void per hole — is clean
+/// at `Fast`, has no violation at `Full` and no unchecked row but those
+/// `undecidable` admits, has Pappus's volume and area, a closed mesh
+/// within its chord of the exact volume, one `Generated` per entity and
+/// every part of the sketch, and the same dump on a second run.
 fn revolves_to_pappus(
     sweep: &Sweep,
     undecidable: impl Fn(&Unchecked) -> bool,
 ) -> Result<(), TestCaseError> {
     let mut m = Model::default();
     let tol = m.precision().tolerance();
-    let full = (sweep.angle - TAU).abs() <= tol.angular;
-    if full && !sweep.profile.holes.is_empty() {
-        // The hole would close into a cavity: the designed refusal,
-        // with the model as it was.
-        match revolve(&mut m, &sweep.profile, sweep.axis, sweep.angle) {
-            Err(OpError::Degenerate {
-                reason: Reason::MultiShell { shells },
-                ..
-            }) => prop_assert_eq!(shells, 1 + sweep.profile.holes.len()),
-            Ok(_) => return Err(fail("a full turn with a hole is two shells")),
-            Err(e) => return Err(fail(format!("revolve: {e}"))),
-        }
-        let (body, _) = revolve(&mut m, &sweep.profile, sweep.axis, 1.0).map_err(fail)?;
-        let mut fresh = Model::default();
-        let (again, _) = revolve(&mut fresh, &sweep.profile, sweep.axis, 1.0).map_err(fail)?;
-        prop_assert_eq!(
-            dump_text(&m, body).map_err(fail)?,
-            dump_text(&fresh, again).map_err(fail)?,
-            "the model is as it was"
-        );
-        return Ok(());
-    }
     let (body, p) = revolve(&mut m, &sweep.profile, sweep.axis, sweep.angle)
         .map_err(|e| fail(format!("revolve: {e}")))?;
     let fast = check(&m, body, Level::Fast);
@@ -240,9 +222,11 @@ fn revolves_to_pappus(
 }
 
 /// Whether an unchecked row is one the plan admits on a general profile:
-/// an S5 pair with a cone, sphere or torus in it (the intersector has no
-/// closed form against those until cycle 2). Never a pair of planes and
-/// cylinders, never a B1 cast — a revolve is one shell.
+/// a face pair with a cone, sphere or torus in it — within a shell (S5)
+/// or between a lump's outer shell and a void (B1) — since the intersector
+/// has no closed form against those until cycle 2, and a B1 cast from a
+/// void of a full turn, since no ray has one either. Never a pair of
+/// planes and cylinders.
 fn on_a_quadric(row: &Unchecked) -> bool {
     let quadric = |k: SurfaceKind| {
         matches!(
@@ -251,7 +235,10 @@ fn on_a_quadric(row: &Unchecked) -> bool {
         )
     };
     match row {
-        Unchecked::FacePair { kinds, .. } => quadric(kinds.0) || quadric(kinds.1),
+        Unchecked::FacePair { kinds, .. } | Unchecked::ShellFacePair { kinds, .. } => {
+            quadric(kinds.0) || quadric(kinds.1)
+        }
+        Unchecked::ShellNesting { .. } => true,
         _ => false,
     }
 }
@@ -437,19 +424,24 @@ fn the_profile_is_held_clear_of_the_axis_and_the_axis_to_the_plane() {
     assert_eq!(reason(&mut m, &tube, tilted), Reason::AxisNotInProfilePlane);
     let lifted = Axis::z_at(Point3::new(0.0, 1.0, 0.0));
     assert_eq!(reason(&mut m, &tube, lifted), Reason::AxisNotInProfilePlane);
-    // A full turn of a profile with a hole would close the hole into a
-    // cavity: a second shell, refused by name.
+    // A full turn of a profile with a hole closes the hole into a cavity:
+    // one lump, its void the hole's sides, Generated from the hole's loop.
+    // It is no refusal, so it is built in a model of its own.
     let holed = Profile {
         holes: vec![rectangle(1.25, 1.75, -0.5, 0.5, false)],
         ..tube_profile(false)
     };
-    assert!(matches!(
-        revolve(&mut m, &holed, z, TAU),
-        Err(OpError::Degenerate {
-            reason: Reason::MultiShell { shells: 2 },
-            ..
-        })
-    ));
+    let mut own = Model::default();
+    let (ring, provenance) = revolve(&mut own, &holed, z, TAU).unwrap();
+    let report = check(&own, ring, Level::Full);
+    assert!(report.is_ok() && report.unchecked().is_empty(), "{report}");
+    let shells = own.shells(ring).unwrap();
+    let found = lumps(&own, ring).unwrap();
+    assert_eq!((shells.len(), found.len()), (2, 1));
+    assert_eq!(found[0].outer, shells[0]);
+    assert_eq!(found[0].voids, [shells[1]]);
+    let cavity = Role::Revolve(SweepPart::Cavity { loop_index: 1 });
+    assert_eq!(provenance.generated_from(cavity), [shells[1].shape()]);
     assert!(
         revolve(&mut m, &holed, z, 1.0).is_ok(),
         "a partial turn's hole opens onto the ends"
