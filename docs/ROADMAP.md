@@ -6,7 +6,7 @@ as its "in" list. One section per cycle; a finished cycle compresses to its
 status line (`/close-cycle`), and the next is appended below.
 
 Spine: **C1** M0 → M1 → M2 → M3 → M4 → M5 (the vertical slice, done), then
-**C2** (the application gate, next), then the Parasolid-grade cycles one
+**C2** (the application gate, under way), then the Parasolid-grade cycles one
 at a time.
 
 ---
@@ -296,9 +296,10 @@ with their `#[ignore]`d twins — green.*
   (`boolean/coaxial-cut`, `coaxial-fuse`). Crossing axes, a quartic, close
   the quadric-curve `⚠ OPEN` with an ADR; no probe forces them.
 - Results of more than one shell — an enclosed cavity, a disjoint `fuse`,
-  a `cut` that splits its target — which M4 refuses as
-  `Reason::MultiShell`, a full revolve of a profile with holes among them;
-  the revolve profile touching its axis (apex and degenerate edges), which
+  a `cut` that splits its target, a full revolve of a profile with holes —
+  as lumps of one `Solid`, two lumps touching along an edge or at a vertex
+  refused as `Reason::NonManifold`. **Done 2026-09-13**, ADR-0006.
+- The revolve profile touching its axis (apex and degenerate edges), which
   M5 refuses as `Reason::ProfileTouchesAxis`. The probe is a rectangle
   with one side on the axis: plane and cylinder faces only.
 - `Model::retain` semantics (the compaction `⚠ OPEN`), the `f32`
@@ -317,7 +318,7 @@ cylinder − cylinder transversal (2.2079e-5), flush union (2.0), revolve
 touching the axis (2π), a fillet on a filleted body, a vertical and a cap
 edge filleted in one call — every twin un-ignored and every probe deleted
 (through hole, blind hole and flush union already pass as C1 fixtures at
-another scale);
+another scale, the enclosed cavity as `boolean/enclosed-cavity` in its own);
 `sweep/revolve-frustum`, `revolve-barrel` and `revolve-ring` passing every
 corpus stage with nothing left unchecked; the consumer's naming fixtures
 pass through provenance with no matcher; the consumer's facade compiles

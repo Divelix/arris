@@ -29,8 +29,9 @@ a `geom::Profile`, tessellation, mass properties and STEP, every
 `primitive/*`, `transform/*`, `boolean/*`, `sweep/*` and `provenance/*`
 fixture passing every corpus stage against Open CASCADE; a failure waiting
 for its fix lives under `tests/fixtures/regression/`. ADR-0001 to 0005.
-**Next:** C2, the application gate — `/idea` or `/plan` its lines one at a
-time (tags `m5`, `c1` are the human's).
+**C2 under way: the application gate.** Multi-shell results are lumps of
+one `Solid` (ADR-0006): cavities, split cuts, disjoint fuses, full revolves
+with holes. **Next:** `/idea` or `/plan` the remaining C2 lines one at a time.
 
 ## Rules that are not derivable from the code
 

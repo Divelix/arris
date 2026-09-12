@@ -28,5 +28,6 @@ re-brainstormed.
 - A fitted pcurve fallback over `Surface::project` on cones, spheres and tori (an oblique section of a cone, a small circle of a sphere about none of its axes, a Villarceau circle), `GeomError::Unsupported` today, for the first operation that makes such a curve on such a face (M5 non-goal)
 - A spindle torus (`R < r`) as a surface, so a revolve of an arc whose circle crosses its axis is more than `Reason::SpindleTorus`, when an operation needs one (M5 non-goal)
 - `ops::planar_face`, a `Profile` as a one-face sheet body, with C7's sheet bodies; the sweeps' cap builder is private until then (M5 `⚠ OPEN` 1)
+- Lumps stored on the `Body` entity and in the native format rather than derived by `arris_check::lumps`: every STEP write and corpus count of a multi-shell body re-runs B1's face-pair meeting test and ray casts, so storing becomes worth it once that shows up as a cost (multi-shell `⚠ OPEN` 3)
 
 ## Rejected
