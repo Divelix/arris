@@ -348,9 +348,10 @@ sphere's pole — holds a degenerate edge there in place of the rise, its
 pcurve the line at the singular `v` over the rise's range, one per face
 closing there, and a full turn keeps the vertex for it: the first
 degenerate edges an operation makes, which `Builder::assemble` takes used
-once and the Euler line leaves out. A full turn along the axis more than
-once in one loop, or touching it at a vertex with no segment along it, is
-still `Reason::ProfileTouchesAxis`. Every other segment sweeps one face: a segment
+once and the Euler line leaves out. A full turn touching the axis at a
+vertex with no segment along it is `Reason::NonManifold`, since the
+surface would touch itself there; a partial turn's flat ends make that
+vertex manifold. Every other segment sweeps one face: a segment
 parallel to the axis a cylinder, perpendicular a plane (an annulus, or a
 sector of one), oblique a cone with its apex on the axis; an arc centred
 on the axis a sphere, elsewhere a torus of `R` its centre's distance and
@@ -374,11 +375,15 @@ over a face by construction. Every pcurve is exact through `pcurve_on`,
 then translated by whole periods into the copy of the domain the loop is
 written in (the profile plane at `u = 0`, a seam's second use one period
 on), since `pcurve_on` reports a periodic parameter in `[0, 2π)`. A full
-turn closes each hole of the profile into a cavity: the outer loop's sides
-are the lump's outer shell and each hole's sides a void of it, stored in
-loop order and `Generated` from `SweepPart::Cavity { loop_index }`
-(ADR-0006); a partial turn's holes open onto its flat ends and are one
-shell with the rest.
+turn closes the profile into one lump (ADR-0006) of a shell per *chain* —
+a maximal run of a loop's segments off the axis, a loop that never lies
+along it being one chain: the chain whose ends span every other's along
+the axis is the lump's outer shell, stored first, and every other chain —
+a hole, a notch cut in from the axis — a void directly inside it, stored
+by loop and lowest segment and `Generated` from `SweepPart::Cavity {
+loop_index, segment }`, `segment` the lowest index the consumer wrote
+among its segments; a partial turn's flat ends join everything into one
+shell.
 
 `ops::extrude(m, &profile, direction: Vec3, length)` sweeps the profile
 along its plane's normal, either way: `direction` is the normal or its
@@ -413,7 +418,7 @@ involved, so the message a consumer shows — or the agent reads — says
 |---|---|---|
 | `InvalidInput` | an input body fails the checker (checked in debug builds before the operation starts, and in release when the `paranoid` feature is on) | `Body`, the `Report` |
 | `Unsupported` | the exhaustive dispatch reached a surface or curve pair the kernel has no formula for yet | the two `GeomKind`s with their entities |
-| `Degenerate` | the requested result has no valid representation: a parameter that makes no geometry (`Reason::NonFinite`, `Reason::NotPositive` naming it — a zero radius, a box whose `min` is not below its `max`, a revolve angle at or below zero, a zero extrude direction; `Reason::AngleAboveTurn` past `2π`), a zero-thickness intersection or an extrude of zero length (`Reason::ZeroThickness`), a revolve whose axis is off the profile's plane (`Reason::AxisNotInProfilePlane`), whose profile crosses its axis (`Reason::ProfileCrossesAxis`), lies within the tolerance of it everywhere (`Reason::ZeroThickness`) or, in a full turn, touches it along more than one run of a loop or at a vertex with no segment along it (`Reason::ProfileTouchesAxis`), or whose arc's circle crosses it (`Reason::SpindleTorus`); an extrude off its plane's normal (`Reason::DirectionNotNormal`); a boolean that selects no material (`Reason::Empty`: a target inside its tool, a `common` of disjoint operands); result shells that would touch along an edge or at a vertex (`Reason::NonManifold`, naming the shared edges or vertices); faces touching along a curve interior to both result faces (`Reason::TangentContact`); a query on a body that is not a `Solid` (`Reason::NotSolid`) | the entities (none for a primitive or a sweep) and a `Reason` enum |
+| `Degenerate` | the requested result has no valid representation: a parameter that makes no geometry (`Reason::NonFinite`, `Reason::NotPositive` naming it — a zero radius, a box whose `min` is not below its `max`, a revolve angle at or below zero, a zero extrude direction; `Reason::AngleAboveTurn` past `2π`), a zero-thickness intersection or an extrude of zero length (`Reason::ZeroThickness`), a revolve whose axis is off the profile's plane (`Reason::AxisNotInProfilePlane`), whose profile crosses its axis (`Reason::ProfileCrossesAxis`) or lies within the tolerance of it everywhere (`Reason::ZeroThickness`), or whose arc's circle crosses it (`Reason::SpindleTorus`); an extrude off its plane's normal (`Reason::DirectionNotNormal`); a boolean that selects no material (`Reason::Empty`: a target inside its tool, a `common` of disjoint operands); result shells that would touch along an edge or at a vertex, or a full revolve touching its axis at a vertex with no segment along it (`Reason::NonManifold`, naming the shared edges or vertices, none for a sweep); faces touching along a curve interior to both result faces (`Reason::TangentContact`); a query on a body that is not a `Solid` (`Reason::NotSolid`) | the entities (none for a primitive or a sweep) and a `Reason` enum |
 | `Profile` | a sweep's sketch is not a valid profile: `Profile::edges` refused it (data-model §Profiles). An invalid profile has no entities to name, so it is neither `InvalidInput` nor `Degenerate` | the `ProfileError`, naming the loop and segment |
 | `Tolerance` | the result would need an entity tolerance above `Precision::max_tolerance` | the entity, the tolerance it wanted |
 | `NotFound` | a handle does not resolve in this model (wrong model, or compacted away) | the `Shape` |

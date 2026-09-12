@@ -145,14 +145,19 @@ pub enum CylinderPart {
 pub enum SweepPart {
     /// The body.
     Body,
-    /// The outer shell: the one shell of every sweep but a full revolve of
-    /// a profile with holes, where it is the lump's outer shell.
+    /// The outer shell: the one shell of every sweep but a full revolve
+    /// with voids, where it is the lump's outer shell.
     Shell,
-    /// The void shell a hole of the profile closes into in a full revolve:
-    /// a cavity of the body's one lump (ADR-0006).
+    /// A void shell of a full revolve, a cavity of the body's one lump
+    /// (ADR-0006): the shell a hole closes into, or a notch cut in from the
+    /// axis — any chain of a loop's segments off the axis but the one whose
+    /// ends span the others.
     Cavity {
-        /// The hole's loop, as the consumer wrote it (holes from 1).
+        /// The chain's loop, as the consumer wrote it.
         loop_index: usize,
+        /// The lowest index the consumer wrote among the chain's segments:
+        /// `0` for a hole, and a different one for each notch of a loop.
+        segment: usize,
     },
     /// The profile face where the sweep starts, its outward normal against
     /// the sweep.

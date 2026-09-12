@@ -126,7 +126,7 @@ bound has to be established here.
   triangle with a leg on the axis, full turn and quarter), a ball (a half
   disc on the axis, `4π/3`) and a partial turn of a pinch; the unchecked
   rows are the quadric pairs' and nothing else.
-- [ ] Step 4 **[2]** — full-turn chains: a notch reaching the axis closes
+- [x] Step 4 **[2]** — full-turn chains: a notch reaching the axis closes
   into a void, a pinch is `Reason::NonManifold` (Open CASCADE's
   `BRepCheck_Analyzer` of its own revolve of the pinch recorded in the
   commit body, as ADR-0006's vertex case was), `Cavity { loop_index,

@@ -30,11 +30,6 @@ pub enum Reason {
     /// A revolve profile crosses its axis: it has points on both sides of
     /// the axis line in its plane, beyond the tolerance.
     ProfileCrossesAxis,
-    /// A full revolve's profile touches its axis where the kernel does not
-    /// build it yet: a loop along the axis more than once (several shells
-    /// of one loop), or a vertex on the axis with no segment along it (the
-    /// surface touching itself there).
-    ProfileTouchesAxis,
     /// A revolve axis does not lie in the profile's plane within the
     /// tolerances: its direction is off the plane by more than the angular
     /// tolerance, or its origin is off it by more than the linear one.
@@ -63,10 +58,12 @@ pub enum Reason {
     /// manifold `Solid` cannot represent (ADR-0004, plan `⚠ OPEN` 1).
     TangentContact,
     /// The result's shells would touch along an edge or at a vertex — an
-    /// edge used by four faces, a vertex two lumps share — which a manifold
-    /// `Solid`'s shells never do (ADR-0006); the error's entities are the
-    /// shared edges or vertices. A body that touches itself so is a
-    /// `General` one, which no operation builds yet.
+    /// edge used by four faces, a vertex two lumps share, a full revolve's
+    /// profile touching its axis at a vertex with no segment along it —
+    /// which a manifold `Solid`'s shells never do (ADR-0006); the error's
+    /// entities are the shared edges or vertices, none for a sweep. A body
+    /// that touches itself so is a `General` one, which no operation builds
+    /// yet.
     NonManifold,
 }
 
@@ -79,7 +76,6 @@ impl core::fmt::Display for Reason {
             }
             Reason::ZeroThickness => f.write_str("the result has no thickness"),
             Reason::ProfileCrossesAxis => f.write_str("the profile crosses the revolve axis"),
-            Reason::ProfileTouchesAxis => f.write_str("the profile touches the revolve axis"),
             Reason::AxisNotInProfilePlane => {
                 f.write_str("the revolve axis does not lie in the profile's plane")
             }
@@ -267,7 +263,7 @@ pub enum OpError {
     },
     /// The requested result has no valid representation: a parameter that
     /// makes no geometry, a zero-thickness intersection, a profile
-    /// crossing or touching its revolve axis. Never a silently empty body.
+    /// crossing its revolve axis. Never a silently empty body.
     #[error("degenerate result: {reason}{}", entities_suffix(.entities))]
     Degenerate {
         /// The entities involved; none for a primitive, which has no

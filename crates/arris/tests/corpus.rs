@@ -286,6 +286,14 @@ fn sweep_revolve_onto_axis() {
     run("sweep/revolve-onto-axis");
 }
 
+/// A rectangle on the axis with a notch cut in from it: in a full turn
+/// the notch closes into a void of the one lump, two shells from one
+/// loop; a quarter turn opens it onto the flat ends.
+#[test]
+fn sweep_revolve_notch_to_axis() {
+    run("sweep/revolve-notch-to-axis");
+}
+
 /// The same recipe under three parameter sets, one test each so a
 /// variant that drifts says which: the eight bolt holes' chain is
 /// `crates/arris/tests/provenance.rs`'s subject, and these hold each

@@ -131,6 +131,7 @@ fn expected_parts(sweep: &Sweep, tol: Tolerance) -> BTreeSet<SweepPart> {
         if let Some(first) = edges.first().filter(|e| full && e.loop_index > 0) {
             parts.insert(SweepPart::Cavity {
                 loop_index: first.loop_index,
+                segment: 0,
             });
         }
         let n = edges.len();
@@ -411,7 +412,7 @@ fn the_profile_is_held_clear_of_the_axis_and_the_axis_to_the_plane() {
         other => panic!("{other:?}"),
     };
     // A vertex on the axis with no segment along it: a full turn's surface
-    // would touch itself there (a partial turn builds it).
+    // would touch itself there (a partial turn builds it), NonManifold.
     let apex = sketch(ProfileLoop::Path {
         start: p(0.0, 0.0),
         segments: vec![
@@ -423,7 +424,7 @@ fn the_profile_is_held_clear_of_the_axis_and_the_axis_to_the_plane() {
     assert!(matches!(
         revolve(&mut m, &apex, z, TAU),
         Err(OpError::Degenerate {
-            reason: Reason::ProfileTouchesAxis,
+            reason: Reason::NonManifold,
             ..
         })
     ));
@@ -452,7 +453,10 @@ fn the_profile_is_held_clear_of_the_axis_and_the_axis_to_the_plane() {
     assert_eq!((shells.len(), found.len()), (2, 1));
     assert_eq!(found[0].outer, shells[0]);
     assert_eq!(found[0].voids, [shells[1]]);
-    let cavity = Role::Revolve(SweepPart::Cavity { loop_index: 1 });
+    let cavity = Role::Revolve(SweepPart::Cavity {
+        loop_index: 1,
+        segment: 0,
+    });
     assert_eq!(provenance.generated_from(cavity), [shells[1].shape()]);
     assert!(
         revolve(&mut m, &holed, z, 1.0).is_ok(),
@@ -587,6 +591,103 @@ fn a_profile_along_its_axis_sweeps_nothing_there() {
             .collect();
         assert_eq!(users, caps, "{angle}");
     }
+}
+
+/// Notches cut in from the axis (`docs/plans/revolve-touching-axis.md`
+/// step 4): in a full turn the profile's chains — its runs of segments off
+/// the axis — are shells, the one spanning the others the lump's outer
+/// shell and each notch a void of it, named by its loop and the lowest
+/// segment the consumer wrote in it, so two notches of one loop are two
+/// voids with two names; a quarter turn opens them onto the flat ends, one
+/// shell. A profile touching the axis at a vertex with no segment along it
+/// is refused in a full turn as `NonManifold`, naming nothing, and built
+/// in a partial one.
+#[test]
+fn notches_reaching_the_axis_close_into_voids_and_a_pinch_is_non_manifold() {
+    let z = Axis::z_at(Point3::origin());
+    let p = |u: f64, v: f64| Point2::new(u, v);
+    // x ∈ [0, 2], z ∈ [0, 5], notched to x = 1 at z ∈ [3, 4] (segments 4 to
+    // 6) and z ∈ [1, 2] (segments 8 to 10); segments 3, 7 and 11 lie along
+    // the axis.
+    let corners = [
+        (2.0, 0.0),
+        (2.0, 5.0),
+        (0.0, 5.0),
+        (0.0, 4.0),
+        (1.0, 4.0),
+        (1.0, 3.0),
+        (0.0, 3.0),
+        (0.0, 2.0),
+        (1.0, 2.0),
+        (1.0, 1.0),
+        (0.0, 1.0),
+        (0.0, 0.0),
+    ];
+    let notched = Profile {
+        plane: xz_plane(),
+        outer: ProfileLoop::Path {
+            start: p(0.0, 0.0),
+            segments: corners
+                .iter()
+                .map(|&(u, v)| ProfileSegment::LineTo(p(u, v)))
+                .collect(),
+        },
+        holes: Vec::new(),
+    };
+    let mut m = Model::default();
+    let (body, provenance) = revolve(&mut m, &notched, z, TAU).unwrap();
+    let report = check(&m, body, Level::Full);
+    assert!(report.is_ok() && report.unchecked().is_empty(), "{report}");
+    assert_eq!(report.euler().unwrap().to_string(), "6/9/9/9/3 g0 = 0");
+    let volume = mass_properties(&m, body).unwrap().volume;
+    assert!(close(volume, 18.0 * PI), "{volume}");
+    let shells = m.shells(body).unwrap();
+    let found = lumps(&m, body).unwrap();
+    assert_eq!((shells.len(), found.len()), (3, 1));
+    assert_eq!(found[0].outer, shells[0]);
+    let voids: BTreeSet<_> = found[0].voids.iter().copied().collect();
+    assert_eq!(voids, BTreeSet::from([shells[1], shells[2]]));
+    let role = |part| provenance.generated_from(Role::Revolve(part)).to_vec();
+    assert_eq!(role(SweepPart::Shell), [shells[0].shape()]);
+    let cavity = |segment| SweepPart::Cavity {
+        loop_index: 0,
+        segment,
+    };
+    assert_eq!(role(cavity(4)), [shells[1].shape()], "the upper notch");
+    assert_eq!(role(cavity(8)), [shells[2].shape()], "the lower notch");
+    recorded_parts(&m, body, &provenance).unwrap();
+
+    let mut m = Model::default();
+    let (quarter, _) = revolve(&mut m, &notched, z, PI / 2.0).unwrap();
+    let report = check(&m, quarter, Level::Full);
+    assert!(report.is_ok() && report.unchecked().is_empty(), "{report}");
+    assert_eq!(m.shells(quarter).unwrap().len(), 1);
+
+    let kite = Profile {
+        plane: xz_plane(),
+        outer: ProfileLoop::Path {
+            start: p(0.0, 0.0),
+            segments: vec![
+                ProfileSegment::LineTo(p(1.0, -1.0)),
+                ProfileSegment::LineTo(p(2.0, 0.0)),
+                ProfileSegment::LineTo(p(1.0, 1.0)),
+                ProfileSegment::LineTo(p(0.0, 0.0)),
+            ],
+        },
+        holes: Vec::new(),
+    };
+    let mut m = Model::default();
+    assert!(matches!(
+        revolve(&mut m, &kite, z, TAU),
+        Err(OpError::Degenerate {
+            reason: Reason::NonManifold,
+            entities,
+        }) if entities.is_empty()
+    ));
+    assert!(
+        revolve(&mut m, &kite, z, PI / 2.0).is_ok(),
+        "a partial turn's flat ends make the vertex manifold"
+    );
 }
 
 /// The surface kind of every face of `body`, with a cone's `Z` against

@@ -282,6 +282,19 @@ fn swept_surface(
     }
 }
 
+/// A maximal run of one loop's segments off the revolve axis — a loop that
+/// never lies along the axis is one — which a full turn closes into one
+/// shell.
+struct Chain {
+    /// The loop, as the consumer wrote it.
+    loop_index: usize,
+    /// The lowest segment index the consumer wrote among its segments.
+    segment: usize,
+    /// Where along the axis its first vertex and its last lie; `None` for
+    /// a loop that never lies along the axis.
+    span: Option<(f64, f64)>,
+}
+
 /// The pcurve of the degenerate edge where a side of revolution closes at
 /// the axis — a cone's apex, a sphere's pole: the line at the singular `v`
 /// over the rise's range, its `u` running as a rise there would, with the
@@ -534,15 +547,18 @@ fn record(
 /// vertices per loop in walking order (the start ring, then the end
 /// ring), edges (start, end, rises), faces (start cap, end cap, sides per
 /// loop per segment) — so the ids are a function of the profile alone;
-/// every tolerance is `default_tolerance`. A full turn closes each hole of
-/// the profile into a cavity: the body is one lump whose outer shell is
-/// the outer loop's sides and whose voids are each hole's (ADR-0006), the
-/// shells stored in loop order; a partial turn's holes open onto its flat
-/// ends and make one shell with the rest. Provenance is one `Generated`
-/// per entity from a [`Role::Revolve`] naming the part of the sketch it
-/// came from: a segment perpendicular to the axis in a full turn sweeps
-/// an annulus of two closed rises and has no `StartEdge`, and a hole's
-/// void is [`SweepPart::Cavity`].
+/// every tolerance is `default_tolerance`. A full turn closes the profile
+/// into one lump (ADR-0006) of a shell per *chain* — a maximal run of a
+/// loop's segments off the axis, a loop that never lies along it being
+/// one: the chain whose ends span every other's along the axis is the
+/// outer shell, stored first, and every other — a hole, a notch cut in
+/// from the axis — a void of it, stored by loop and lowest segment; a
+/// partial turn's flat ends join everything into one shell. Provenance is
+/// one `Generated` per entity from a [`Role::Revolve`] naming the part of
+/// the sketch it came from: a segment perpendicular to the axis in a full
+/// turn sweeps an annulus of two closed rises and has no `StartEdge`, and
+/// a void is [`SweepPart::Cavity`], named by its loop and the lowest
+/// segment index the consumer wrote in its chain.
 ///
 /// Errors, the model untouched: [`OpError::Profile`] when
 /// `Profile::edges` refuses the sketch; [`OpError::Degenerate`] with
@@ -553,9 +569,9 @@ fn record(
 /// [`Reason::ProfileCrossesAxis`] when the profile has points on both
 /// sides of the axis, [`Reason::ZeroThickness`] when it lies within
 /// `default_tolerance` of the axis everywhere,
-/// [`Reason::ProfileTouchesAxis`] when a full turn's loop lies along the
-/// axis more than once or touches it at a vertex with no segment along
-/// it, and [`Reason::SpindleTorus`] when an arc's circle crosses it off
+/// [`Reason::NonManifold`] when a full turn's profile touches the axis at
+/// a vertex with no segment along it, where the swept surface would touch
+/// itself, and [`Reason::SpindleTorus`] when an arc's circle crosses it off
 /// its centre.
 ///
 /// ```
@@ -682,22 +698,66 @@ pub fn revolve(
         let on = on_axis[li][v];
         [on && singular(li, (v + n - 1) % n), on && singular(li, v)]
     };
-    // Not yet built in a full turn: a loop along the axis more than once,
-    // which makes several shells of one loop, and a vertex on the axis
-    // with no segment along it, where the surface touches itself.
-    if full {
-        for (li, edges) in loops.iter().enumerate() {
+    // A full turn touching the axis at a vertex with no segment along it
+    // sweeps a surface touching itself there — two chains, or one and
+    // itself, meeting at a point. A partial turn's flat ends close the
+    // vertex's link, so it builds.
+    if full
+        && loops.iter().enumerate().any(|(li, edges)| {
             let n = edges.len();
-            let runs = (0..n)
-                .filter(|&j| along[li][j] && !along[li][(j + n - 1) % n])
-                .count();
-            let pinch =
-                (0..n).any(|j| on_axis[li][j] && !along[li][j] && !along[li][(j + n - 1) % n]);
-            if runs > 1 || pinch {
-                return Err(degenerate(Reason::ProfileTouchesAxis));
+            (0..n).any(|j| on_axis[li][j] && !along[li][j] && !along[li][(j + n - 1) % n])
+        })
+    {
+        return Err(degenerate(Reason::NonManifold));
+    }
+    // A full turn's shells: each loop's chains, `chain[li][j]` the chain of
+    // segment `j` and `None` along the axis, walked from just past the
+    // loop's first segment along the axis.
+    let mut chain: Vec<Vec<Option<usize>>> = Vec::with_capacity(loops.len());
+    let mut chains: Vec<Chain> = Vec::new();
+    for (li, edges) in loops.iter().enumerate() {
+        let n = edges.len();
+        let first_along = (0..n).find(|&j| along[li][j]);
+        let from = first_along.map_or(0, |j| j + 1);
+        let mut row = vec![None; n];
+        let mut current: Option<usize> = None;
+        for (k, edge) in edges.iter().cycle().skip(from).take(n).enumerate() {
+            let j = (from + k) % n;
+            if along[li][j] {
+                current = None;
+                continue;
+            }
+            if current.is_none() {
+                chains.push(Chain {
+                    loop_index: edge.loop_index,
+                    segment: edge.segment,
+                    span: first_along.map(|_| (in_plane.t(edge.start), in_plane.t(edge.start))),
+                });
+                current = Some(chains.len() - 1);
+            }
+            row[j] = current;
+            if let Some(c) = chains.last_mut() {
+                c.segment = c.segment.min(edge.segment);
+                if let Some(span) = &mut c.span {
+                    span.1 = in_plane.t(edge.end);
+                }
             }
         }
+        chain.push(row);
     }
+    // The chain whose ends span every other's along the axis is the lump's
+    // outer shell — a loop that never lies along the axis spans everything
+    // — and the voids follow by loop and lowest segment.
+    let width = |c: &Chain| c.span.map_or(f64::INFINITY, |(a, b)| (b - a).abs());
+    let Some(outer) = (0..chains.len())
+        .filter(|&c| chains[c].loop_index == 0)
+        .max_by(|&a, &b| width(&chains[a]).total_cmp(&width(&chains[b])))
+    else {
+        return Err(degenerate(Reason::ZeroThickness));
+    };
+    let mut shell_order: Vec<usize> = (0..chains.len()).filter(|&c| c != outer).collect();
+    shell_order.sort_by_key(|&c| (chains[c].loop_index, chains[c].segment));
+    shell_order.insert(0, outer);
 
     let tolerance = precision.default_tolerance;
     let rise_range = if full {
@@ -946,8 +1006,9 @@ pub fn revolve(
             face_roles.push(part(SweepPart::EndCap));
         }
 
-        // Where each loop's sides start in `faces`: a full turn's shells.
-        let mut side_start: Vec<usize> = Vec::with_capacity(loops.len());
+        // The chain of every side, in `faces` order after the caps: a full
+        // turn's shells.
+        let mut side_chain: Vec<(Option<usize>, &ProfileEdge)> = Vec::new();
         // The sides: start edge, rise up, end edge back, rise down — the
         // end edge the start edge's second use across the seam in a full
         // turn — walked that way when the material sweeps along the
@@ -957,7 +1018,6 @@ pub fn revolve(
         // the axis sweeps no side, and a vertex on the axis has no rise to
         // walk, so a side reaching the axis closes there.
         for (li, edges_of) in loops.iter().enumerate() {
-            side_start.push(faces.len());
             let n = edges_of.len();
             for (j, edge) in edges_of.iter().enumerate() {
                 let Some((surface, annulus)) = &surfaces[li][j] else {
@@ -1054,32 +1114,44 @@ pub fn revolve(
                     loop_index: edge.loop_index,
                     segment: edge.segment,
                 }));
+                side_chain.push((chain[li][j], edge));
             }
         }
 
-        // A full turn has no caps, so every loop's sides close on their
-        // own: the outer loop's the lump's outer shell, each hole's a void
-        // of it. A partial turn's caps join every loop into one shell.
-        let (shells, shell_roles) = if full {
-            let mut rest = faces;
-            let mut shells = Vec::with_capacity(side_start.len());
-            for &start in side_start.iter().skip(1).rev() {
-                shells.push(rest.split_off(start));
+        // A full turn has no caps, so the sides close across the axis on
+        // their own, a shell per chain: the spanning chain's the lump's
+        // outer shell, stored first, every other a void of it by loop and
+        // lowest segment, each shell's faces in the order they were made. A
+        // partial turn's caps join everything into one shell.
+        let (shells, shell_roles, face_roles) = if full {
+            let mut buckets: Vec<Vec<(FaceSpec, Role)>> =
+                chains.iter().map(|_| Vec::new()).collect();
+            for ((face, role), (c, edge)) in faces.into_iter().zip(face_roles).zip(side_chain) {
+                let Some(bucket) = c.and_then(|c| buckets.get_mut(c)) else {
+                    return Err(unmade(edge, "the shell of a side"));
+                };
+                bucket.push((face, role));
             }
-            shells.push(rest);
-            shells.reverse();
-            let roles = loops
-                .iter()
-                .map(|edges_of| match edges_of.first() {
-                    Some(e) if e.loop_index > 0 => part(SweepPart::Cavity {
-                        loop_index: e.loop_index,
-                    }),
-                    _ => part(SweepPart::Shell),
-                })
-                .collect();
-            (shells, roles)
+            let mut shells = Vec::with_capacity(shell_order.len());
+            let mut shell_roles = Vec::with_capacity(shell_order.len());
+            let mut face_roles = Vec::new();
+            for &c in &shell_order {
+                let (specs, roles): (Vec<FaceSpec>, Vec<Role>) =
+                    core::mem::take(&mut buckets[c]).into_iter().unzip();
+                shells.push(specs);
+                face_roles.extend(roles);
+                shell_roles.push(if c == outer {
+                    part(SweepPart::Shell)
+                } else {
+                    part(SweepPart::Cavity {
+                        loop_index: chains[c].loop_index,
+                        segment: chains[c].segment,
+                    })
+                });
+            }
+            (shells, shell_roles, face_roles)
         } else {
-            (vec![faces], vec![part(SweepPart::Shell)])
+            (vec![faces], vec![part(SweepPart::Shell)], face_roles)
         };
         let assembly = Assembly {
             vertices,
