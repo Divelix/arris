@@ -73,6 +73,24 @@ jobs:
       - run: cargo nextest run -p arris-ops --features parallel
       - run: cargo nextest run -p arris --features parallel
 
+  # A consumer that wants no serde support gets none of its cost: every
+  # internal workspace dependency disables default features
+  # (docs/ARCHITECTURE.md §Formats and tools), so arris-topo's and
+  # arris-io's own `default = ["serde"]` reach the build only through
+  # `arris`'s own `serde` feature, on by default but off here.
+  no-default-features:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check -p arris --no-default-features
+      - run: |
+          if cargo tree -p arris --no-default-features -e normal | grep -q serde_json; then
+            echo "serde_json reaches arris --no-default-features" >&2
+            exit 1
+          fi
+
   # A library's docs are part of its API: a broken intra-doc link or a
   # missing doc on a public item fails the build.
   doc:

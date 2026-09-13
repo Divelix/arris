@@ -319,3 +319,35 @@ fn a_wire_body_and_an_empty_list_are_typed_errors() {
         Err(StepError::NotFound(_))
     ));
 }
+
+/// A shell naming a face that does not resolve: a typed refusal, never a
+/// panic and never output that silently leaves the face out. `lumps`
+/// (`arris_check`) measures every shell's volume before the writer ever
+/// reaches its own per-face lookups, and folds the dangling reference
+/// into `LumpError::Unmeasurable` there — the writer's own `NotFound`
+/// sites (the edge-use cross-reference, a NURBS control point) guard
+/// paths `lumps` does not also cover; see the finding at this step in
+/// `docs/plans/kernel-seams.md`.
+#[test]
+fn a_face_removed_from_a_shell_is_a_typed_refusal_not_a_panic() {
+    let mut m = Model::default();
+    let body = sample::cuboid(&mut m, Point3::origin(), Point3::new(10.0, 10.0, 10.0)).unwrap();
+    let mut faces = m.faces(body).unwrap();
+    let ghost = arris_topo::FaceId::new(9999, 0);
+    *faces.last_mut().unwrap() = arris_topo::Face::forward(ghost);
+    let shell = m.raw().add_shell(arris_topo::entity::Shell::new(faces));
+    let ghost_body = m.raw().add_body(BodyEntity::new(
+        BodyKind::Solid,
+        vec![arris_topo::Shell::forward(shell)],
+        Vec::new(),
+        Vec::new(),
+    ));
+    let ghost_body = Body::forward(ghost_body);
+    assert!(matches!(
+        step::write(&m, &[ghost_body]),
+        Err(StepError::Lumps {
+            source: LumpError::Unmeasurable { .. },
+            ..
+        })
+    ));
+}

@@ -570,7 +570,7 @@ impl Mesh {
             }
             let signs = self.signs(t, p);
             match signs.iter().position(|&s| s == Sign::Negative) {
-                None => return Ok(self.classify(t, signs)),
+                None => return self.classify(t, signs),
                 Some(i) => match self.tris[t].n[i] {
                     Some(next) => t = next,
                     None => break,
@@ -588,7 +588,7 @@ impl Mesh {
             }
             let signs = self.signs(t, p);
             if signs.iter().all(|&s| s != Sign::Negative) {
-                return Ok(self.classify(t, signs));
+                return self.classify(t, signs);
             }
         }
         Err(Fail::Internal(
@@ -608,18 +608,20 @@ impl Mesh {
 
     /// A point with no negative sign against `t`: inside, on the one
     /// edge whose sign is zero, or on the vertex shared by the two.
-    fn classify(&self, t: usize, signs: [Sign; 3]) -> Location {
+    fn classify(&self, t: usize, signs: [Sign; 3]) -> Result<Location, Fail> {
         let zeros: Vec<usize> = (0..3).filter(|&i| signs[i] == Sign::Zero).collect();
         match zeros.as_slice() {
-            [] => Location::Inside(t),
-            [i] => Location::OnEdge(t, *i),
+            [] => Ok(Location::Inside(t)),
+            [i] => Ok(Location::OnEdge(t, *i)),
             // Edges i and j meet at the vertex they share.
             [i, j] => {
                 let v = self.tris[t].v;
                 let shared = if (*i + 1) % 3 == *j { v[*j] } else { v[*i] };
-                Location::OnVertex(shared)
+                Ok(Location::OnVertex(shared))
             }
-            _ => Location::OnVertex(self.tris[t].v[0]),
+            // All three signs zero: a degenerate triangle, never a
+            // property of the input points alone.
+            _ => Err(Fail::Internal("a triangle with three zero signs")),
         }
     }
 

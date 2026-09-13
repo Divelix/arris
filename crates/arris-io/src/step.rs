@@ -539,21 +539,22 @@ impl<'m> Writer<'m> {
         let number = self.reserve();
         let start = self.vertex(edge.start())?;
         let end = self.vertex(edge.end())?;
-        let uses: Vec<(CoedgeRef, Coedge, SurfaceId)> = self
-            .model
-            .edge_uses(id)?
-            .iter()
-            .filter(|u| self.faces_written.contains(&u.face))
-            .filter_map(|&u| {
-                let face = self.model.face(u.face).ok()?;
-                let coedge = *face
-                    .loops()
-                    .get(u.loop_index)?
-                    .coedges()
-                    .get(u.coedge_index)?;
-                Some((u, coedge, face.surface()))
-            })
-            .collect();
+        let mut uses: Vec<(CoedgeRef, Coedge, SurfaceId)> = Vec::new();
+        for &u in self.model.edge_uses(id)?.iter() {
+            if !self.faces_written.contains(&u.face) {
+                continue;
+            }
+            let face = self.model.face(u.face)?;
+            let Some(coedge) = face
+                .loops()
+                .get(u.loop_index)
+                .and_then(|l| l.coedges().get(u.coedge_index))
+                .copied()
+            else {
+                continue;
+            };
+            uses.push((u, coedge, face.surface()));
+        }
         if uses.len() > 2 {
             return Err(StepError::Unsupported {
                 body,
@@ -835,9 +836,9 @@ impl<'m> Writer<'m> {
         for (i, weights) in n.weights().chunks(cv).enumerate() {
             let mut row = Vec::with_capacity(cv);
             for j in 0..weights.len() {
-                let Some(point) = n.control_point(i, j) else {
-                    continue;
-                };
+                let point = n
+                    .control_point(i, j)
+                    .ok_or_else(|| StepError::NotFound(NotFound::new(owner)))?;
                 row.push(self.point_3d(point, owner)?);
             }
             rows.push(format!("({})", refs(row)));

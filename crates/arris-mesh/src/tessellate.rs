@@ -11,8 +11,15 @@ use arris_topo::arris_math::{Interval, Point2};
 use arris_topo::entity::EdgeGeometry;
 use arris_topo::{Body, EdgeId, FaceId, Model, NotFound, Orientation, VertexId};
 
-use crate::cdt::{self, CdtError, VertexRef};
+use crate::cdt::{self, VertexRef};
 use crate::{MeshError, TriMesh};
+
+/// A cap on a face's interior lattice, total points in both directions:
+/// an allocation and a CDT input this size is already enormous, and a
+/// face that would need more — a torus whose minor radius is orders of
+/// magnitude below its major one, at a fine chord — is
+/// [`MeshError::GridTooLarge`] instead of attempted.
+pub const MAX_INTERIOR_POINTS: usize = 1 << 20;
 
 /// The samples of one edge: `n + 1` parameters over its range and the
 /// mesh index of each, the first and last being the end vertices'.
@@ -60,8 +67,10 @@ struct EdgeSamples {
 /// Errors: [`MeshError::Chord`]; [`MeshError::InvalidInput`] (debug
 /// builds); [`MeshError::NotFound`] for the body or anything it refers
 /// to; [`MeshError::Face`] when a face's loops are not the simple nested
-/// polygons a valid face has; [`MeshError::NonFinitePosition`] when the
-/// geometry evaluates to a non-finite point.
+/// polygons a valid face has; [`MeshError::GridTooLarge`] when a face's
+/// interior lattice at `chord` would need more than
+/// [`MAX_INTERIOR_POINTS`] points; [`MeshError::NonFinitePosition`] when
+/// the geometry evaluates to a non-finite point.
 ///
 /// ```
 /// use arris_debug::sample;
@@ -225,10 +234,9 @@ pub fn tessellate(m: &Model, body: Body, chord: f64) -> Result<TriMesh, MeshErro
             }
             let polygon = Polygon2::from_points(points.iter().copied());
             if polygon.points().len() != indices.len() {
-                return Err(MeshError::Face {
-                    face: f.id,
-                    source: CdtError::Internal("a loop's ring and its index ring differ in length"),
-                });
+                return Err(MeshError::Internal(
+                    "a loop's ring and its index ring differ in length",
+                ));
             }
             polygons.push(polygon);
             rings.push(indices);
@@ -237,7 +245,7 @@ pub fn tessellate(m: &Model, body: Body, chord: f64) -> Result<TriMesh, MeshErro
         // position of its own on the surface.
         let (bounds, steps) = domains.get(k).copied().ok_or(NotFound::new(f.id))?;
         let surface = m.surface(face.surface())?;
-        let interior = interior_grid(&polygons, bounds, steps);
+        let interior = interior_grid(f.id, &polygons, bounds, steps)?;
         let mut interior_indices: Vec<u32> = Vec::with_capacity(interior.len());
         for uv in &interior {
             let p = surface.point(uv.x, uv.y);
@@ -306,20 +314,18 @@ fn triangulate_face(w: &FaceWork) -> Result<Vec<[u32; 3]>, MeshError> {
                 .get(polygon)
                 .and_then(|r| r.get(vertex))
                 .copied()
-                .ok_or(MeshError::Face {
-                    face: w.face,
-                    source: CdtError::Internal("a triangle corner names no loop point"),
-                }),
+                .ok_or(MeshError::Internal("a triangle corner names no loop point")),
             Some(VertexRef::Interior(i)) => {
-                w.interior_indices.get(i).copied().ok_or(MeshError::Face {
-                    face: w.face,
-                    source: CdtError::Internal("a triangle corner names no interior point"),
-                })
+                w.interior_indices
+                    .get(i)
+                    .copied()
+                    .ok_or(MeshError::Internal(
+                        "a triangle corner names no interior point",
+                    ))
             }
-            None => Err(MeshError::Face {
-                face: w.face,
-                source: CdtError::Internal("a triangle corner is not an input point"),
-            }),
+            None => Err(MeshError::Internal(
+                "a triangle corner is not an input point",
+            )),
         }
     };
     let mut triangles = Vec::with_capacity(triangulation.triangles().len());
@@ -469,18 +475,33 @@ fn scaled_point(p: Point2, scale: [f64; 2]) -> Point2 {
 /// directions and get a lattice sized by
 /// [`arris_topo::arris_geom::Surface::chord_steps`], never by a
 /// per-triangle error estimate.
-fn interior_grid(polygons: &[Polygon2], bounds: [Interval; 2], steps: [f64; 2]) -> Vec<Point2> {
+fn interior_grid(
+    face: FaceId,
+    polygons: &[Polygon2],
+    bounds: [Interval; 2],
+    steps: [f64; 2],
+) -> Result<Vec<Point2>, MeshError> {
     let mut counts = [1usize; 2];
     for dir in 0..2 {
         let length = bounds[dir].length();
         if !(length.is_finite() && length > 0.0 && steps[dir] > 0.0) {
-            return Vec::new();
+            return Ok(Vec::new());
         }
         let wanted = (length / steps[dir]).ceil();
         if !wanted.is_finite() {
-            return Vec::new();
+            return Ok(Vec::new());
         }
-        counts[dir] = (wanted as usize).clamp(1, MAX_SEGMENTS_PER_PIECE);
+        counts[dir] = (wanted as usize).max(1);
+    }
+    // Capped by the lattice's total, not per direction: two directions
+    // each under the old per-direction cap could still multiply into an
+    // allocation and a CDT input no chord tolerance should ask for.
+    let points_wanted = counts[0].saturating_mul(counts[1]);
+    if points_wanted > MAX_INTERIOR_POINTS {
+        return Err(MeshError::GridTooLarge {
+            face,
+            points: points_wanted,
+        });
     }
     let mut points = Vec::new();
     for i in 1..counts[0] {
@@ -493,7 +514,7 @@ fn interior_grid(polygons: &[Polygon2], bounds: [Interval; 2], steps: [f64; 2]) 
             }
         }
     }
-    points
+    Ok(points)
 }
 
 #[cfg(test)]

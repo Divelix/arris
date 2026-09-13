@@ -13,14 +13,18 @@ license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
 # Internal crates, referenced by path from the workspace so every edge is
-# declared in exactly one place.
-arris-math = { path = "crates/arris-math", version = "0.0.1" }
-arris-geom = { path = "crates/arris-geom", version = "0.0.1" }
-arris-topo = { path = "crates/arris-topo", version = "0.0.1" }
-arris-check = { path = "crates/arris-check", version = "0.0.1" }
-arris-ops = { path = "crates/arris-ops", version = "0.0.1" }
-arris-mesh = { path = "crates/arris-mesh", version = "0.0.1" }
-arris-io = { path = "crates/arris-io", version = "0.0.1" }
+# declared in exactly one place. `default-features` is stated explicitly
+# (Cargo requires it here to let a member override it) so a dependent can
+# opt out of, say, arris-topo's and arris-io's own `default = ["serde"]`
+# and forward the feature itself instead (`arris`'s own `serde` feature,
+# `cargo check -p arris --no-default-features`).
+arris-math = { path = "crates/arris-math", version = "0.0.1", default-features = false }
+arris-geom = { path = "crates/arris-geom", version = "0.0.1", default-features = false }
+arris-topo = { path = "crates/arris-topo", version = "0.0.1", default-features = false }
+arris-check = { path = "crates/arris-check", version = "0.0.1", default-features = false }
+arris-ops = { path = "crates/arris-ops", version = "0.0.1", default-features = false }
+arris-mesh = { path = "crates/arris-mesh", version = "0.0.1", default-features = false }
+arris-io = { path = "crates/arris-io", version = "0.0.1", default-features = false }
 arris-debug = { path = "crates/arris-debug", version = "0.0.1" }
 
 # External crates, pinned here and used with `workspace = true` (SEED.md §4).

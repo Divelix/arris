@@ -7,6 +7,13 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[features]
+# Forwarded, not used directly: a consumer that reaches `arris_topo`'s
+# types through this crate's re-export (`arris-io`'s native format) needs
+# a path to `arris-topo/serde` that does not depend on its default
+# features being on.
+serde = ["arris-topo/serde"]
+
 [dependencies]
 arris-topo.workspace = true
 

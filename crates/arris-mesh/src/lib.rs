@@ -29,5 +29,5 @@ mod trimesh;
 // caller reaches it through this crate as it always has.
 pub use arris_topo::arris_math::Aabb;
 pub use polyline::Polyline;
-pub use tessellate::tessellate;
+pub use tessellate::{MAX_INTERIOR_POINTS, tessellate};
 pub use trimesh::{EdgeRange, FaceRange, MeshError, TriMesh};

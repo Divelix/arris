@@ -565,7 +565,30 @@ impl Violation {
             | Violation::FacesIntersect { .. }
             | Violation::ShellNesting { .. }
             | Violation::NonPositiveVolume { .. } => Level::Full,
-            _ => Level::Fast,
+            Violation::Unresolved { .. }
+            | Violation::NotIndexed { .. }
+            | Violation::NonFinite { .. }
+            | Violation::VertexTolerance { .. }
+            | Violation::VertexOffEdge { .. }
+            | Violation::VertexOffFace { .. }
+            | Violation::EdgeRange { .. }
+            | Violation::EdgeEnds { .. }
+            | Violation::EdgeUnused { .. }
+            | Violation::PcurveOffCurve { .. }
+            | Violation::EdgeTolerance { .. }
+            | Violation::DegenerateEdge { .. }
+            | Violation::Seam { .. }
+            | Violation::LoopOpen { .. }
+            | Violation::PcurveGap { .. }
+            | Violation::EdgeReusedInFace { .. }
+            | Violation::LoopNesting { .. }
+            | Violation::FaceMalformed { .. }
+            | Violation::FaceTolerance { .. }
+            | Violation::FaceUsedTwice { .. }
+            | Violation::EdgeUses { .. }
+            | Violation::ShellDisconnected { .. }
+            | Violation::ShellOpen { .. }
+            | Violation::WireMalformed { .. } => Level::Fast,
         }
     }
 

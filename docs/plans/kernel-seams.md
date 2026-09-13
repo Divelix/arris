@@ -382,7 +382,7 @@ bound has to be established here.
     the only way to observe *that* lookup's own id naming is to call it
     directly, past `verify_input`. Precedented broadly elsewhere in the
     workspace (`arris-topo`, `arris-check`, …), new for `arris-ops`.
-- [ ] Step 11 **[1]** — **Rule fixes in check, mesh and io; features.**
+- [x] Step 11 **[1]** — **Rule fixes in check, mesh and io; features.**
   - `Violation::level` exhaustive; `cdt::classify`'s wildcard →
     `Fail::Internal`.
   - `interior_grid` capped by total points →
@@ -397,6 +397,44 @@ bound has to be established here.
     - a model with a face removed under a written edge returns
       `NotFound` from the STEP writer;
     - the CI job.
+  - Finding (step 11): `default-features = false` on the internal crates
+    lives in `[workspace.dependencies]` itself (each entry gains
+    `default-features = true`, which Cargo requires stated explicitly
+    before a member may set it to `false` — every member here does, via
+    plain `.workspace = true`, once the workspace default is `false`),
+    not repeated on every `.workspace = true` edge — one declaration
+    instead of one per crate. `arris-topo` and `arris-io` keep their own
+    `default = ["serde"]` (their own `cargo test` still wants it); the
+    forwarding path a consumer needs now goes through features, not
+    inherited defaults: `arris-check` gained `serde = ["arris-topo/serde"]`
+    (forwarded, nothing in `arris-check` itself uses it — it is
+    `arris-io`'s only path to `arris_topo::Model`'s `Serialize`), and
+    `arris-io`'s own `serde` feature now lists `"arris-check/serde"`
+    instead of relying on `arris-topo`'s default. Verified with
+    `cargo tree -p arris --no-default-features` (no `serde`/`serde_json`
+    at all) and standalone `cargo test -p arris-topo|arris-io|arris-debug`
+    (each still gets what its own manifest asks for).
+  - Finding (step 11): the STEP-writer test is not what the step named.
+    `self.model.face(u.face)` in `Writer::edge`'s use-computation, and
+    `NurbsSurface::control_point` in `nurbs_surface`, cannot fail for a
+    live `&Model`: `push_face`/`rebuild_indices` (`arris-topo`) only ever
+    index a coedge whose edge resolves under the face's own, just-created
+    (always-valid) id, and `NurbsSurface::new` refuses a control-point
+    count that does not match `counts()` before the value exists — there
+    is no mutation between construction and either lookup for either
+    invariant to go stale. A shell naming a face that does not resolve
+    (built through `Model::raw`) is real and reachable, but `arris_check`'s
+    `lumps` — required for every `Solid` body before the writer reaches
+    its own per-face code — measures every shell's volume first and folds
+    exactly this dangling reference into `LumpError::Unmeasurable`, mapped
+    to `StepError::Lumps`, before `Writer::solids` ever calls
+    `closed_shell`. Landed as
+    `a_face_removed_from_a_shell_is_a_typed_refusal_not_a_panic`: a typed
+    refusal, never a panic and never silently-wrong output, which is what
+    the fixed sites also guard — on paths `lumps` does not reach, for
+    whichever future caller does (a blend keeping a shell whose face
+    `retain` already dropped, say). The two `?` conversions stay: cheap,
+    correct, and named by the same rule as every other site in step 10.
 - [ ] Step 12 **[1]** — **Fixture grammar parity, the provenance audit,
   shared test helpers.**
   - Python maps `BitXor` to power and rejects `Pow`.

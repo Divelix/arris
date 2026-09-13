@@ -531,6 +531,26 @@ fn the_sample_sphere_meshes_within_the_inscribed_bound() {
     }
 }
 
+/// A torus whose minor radius is far smaller than its major one, at a
+/// chord fine enough for the minor circle: the major direction's lattice
+/// (which does not shrink with the minor radius) would need billions of
+/// points at that chord. `MeshError::GridTooLarge` names the face and the
+/// count it would have needed, not an allocation.
+#[test]
+fn a_torus_with_a_tiny_minor_radius_at_a_fine_chord_is_grid_too_large() {
+    let mut m = Model::default();
+    let (major, minor) = (5.0, 1e-6);
+    let body = sample::torus(&mut m, Point3::origin(), major, minor).unwrap();
+    let face = m.faces(body).unwrap()[0].id;
+    match tessellate(&m, body, 1e-12).unwrap_err() {
+        MeshError::GridTooLarge { face: f, points } => {
+            assert_eq!(f, face);
+            assert!(points > 1 << 20, "{points}");
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
 #[test]
 fn the_sample_torus_meshes_closed() {
     let mut m = Model::default();

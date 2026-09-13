@@ -85,6 +85,22 @@ pub enum MeshError {
         /// What the triangulation found.
         source: CdtError,
     },
+    /// The interior lattice `chord` asks for on `face` would need more
+    /// than [`crate::MAX_INTERIOR_POINTS`] points: a surface whose
+    /// curvature varies enormously over its domain (a torus with a
+    /// minor radius far smaller than its major one, at a fine chord).
+    #[error("{face}'s interior lattice would need {points} points")]
+    GridTooLarge {
+        /// The face.
+        face: FaceId,
+        /// How many points it would need.
+        points: usize,
+    },
+    /// Tessellation's own bookkeeping broke on validated input: never a
+    /// property of the body or the chord tolerance, and never the CDT's
+    /// own fault, so never a [`MeshError::Face`].
+    #[error("kernel bug: {0}")]
+    Internal(&'static str),
 }
 
 /// An indexed triangle mesh with `f64` positions, the output type of
