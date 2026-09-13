@@ -250,10 +250,12 @@ a `Curve` variant. Either it becomes one (`Curve::QuadricSection`, exact,
 with STEP export fitting a B-spline at write time) or the intersector fits
 `Curve::Nurbs` to the edge's tolerance and the exact form is never stored.
 `SEED.md` §10 lists this as the first kickoff question; it is decided by the
-ADR that lands cylinder–cylinder intersection (cycle 2), and cycle 1's
-plane–cylinder pairs produce only lines, circles and ellipses. Until then
-S5 reports a cylinder–cylinder pair that is not coaxial as unchecked,
-which an extrude of two arcs whose cylinders' boxes overlap makes.
+ADR that lands the general quadric pairs (C3, `docs/ROADMAP.md`) — a
+blend's own surfaces meet only in conics, since the construction places
+them (ADR-0007) — and cycle 1's plane–cylinder pairs produce only lines,
+circles and ellipses. Until then S5 reports a cylinder–cylinder pair that
+is not coaxial as unchecked, which an extrude of two arcs whose
+cylinders' boxes overlap makes.
 
 ### Pcurves (`Curve2`)
 
@@ -1027,6 +1029,18 @@ alone, a cavity, is `Generated` from the tool's shell; a shell of a
 kept-by-id operand no result shell came from is `Deleted`. The result's
 body is `Modified` from the target's in `cut`, from both operands' in
 `fuse` and `common`.
+
+A blend writes its record against the blended edge, with no `Role` of
+its own (ADR-0007): the blend face, its two contact edges, its two end
+arcs and the four vertices where the arcs meet the contacts are
+`Generated` from the edge; each of the edge's two faces, each face
+across an end and each corner edge the trim shortens is `Modified` into
+its new self; the edge and the two corner vertices it consumes are
+`Deleted`; the shell and the body are `Modified` one-to-one, and every
+other entity of the body is kept by id. Two blends that share a face
+modify it once, into the face rewritten by both. A miter edge is
+`Generated` from both edges it joins, so `generated_pair` finds it, and a
+sphere corner face from its three. `audit` holds on every result.
 
 Queries: `generated_from(origin) -> &[Shape]`, `modified_from(origin)`,
 `is_deleted(input)`, `origins(output) -> Vec<(Relation, Origin)>` (the

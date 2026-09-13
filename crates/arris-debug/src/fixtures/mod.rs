@@ -292,6 +292,21 @@ pub enum Step {
         /// The body cut away.
         tool: String,
     },
+    /// A constant-radius fillet of edges of a step's body, named by a
+    /// point on each: Arris takes the edge `classify_point` answers
+    /// `On(Edge)` for, the oracle the nearest edge by `BRepExtrema`, and
+    /// both refuse a point within `probe` of two edges or on none
+    /// (`tests/fixtures/README.md`).
+    Fillet {
+        /// Step name.
+        name: String,
+        /// The body blended.
+        of: String,
+        /// One point on each edge to blend.
+        edges: Vec<[Num; 3]>,
+        /// The ball's radius.
+        radius: Num,
+    },
 }
 
 impl Step {
@@ -306,7 +321,8 @@ impl Step {
             | Step::Transform { name, .. }
             | Step::Fuse { name, .. }
             | Step::Common { name, .. }
-            | Step::Cut { name, .. } => name,
+            | Step::Cut { name, .. }
+            | Step::Fillet { name, .. } => name,
         }
     }
 }
@@ -391,6 +407,16 @@ pub enum ExpectError {
     /// compound of solids sharing it has an odd Euler characteristic, so
     /// it records no genus and the recipe states none.
     NonManifold,
+    /// `OpError::Degenerate` with `Reason::BlendTooLarge`: a blend's
+    /// contact or end arc leaves its face (ADR-0007).
+    BlendTooLarge,
+    /// `OpError::Degenerate` with `Reason::TangentChain`: a blended edge's
+    /// faces meet at a tangent dihedral, or the edge runs into a blend
+    /// face (ADR-0007).
+    TangentChain,
+    /// `OpError::Degenerate` with `Reason::VertexBlend`: a corner the
+    /// blend's closed forms do not cover (ADR-0007).
+    VertexBlend,
 }
 
 /// The closed forms a fixture's author states, cross-checking the oracle.
@@ -662,7 +688,14 @@ pub fn load(dir: &Path) -> Result<Fixture, FixtureError> {
 /// The areas of the corpus whose comparable solid fixtures must carry a
 /// committed dump per variant: every area a corpus test runs, so a
 /// fixture there has passed and been blessed, and none is `#[ignore]`d.
-pub const DUMPED_AREAS: [&str; 5] = ["primitive", "transform", "boolean", "sweep", "provenance"];
+pub const DUMPED_AREAS: [&str; 6] = [
+    "primitive",
+    "transform",
+    "boolean",
+    "sweep",
+    "provenance",
+    "blend",
+];
 
 /// The area a failure shrunk to a fixture waits in until it passes
 /// (`.agents/rules/kernel.md` §Testing): outside [`DUMPED_AREAS`], so it

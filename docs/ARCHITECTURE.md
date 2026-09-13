@@ -21,7 +21,7 @@ re-exports the public API. Lower crates never name types from upper ones.
 | `arris-geom` | `Surface`, `Curve`, `Curve2` (analytic + NURBS): evaluation, derivatives, point projection, curve/curve, curve/surface and surface/surface intersection, bounding boxes over a parameter range, pcurves and the NURBS fit behind them; the (u, v) toolkit `region2` and `integrate` shared by the checker, tessellation, mass properties and classification; `Profile`, the planar sketch of lines and arcs a sweep takes, validated and oriented by `Profile::edges`; `GeomError` | `arris-math`, `thiserror`, `serde` (feature) | 0 — representation |
 | `arris-topo` | `Model` (the arena), typed ids, `Shape`/`Body`/`Face`/… handles, orientation, entities, pcurves, per-entity tolerances, Euler operators including the assembly seam (`Assembly::of_body`, `effective_uses`, `AssemblySlots`), the Euler line (`euler::EulerLine`), adjacency and iteration, `Provenance` and its audit; re-exports `arris-geom` and `arris-math` | `arris-geom`, `arris-math`, `thiserror`, `serde` (feature) | 0 — representation |
 | `arris-check` | The invariant checker: `check(&Model, Body, Level) -> Report` and the `Violation` list of data-model §Invariants; the shared face domain (`domain::FaceDomain`), point classifier (`classify::Classifier`, `classify_point`) and region flux (`flux::face_flux`) every `Full` row, the boolean and tessellation read a face through; re-exports `arris-topo` | `arris-topo`, `serde` (feature, forwarded to `arris-topo`) | 1 |
-| `arris-ops` | Primitives, extrude and revolve of a `Profile`, transform, booleans, later blends; `measure` (mass properties); each returns `Provenance` | `arris-check`, `thiserror`, `rayon` (feature) | 2 — algorithms |
+| `arris-ops` | Primitives, extrude and revolve of a `Profile`, transform, booleans, the blends; `measure` (mass properties); each returns `Provenance` | `arris-check`, `thiserror`, `rayon` (feature) | 2 — algorithms |
 | `arris-mesh` | `TriMesh`, `Polyline`, the constrained Delaunay triangulation in (u, v) (`cdt`, ADR-0003), tessellation of faces and edges with shared edge discretisation; re-exports `arris-math`'s `Aabb` | `arris-check`, `arris-topo`, `thiserror`, `rayon` (feature) | 2 — algorithms |
 | `arris-io` | STEP AP214 Part 21 writer (later reader), the native format (`native`); re-exports `arris-check` | `arris-check`, `thiserror`, `serde`, `serde_json`, `postcard` (the last three behind the `serde` feature) | 2 — algorithms |
 | `arris-debug` | Text dump, the hand-built sample bodies (`sample`), PNG render (own software rasteriser over `image`), Rerun stream (feature), the fixture loader and corpus lint, the corpus runner (`corpus`) and the oracle seam (`oracle`), the seeded property-test runner and strategies | `arris-ops`, `arris-mesh`, `arris-io`, `arris-topo`, `arris-geom`, `arris-math`, `image`, `serde`, `serde_json`, `sha2`, `thiserror`, `proptest` (not on `wasm32`), `rerun` (feature) | 3 — dev-facing |
@@ -339,7 +339,7 @@ The keep-by-id assembly and the provenance writer above are
 `Policy` per operand (`Reuse`, an untouched entity kept by id and a piece
 `Modified` from its parent; `Regenerate`, every entity `Deleted` and a
 surviving piece `Generated` from it, the tool of a `cut`) turns the
-pieces a boolean or a future blend has already decided on into an
+pieces a boolean has already decided on into an
 `Assembly` and, once `Builder::assemble` returns it, writes the generic
 half of their provenance — every operand entity kept, modified or
 deleted, the shell reconciliation, a coincident piece's stand-in — from
@@ -347,7 +347,50 @@ the same `AssemblySlots` `transform` reads its own outputs through. The
 boolean layers its own two relations on top — a section vertex's or
 edge's `Generated` from the face pair that made it, meaningless without
 `Interferences` — inline, over the `Provenance` the writer returns.
-`boolean()` is `rebuild`'s first caller; a blend is its second.
+`boolean()` is `rebuild`'s first caller; a blend is its second, through
+`rebuild::rewrite`: one operand, its faces kept by id unless their loops
+change, its edges and vertices kept unless a new edge is a piece of one
+or a face's new loops no longer reach them, the blend faces added after
+each shell's own, and the same generic provenance — kept unrecorded, a
+piece or a replacement `Modified`, the rest of what is gone `Deleted`,
+each shell and the body `Modified` — over which the blend adds its
+`Generated` records.
+
+`ops::fillet(m, body, edges: &[Edge], radius)` blends the listed edges
+with a rolling ball, one stripe per edge built in closed form from the
+edge's two faces (ADR-0007). The table: two planes blend to a cylinder
+of the radius on the line where the faces' offset planes meet — its
+frame's `X` at one contact ruling and `Z` along the edge, so the contacts
+sit at `u = 0` and `u = π − φ` for normals `φ` apart and `v` is the
+edge's own parameter — with the contact on each plane the line at
+`r tan(φ/2)` from the edge, a `Line` pcurve there and a ruling on the
+cylinder; a plane against a cylinder along a ruling or a circle, and the
+chamfer, follow in this cycle. Convex or concave is read from the
+dihedral, and the contact curves come from the construction, never from
+the intersector. Each end is trimmed by the face across the corner — at a
+vertex of three edges, the plane the corner's other two edges share:
+the section is a circle when that plane is perpendicular to the edge
+and an ellipse when oblique, exact on the plane and a `Line` or a
+fitted `Nurbs` on the cylinder by the oblique-section rule, at the arc's
+own tolerance; the corner vertex goes, the corner's other two edges are
+shortened on their own curves to the arc's ends, and the face across
+takes the arc in its loop. The edges are blended in the body's iteration
+order, whatever order they are listed in, so the result and its ids are
+the same for any order of one set. A contact line or an end arc that
+would leave its face through an edge that is not the corner's own, or a
+corner edge shorter than the trim — decided in the face's own (u, v)
+through `FaceDomain::side` at `check_samples` interior parameters — is
+`Reason::BlendTooLarge` naming the edge and the face or edge the blend
+runs out of; a tangent dihedral is `Reason::TangentChain`; a vertex of
+other than three edges, or one that two blended edges meet at until the
+miter lands, is `Reason::VertexBlend` naming the vertex; a surface pair
+outside the table, or a face across an end that is not a plane, is
+`OpError::Unsupported` naming the kinds and the faces; an empty list,
+an edge listed twice and an edge of another body are `Reason::NoEdges`,
+`RepeatedEdge` and `EdgeNotInBody`. A blend that meets a third face while
+its contacts stay inside their faces is not detected by the operation:
+S5 catches it in the corpus. Provenance is rooted at the edge with no new
+`Role` (data-model §Provenance).
 
 Sweeps take a planar `geom::Profile` — an outer loop and holes of lines
 and arcs in a plane's own (u, v), validated and oriented by
@@ -451,8 +494,8 @@ involved, so the message a consumer shows — or the agent reads — says
 | Variant | When | Carries |
 |---|---|---|
 | `InvalidInput` | an input body fails the checker (checked in debug builds before the operation starts, and in release when the `paranoid` feature is on) | `Body`, the `Report` |
-| `Unsupported` | the exhaustive dispatch reached a surface or curve pair the kernel has no formula for yet | the two `GeomKind`s with their entities |
-| `Degenerate` | the requested result has no valid representation: a parameter that makes no geometry (`Reason::NonFinite`, `Reason::NotPositive` naming it — a zero radius, a box whose `min` is not below its `max`, a revolve angle at or below zero, a zero extrude direction; `Reason::AngleAboveTurn` past `2π`), a zero-thickness intersection or an extrude of zero length (`Reason::ZeroThickness`), a revolve whose axis is off the profile's plane (`Reason::AxisNotInProfilePlane`), whose profile crosses its axis (`Reason::ProfileCrossesAxis`) or lies within the tolerance of it everywhere (`Reason::ZeroThickness`), or whose arc's circle crosses it (`Reason::SpindleTorus`); an extrude off its plane's normal (`Reason::DirectionNotNormal`); a boolean that selects no material (`Reason::Empty`: a target inside its tool, a `common` of disjoint operands); result shells that would touch along an edge or at a vertex, or a full revolve touching its axis at a vertex with no segment along it (`Reason::NonManifold`, naming the shared edges or vertices, none for a sweep); faces touching along a curve interior to both result faces (`Reason::TangentContact`); a query on a body that is not a `Solid` (`Reason::NotSolid`) | the entities (none for a primitive or a sweep) and a `Reason` enum |
+| `Unsupported` | the exhaustive dispatch reached a surface or curve pair the kernel has no formula for yet — a boolean's face pair, a blend's face pair outside its table or the face across a blend's end | the two `GeomKind`s with their entities |
+| `Degenerate` | the requested result has no valid representation: a parameter that makes no geometry (`Reason::NonFinite`, `Reason::NotPositive` naming it — a zero radius, a box whose `min` is not below its `max`, a revolve angle at or below zero, a zero extrude direction; `Reason::AngleAboveTurn` past `2π`), a zero-thickness intersection or an extrude of zero length (`Reason::ZeroThickness`), a revolve whose axis is off the profile's plane (`Reason::AxisNotInProfilePlane`), whose profile crosses its axis (`Reason::ProfileCrossesAxis`) or lies within the tolerance of it everywhere (`Reason::ZeroThickness`), or whose arc's circle crosses it (`Reason::SpindleTorus`); an extrude off its plane's normal (`Reason::DirectionNotNormal`); a boolean that selects no material (`Reason::Empty`: a target inside its tool, a `common` of disjoint operands); result shells that would touch along an edge or at a vertex, or a full revolve touching its axis at a vertex with no segment along it (`Reason::NonManifold`, naming the shared edges or vertices, none for a sweep); faces touching along a curve interior to both result faces (`Reason::TangentContact`); a blend asked for no edges (`Reason::NoEdges`), for an edge twice (`Reason::RepeatedEdge`) or for an edge of another body (`Reason::EdgeNotInBody`), one that leaves its face or outruns a corner edge (`Reason::BlendTooLarge`), one at a tangent dihedral (`Reason::TangentChain`), or one at a corner the closed forms do not cover (`Reason::VertexBlend`, ADR-0007); a query on a body that is not a `Solid` (`Reason::NotSolid`) | the entities (none for a primitive or a sweep) and a `Reason` enum |
 | `Profile` | a sweep's sketch is not a valid profile: `Profile::edges` refused it (data-model §Profiles). An invalid profile has no entities to name, so it is neither `InvalidInput` nor `Degenerate` | the `ProfileError`, naming the loop and segment |
 | `Tolerance` | the result would need an entity tolerance above `Precision::max_tolerance` | the entity, the tolerance it wanted |
 | `NotFound` | an id does not resolve in this model (wrong model, or compacted away) | the `AnyId` that failed to resolve itself, never an entity that merely holds it |
@@ -768,13 +811,16 @@ mesh-based mass properties (`ops::measure` integrates the B-Rep).
   that feed it a curve or a surface without a body (`polyline_of`,
   `wireframe_of`), the Rerun stream, the fixture loader and corpus lint
   (`fixtures`; a solid fixture the runner compares under `primitive/`,
-  `transform/`, `boolean/`, `sweep/` or `provenance/` without its committed
-  dump per variant fails the lint, so an ignored fixture there does; a
+  `transform/`, `boolean/`, `sweep/`, `provenance/` or `blend/` without its
+  committed dump per variant fails the lint, so an ignored fixture there does; a
   failure waiting for its fix sits under `regression/`, and fails the lint
   once it has a dump), the corpus runner (`corpus::run`, the fixture test of
   roadmap §Fixtures — a `profile` step built into a `geom::Profile` kept
   beside the bodies for the sweep steps that name it, no body and no
-  accounting of its own; checker, counts — a solid per lump — and genus,
+  accounting of its own; a `fillet` step's edges named by a point each,
+  the edge `classify_point` answers `On(Edge)` for when no second edge of
+  the body passes within the fixture's `probe` of the point, a
+  `CorpusError::EdgePoint` otherwise; checker, counts — a solid per lump — and genus,
   the oracle's reading
   of the STEP, the mass properties against the oracle's within the
   fixture's tolerances, the mesh closed and within `mesh_volume_rel`,
@@ -851,7 +897,7 @@ facade needs Arris types above it.
 | Extrude / revolve of a sketched profile with holes | `ops::extrude`, `ops::revolve` over `Profile` (lines and arcs) |
 | Boolean union / intersect / cut | `ops::fuse`, `ops::common`, `ops::cut` |
 | Transform (geometry only, topology and index order preserved) | `ops::transform` — new ids, provenance `Modified` one-to-one in iteration order |
-| Fillet / chamfer of named edges, one call for all edges | `ops::fillet`, `ops::chamfer` (cycle 2) |
+| Fillet / chamfer of named edges, one call for all edges | `ops::fillet` (ADR-0007); `ops::chamfer` follows in this cycle |
 | Tessellation into a render mesh with per-face and per-edge ranges | `arris_mesh::tessellate` → `TriMesh` with `FaceRange`/`EdgeRange` keyed by `FaceId`/`EdgeId` |
 | A planar face's frame | `model.surface(model.face(id)?.surface())` is `Surface::Plane { frame }`; the frame *is* the answer, and it is stable across re-evaluation because a primitive's frame, or a sweep's profile plane, is |
 | Mass properties (volume, area, centroid, inertia) | `ops::measure::mass_properties` → `MassProperties` (exact over the B-Rep, the tensor about the centroid); or the consumer's own integrator over `TriMesh` |

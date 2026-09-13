@@ -159,7 +159,26 @@ mechanical; **[2]** careful — a geometric or numeric case to get right
 within a given design; **[3]** unproven — an algorithm whose robustness or
 bound has to be established here.
 
-- [ ] Step 1 **[3]** — **One convex box edge, end to end.**
+- [x] Step 1 **[3]** — **One convex box edge, end to end.** Landed
+  2026-09-13, ADR-0007. Findings, each a deliberate departure from the
+  bullets below: the blend cylinder's `X` is at one contact ruling, not
+  toward the deleted edge, so the contacts sit at `u = 0` and `u = π − φ`
+  and no pcurve crosses `u = 0` — Open CASCADE's `ChFiKPart` placement,
+  which the ADR records; the cap edge and the oblique pose are fixtures
+  of their own (`blend/box-cap-edge-fillet`, `box-posed-edge-fillet`)
+  rather than variants, since a variant overrides params only and a
+  different edge or pose moves every probe, while `box-edge-fillet`'s
+  variant `larger` varies the radius; a 2-cube at `r = 1.5` builds (the
+  contacts are at 0.5 from the far edges), so the `BlendTooLarge` test
+  uses `r = 2.5` and `r = 2`; the edge-by-point rule is the corpus
+  runner's (`CorpusError::EdgePoint`), which every corpus test and
+  `corpus::chain` pass through, not the static lint's; `box-oblique-end`
+  sets `inertia_rel` 1e-8 because Open CASCADE's own fillet integrates
+  its approximated ellipse pcurve 3e-9 off, while Arris's exact tensor
+  and the oracle's reading of Arris's STEP agree to 1e-11. Two blended
+  edges at one vertex are `VertexBlend` until step 2. Step 3's several-
+  edge case is structurally in (per-face edits over shared corner-edge
+  cuts) but untested.
   - `ops::fillet` with the plane–plane arm: the blend cylinder on the
     line where the two faces' offset planes meet, radius `r`, its frame's
     `X` from its axis toward the deleted edge so the contact rulings sit

@@ -28,15 +28,15 @@ use arris_io::arris_check::arris_topo::arris_math::nalgebra::UnitQuaternion;
 use arris_io::arris_check::arris_topo::arris_math::{
     Axis, FrameError, Isometry, Point3, UnitVec3, Vec3,
 };
-use arris_io::arris_check::arris_topo::{Body, Model, Provenance};
+use arris_io::arris_check::arris_topo::{Body, Edge, EntityId, Model, Provenance};
 use arris_io::arris_check::classify::{Classification, classify_point};
 use arris_io::arris_check::{Level, LumpError, Report, check, lumps};
 use arris_io::step::{self, StepError};
 use arris_mesh::tessellate;
 use arris_ops::measure::mass_properties;
 use arris_ops::{
-    OpError, Reason, common, cut, extrude, fuse, primitive_box, primitive_cylinder, revolve,
-    transform,
+    OpError, Reason, common, cut, extrude, fillet, fuse, primitive_box, primitive_cylinder,
+    revolve, transform,
 };
 
 use crate::dump::dump_text;
@@ -95,6 +95,20 @@ pub enum CorpusError {
         step: String,
         /// The cause, boxed to keep the error small.
         source: Box<geom_spec::BuildError>,
+    },
+    /// A point naming an edge to blend is not on exactly one edge of the
+    /// body: it classifies to a vertex, a face, the inside or the
+    /// outside, or lies within `probe` of two edges.
+    #[error("{fixture}: step {step:?}: the edge point {point:?} {what}")]
+    EdgePoint {
+        /// The fixture.
+        fixture: String,
+        /// The step's name.
+        step: String,
+        /// The point.
+        point: [f64; 3],
+        /// What it names instead of one edge.
+        what: String,
     },
     /// A recipe axis is not one.
     #[error("{fixture}: step {step:?}: axis: {source}")]
@@ -280,6 +294,15 @@ impl Refusal {
             Refusal::Error(ExpectError::NonManifold) => {
                 "OpError::Degenerate with Reason::NonManifold".into()
             }
+            Refusal::Error(ExpectError::BlendTooLarge) => {
+                "OpError::Degenerate with Reason::BlendTooLarge".into()
+            }
+            Refusal::Error(ExpectError::TangentChain) => {
+                "OpError::Degenerate with Reason::TangentChain".into()
+            }
+            Refusal::Error(ExpectError::VertexBlend) => {
+                "OpError::Degenerate with Reason::VertexBlend".into()
+            }
         }
     }
 
@@ -300,6 +323,9 @@ impl Refusal {
                     Refusal::Degenerate => true,
                     Refusal::Error(ExpectError::TangentContact) => reason == Reason::TangentContact,
                     Refusal::Error(ExpectError::NonManifold) => reason == Reason::NonManifold,
+                    Refusal::Error(ExpectError::BlendTooLarge) => reason == Reason::BlendTooLarge,
+                    Refusal::Error(ExpectError::TangentChain) => reason == Reason::TangentChain,
+                    Refusal::Error(ExpectError::VertexBlend) => reason == Reason::VertexBlend,
                 };
                 if matches {
                     return Ok(());
@@ -701,7 +727,8 @@ impl Inputs {
             | Step::Profile { .. }
             | Step::Extrude { .. }
             | Step::Revolve { .. }
-            | Step::Transform { .. } => return None,
+            | Step::Transform { .. }
+            | Step::Fillet { .. } => return None,
         };
         Some((*self.bodies.get(x)?, *self.bodies.get(y)?))
     }
@@ -966,7 +993,79 @@ fn build_step(
             let tool = reference(fixture, step, tool, made)?.body;
             body(cut(m, target, tool).map_err(op)?, vec![target, tool])
         }
+        Step::Fillet {
+            of, edges, radius, ..
+        } => {
+            let of_body = reference(fixture, step, of, made)?.body;
+            let probe = fixture.recipe.tolerances.probe;
+            let mut selected = Vec::with_capacity(edges.len());
+            for p in edges {
+                let point = point(fixture, step, p, params)?;
+                let edge =
+                    edge_at(m, of_body, point, probe).map_err(|what| CorpusError::EdgePoint {
+                        fixture: name.clone(),
+                        step: step.name().to_string(),
+                        point: [point.x, point.y, point.z],
+                        what,
+                    })?;
+                selected.push(edge);
+            }
+            let radius = number(fixture, step, radius, params)?;
+            body(
+                fillet(m, of_body, &selected, radius).map_err(op)?,
+                vec![of_body],
+            )
+        }
     }
+}
+
+/// The edge of `body` a recipe names by `point`: the one
+/// `classify_point` answers `On(Edge)` for, when no second edge of the
+/// body passes within `probe` of the point — the rule the oracle's
+/// nearest-edge search keeps too (`tests/fixtures/README.md`). Errors:
+/// what the point names instead.
+fn edge_at(m: &Model, body: Body, point: Point3, probe: f64) -> Result<Edge, String> {
+    let on = match classify_point(m, body, point) {
+        Ok(Classification::On(shape)) => shape,
+        Ok(Classification::Inside) => return Err("is inside the body, on no edge".into()),
+        Ok(Classification::Outside) => return Err("is outside the body, on no edge".into()),
+        Err(e) => return Err(format!("could not be classified: {e}")),
+    };
+    let EntityId::Edge(id) = on.id else {
+        return Err(format!("is on {on}, not on an edge"));
+    };
+    let mut near: Vec<EntityId> = Vec::new();
+    for edge in m.edges(body).map_err(|e| e.to_string())? {
+        let entity = m.edge(edge.id).map_err(|e| e.to_string())?;
+        let Some((curve, range)) = entity.curve() else {
+            continue;
+        };
+        let curve = m.curve(curve).map_err(|e| e.to_string())?;
+        let Ok(projection) = curve.project(point) else {
+            continue;
+        };
+        let t = match curve.period() {
+            Some(p) => {
+                let k = ((range.lo() - projection.t) / p).ceil();
+                projection.t + k * p
+            }
+            None => projection.t,
+        };
+        if projection.distance <= probe && range.lo() - probe <= t && t <= range.hi() + probe {
+            near.push(EntityId::Edge(edge.id));
+        }
+    }
+    if near.len() != 1 {
+        return Err(format!(
+            "is within the probe tolerance of {} edges ({})",
+            near.len(),
+            near.iter()
+                .map(|e| e.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    Ok(Edge::forward(id))
 }
 
 fn reference<'a>(

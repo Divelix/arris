@@ -294,6 +294,37 @@ fn sweep_revolve_notch_to_axis() {
     run("sweep/revolve-notch-to-axis");
 }
 
+/// The consumer's 2-cube with one vertical edge filleted: a plane–plane
+/// blend, a cylinder between two circle ends (ADR-0007), at `r = 0.2`
+/// and at `r = 0.5`.
+#[test]
+fn blend_box_edge_fillet() {
+    run("blend/box-edge-fillet");
+}
+
+/// The same solid rotated: a cap edge of the cube, the blend's ends on
+/// two side faces.
+#[test]
+fn blend_box_cap_edge_fillet() {
+    run("blend/box-cap-edge-fillet");
+}
+
+/// The cube rotated about (1, 1, 1) and moved before the fillet: the
+/// same blend in an oblique pose, the edge and every probe named by the
+/// rotation's closed form.
+#[test]
+fn blend_box_posed_edge_fillet() {
+    run("blend/box-posed-edge-fillet");
+}
+
+/// An extruded parallelogram's slanted top edge: the end faces are
+/// oblique to the edge, so each end trim is an ellipse arc with a fitted
+/// pcurve on the blend (the oblique-section rule).
+#[test]
+fn blend_box_oblique_end() {
+    run("blend/box-oblique-end");
+}
+
 /// The same recipe under three parameter sets, one test each so a
 /// variant that drifts says which: the eight bolt holes' chain is
 /// `crates/arris/tests/provenance.rs`'s subject, and these hold each

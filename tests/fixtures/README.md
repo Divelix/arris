@@ -18,7 +18,8 @@ is `tools/oracle/oracle/recipe.py` and `fixture.py`. The corpus lint
 directory: both files present and parseable, `expected.json` not stale, the
 Euler line zero, every `analytic` value matching the oracle to 1e-6
 relative, counts and probe expectations exactly — and every solid under
-`primitive/`, `transform/`, `boolean/`, `sweep/` or `provenance/` that the
+`primitive/`, `transform/`, `boolean/`, `sweep/`, `provenance/` or
+`blend/` that the
 runner compares (the oracle built a solid, the recipe expects no refusal)
 carrying its committed dump per variant, which a fixture only has once it
 passed and was blessed. An `#[ignore]`d fixture in those areas therefore
@@ -115,7 +116,14 @@ of the step that made the fixture pass, and a later change to it is a
 | `transform` | `of`, optional `translate`, optional `rotate` `{axis, origin, angle_deg}`; rotation first |
 | `fuse`, `common` | `a`, `b` |
 | `cut` | `target`, `tool` |
+| `fillet` | `of`, `edges` (a list of points, one on each edge to blend), `radius` |
 
+- **A `fillet`'s edges are named by a point each**, so a selection
+  survives a transform and a second blend, which a role does not: Arris
+  takes the edge `classify_point` answers `On(Edge)` for, the oracle the
+  nearest edge by `BRepExtrema`, and both refuse a point that is within
+  `probe` of two edges or on none — a vertex, a face, the inside or the
+  outside (`CorpusError::EdgePoint`).
 - **A `profile` plane's `x` and `y`** must be orthogonal (each normalised
   first): refused on both sides, by the same named tolerance
   (`arris_math::Precision::DEFAULT.angular_tolerance`, Open CASCADE's
@@ -127,12 +135,15 @@ of the step that made the fixture pass, and a later change to it is a
   says the result has no volume (`boolean/flush-common`,
   `boolean/swallow-cut`, `boolean/disjoint-common`), and then nothing
   else is compared.
-  `expect_error: "tangent-contact" | "non-manifold"` says Open CASCADE
+  `expect_error: "tangent-contact" | "non-manifold" | "blend-too-large" |
+  "tangent-chain" | "vertex-blend"` says Open CASCADE
   builds a result Arris refuses by design (the tangent cases,
   `Reason::TangentContact` — ADR-0004; `boolean/edge-touching-fuse`, two
   solids sharing an edge, `Reason::NonManifold` — ADR-0006, whose
   compound has an odd Euler characteristic, so the oracle records no
-  genus for it and the recipe states none): the oracle's numbers are
+  genus for it and the recipe states none; a blend it builds and Arris
+  refuses as `Reason::BlendTooLarge`, `TangentChain` or `VertexBlend` —
+  ADR-0007): the oracle's numbers are
   recorded and the lint still
   cross-checks them against the other `analytic` values, but the runner asserts the typed error and compares
   nothing — and the oracle's self-test records the result without

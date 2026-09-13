@@ -1,0 +1,26 @@
+{
+  "description": "an extruded parallelogram (0,0)–(2,0)–(3,2)–(1,2), height 2, its slanted top edge filleted at r 0.2: the end faces y = 0 and y = 2 are oblique to the edge, so each end trim is an ellipse arc, exact on the plane and a fitted pcurve on the blend. inertia_rel is 1e-8 here: Open CASCADE's own fillet face carries an approximated pcurve along the ellipse and its GProp integration of it is off by 3e-9 of the tensor, while Arris's exact tensor and the oracle's reading of Arris's STEP agree to 1e-11",
+  "params": {"r": 0.2},
+  "steps": [
+    {"name": "sketch", "op": "profile", "plane": {"origin": [0, 0, 0], "x": [1, 0, 0], "y": [0, 1, 0]},
+     "outer": {"start": [0, 0], "segments": [{"line_to": [2, 0]}, {"line_to": [3, 2]}, {"line_to": [1, 2]}, {"line_to": [0, 0]}]}},
+    {"name": "prism", "op": "extrude", "profile": "sketch", "direction": [0, 0, 1], "length": 2},
+    {"name": "result", "op": "fillet", "of": "prism", "edges": [[2.5, 1, 2]], "radius": "r"}
+  ],
+  "result": "result",
+  "tolerances": {"inertia_rel": 1e-8},
+  "probes": [
+    {"label": "inside", "point": [1.5, 1, 1], "expect": "in"},
+    {"label": "corner_gone", "point": ["2.5 - 0.1 / sqrt(5)", "1 + 0.05 / sqrt(5)", 1.95], "expect": "out"},
+    {"label": "on_blend", "point": ["2.5 - 2 * (r - r / sqrt(2)) / sqrt(5)", "1 + (r - r / sqrt(2)) / sqrt(5)", "2 - (r - r / sqrt(2))"], "expect": "on"},
+    {"label": "on_contact", "point": ["2.5 - 2 * r / sqrt(5)", "1 + r / sqrt(5)", 2], "expect": "on"},
+    {"label": "on_arc", "point": ["2 - (r - r / sqrt(2)) * sqrt(5) / 2", 0, "2 - (r - r / sqrt(2))"], "expect": "on"},
+    {"label": "on_top", "point": [1.5, 1, 2], "expect": "on"}
+  ],
+  "analytic": {
+    "volume": "8 - (1 - pi / 4) * r^2 * sqrt(5)",
+    "area": "16 + sqrt(5) * (4 - 2 * r + pi / 2 * r - (1 - pi / 4) * r^2)",
+    "counts": {"vertices": 10, "edges": 15, "faces": 7, "loops": 7, "shells": 1},
+    "genus": 0
+  }
+}

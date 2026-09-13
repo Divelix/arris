@@ -34,8 +34,8 @@ The unit of acceptance. A fixture is a directory
   the regression guard for ids and provenance (`dump.<variant>.txt` for a
   variant other than `default`). Committed once the fixture passes; the
   corpus lint fails a fixture the runner compares under `primitive/`,
-  `transform/`, `boolean/`, `sweep/` or `provenance/` without one, so those
-  areas hold no ignored fixture by test. A failure waiting for its fix is
+  `transform/`, `boolean/`, `sweep/`, `provenance/` or `blend/` without
+  one, so those areas hold no ignored fixture by test. A failure waiting for its fix is
   a fixture under `regression/`, outside them, and moves into its area in
   the commit that makes it pass.
 
@@ -56,9 +56,9 @@ written instead under `ARRIS_BLESS=1`.
 A fixture whose result is no solid does not reach those stages: one the
 oracle recorded none for (`degenerate`) must fail with
 `OpError::Degenerate`, and one whose recipe says `analytic.expect_error`
-must fail with that typed refusal — `tangent-contact` or `non-manifold`,
-the oracle's numbers kept as the record of what Open CASCADE builds
-instead. A recipe may also say `analytic.counts_differ: "why"` and carry
+must fail with that typed refusal — `tangent-contact`, `non-manifold`,
+`blend-too-large`, `tangent-chain` or `vertex-blend`, the oracle's
+numbers kept as the record of what Open CASCADE builds instead. A recipe may also say `analytic.counts_differ: "why"` and carry
 its own counts, for the one place Arris's convention is deliberately not
 Open CASCADE's (a tangent ruling left unimprinted); every other fixture
 mirrors the oracle's counts exactly.
@@ -282,19 +282,29 @@ with their `#[ignore]`d twins — green.*
   A second fillet on an already-filleted body. Two blended edges meeting
   at a corner whose third edge stays sharp — a vertical and a cap edge, or
   two cap edges, the same solid rotated — meet in a miter, two cylinders
-  and one ellipse, not a vertex blend (Open CASCADE, checked).
-- Cone, sphere and torus in the intersector as far as the blends and the
-  probe corpus need: plane–cone, plane–sphere, plane–torus, cylinder–torus
-  at the hole-edge fillet. The fillet idea's construction decides the
-  exact pairs.
-- The checker's S5 and B1 arms against cone, sphere and torus faces over
-  that intersector, so M5's quadric-faced revolves become corpus fixtures
-  (`sweep/revolve-frustum`, `revolve-barrel`, `revolve-ring`) instead of
-  closed-form tests with the oracle reading a scratch STEP.
+  and one ellipse, not a vertex blend (Open CASCADE, checked). Blends are
+  rolling-ball stripes built in closed form on analytic face pairs,
+  ADR-0007: `ops::fillet` on a plane–plane edge with its ends trimmed by
+  the face across is in (`blend/box-edge-fillet`, `box-cap-edge-fillet`,
+  `box-posed-edge-fillet`, `box-oblique-end`).
+- Cone, sphere and torus in the intersector in the positions a blend and
+  M5's revolves put them, every one a conic: a plane against a quadric
+  with the plane perpendicular to the axis, a cylinder against a quadric
+  coaxial with it, a sphere against a cylinder through its centre,
+  plane–sphere, and a line against each quadric. The general pairs —
+  plane–cone, plane–sphere and plane–torus in general position — are
+  C3's.
+- The checker's S5 and B1 arms, and `classify_point`, against cone,
+  sphere and torus faces over those arms, so M5's quadric-faced revolves
+  become corpus fixtures (`sweep/revolve-frustum`, `revolve-barrel`,
+  `revolve-ring`) instead of closed-form tests with the oracle reading a
+  scratch STEP.
 - Cylinder–cylinder booleans. Parallel axes (rulings, a tangent line)
-  are what the transversal probe needs; coaxial already passes
-  (`boolean/coaxial-cut`, `coaxial-fuse`). Crossing axes, a quartic, close
-  the quadric-curve `⚠ OPEN` with an ADR; no probe forces them.
+  are what the transversal probe needs and what a blend along a ruling's
+  S5 row needs; coaxial already passes (`boolean/coaxial-cut`,
+  `coaxial-fuse`); equal radii with crossing axes, two ellipses, is the
+  miter's S5 row. Crossing axes of unequal radii, a quartic, close the
+  quadric-curve `⚠ OPEN` with an ADR and are C3's; no probe forces them.
 - Results of more than one shell — an enclosed cavity, a disjoint `fuse`,
   a `cut` that splits its target, a full revolve of a profile with holes —
   as lumps of one `Solid`, two lumps touching along an edge or at a vertex

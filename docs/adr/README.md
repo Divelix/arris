@@ -17,3 +17,4 @@ here; the first ADR is the first decision taken *after* the seed.
 | [0004](0004-booleans-by-general-fuse-over-coedges.md) | Booleans by a General Fuse over coedges: shared paves, faces split in (u, v), the result assembled with kept ids | accepted |
 | [0005](0005-ruled-direction-flattened-for-the-triangulation.md) | A ruled direction is flattened before the triangulation | accepted |
 | [0006](0006-lumps-in-one-solid.md) | Lumps in one `Solid`: several shells, nested by B1, derived and never stored | accepted |
+| [0007](0007-blends-as-rolling-ball-stripes-on-analytic-pairs.md) | Blends are rolling-ball stripes on analytic face pairs, built in closed form and assembled with kept ids | accepted |

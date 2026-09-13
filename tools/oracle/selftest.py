@@ -141,6 +141,24 @@ SMOKES = [
         "analytic": {"default": {"volume": 24000.0, "area": 7000.0, "counts": (12, 20, 10, 10), "genus": 0}},
         "degenerate": ["flush"],
     },
+    {
+        "name": "one edge of a cube filleted, named by a point on it",
+        "recipe": {
+            "params": {"r": 0.2},
+            "steps": [
+                {"name": "cube", "op": "box", "min": [0, 0, 0], "max": [2, 2, 2]},
+                {"name": "result", "op": "fillet", "of": "cube", "edges": [[2, 2, 1]], "radius": "r"},
+            ],
+            "result": "result",
+            "probes": [
+                {"label": "inside", "point": [1, 1, 1]},
+                {"label": "corner_gone", "point": [1.95, 1.95, 1]},
+                {"label": "on_blend", "point": ["2 - r + r / sqrt(2)", "2 - r + r / sqrt(2)", 1]},
+            ],
+        },
+        "analytic": {"default": {"volume": 8 - (1 - PI / 4) * 0.04 * 2, "area": 24 - 0.8 - 2 * (1 - PI / 4) * 0.04 + PI * 0.2, "counts": (10, 15, 7, 7), "genus": 0}},
+        "probes": {"inside": "in", "corner_gone": "out", "on_blend": "on"},
+    },
 ]
 
 

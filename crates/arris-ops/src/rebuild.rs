@@ -3,22 +3,23 @@
 //! untouched under a `Reuse` operand, in which case it is kept by id;
 //! every touched entity's provenance is written from the pieces as they
 //! are made. `boolean::result` is the first producer of pieces; a blend
-//! will be another.
+//! is the second, through [`rewrite`] — one operand, its faces kept by
+//! id unless replaced, the blend faces added (ADR-0007).
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use arris_check::arris_topo::builder::{
-    Assembly, EdgeKey, EdgeSpec, FaceSpec, UseSpec, VertexKey, VertexSpec, effective_uses,
+    Assembly, Builder, EdgeKey, EdgeSpec, FaceSpec, UseSpec, VertexKey, VertexSpec, effective_uses,
 };
-use arris_check::arris_topo::entity::EdgeGeometry;
+use arris_check::arris_topo::entity::{BodyKind, EdgeGeometry};
 use arris_check::arris_topo::{
-    Body, CurveId, EdgeId, EntityId, Face as FaceHandle, FaceId, Model, Orientation, Provenance,
-    Shape, ShellId, VertexId,
+    Body, Curve2Id, CurveId, EdgeId, EntityId, Face as FaceHandle, FaceId, Model, Orientation,
+    Provenance, Shape, ShellId, SurfaceId, VertexId,
 };
 
 use crate::boolean::Interferences;
 use crate::boolean::pieces::{ERef, PieceUse, SubEdge, VRef};
-use crate::error::OpError;
+use crate::error::{Fault, OpError};
 
 /// A `Forward` handle to `id`, as a [`Shape`].
 pub(crate) fn forward(id: impl Into<EntityId>) -> Shape {
@@ -413,4 +414,231 @@ pub(crate) fn write_provenance(
         }
     }
     p
+}
+
+/// One use of an edge by a loop of a rewritten or added face, in the
+/// *stored* sense — `Forward` walks along the edge's parameter — as a
+/// face's loops are written counter-clockwise about its surface's normal
+/// (`docs/DATA-MODEL.md` §Orientation); [`rewrite`] turns it into the
+/// effective walk the builder takes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct StoredUse {
+    /// The edge: kept by id, or one of the rewrite's own.
+    pub edge: EdgeKey,
+    /// Along or against its parameter.
+    pub orientation: Orientation,
+    /// The pcurve of this use on the face's surface.
+    pub pcurve: Curve2Id,
+}
+
+/// A face a rewrite adds beside the operand's own.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct AddedFace {
+    /// The operand shell it joins, by index in the body's stored order.
+    pub shell: usize,
+    /// Its surface.
+    pub surface: SurfaceId,
+    /// `Forward` when the surface's normal is the outward one.
+    pub orientation: Orientation,
+    /// Its loops in stored order.
+    pub loops: Vec<Vec<StoredUse>>,
+    /// Its tolerance.
+    pub tolerance: f64,
+}
+
+/// A rewrite of one operand (ADR-0007): its faces kept whole by id
+/// unless replaced by new loops, its edges and vertices kept by id unless
+/// a new edge is a piece of one or a face's new loops no longer reach
+/// them, plus the faces the operation adds. What a blend hands
+/// [`rewrite`], the second producer of an assembly after the boolean's
+/// pieces.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub(crate) struct Rewrite {
+    /// The new vertices, addressed by `VertexKey::New`.
+    pub vertices: Vec<VertexSpec>,
+    /// The new edges, addressed by `EdgeKey::New`, each with the operand
+    /// edge it is a piece of, when it is one — a corner edge shortened
+    /// by a trim — and `None` for an edge the operation makes.
+    pub edges: Vec<(EdgeSpec, Option<EdgeId>)>,
+    /// The operand faces replaced, each by its new loops in stored order;
+    /// the surface, the shell's use and the tolerance stay the face's.
+    pub faces: BTreeMap<FaceId, Vec<Vec<StoredUse>>>,
+    /// The faces added, each appended to its shell after the operand's
+    /// own, in this order.
+    pub added: Vec<AddedFace>,
+}
+
+/// What [`rewrite`] built: the body, the ids behind the rewrite's new
+/// vertices, edges and added faces, and the generic half
+/// of the provenance — every operand entity kept, `Modified` into its
+/// replacement or piece, or `Deleted`; every shell and the body
+/// `Modified` one-to-one. The caller adds the records only it knows,
+/// the `Generated` relations of the entities it made.
+pub(crate) struct Rewritten {
+    /// The body built.
+    pub body: Body,
+    /// The id of `Rewrite::vertices[i]`, at `i`.
+    pub vertices: Vec<VertexId>,
+    /// The id of `Rewrite::edges[i]`, at `i`.
+    pub edges: Vec<EdgeId>,
+    /// The id of `Rewrite::added[i]`, at `i`.
+    pub added: Vec<FaceId>,
+    /// The generic provenance, above.
+    pub provenance: Provenance,
+}
+
+/// Assembles `body` with `rewrite` applied — every face kept by id
+/// unless replaced, the added faces after each shell's own — finishes
+/// it as a solid, and writes the generic provenance (ADR-0004's keep-by-
+/// id rule, ADR-0007): an operand vertex, edge or face still in the
+/// result is kept and unrecorded; an edge with pieces among the new
+/// edges is `Modified` into them, a replaced face into its replacement;
+/// anything else of the operand that is gone is `Deleted`; each shell is
+/// `Modified` into the shell built from it and the body into the result.
+/// The output is verified as every operation's is. Errors: the builder's
+/// refusal as [`OpError::Internal`], an id that does not resolve.
+pub(crate) fn rewrite(m: &mut Model, body: Body, rewrite: Rewrite) -> Result<Rewritten, OpError> {
+    let precision = m.precision();
+    let closure = m.closure(body)?;
+    let shells = m.shells(body)?;
+    let mut assembly = Assembly {
+        vertices: rewrite.vertices,
+        edges: rewrite.edges.iter().map(|(spec, _)| *spec).collect(),
+        shells: Vec::with_capacity(shells.len()),
+    };
+    let stored_to_spec =
+        |orientation: Orientation, loops: &[Vec<StoredUse>]| -> Vec<Vec<UseSpec>> {
+            loops
+                .iter()
+                .map(|l| {
+                    effective_uses(
+                        orientation,
+                        l.iter().map(|u| (u.edge, u.orientation, u.pcurve)),
+                    )
+                    .into_iter()
+                    .map(|(edge, orientation, pcurve)| UseSpec {
+                        edge,
+                        orientation,
+                        pcurve,
+                    })
+                    .collect()
+                })
+                .collect()
+        };
+    // Where each replaced and added face sits in the assembly's shells.
+    let mut replaced_at: BTreeMap<FaceId, (usize, usize)> = BTreeMap::new();
+    let mut added_at: Vec<(usize, usize)> = Vec::with_capacity(rewrite.added.len());
+    for (s, shell) in shells.iter().enumerate() {
+        let entity = m.shell(shell.id)?;
+        let mut faces: Vec<FaceSpec> = Vec::with_capacity(entity.faces().len());
+        for face_use in entity.faces() {
+            let face = face_use.oriented_by(shell.orientation);
+            match rewrite.faces.get(&face.id) {
+                Some(loops) => {
+                    let old = m.face(face.id)?;
+                    replaced_at.insert(face.id, (s, faces.len()));
+                    faces.push(FaceSpec::New {
+                        surface: old.surface(),
+                        orientation: face.orientation,
+                        loops: stored_to_spec(face.orientation, loops),
+                        tolerance: old.tolerance(),
+                    });
+                }
+                None => faces.push(FaceSpec::Keep(face)),
+            }
+        }
+        assembly.shells.push(faces);
+    }
+    for added in &rewrite.added {
+        let Some(shell) = assembly.shells.get_mut(added.shell) else {
+            return Err(OpError::Internal(Fault::Invariant {
+                what: "the shell an added face joins",
+            }));
+        };
+        added_at.push((added.shell, shell.len()));
+        shell.push(FaceSpec::New {
+            surface: added.surface,
+            orientation: added.orientation,
+            loops: stored_to_spec(added.orientation, &added.loops),
+            tolerance: added.tolerance,
+        });
+    }
+
+    let (builder, slots) = Builder::assemble(m, precision.default_tolerance, assembly)?;
+    let built = builder.finish(m, BodyKind::Solid)?;
+    let id_at = |(s, i): (usize, usize)| -> Result<FaceId, OpError> {
+        slots
+            .faces
+            .get(s)
+            .and_then(|shell| shell.get(i))
+            .and_then(|slot| built.faces.get(slot))
+            .copied()
+            .ok_or(OpError::Internal(Fault::Invariant {
+                what: "the slot of a face spec",
+            }))
+    };
+    let vertices: Vec<VertexId> = slots
+        .vertices
+        .iter()
+        .map(|slot| built.vertices[slot])
+        .collect();
+    let edges: Vec<EdgeId> = slots.edges.iter().map(|slot| built.edges[slot]).collect();
+    let mut faces: BTreeMap<FaceId, FaceId> = BTreeMap::new();
+    for (&old, &at) in &replaced_at {
+        faces.insert(old, id_at(at)?);
+    }
+    let mut added: Vec<FaceId> = Vec::with_capacity(added_at.len());
+    for &at in &added_at {
+        added.push(id_at(at)?);
+    }
+
+    // The generic provenance: kept is unrecorded, a piece or a
+    // replacement is `Modified`, the rest of what is gone is `Deleted`.
+    let out = m.closure(built.body)?;
+    let mut p = Provenance::new();
+    for &v in &closure.vertices {
+        if out.vertices.binary_search(&v).is_err() {
+            p.add_deleted(forward(v));
+        }
+    }
+    let mut pieces_of: BTreeMap<EdgeId, Vec<EdgeId>> = BTreeMap::new();
+    for ((_, parent), &id) in rewrite.edges.iter().zip(&edges) {
+        if let Some(parent) = parent {
+            pieces_of.entry(*parent).or_default().push(id);
+        }
+    }
+    for &e in &closure.edges {
+        if out.edges.binary_search(&e).is_ok() {
+            continue;
+        }
+        match pieces_of.get(&e) {
+            Some(pieces) => {
+                for &piece in pieces {
+                    p.add_modified(forward(e), forward(piece));
+                }
+            }
+            None => p.add_deleted(forward(e)),
+        }
+    }
+    for &f in &closure.faces {
+        if out.faces.binary_search(&f).is_ok() {
+            continue;
+        }
+        match faces.get(&f) {
+            Some(&new) => p.add_modified(forward(f), forward(new)),
+            None => p.add_deleted(forward(f)),
+        }
+    }
+    for (old, &new) in shells.iter().zip(&built.shells) {
+        p.add_modified(forward(old.id), forward(new));
+    }
+    p.add_modified(forward(body.id), forward(built.body.id));
+    crate::verify(m, built.body)?;
+    Ok(Rewritten {
+        body: built.body,
+        vertices,
+        edges,
+        added,
+        provenance: p,
+    })
 }

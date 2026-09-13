@@ -65,6 +65,32 @@ pub enum Reason {
     /// that touches itself so is a `General` one, which no operation builds
     /// yet.
     NonManifold,
+    /// A blend was asked for no edges at all; the error's entity is the
+    /// body.
+    NoEdges,
+    /// An edge is listed twice in one blend call; the error's entity is
+    /// the edge.
+    RepeatedEdge,
+    /// An edge id resolves in the model but is not an edge of the body a
+    /// blend was asked to blend; the error's entities are the edge and
+    /// the body.
+    EdgeNotInBody,
+    /// A blend does not fit its faces: a contact curve or an end arc
+    /// leaves the face it lies on through an edge that is not one of the
+    /// corner's own, or a corner edge is shorter than the trim would cut
+    /// from it (ADR-0007). The error's entities are the blended edge and
+    /// the face or edge the blend runs out of.
+    BlendTooLarge,
+    /// The blended edge's two faces meet at a tangent dihedral — the arc
+    /// and the line of a slot's wall, a blend face and its neighbour — so
+    /// there is no corner to roll a ball into; a tangent chain is cycle
+    /// 6's. The error's entities are the edge and its two faces.
+    TangentChain,
+    /// A corner the closed forms do not cover: a vertex of other than
+    /// three edges, or a vertex two or more blended edges meet at — until
+    /// the miter and the sphere corner land (ADR-0007). The error's
+    /// entities are the blended edge and the vertex.
+    VertexBlend,
 }
 
 impl core::fmt::Display for Reason {
@@ -93,6 +119,18 @@ impl core::fmt::Display for Reason {
             }
             Reason::NonManifold => f.write_str(
                 "the result's shells would touch along an edge or at a vertex, which a solid does not hold",
+            ),
+            Reason::NoEdges => f.write_str("no edges were given to blend"),
+            Reason::RepeatedEdge => f.write_str("an edge is listed twice"),
+            Reason::EdgeNotInBody => f.write_str("the edge is not an edge of the body"),
+            Reason::BlendTooLarge => f.write_str(
+                "the blend leaves its face through an edge that is not the corner's own",
+            ),
+            Reason::TangentChain => f.write_str(
+                "the edge's faces meet at a tangent dihedral, which has no corner to blend",
+            ),
+            Reason::VertexBlend => f.write_str(
+                "the corner at the edge's end is one the blend's closed forms do not cover",
             ),
         }
     }

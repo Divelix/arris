@@ -33,6 +33,9 @@ Operations, by `op`:
     fuse       a <name>, b <name>
     common     a <name>, b <name>
     cut        target <name>, tool <name>
+    fillet     of <name>, edges [[x,y,z], ...], radius
+               (each point names the edge nearest to it, which must be the
+               only edge within the fixture's `probe` tolerance)
 
 Conventions are Open CASCADE's: a full revolve (360°) has seam edges, a
 fuse of flush boxes does not merge coplanar faces, a common with no volume
@@ -50,9 +53,12 @@ from OCP.BRepAlgoAPI import BRepAlgoAPI_Common, BRepAlgoAPI_Cut, BRepAlgoAPI_Fus
 from OCP.BRepBuilderAPI import (
     BRepBuilderAPI_MakeEdge,
     BRepBuilderAPI_MakeFace,
+    BRepBuilderAPI_MakeVertex,
     BRepBuilderAPI_MakeWire,
     BRepBuilderAPI_Transform,
 )
+from OCP.BRepExtrema import BRepExtrema_DistShapeShape
+from OCP.BRepFilletAPI import BRepFilletAPI_MakeFillet
 from OCP.BRepPrimAPI import (
     BRepPrimAPI_MakeBox,
     BRepPrimAPI_MakeCylinder,
@@ -62,7 +68,10 @@ from OCP.BRepPrimAPI import (
 from OCP.GC import GC_MakeArcOfCircle
 from OCP.gp import gp_Ax1, gp_Ax2, gp_Ax3, gp_Circ, gp_Dir, gp_Pln, gp_Pnt, gp_Trsf, gp_Vec
 from OCP.ShapeFix import ShapeFix_Face
+from OCP.TopAbs import TopAbs_EDGE
+from OCP.TopExp import TopExp
 from OCP.TopoDS import TopoDS, TopoDS_Shape
+from OCP.collections import IndexedMap_TopoDS_Shape_TopTools_ShapeMapHasher as IndexedMapOfShape
 
 from . import OracleError
 
@@ -308,6 +317,7 @@ def _profile(step: dict, params: dict[str, float]) -> TopoDS_Shape:
 def build(fixture: dict, variant: str = "default") -> tuple[TopoDS_Shape, dict[str, TopoDS_Shape]]:
     """The result shape of `fixture` for `variant`, and every named step."""
     params = resolve_params(fixture, variant)
+    probe = float(fixture.get("tolerances", {}).get("probe", 1e-7))
     shapes: dict[str, TopoDS_Shape] = {}
 
     def ref(name: Any) -> TopoDS_Shape:
@@ -323,7 +333,7 @@ def build(fixture: dict, variant: str = "default") -> tuple[TopoDS_Shape, dict[s
         if name in shapes:
             raise OracleError(f"step {i}: name {name!r} is already used")
         try:
-            shapes[name] = _build_step(step, op, params, ref)
+            shapes[name] = _build_step(step, op, params, ref, probe)
         except KeyError as e:
             raise OracleError(f"step {name!r} ({op}): missing field {e}") from e
     result = fixture.get("result")
@@ -332,7 +342,25 @@ def build(fixture: dict, variant: str = "default") -> tuple[TopoDS_Shape, dict[s
     return shapes[result], shapes
 
 
-def _build_step(step: dict, op: str, params: dict[str, float], ref) -> TopoDS_Shape:
+def _edge_at(shape: TopoDS_Shape, point: list[float], probe: float):
+    """The edge of `shape` nearest `point` by `BRepExtrema`, which must be
+    the only edge within `probe` of it — the rule Arris's runner keeps on
+    its side with `classify_point` (tests/fixtures/README.md)."""
+    vertex = BRepBuilderAPI_MakeVertex(_pnt(point)).Vertex()
+    edges = IndexedMapOfShape()
+    TopExp.MapShapes_s(shape, TopAbs_EDGE, edges)
+    near = []
+    for i in range(1, edges.Extent() + 1):
+        edge = TopoDS.Edge(edges.FindKey(i))
+        d = BRepExtrema_DistShapeShape(edge, vertex)
+        if d.IsDone() and d.Value() <= probe:
+            near.append(edge)
+    if len(near) != 1:
+        raise OracleError(f"edge point {point} is within {probe} of {len(near)} edges, not one")
+    return near[0]
+
+
+def _build_step(step: dict, op: str, params: dict[str, float], ref, probe: float = 1e-7) -> TopoDS_Shape:
     if op == "box":
         lo, hi = vector(step["min"], params), vector(step["max"], params)
         if any(h <= l for l, h in zip(lo, hi)):
@@ -385,4 +413,16 @@ def _build_step(step: dict, op: str, params: dict[str, float], ref) -> TopoDS_Sh
         return _checked(BRepAlgoAPI_Common(ref(step["a"]), ref(step["b"])), "common")
     if op == "cut":
         return _checked(BRepAlgoAPI_Cut(ref(step["target"]), ref(step["tool"])), "cut")
+    if op == "fillet":
+        shape = ref(step["of"])
+        radius = number(step["radius"], params)
+        if radius <= 0.0:
+            raise OracleError("fillet radius must be positive")
+        points = step["edges"]
+        if not isinstance(points, list) or not points:
+            raise OracleError("fillet needs a list of edge points")
+        mf = BRepFilletAPI_MakeFillet(shape)
+        for p in points:
+            mf.Add(radius, _edge_at(shape, vector(p, params), probe))
+        return _checked(mf, "fillet")
     raise OracleError(f"unknown op {op!r}")
