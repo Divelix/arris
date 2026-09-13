@@ -292,7 +292,7 @@ bound has to be established here.
     is the entity its spec names. The same assembly through a zip would
     misalign, which the test shows by asserting the orders differ.
   - Provenance tests and corpus dumps unchanged.
-- [ ] Step 7 **[1]** — **The effective walk, once.**
+- [x] Step 7 **[1]** — **The effective walk, once.**
   - `effective_uses` and `FaceSpec::from_face` per the delta. `finish`,
     `keep_face`, `transform`, the boolean's `assembly` and
     `tests/assemble.rs` call them.

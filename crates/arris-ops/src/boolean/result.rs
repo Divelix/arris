@@ -12,7 +12,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use arris_check::arris_topo::arris_geom::{GeomError, GeomKind, Surface, SurfaceIntersection};
 use arris_check::arris_topo::arris_math::{Interval, Point2, Point3, Precision, Vec3};
 use arris_check::arris_topo::builder::{
-    Assembly, Builder, EdgeKey, EdgeSpec, FaceSpec, UseSpec, VertexKey, VertexSpec,
+    Assembly, Builder, EdgeKey, EdgeSpec, FaceSpec, UseSpec, VertexKey, VertexSpec, effective_uses,
 };
 use arris_check::arris_topo::entity::{BodyKind, EdgeGeometry};
 use arris_check::arris_topo::{
@@ -1371,18 +1371,17 @@ impl Build<'_> {
                     .loops
                     .iter()
                     .map(|l| {
-                        let mut uses: Vec<UseSpec> = l
-                            .iter()
-                            .map(|u| UseSpec {
-                                edge: ekey[&u.edge],
-                                orientation: piece.orientation.compose(u.orientation),
-                                pcurve: u.pcurve,
-                            })
-                            .collect();
-                        if piece.orientation.is_reversed() {
-                            uses.reverse();
-                        }
-                        uses
+                        effective_uses(
+                            piece.orientation,
+                            l.iter().map(|u| (ekey[&u.edge], u.orientation, u.pcurve)),
+                        )
+                        .into_iter()
+                        .map(|(edge, orientation, pcurve)| UseSpec {
+                            edge,
+                            orientation,
+                            pcurve,
+                        })
+                        .collect()
                     })
                     .collect();
                 faces.push(FaceSpec::New {

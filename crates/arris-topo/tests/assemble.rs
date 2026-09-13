@@ -15,11 +15,11 @@ use arris_topo::arris_geom::{Curve2, Profile, ProfileLoop, ProfileSegment, Surfa
 use arris_topo::arris_math::{Axis, Frame, Frame2, Interval, Point2, Point3, Vec3};
 use arris_topo::builder::{
     Assembly, AssemblySlots, BuildError, Builder, EdgeKey, EdgeSpec, FaceSpec, UseSpec, VertexKey,
-    VertexSpec,
+    VertexSpec, effective_uses,
 };
 use arris_topo::entity::BodyKind;
 use arris_topo::euler::EulerLine;
-use arris_topo::{Body, EdgeId, FaceId, Model, Orientation, VertexId};
+use arris_topo::{Body, Curve2Id, EdgeId, FaceId, Model, Orientation, VertexId};
 
 /// One named body in its own model.
 type Solid = (&'static str, fn(&mut Model) -> Body);
@@ -129,36 +129,7 @@ fn describe(m: &Model, body: Body, keep: bool) -> Assembly {
                     if keep {
                         return FaceSpec::Keep(face);
                     }
-                    let entity = m.face(face.id).unwrap();
-                    let loops = entity
-                        .loops()
-                        .iter()
-                        .map(|l| {
-                            let mut walk: Vec<UseSpec> = l
-                                .coedges()
-                                .iter()
-                                .map(|c| UseSpec {
-                                    edge: if keep {
-                                        EdgeKey::Kept(c.edge())
-                                    } else {
-                                        EdgeKey::New(edge_index[&c.edge()])
-                                    },
-                                    orientation: face.orientation.compose(c.orientation()),
-                                    pcurve: c.pcurve(),
-                                })
-                                .collect();
-                            if face.orientation.is_reversed() {
-                                walk.reverse();
-                            }
-                            walk
-                        })
-                        .collect();
-                    FaceSpec::New {
-                        surface: entity.surface(),
-                        orientation: face.orientation,
-                        loops,
-                        tolerance: entity.tolerance(),
-                    }
+                    FaceSpec::from_face(m, face, |id| EdgeKey::New(edge_index[&id])).unwrap()
                 })
                 .collect(),
         ],
@@ -457,6 +428,35 @@ fn every_face_new_is_the_same_body_under_new_ids() {
         assert!(report.is_ok(), "{name}: {report}");
         let after = dump_text(&m, built.body).unwrap();
         assert_eq!(up_to_ids(&before), up_to_ids(&after), "{name}");
+    }
+}
+
+/// `effective_uses` walks a loop both ways with the same function
+/// (composing an orientation with itself and reversing a list are each
+/// their own inverse): for every face of every sample body, under both an
+/// assumed `Forward` and `Reversed` face orientation, `keep_face`'s walk
+/// (stored to effective) followed by `finish`'s (effective to stored) —
+/// `effective_uses` applied twice — returns the stored loop unchanged.
+#[test]
+fn effective_uses_is_its_own_inverse_on_every_sample_face() {
+    for (name, build) in solids() {
+        let mut m = Model::default();
+        let body = build(&mut m);
+        for face in m.faces(body).unwrap() {
+            let entity = m.face(face.id).unwrap();
+            for (li, l) in entity.loops().iter().enumerate() {
+                let raw: Vec<(EdgeId, Orientation, Curve2Id)> = l
+                    .coedges()
+                    .iter()
+                    .map(|c| (c.edge(), c.orientation(), c.pcurve()))
+                    .collect();
+                for orientation in [Orientation::Forward, Orientation::Reversed] {
+                    let effective = effective_uses(orientation, raw.clone());
+                    let back = effective_uses(orientation, effective);
+                    assert_eq!(back, raw, "{name} {} loop {li}", face.id);
+                }
+            }
+        }
     }
 }
 

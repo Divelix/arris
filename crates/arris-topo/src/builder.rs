@@ -907,6 +907,27 @@ pub struct UseSpec {
     pub pcurve: Curve2Id,
 }
 
+/// The uses of one loop the other way it can be walked: from stored order
+/// to *effective* order (as seen from outside the material, whatever the
+/// surface's own normal, `docs/DATA-MODEL.md` §Orientation) or back —
+/// composing an orientation with itself and reversing a list are each
+/// their own inverse, so one function walks both ways. Every orientation
+/// is composed with `face_orientation`, and the whole walk is reversed
+/// when `face_orientation` is `Reversed`.
+pub fn effective_uses<T>(
+    face_orientation: Orientation,
+    uses: impl IntoIterator<Item = (T, Orientation, Curve2Id)>,
+) -> Vec<(T, Orientation, Curve2Id)> {
+    let mut out: Vec<(T, Orientation, Curve2Id)> = uses
+        .into_iter()
+        .map(|(id, orientation, pcurve)| (id, face_orientation.compose(orientation), pcurve))
+        .collect();
+    if face_orientation.is_reversed() {
+        out.reverse();
+    }
+    out
+}
+
 /// A face of an [`Assembly`]: one the model already holds, kept whole with
 /// its id, or one to append.
 #[derive(Debug, Clone, PartialEq)]
@@ -928,6 +949,46 @@ pub enum FaceSpec {
         /// The tolerance it is stored with.
         tolerance: f64,
     },
+}
+
+impl FaceSpec {
+    /// The [`FaceSpec::New`] that reads `face_use` whole from `model`: its
+    /// surface, tolerance, and every loop's uses in effective order, each
+    /// edge named through `edge_key` — what an operation that copies or
+    /// moves a face whole wants, differing from another only in how it
+    /// names an edge. Errors: `face_use` does not resolve.
+    pub fn from_face(
+        model: &Model,
+        face_use: handle::Face,
+        mut edge_key: impl FnMut(EdgeId) -> EdgeKey,
+    ) -> Result<FaceSpec, NotFound> {
+        let entity = model.face(face_use.id)?;
+        let loops = entity
+            .loops()
+            .iter()
+            .map(|l| {
+                effective_uses(
+                    face_use.orientation,
+                    l.coedges()
+                        .iter()
+                        .map(|c| (c.edge(), c.orientation(), c.pcurve())),
+                )
+                .into_iter()
+                .map(|(edge, orientation, pcurve)| UseSpec {
+                    edge: edge_key(edge),
+                    orientation,
+                    pcurve,
+                })
+                .collect()
+            })
+            .collect();
+        Ok(FaceSpec::New {
+            surface: entity.surface(),
+            orientation: face_use.orientation,
+            loops,
+            tolerance: entity.tolerance(),
+        })
+    }
 }
 
 /// The faces of one body, grouped into its shells, and the edges and
@@ -1984,21 +2045,20 @@ impl Builder {
                     None => {
                         let mut loops = Vec::with_capacity(f.loops.len());
                         for (li, lp) in f.loops.iter().enumerate() {
-                            let mut coedges = Vec::with_capacity(lp.uses.len());
+                            let mut effective = Vec::with_capacity(lp.uses.len());
                             for (ci, u) in lp.uses.iter().enumerate() {
                                 let edge = *edges.get(&u.edge).ok_or(BuildError::NoEdge(u.edge))?;
                                 let pcurve = u.pcurve.ok_or(BuildError::MissingPcurve {
                                     position: Position::new(FaceRef(i), li, ci),
                                 })?;
-                                coedges.push(Coedge::new(
-                                    edge,
-                                    f.orientation.compose(u.orientation),
-                                    pcurve,
-                                ));
+                                effective.push((edge, u.orientation, pcurve));
                             }
-                            if f.orientation.is_reversed() {
-                                coedges.reverse();
-                            }
+                            let coedges = effective_uses(f.orientation, effective)
+                                .into_iter()
+                                .map(|(edge, orientation, pcurve)| {
+                                    Coedge::new(edge, orientation, pcurve)
+                                })
+                                .collect();
                             loops.push(Loop::new(coedges));
                         }
                         m.push_face(entity::Face::new(f.surface, loops, f.tolerance))
@@ -2266,17 +2326,18 @@ impl Builder {
         model.surface(entity.surface())?;
         let mut loops = Vec::with_capacity(entity.loops().len());
         for l in entity.loops() {
+            let raw = l
+                .coedges()
+                .iter()
+                .map(|c| (c.edge(), c.orientation(), c.pcurve()));
             let mut walk = Vec::with_capacity(l.coedges().len());
-            for c in l.coedges() {
-                model.curve2(c.pcurve())?;
+            for (edge, orientation, pcurve) in effective_uses(face.orientation, raw) {
+                model.curve2(pcurve)?;
                 walk.push(Use {
-                    edge: self.keep_edge(model, at, c.edge(), false)?,
-                    orientation: face.orientation.compose(c.orientation()),
-                    pcurve: Some(c.pcurve()),
+                    edge: self.keep_edge(model, at, edge, false)?,
+                    orientation,
+                    pcurve: Some(pcurve),
                 });
-            }
-            if face.orientation.is_reversed() {
-                walk.reverse();
             }
             let index = loops.len();
             loops.push(self.staged_loop(walk, index)?);

@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use arris_check::arris_topo::arris_math::Isometry;
 use arris_check::arris_topo::builder::{
-    Assembly, Builder, EdgeKey, EdgeSpec, FaceSpec, UseSpec, VertexKey, VertexSpec,
+    Assembly, Builder, EdgeKey, EdgeSpec, FaceSpec, VertexKey, VertexSpec,
 };
 use arris_check::arris_topo::entity::EdgeGeometry;
 use arris_check::arris_topo::{Body, EntityId, Model, Orientation, Provenance, Shape};
@@ -115,38 +115,13 @@ pub fn transform(
         for (_, faces) in &shells {
             let mut face_specs = Vec::with_capacity(faces.len());
             for f in faces {
-                let old = m.face(f.id).map_err(|_| not_found())?.clone();
-                let loops = old
-                    .loops()
-                    .iter()
-                    .map(|l| {
-                        // `UseSpec::orientation` is the *effective* direction,
-                        // as seen from outside the material — `f.orientation`
-                        // composed with the coedge's own, the loop reversed to
-                        // match when the face itself is reversed (the same
-                        // conversion `Builder::assemble`'s `Keep` case
-                        // applies).
-                        let mut uses: Vec<UseSpec> = l
-                            .coedges()
-                            .iter()
-                            .map(|c| UseSpec {
-                                edge: EdgeKey::New(edge_index[&c.edge()]),
-                                orientation: f.orientation.compose(c.orientation()),
-                                pcurve: c.pcurve(),
-                            })
-                            .collect();
-                        if f.orientation.is_reversed() {
-                            uses.reverse();
-                        }
-                        uses
-                    })
-                    .collect();
-                face_specs.push(FaceSpec::New {
-                    surface: surface_of[&old.surface()],
-                    orientation: f.orientation,
-                    loops,
-                    tolerance: old.tolerance(),
-                });
+                let old_surface = m.face(f.id).map_err(|_| not_found())?.surface();
+                let mut spec = FaceSpec::from_face(m, *f, |id| EdgeKey::New(edge_index[&id]))
+                    .map_err(|_| not_found())?;
+                if let FaceSpec::New { surface, .. } = &mut spec {
+                    *surface = surface_of[&old_surface];
+                }
+                face_specs.push(spec);
             }
             shell_specs.push(face_specs);
         }
