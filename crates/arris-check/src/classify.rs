@@ -12,7 +12,7 @@ use std::fmt;
 
 use arris_topo::arris_geom::region2::Side;
 use arris_topo::arris_geom::{Curve, CurveSurfaceIntersection, GeomError, intersect_curve_surface};
-use arris_topo::arris_math::{Point3, Precision, UnitVec3, Vec3};
+use arris_topo::arris_math::{Point3, Precision, Tolerance, UnitVec3, Vec3};
 use arris_topo::{Body, FaceId, Model, NotFound, Orientation, Shape};
 
 use crate::domain::{FaceDomain, boundary_entity};
@@ -101,8 +101,9 @@ impl From<GeomError> for ClassifyError {
 /// tolerances (`docs/DATA-MODEL.md` §Tolerances): a vertex within its
 /// tolerance, then an edge within its, then a face within its. Only a
 /// point that is on nothing is cast for, and a direction whose ray grazes
-/// a face's boundary, touches a surface tangentially or lies in one is
-/// abandoned for the next; all eight abandoned is
+/// a face's boundary, touches a surface tangentially or lies in one — by
+/// the face's own tolerance — is abandoned for the next; all eight
+/// abandoned is
 /// [`ClassifyError::Undecided`], never a guess.
 ///
 /// Errors: an id that does not resolve, a surface a ray has no closed
@@ -216,7 +217,7 @@ impl<'m> Classifier<'m> {
     /// closed form.
     pub(crate) fn contains(&self, point: Point3) -> Result<Option<bool>, ClassifyError> {
         let model = self.model;
-        let tolerance = self.precision.tolerance();
+        let angular = self.precision.angular_tolerance;
         'direction: for d in RAY_DIRECTIONS {
             let ray = Curve::Line {
                 origin: point,
@@ -226,12 +227,15 @@ impl<'m> Classifier<'m> {
             for &id in &self.faces {
                 let face = model.face(id)?;
                 let surface = model.surface(face.surface())?;
+                // The ray meets, grazes or lies in the surface by the
+                // face's own tolerance (`docs/DATA-MODEL.md` §Tolerances).
+                let tolerance = Tolerance::new(face.tolerance(), angular);
                 let hits = match intersect_curve_surface(&ray, surface, tolerance)? {
                     CurveSurfaceIntersection::Points(hits) => hits,
                     CurveSurfaceIntersection::Coincident => continue 'direction,
                 };
                 for hit in hits {
-                    if hit.t.abs() <= self.precision.default_tolerance {
+                    if hit.t.abs() <= face.tolerance() {
                         // The ray starts on this surface. On the face
                         // itself the point has no parity to take; off
                         // it, the surface is merely passed through at

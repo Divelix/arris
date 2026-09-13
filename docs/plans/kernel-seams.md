@@ -237,7 +237,7 @@ bound has to be established here.
     by a period.
   - Corpus dumps unchanged. Checker, classifier and boolean tests
     unchanged.
-- [ ] Step 3 **[2]** — **The entity's tolerance, not the model's, in
+- [x] Step 3 **[2]** — **The entity's tolerance, not the model's, in
   `Full` rows and the classifier.**
   - `full.rs` (the on-surface distance in `regions_overlap` and
     `curve_is_interior_to_both`) and `classify.rs` (the ray's
@@ -247,6 +247,15 @@ bound has to be established here.
     within theirs. S5 and `classify_point` answer by the faces'
     tolerance where they answered by the default before.
   - Corpus dumps unchanged, since every C1 face is at the default.
+  - Finding (step 3): the intersector in `faces_meet` takes the pair's
+    tolerance as well, or two faces within theirs never reach the
+    overlap test. The classifier's ray cast cannot change a
+    `classify_point` answer on a body that passes E5 and V1–V3: a point
+    its ray-start or grazing test now judges differently is already
+    `On` an entity by that entity's tolerance, and only which
+    directions are abandoned moves. The observable tests are S5 and B1
+    by the faces' tolerance, with `classify_point` asserted to decide
+    the same loose body.
 - [ ] Step 4 **[1]** — **`Classifier` built once; `face_flux`.**
   - `Classifier::of_body` becomes public. `shell_contains`/`nesting`
     reuse one classifier per shell, and the boolean's piece selection

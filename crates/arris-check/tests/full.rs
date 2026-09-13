@@ -5,13 +5,14 @@
 
 use core::f64::consts::{PI, TAU};
 
+use arris_check::classify::{Classification, classify_point};
 use arris_check::{
     Level, Lump, LumpError, Report, ShellNestingFault, Unchecked, Violation, check, lumps,
 };
 use arris_debug::sample;
 use arris_topo::arris_geom::{Curve, Curve2, NurbsCurve, Surface, SurfaceKind};
 use arris_topo::arris_math::{
-    Frame, Frame2, Handedness, Interval, Point2, Point3, UnitVec2, UnitVec3, Vec2, Vec3,
+    Frame, Frame2, Handedness, Interval, Point2, Point3, Precision, UnitVec2, UnitVec3, Vec2, Vec3,
 };
 use arris_topo::entity::{
     Body as BodyEntity, BodyKind, Coedge, Edge, EdgeGeometry, Face, Loop, Shell, Vertex,
@@ -66,6 +67,11 @@ fn ring(m: &mut Model, corners: &[Point2]) -> Ring {
 /// parameter.
 fn ring_on(m: &mut Model, frame: &Frame, corners: &[Point3]) -> Ring {
     let tol = m.precision().default_tolerance;
+    ring_at(m, frame, corners, tol)
+}
+
+/// [`ring_on`] with every vertex and edge at `tol`.
+fn ring_at(m: &mut Model, frame: &Frame, corners: &[Point3], tol: f64) -> Ring {
     let n = corners.len();
     let at = |p: Point3| {
         let local = frame.to_local(p);
@@ -372,6 +378,101 @@ fn s5_two_faces_that_cross_along_the_line_of_their_planes() {
             face_b: face_upright,
         }
     );
+}
+
+/// The tolerance the loose tests' entities are at: ten times the model's
+/// default.
+const LOOSE: f64 = 1e-6;
+
+/// S5 by the faces' own tolerance: the zero-thickness sheet of
+/// `s5_two_coincident_faces_in_one_shell` with the lower face's plane
+/// lifted 5e-7 — five times the model's default tolerance, half the
+/// faces'. Every entity is at `LOOSE`, so the lift is within the edges'
+/// and vertices' tolerance and the faces coincide by theirs; by the
+/// model's default the planes would be apart and S5 silent.
+#[test]
+fn s5_two_faces_that_coincide_within_their_own_tolerance() {
+    let mut m = Model::default();
+    let lift = 5e-7;
+    let up = ground(&mut m);
+    let down = m.add_surface(Surface::Plane {
+        frame: Frame::new(Point3::new(0.0, 0.0, lift), -Vec3::z(), Vec3::x()).unwrap(),
+    });
+    let corners = [p2(0.0, 0.0), p2(10.0, 0.0), p2(10.0, 10.0), p2(0.0, 10.0)];
+    let world: Vec<Point3> = corners.iter().map(|p| Point3::new(p.x, p.y, 0.0)).collect();
+    let r = ring_at(&mut m, &Frame::world(), &world, LOOSE);
+    // The same ring walked backwards, in the lower face's (u, v), which
+    // is `(x, −y)`.
+    let mut back = Vec::with_capacity(corners.len());
+    for k in (0..corners.len()).rev() {
+        let (a, b) = (corners[k], corners[(k + 1) % corners.len()]);
+        let d = b - a;
+        let pcurve = m.add_curve2(Curve2::Line {
+            origin: p2(a.x, -a.y),
+            direction: UnitVec2::new_normalize(Vec2::new(d.x, -d.y)),
+        });
+        back.push(Coedge::new(r.edges[k], Orientation::Reversed, pcurve));
+    }
+    let face_up = m
+        .raw()
+        .add_face(Face::new(up, vec![Loop::new(r.coedges)], LOOSE));
+    let face_down = m
+        .raw()
+        .add_face(Face::new(down, vec![Loop::new(back)], LOOSE));
+    let (body, shell) = body_of(
+        &mut m,
+        vec![FaceHandle::forward(face_up), FaceHandle::forward(face_down)],
+        BodyKind::Sheet,
+    );
+    let fast = check(&m, body, Level::Fast);
+    assert!(fast.is_ok(), "{fast}");
+    assert_lines(&check(&m, body, Level::Full), &[("S5", shell.to_string())]);
+}
+
+/// B1 by the faces' own tolerance: a hollow box whose cavity's top is
+/// 5e-7 under the outer top — a wall thinner than its faces' tolerance —
+/// built in a model whose default is `LOOSE` and imported, tolerances
+/// and all, into one whose default is ten times finer. By the faces'
+/// tolerance the void's top meets the outer top, an overlap; by the
+/// model's default the two planes are apart and the nesting passes.
+/// `classify_point` decides the same body by the same tolerances: a
+/// point in the wall is on the outer top, one in the cavity is outside
+/// and one in the material inside.
+#[test]
+fn b1_a_wall_thinner_than_its_faces_tolerance_is_an_overlap() {
+    let mut loose = Model::new(Precision {
+        default_tolerance: LOOSE,
+        ..Precision::DEFAULT
+    })
+    .unwrap();
+    let outer =
+        sample::cuboid(&mut loose, Point3::origin(), Point3::new(10.0, 10.0, 10.0)).unwrap();
+    let cavity = sample::cuboid(
+        &mut loose,
+        Point3::new(2.0, 2.0, 2.0),
+        Point3::new(8.0, 8.0, 10.0 - 5e-7),
+    )
+    .unwrap();
+    let mut m = Model::default();
+    let (outer, _) = m.import(&loose, outer).unwrap();
+    let (cavity, _) = m.import(&loose, cavity).unwrap();
+    let outer_shell = m.shells(outer).unwrap()[0].id;
+    let void = inverted_shell(&mut m, cavity);
+    let body = solid_of(&mut m, vec![outer_shell, void]);
+    let fast = check(&m, body, Level::Fast);
+    assert!(fast.is_ok(), "{fast}");
+    let full = check(&m, body, Level::Full);
+    assert_eq!(
+        only_nesting_fault(&full),
+        ShellNestingFault::Overlap {
+            shells: [outer_shell, void]
+        },
+        "{full}"
+    );
+    let at = |x, y, z| classify_point(&m, body, Point3::new(x, y, z)).unwrap();
+    assert!(matches!(at(5.0, 5.0, 10.0 - 2.5e-7), Classification::On(_)));
+    assert_eq!(at(5.0, 5.0, 5.0), Classification::Outside);
+    assert_eq!(at(1.0, 5.0, 5.0), Classification::Inside);
 }
 
 /// A (u, v) line through `(u, v)`, along `u` or along `v`, at unit speed.

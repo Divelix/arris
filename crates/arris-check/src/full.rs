@@ -20,7 +20,7 @@ use arris_topo::arris_geom::region2::{Piece, Side};
 use arris_topo::arris_geom::{
     Curve, Surface, SurfaceIntersection, SurfaceKind, intersect_surfaces,
 };
-use arris_topo::arris_math::{Aabb, Interval, Point2, Point3};
+use arris_topo::arris_math::{Aabb, Interval, Point2, Point3, Tolerance};
 use arris_topo::entity::BodyKind;
 use arris_topo::{EdgeId, FaceId, Orientation, ShellId};
 
@@ -203,17 +203,20 @@ impl<'m> Checker<'m> {
                 return Ok(false);
             }
         }
-        Ok(
-            match intersect_surfaces(sa, sb, self.precision.tolerance()) {
-                Err(_) => return Err((sa.kind(), sb.kind())),
-                Ok(SurfaceIntersection::Empty) => false,
-                Ok(SurfaceIntersection::Coincident) => self.regions_overlap(a, sa, b, sb),
-                Ok(SurfaceIntersection::Transversal(curves))
-                | Ok(SurfaceIntersection::Tangent(curves)) => curves
-                    .iter()
-                    .any(|c| self.curve_is_interior_to_both(a, sa, b, sb, c)),
-            },
-        )
+        // The pair is decided at the larger of the two faces' own
+        // tolerances (`docs/DATA-MODEL.md` §Tolerances), as a boolean
+        // between them would decide it.
+        let tolerance = fa.tolerance().max(fb.tolerance());
+        let query = Tolerance::new(tolerance, self.precision.angular_tolerance);
+        Ok(match intersect_surfaces(sa, sb, query) {
+            Err(_) => return Err((sa.kind(), sb.kind())),
+            Ok(SurfaceIntersection::Empty) => false,
+            Ok(SurfaceIntersection::Coincident) => self.regions_overlap(a, sa, b, sb, tolerance),
+            Ok(SurfaceIntersection::Transversal(curves))
+            | Ok(SurfaceIntersection::Tangent(curves)) => curves
+                .iter()
+                .any(|c| self.curve_is_interior_to_both(a, sa, b, sb, c, tolerance)),
+        })
     }
 
     /// S5: two faces of a shell meet only along the edges and vertices
@@ -263,9 +266,17 @@ impl<'m> Checker<'m> {
     /// `true` when two faces on the same surface share interior (u, v):
     /// a deterministic grid over each face's parameter box, the points
     /// strictly inside that face carried through 3D and classified
-    /// against the other. An overlap smaller than the grid's spacing is
-    /// not seen; the loops crossing is L5's and S5's own curve test.
-    fn regions_overlap(&self, a: FaceId, sa: &Surface, b: FaceId, sb: &Surface) -> bool {
+    /// against the other when within `tolerance` of its surface. An
+    /// overlap smaller than the grid's spacing is not seen; the loops
+    /// crossing is L5's and S5's own curve test.
+    fn regions_overlap(
+        &self,
+        a: FaceId,
+        sa: &Surface,
+        b: FaceId,
+        sb: &Surface,
+        tolerance: f64,
+    ) -> bool {
         let n = self.precision.check_samples.max(2);
         for (from, from_surface, to, to_surface) in [(a, sa, b, sb), (b, sb, a, sa)] {
             let Some(domain) = self.domains.get(&from) else {
@@ -294,7 +305,7 @@ impl<'m> Checker<'m> {
                     let Ok(projection) = to_surface.project(point) else {
                         continue;
                     };
-                    if projection.distance > self.precision.default_tolerance {
+                    if projection.distance > tolerance {
                         continue;
                     }
                     if self
@@ -311,9 +322,10 @@ impl<'m> Checker<'m> {
     }
 
     /// `true` when the surfaces' intersection curve has a point interior
-    /// to both faces that is not on an edge or vertex they share. The
-    /// curve is sampled over the parameters both faces' boundaries reach
-    /// — its whole domain when it is periodic.
+    /// to both faces, within `tolerance` of both surfaces, that is not on
+    /// an edge or vertex they share. The curve is sampled over the
+    /// parameters both faces' boundaries reach — its whole domain when it
+    /// is periodic.
     fn curve_is_interior_to_both(
         &self,
         a: FaceId,
@@ -321,6 +333,7 @@ impl<'m> Checker<'m> {
         b: FaceId,
         sb: &Surface,
         curve: &Curve,
+        tolerance: f64,
     ) -> bool {
         let Some(range) = self.curve_range(a, sa, b, sb, curve) else {
             return false;
@@ -343,8 +356,7 @@ impl<'m> Checker<'m> {
             let (Ok(pa), Ok(pb)) = (sa.project(point), sb.project(point)) else {
                 continue;
             };
-            let far = self.precision.default_tolerance;
-            if pa.distance > far || pb.distance > far {
+            if pa.distance > tolerance || pb.distance > tolerance {
                 continue;
             }
             if inside(a, pa.uv) && inside(b, pb.uv) {
