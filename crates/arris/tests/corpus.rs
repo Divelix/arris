@@ -325,6 +325,19 @@ fn blend_box_oblique_end() {
     run("blend/box-oblique-end");
 }
 
+/// The miter: the vertical and the cap edge at one corner blended in one
+/// call, two cylinders meeting in the ellipse of their bisecting plane
+/// (ADR-0007). Waits under `regression/` because S5 has no closed form
+/// for the two blend cylinders' crossing axes: the checker stage reports
+/// that one pair unchecked until the cylinder–cylinder plan lands the
+/// equal-radius crossing arm; `crates/arris-ops/tests/fillet.rs` holds
+/// the result to the oracle's numbers meanwhile.
+#[test]
+#[ignore = "S5 has no closed form for the miter's two cylinders with crossing axes: waits on the cylinder–cylinder plan (plans/fillet-and-chamfer step 7)"]
+fn regression_fillet_miter() {
+    run("regression/fillet-miter");
+}
+
 /// The same recipe under three parameter sets, one test each so a
 /// variant that drifts says which: the eight bolt holes' chain is
 /// `crates/arris/tests/provenance.rs`'s subject, and these hold each

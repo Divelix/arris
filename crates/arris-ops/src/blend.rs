@@ -7,7 +7,7 @@
 //! entity kept by id (`docs/ARCHITECTURE.md` §Operations,
 //! `docs/DATA-MODEL.md` §Provenance).
 
-use core::f64::consts::TAU;
+use core::f64::consts::{PI, TAU};
 use std::collections::{BTreeMap, BTreeSet};
 
 use arris_check::arris_topo::arris_geom::region2::Side;
@@ -15,7 +15,9 @@ use arris_check::arris_topo::arris_geom::{
     Curve, Curve2, GeomKind, Surface, SurfaceIntersection, SurfaceKind, intersect_surfaces,
     pcurve_on,
 };
-use arris_check::arris_topo::arris_math::{Frame, Interval, Point2, Point3, Tolerance, Vec2, Vec3};
+use arris_check::arris_topo::arris_math::{
+    Frame, Interval, Point2, Point3, Tolerance, UnitVec3, Vec2, Vec3, wrap_angle,
+};
 use arris_check::arris_topo::builder::{EdgeKey, EdgeSpec, VertexKey, VertexSpec};
 use arris_check::arris_topo::entity::EdgeGeometry;
 use arris_check::arris_topo::{
@@ -158,16 +160,123 @@ struct Contact {
     tolerance: f64,
 }
 
+/// One edge's stripe: the blend surface with its two contact lines and
+/// the faces they lie on, nothing about its ends decided yet.
+struct Stripe {
+    edge: EdgeId,
+    start: VertexId,
+    end: VertexId,
+    /// The edge's direction, the blend's `Z`.
+    d: Vec3,
+    /// A point on the blend's axis, level with the edge's line origin.
+    axis_origin: Point3,
+    frame: Frame,
+    surface: Surface,
+    radius: f64,
+    /// The angle the blend turns through, `π − φ` for normals `φ` apart.
+    beta: f64,
+    convex: bool,
+    /// The contact lines, at `u = 0` then at `u = β`.
+    lines: [Curve; 2],
+    /// The face each contact lies on, in the same order.
+    faces: [FaceId; 2],
+    /// The edge's use by each of those faces, in the same order.
+    uses: [UseAt; 2],
+    tolerance: f64,
+}
+
+/// One end of a blend: trimmed by the face across the corner, or met by
+/// the other blend of a miter.
+enum EndKind {
+    Face(Box<End>),
+    /// The miter at `miters[at]`, this stripe being its `side`.
+    Miter {
+        at: usize,
+        side: usize,
+    },
+}
+
+impl EndKind {
+    /// The contact lines' parameters at this end, by contact.
+    fn t(&self, miters: &[Miter], k: usize) -> f64 {
+        match self {
+            EndKind::Face(end) => end.t[k],
+            EndKind::Miter { at, side } => miters[*at].t[*side][k],
+        }
+    }
+
+    /// The tolerance a face end's trim vertex carries, `None` at a miter.
+    fn vertex_tolerance(&self, k: usize) -> Option<f64> {
+        match self {
+            EndKind::Face(end) => Some(end.vertex_tolerance[k]),
+            EndKind::Miter { .. } => None,
+        }
+    }
+}
+
+/// Two blends meeting at a vertex whose third edge stays sharp
+/// (ADR-0007): the ellipse where the two equal-radius cylinders cross,
+/// in the plane bisecting their axes through the ball's one centre, from
+/// the point where the two contacts on the shared face cross to the
+/// point on the third edge where the other two contacts meet it.
+struct Miter {
+    /// The two blended edges, in the blends' order.
+    edges: [EdgeId; 2],
+    /// For each of the two stripes, which of its contacts lies on the
+    /// shared face.
+    shared: [usize; 2],
+    /// The contact lines' parameters at the miter, `[side][contact]`.
+    t: [[f64; 2]; 2],
+    /// Where the two contacts on the shared face cross.
+    q: Point3,
+    /// Where the other two contacts meet the third edge.
+    p3: Point3,
+    curve: Curve,
+    range: Interval,
+    /// `true` when `range.lo()` is at `q`.
+    q_first: bool,
+    /// For each side, `true` when `range.lo()` is at that stripe's
+    /// contact at `u = 0`.
+    lo_first: [bool; 2],
+    /// The ellipse's pcurve on each stripe's cylinder, placed.
+    on_blend: [Curve2; 2],
+    /// The third edge shortened to `p3`.
+    trim: Trim,
+    tolerance: f64,
+    q_tolerance: f64,
+    p3_tolerance: f64,
+}
+
 /// One edge's blend, decided and checked, before anything is written.
 struct Blend {
-    edge: EdgeId,
-    surface: Surface,
-    orientation: Orientation,
+    stripe: Stripe,
     /// The contacts, at `u = 0` then at `u = β`.
     contacts: [Contact; 2],
     /// At the edge's `range.lo()` end, then its `range.hi()` end.
-    ends: [End; 2],
-    tolerance: f64,
+    ends: [EndKind; 2],
+}
+
+/// The parameters of the closest points of two lines with unit
+/// directions, or `None` when the lines are parallel within `tol.angular`.
+fn lines_cross(o1: Point3, d1: Vec3, o2: Point3, d2: Vec3, tol: Tolerance) -> Option<(f64, f64)> {
+    let c = d1.dot(&d2);
+    if d1.cross(&d2).norm() <= tol.angular {
+        return None;
+    }
+    let denom = 1.0 - c * c;
+    let w = o2 - o1;
+    let (w1, w2) = (w.dot(&d1), w.dot(&d2));
+    Some(((w1 - c * w2) / denom, (c * w1 - w2) / denom))
+}
+
+/// The origin of a contact line.
+fn line_origin(line: &Curve) -> Result<Point3, OpError> {
+    match line {
+        Curve::Line { origin, .. } => Ok(*origin),
+        Curve::Circle { .. } | Curve::Ellipse { .. } | Curve::Nurbs(_) => {
+            Err(invariant("a contact line"))
+        }
+    }
 }
 
 /// `t` moved by whole periods into `range`, when it can be; a parameter
@@ -234,17 +343,16 @@ fn arc_between(t_a: f64, t_b: f64, t_mid: f64) -> Result<(Interval, bool), OpErr
         .map(|r| (r, a_first))
         .map_err(|_| invariant("an end arc of positive length"))
 }
-
-/// The blend of one edge under the plane–plane arm, every contact and
-/// end decided and checked against the body, nothing written.
-fn plan(
+/// The stripe of one edge under the plane–plane arm: the blend cylinder
+/// and its two contact lines decided from the edge's two faces, its ends
+/// not yet.
+fn stripe(
     m: &Model,
     view: &View,
     edge: EdgeId,
     radius: f64,
     tol: Tolerance,
-    samples: usize,
-) -> Result<Blend, OpError> {
+) -> Result<Stripe, OpError> {
     let e = forward(edge);
     let entity = *m.edge(edge)?;
     let Some((curve_id, range)) = entity.curve() else {
@@ -338,242 +446,516 @@ fn plan(
         .max(m.face(f1)?.tolerance())
         .max(m.face(f2)?.tolerance());
     let by_u = [lo, hi];
-    let lines = by_u.map(|i| Curve::Line {
-        origin: origin + contact_offset[i],
-        direction,
-    });
-    let contact_faces = by_u.map(|i| faces[i]);
-    let contact_uses = by_u.map(|i| uses[i]);
-
-    let mut ends: Vec<End> = Vec::with_capacity(2);
-    for (at_lo, vertex) in [(true, entity.start()), (false, entity.end())] {
-        let v = forward(vertex);
-        let vertex_blend = || degenerate(vec![e, v], Reason::VertexBlend);
-        // The corner's other two edges: the neighbour of the blended
-        // edge's coedge at this end in each face's loop.
-        let mut corner_edges = [edge; 2];
-        for (k, u) in contact_uses.iter().enumerate() {
-            let l = &m.face(u.face)?.loops()[u.loop_index];
-            let n = l.coedges().len();
-            let before = (u.orientation == Orientation::Forward) == at_lo;
-            let j = if before {
-                (u.coedge_index + n - 1) % n
-            } else {
-                (u.coedge_index + 1) % n
-            };
-            corner_edges[k] = l.coedges()[j].edge();
-        }
-        let at_vertex = view
-            .vertex_edges
-            .get(&vertex)
-            .ok_or(invariant("the corner vertex's edges"))?;
-        let three: BTreeSet<EdgeId> = [edge, corner_edges[0], corner_edges[1]]
-            .into_iter()
-            .collect();
-        if three.len() != 3 || *at_vertex != three {
-            return Err(vertex_blend());
-        }
-        let other_face = |corner: EdgeId, own: FaceId| -> Result<FaceId, OpError> {
-            let uses = view
-                .uses
-                .get(&corner)
-                .ok_or(invariant("the corner edge's uses"))?;
-            let others: Vec<FaceId> = uses.iter().map(|u| u.face).filter(|&f| f != own).collect();
-            match others.as_slice() {
-                [f] if *f != f1 && *f != f2 => Ok(*f),
-                _ => Err(vertex_blend()),
-            }
-        };
-        let face3 = other_face(corner_edges[0], contact_faces[0])?;
-        if other_face(corner_edges[1], contact_faces[1])? != face3 {
-            return Err(vertex_blend());
-        }
-        let surface3 = m.surface(m.face(face3)?.surface())?;
-        let Surface::Plane { frame: plane3 } = surface3 else {
-            return Err(OpError::Unsupported {
-                a: (GeomKind::Surface(SurfaceKind::Cylinder), e),
-                b: (GeomKind::Surface(surface3.kind()), forward(face3)),
-            });
-        };
-        let n3: Vec3 = plane3.z().into_inner();
-        let dn = d.dot(&n3);
-        if dn.abs() <= tol.angular {
-            return Err(vertex_blend());
-        }
-        let face3_tolerance = m.face(face3)?.tolerance();
-        // Where each contact line pierces the face across.
-        let mut points = [Point3::origin(); 2];
-        let mut t = [0.0; 2];
-        for k in 0..2 {
-            let Curve::Line { origin: q, .. } = lines[k] else {
-                return Err(invariant("a contact line"));
-            };
-            t[k] = (plane3.origin() - q).dot(&n3) / dn;
-            points[k] = q + t[k] * d;
-        }
-        // The corner edges shortened to the trim points.
-        let mut trims = [Trim {
-            edge,
-            t: 0.0,
-            cuts_lo: true,
-        }; 2];
-        let mut vertex_tolerance = [0.0; 2];
-        for k in 0..2 {
-            let corner = corner_edges[k];
-            let ce = *m.edge(corner)?;
-            let Some((cid, crange)) = ce.curve() else {
-                return Err(vertex_blend());
-            };
-            let ccurve = m.curve(cid)?;
-            let projection = ccurve
-                .project(points[k])
-                .map_err(|g| OpError::Internal(Fault::Geometry(g)))?;
-            if projection.distance > ce.tolerance() {
-                return Err(invariant("the corner edge through the trim point"));
-            }
-            let too_large = || degenerate(vec![e, forward(corner)], Reason::BlendTooLarge);
-            let Some(tc) = into_range(crange, projection.t, ccurve.period()) else {
-                return Err(too_large());
-            };
-            let cuts_lo = ce.start() == vertex;
-            let far = if cuts_lo { ce.end() } else { ce.start() };
-            let far_vertex = m.vertex(far)?;
-            let kept_length = if cuts_lo {
-                crange.hi() - tc
-            } else {
-                tc - crange.lo()
-            };
-            if kept_length <= 0.0
-                || (points[k] - far_vertex.point()).norm() <= far_vertex.tolerance()
-            {
-                return Err(too_large());
-            }
-            trims[k] = Trim {
-                edge: corner,
-                t: tc,
-                cuts_lo,
-            };
-            vertex_tolerance[k] = tolerance.max(ce.tolerance()).max(face3_tolerance);
-        }
-        // The arc: the blend cut by the plane across, between the two
-        // trim points, on the blend's side of its axis.
-        let section = intersect_surfaces(&surface, surface3, tol)
-            .map_err(|g| OpError::Internal(Fault::Geometry(g)))?;
-        let arc_curve = match section {
-            SurfaceIntersection::Transversal(curves) if curves.len() == 1 => curves[0].clone(),
-            SurfaceIntersection::Transversal(_)
-            | SurfaceIntersection::Tangent(_)
-            | SurfaceIntersection::Empty
-            | SurfaceIntersection::Coincident => {
-                return Err(invariant("a transversal section of the blend at its end"));
-            }
-        };
-        let (arc_range, lo_first) = match &arc_curve {
-            Curve::Circle { .. } => (
-                Interval::new(0.0, beta)
-                    .map_err(|_| invariant("a blend turning by a positive angle"))?,
-                true,
-            ),
-            Curve::Ellipse { .. } => {
-                // The point of the arc half way round the blend.
-                let half = beta / 2.0;
-                let ruling = axis_origin
-                    + radius
-                        * (half.cos() * frame.x().into_inner()
-                            + half.sin() * frame.y().into_inner());
-                let mid = ruling + ((plane3.origin() - ruling).dot(&n3) / dn) * d;
-                let param = |p: Point3| -> Result<f64, OpError> {
-                    arc_curve
-                        .project(p)
-                        .map(|q| q.t)
-                        .map_err(|g| OpError::Internal(Fault::Geometry(g)))
-                };
-                arc_between(param(points[0])?, param(points[1])?, param(mid)?)?
-            }
-            Curve::Line { .. } | Curve::Nurbs(_) => {
-                return Err(invariant("a conic section of the blend at its end"));
-            }
-        };
-        let arc_tolerance = tolerance.max(face3_tolerance);
-        let arc_tol = Tolerance::new(arc_tolerance, tol.angular);
-        let on_face = pcurve_on(&arc_curve, arc_range, surface3, arc_tol)
-            .map_err(|g| OpError::Internal(Fault::Geometry(g)))?;
-        if !inside_face(m, face3, &on_face, arc_range, samples)? {
-            return Err(degenerate(vec![e, forward(face3)], Reason::BlendTooLarge));
-        }
-        let on_blend = pcurve_on(&arc_curve, arc_range, &surface, arc_tol)
-            .map_err(|g| OpError::Internal(Fault::Geometry(g)))?;
-        let on_blend = placed(on_blend, arc_range.lo(), if lo_first { 0.0 } else { beta });
-        ends.push(End {
-            vertex,
-            face: face3,
-            points,
-            t,
-            trims,
-            arc: Arc {
-                curve: arc_curve,
-                range: arc_range,
-                lo_first,
-                on_face,
-                on_blend,
-                tolerance: arc_tolerance,
-            },
-            vertex_tolerance,
-        });
-    }
-    let Ok([start, end]): Result<[End; 2], _> = ends.try_into() else {
-        return Err(invariant("two ends of the blend"));
-    };
-    // The contact lines between their trim points.
-    let mut contacts: Vec<Contact> = Vec::with_capacity(2);
-    for k in 0..2 {
-        let face = contact_faces[k];
-        let too_large = || degenerate(vec![e, forward(face)], Reason::BlendTooLarge);
-        if end.t[k] - start.t[k] <= tolerance {
-            return Err(too_large());
-        }
-        let range = Interval::new(start.t[k], end.t[k]).map_err(|_| too_large())?;
-        let plane = m.surface(m.face(face)?.surface())?;
-        let line_tol = Tolerance::new(tolerance, tol.angular);
-        let on_face = pcurve_on(&lines[k], range, plane, line_tol)
-            .map_err(|g| OpError::Internal(Fault::Geometry(g)))?;
-        if !inside_face(m, face, &on_face, range, samples)? {
-            return Err(too_large());
-        }
-        let u = if k == 0 { 0.0 } else { beta };
-        let on_blend = pcurve_on(&lines[k], range, &surface, line_tol)
-            .map_err(|g| OpError::Internal(Fault::Geometry(g)))?;
-        let on_blend = placed(on_blend, range.lo(), u);
-        contacts.push(Contact {
-            face,
-            line: lines[k].clone(),
-            range,
-            on_face,
-            on_blend,
-            tolerance,
-        });
-    }
-    let Ok(contacts): Result<[Contact; 2], _> = contacts.try_into() else {
-        return Err(invariant("two contacts of the blend"));
-    };
-    Ok(Blend {
+    Ok(Stripe {
         edge,
+        start: entity.start(),
+        end: entity.end(),
+        d,
+        axis_origin,
+        frame,
         surface,
-        orientation: if convex {
-            Orientation::Forward
-        } else {
-            Orientation::Reversed
-        },
-        contacts,
-        ends: [start, end],
+        radius,
+        beta,
+        convex,
+        lines: by_u.map(|i| Curve::Line {
+            origin: origin + contact_offset[i],
+            direction,
+        }),
+        faces: by_u.map(|i| faces[i]),
+        uses: by_u.map(|i| uses[i]),
         tolerance,
     })
 }
 
-/// The tolerance a trim vertex carries: the largest of the entities that
-/// meet there — the contact, the arc and the corner edge.
-fn vertex_tolerance_of(start: &End, end: &End, k: usize) -> f64 {
-    start.vertex_tolerance[k].max(end.vertex_tolerance[k])
+/// The end of `s` at its start (`at_lo`) or its end vertex, trimmed by
+/// the face across the corner: the vertex's other two edges, the plane
+/// they share, where each contact pierces it, the corner edges shortened
+/// there and the arc between — every one checked against the body.
+fn face_end(
+    m: &Model,
+    view: &View,
+    s: &Stripe,
+    at_lo: bool,
+    tol: Tolerance,
+    samples: usize,
+) -> Result<End, OpError> {
+    let (edge, d, radius, beta) = (s.edge, s.d, s.radius, s.beta);
+    let e = forward(edge);
+    let vertex = if at_lo { s.start } else { s.end };
+    let v = forward(vertex);
+    let vertex_blend = || degenerate(vec![e, v], Reason::VertexBlend);
+    // The corner's other two edges: the neighbour of the blended edge's
+    // coedge at this end in each face's loop.
+    let mut corner_edges = [edge; 2];
+    for (k, u) in s.uses.iter().enumerate() {
+        let l = &m.face(u.face)?.loops()[u.loop_index];
+        let n = l.coedges().len();
+        let before = (u.orientation == Orientation::Forward) == at_lo;
+        let j = if before {
+            (u.coedge_index + n - 1) % n
+        } else {
+            (u.coedge_index + 1) % n
+        };
+        corner_edges[k] = l.coedges()[j].edge();
+    }
+    let at_vertex = view
+        .vertex_edges
+        .get(&vertex)
+        .ok_or(invariant("the corner vertex's edges"))?;
+    let three: BTreeSet<EdgeId> = [edge, corner_edges[0], corner_edges[1]]
+        .into_iter()
+        .collect();
+    if three.len() != 3 || *at_vertex != three {
+        return Err(vertex_blend());
+    }
+    let other_face = |corner: EdgeId, own: FaceId| -> Result<FaceId, OpError> {
+        let uses = view
+            .uses
+            .get(&corner)
+            .ok_or(invariant("the corner edge's uses"))?;
+        let others: Vec<FaceId> = uses.iter().map(|u| u.face).filter(|&f| f != own).collect();
+        match others.as_slice() {
+            [f] if !s.faces.contains(f) => Ok(*f),
+            _ => Err(vertex_blend()),
+        }
+    };
+    let face3 = other_face(corner_edges[0], s.faces[0])?;
+    if other_face(corner_edges[1], s.faces[1])? != face3 {
+        return Err(vertex_blend());
+    }
+    let surface3 = m.surface(m.face(face3)?.surface())?;
+    let Surface::Plane { frame: plane3 } = surface3 else {
+        return Err(OpError::Unsupported {
+            a: (GeomKind::Surface(SurfaceKind::Cylinder), e),
+            b: (GeomKind::Surface(surface3.kind()), forward(face3)),
+        });
+    };
+    let n3: Vec3 = plane3.z().into_inner();
+    let dn = d.dot(&n3);
+    if dn.abs() <= tol.angular {
+        return Err(vertex_blend());
+    }
+    let face3_tolerance = m.face(face3)?.tolerance();
+    // Where each contact line pierces the face across.
+    let mut points = [Point3::origin(); 2];
+    let mut t = [0.0; 2];
+    for k in 0..2 {
+        let q = line_origin(&s.lines[k])?;
+        t[k] = (plane3.origin() - q).dot(&n3) / dn;
+        points[k] = q + t[k] * d;
+    }
+    // The corner edges shortened to the trim points.
+    let mut trims = [Trim {
+        edge,
+        t: 0.0,
+        cuts_lo: true,
+    }; 2];
+    let mut vertex_tolerance = [0.0; 2];
+    for k in 0..2 {
+        let corner = corner_edges[k];
+        let ce = *m.edge(corner)?;
+        let Some((cid, crange)) = ce.curve() else {
+            return Err(vertex_blend());
+        };
+        let ccurve = m.curve(cid)?;
+        let projection = ccurve
+            .project(points[k])
+            .map_err(|g| OpError::Internal(Fault::Geometry(g)))?;
+        if projection.distance > ce.tolerance() {
+            return Err(invariant("the corner edge through the trim point"));
+        }
+        let too_large = || degenerate(vec![e, forward(corner)], Reason::BlendTooLarge);
+        let Some(tc) = into_range(crange, projection.t, ccurve.period()) else {
+            return Err(too_large());
+        };
+        let cuts_lo = ce.start() == vertex;
+        let far = if cuts_lo { ce.end() } else { ce.start() };
+        let far_vertex = m.vertex(far)?;
+        let kept_length = if cuts_lo {
+            crange.hi() - tc
+        } else {
+            tc - crange.lo()
+        };
+        if kept_length <= 0.0 || (points[k] - far_vertex.point()).norm() <= far_vertex.tolerance() {
+            return Err(too_large());
+        }
+        trims[k] = Trim {
+            edge: corner,
+            t: tc,
+            cuts_lo,
+        };
+        vertex_tolerance[k] = s.tolerance.max(ce.tolerance()).max(face3_tolerance);
+    }
+    // The arc: the blend cut by the plane across, between the two trim
+    // points, on the blend's side of its axis.
+    let section = intersect_surfaces(&s.surface, surface3, tol)
+        .map_err(|g| OpError::Internal(Fault::Geometry(g)))?;
+    let arc_curve = match section {
+        SurfaceIntersection::Transversal(curves) if curves.len() == 1 => curves[0].clone(),
+        SurfaceIntersection::Transversal(_)
+        | SurfaceIntersection::Tangent(_)
+        | SurfaceIntersection::Empty
+        | SurfaceIntersection::Coincident => {
+            return Err(invariant("a transversal section of the blend at its end"));
+        }
+    };
+    let (arc_range, lo_first) = match &arc_curve {
+        Curve::Circle { .. } => (
+            Interval::new(0.0, beta)
+                .map_err(|_| invariant("a blend turning by a positive angle"))?,
+            true,
+        ),
+        Curve::Ellipse { .. } => {
+            // The point of the arc half way round the blend.
+            let half = beta / 2.0;
+            let ruling = s.axis_origin
+                + radius
+                    * (half.cos() * s.frame.x().into_inner()
+                        + half.sin() * s.frame.y().into_inner());
+            let mid = ruling + ((plane3.origin() - ruling).dot(&n3) / dn) * d;
+            let param = |p: Point3| -> Result<f64, OpError> {
+                arc_curve
+                    .project(p)
+                    .map(|q| q.t)
+                    .map_err(|g| OpError::Internal(Fault::Geometry(g)))
+            };
+            arc_between(param(points[0])?, param(points[1])?, param(mid)?)?
+        }
+        Curve::Line { .. } | Curve::Nurbs(_) => {
+            return Err(invariant("a conic section of the blend at its end"));
+        }
+    };
+    let arc_tolerance = s.tolerance.max(face3_tolerance);
+    let arc_tol = Tolerance::new(arc_tolerance, tol.angular);
+    let on_face = pcurve_on(&arc_curve, arc_range, surface3, arc_tol)
+        .map_err(|g| OpError::Internal(Fault::Geometry(g)))?;
+    if !inside_face(m, face3, &on_face, arc_range, samples)? {
+        return Err(degenerate(vec![e, forward(face3)], Reason::BlendTooLarge));
+    }
+    let on_blend = pcurve_on(&arc_curve, arc_range, &s.surface, arc_tol)
+        .map_err(|g| OpError::Internal(Fault::Geometry(g)))?;
+    let on_blend = placed(on_blend, arc_range.lo(), if lo_first { 0.0 } else { beta });
+    Ok(End {
+        vertex,
+        face: face3,
+        points,
+        t,
+        trims,
+        arc: Arc {
+            curve: arc_curve,
+            range: arc_range,
+            lo_first,
+            on_face,
+            on_blend,
+            tolerance: arc_tolerance,
+        },
+        vertex_tolerance,
+    })
+}
+
+/// The contact lines of `s` between their parameters at its two ends,
+/// `t[end][contact]`, each checked to lie inside its face.
+fn contacts(
+    m: &Model,
+    s: &Stripe,
+    t: [[f64; 2]; 2],
+    tol: Tolerance,
+    samples: usize,
+) -> Result<[Contact; 2], OpError> {
+    let e = forward(s.edge);
+    let mut contacts: Vec<Contact> = Vec::with_capacity(2);
+    let spans = [0, 1].map(|k| (t[0][k], t[1][k]));
+    for (k, ((&face, line), &(lo, hi))) in s.faces.iter().zip(&s.lines).zip(&spans).enumerate() {
+        let too_large = || degenerate(vec![e, forward(face)], Reason::BlendTooLarge);
+        if hi - lo <= s.tolerance {
+            return Err(too_large());
+        }
+        let range = Interval::new(lo, hi).map_err(|_| too_large())?;
+        let plane = m.surface(m.face(face)?.surface())?;
+        let line_tol = Tolerance::new(s.tolerance, tol.angular);
+        let on_face = pcurve_on(line, range, plane, line_tol)
+            .map_err(|g| OpError::Internal(Fault::Geometry(g)))?;
+        if !inside_face(m, face, &on_face, range, samples)? {
+            return Err(too_large());
+        }
+        let u = if k == 0 { 0.0 } else { s.beta };
+        let on_blend = pcurve_on(line, range, &s.surface, line_tol)
+            .map_err(|g| OpError::Internal(Fault::Geometry(g)))?;
+        let on_blend = placed(on_blend, range.lo(), u);
+        contacts.push(Contact {
+            face,
+            line: line.clone(),
+            range,
+            on_face,
+            on_blend,
+            tolerance: s.tolerance,
+        });
+    }
+    contacts
+        .try_into()
+        .map_err(|_| invariant("two contacts of the blend"))
+}
+
+/// The miter of stripes `a` and `b` at `vertex`, a corner of three edges
+/// whose third stays sharp (ADR-0007). The two stripes share one face
+/// and have equal dihedrals, so their axes cross at the ball's one
+/// centre and their contacts on the faces the third edge separates meet
+/// it at one point; the miter is the ellipse of the two cylinders in
+/// the plane bisecting their axes, from where the two contacts on the
+/// shared face cross to that point, its pcurve on each cylinder fitted
+/// by the oblique-section rule. The third edge is shortened to the
+/// point. A corner whose dihedrals differ, whose blends are not both
+/// convex or both concave, or whose edges do not share exactly one face
+/// is `Reason::VertexBlend`.
+fn miter(
+    m: &Model,
+    view: &View,
+    a: &Stripe,
+    b: &Stripe,
+    vertex: VertexId,
+    tol: Tolerance,
+) -> Result<Miter, OpError> {
+    let v = forward(vertex);
+    let (ea, eb) = (forward(a.edge), forward(b.edge));
+    let vertex_blend = || degenerate(vec![ea, eb, v], Reason::VertexBlend);
+    // The shared face, and each stripe's contact on it.
+    let mut shared: Option<(usize, usize, FaceId)> = None;
+    for (ka, &fa) in a.faces.iter().enumerate() {
+        for (kb, &fb) in b.faces.iter().enumerate() {
+            if fa == fb && shared.replace((ka, kb, fa)).is_some() {
+                return Err(vertex_blend());
+            }
+        }
+    }
+    let Some((ka, kb, _)) = shared else {
+        return Err(vertex_blend());
+    };
+    let (face_a, face_b) = (a.faces[1 - ka], b.faces[1 - kb]);
+    // The third edge: the vertex's one edge that is not blended, between
+    // the two faces the blends do not share.
+    let at_vertex = view
+        .vertex_edges
+        .get(&vertex)
+        .ok_or(invariant("the corner vertex's edges"))?;
+    let third: Vec<EdgeId> = at_vertex
+        .iter()
+        .copied()
+        .filter(|&e| e != a.edge && e != b.edge)
+        .collect();
+    let (&[e3], 3) = (third.as_slice(), at_vertex.len()) else {
+        return Err(vertex_blend());
+    };
+    let faces3: BTreeSet<FaceId> = view
+        .uses
+        .get(&e3)
+        .ok_or(invariant("the corner edge's uses"))?
+        .iter()
+        .map(|u| u.face)
+        .collect();
+    if faces3 != BTreeSet::from([face_a, face_b]) {
+        return Err(vertex_blend());
+    }
+    // Equal dihedrals, both convex or both concave: what puts the two
+    // axes through one centre and the two far contacts through one point
+    // of the third edge; anything else is a corner of two arcs, C6's.
+    if (a.beta - b.beta).abs() > tol.angular || a.convex != b.convex {
+        return Err(vertex_blend());
+    }
+    let tolerance = a.tolerance.max(b.tolerance);
+    let radius = a.radius;
+    let crossing = |o1: Point3, d1: Vec3, o2: Point3, d2: Vec3, what: &'static str| {
+        let (t1, t2) = lines_cross(o1, d1, o2, d2, tol).ok_or_else(vertex_blend)?;
+        let (p1, p2) = (o1 + t1 * d1, o2 + t2 * d2);
+        if (p1 - p2).norm() > tolerance {
+            return Err(invariant(what));
+        }
+        Ok((p1 + (p2 - p1) * 0.5, t1, t2))
+    };
+    // The ball's centre, where the two axes cross.
+    let (centre, _, _) = crossing(
+        a.axis_origin,
+        a.d,
+        b.axis_origin,
+        b.d,
+        "the two axes through the ball's centre",
+    )?;
+    // Where the two contacts on the shared face cross.
+    let (q, tqa, tqb) = crossing(
+        line_origin(&a.lines[ka])?,
+        a.d,
+        line_origin(&b.lines[kb])?,
+        b.d,
+        "the contacts on the shared face through one point",
+    )?;
+    // Where the other two contacts meet the third edge.
+    let e3_entity = *m.edge(e3)?;
+    let Some((c3_id, range3)) = e3_entity.curve() else {
+        return Err(vertex_blend());
+    };
+    let c3 = m.curve(c3_id)?;
+    let &Curve::Line {
+        origin: o3,
+        direction: d3,
+    } = c3
+    else {
+        return Err(OpError::Unsupported {
+            a: (GeomKind::Curve(c3.kind()), forward(e3)),
+            b: (GeomKind::Surface(SurfaceKind::Plane), forward(face_a)),
+        });
+    };
+    let d3: Vec3 = d3.into_inner();
+    let (p3, tpa, t3) = crossing(
+        line_origin(&a.lines[1 - ka])?,
+        a.d,
+        o3,
+        d3,
+        "the first blend's contact through the third edge",
+    )?;
+    let (p3b, tpb, _) = crossing(
+        line_origin(&b.lines[1 - kb])?,
+        b.d,
+        o3,
+        d3,
+        "the second blend's contact through the third edge",
+    )?;
+    if (p3 - p3b).norm() > tolerance {
+        return Err(invariant(
+            "the two contacts through one point of the third edge",
+        ));
+    }
+    // The third edge shortened to that point.
+    let too_large = || degenerate(vec![ea, eb, forward(e3)], Reason::BlendTooLarge);
+    let Some(tc) = into_range(range3, t3, c3.period()) else {
+        return Err(too_large());
+    };
+    let cuts_lo = e3_entity.start() == vertex;
+    let far = if cuts_lo {
+        e3_entity.end()
+    } else {
+        e3_entity.start()
+    };
+    let far_vertex = m.vertex(far)?;
+    let kept_length = if cuts_lo {
+        range3.hi() - tc
+    } else {
+        tc - range3.lo()
+    };
+    if kept_length <= 0.0 || (p3 - far_vertex.point()).norm() <= far_vertex.tolerance() {
+        return Err(too_large());
+    }
+    let trim = Trim {
+        edge: e3,
+        t: tc,
+        cuts_lo,
+    };
+    // The ellipse: in the plane through the centre bisecting the two
+    // axes — its normal the difference of the edges' directions toward
+    // the vertex — with its minor axis `r` toward the shared face and its
+    // major axis `r / |n · Z|` toward the third edge.
+    let toward = |s: &Stripe| if s.end == vertex { s.d } else { -s.d };
+    let Some(n) = UnitVec3::try_new(toward(a) - toward(b), tol.linear) else {
+        return Err(vertex_blend());
+    };
+    let n: Vec3 = n.into_inner();
+    let cos = n.dot(&a.d).abs();
+    if cos <= tol.angular || (cos - n.dot(&b.d).abs()).abs() > tol.angular {
+        return Err(invariant("the miter plane at one angle to both axes"));
+    }
+    let y = q - centre;
+    if (y.norm() - radius).abs() > tolerance {
+        return Err(invariant(
+            "the ball touching the shared face where the contacts cross",
+        ));
+    }
+    let y = y / y.norm();
+    let Some(x) = UnitVec3::try_new(n.cross(&y), tol.linear) else {
+        return Err(invariant("the miter's major axis"));
+    };
+    let mut x: Vec3 = x.into_inner();
+    if x.dot(&(p3 - centre)) < 0.0 {
+        x = -x;
+    }
+    let frame = Frame::new(centre, x.cross(&y), x)?;
+    let curve = Curve::Ellipse {
+        frame,
+        major_radius: radius / cos,
+        minor_radius: radius,
+    };
+    let param = |p: Point3| -> Result<f64, OpError> {
+        let projection = curve
+            .project(p)
+            .map_err(|g| OpError::Internal(Fault::Geometry(g)))?;
+        if projection.distance > tolerance {
+            return Err(invariant("the miter's ends on its ellipse"));
+        }
+        Ok(projection.t)
+    };
+    let (tq, tp) = (param(q)?, param(p3)?);
+    // The arc between them: the way round that lies inside both blends,
+    // between their contacts in `u`.
+    let inside = |t: f64| {
+        [a, b].iter().all(|s| {
+            let l = s.frame.to_local(curve.point(t));
+            let u = wrap_angle(l.y.atan2(l.x));
+            u > 0.0 && u < s.beta
+        })
+    };
+    let up = |t: f64, from: f64| if t >= from { t } else { t + TAU };
+    let direct = (tq + up(tp, tq)) / 2.0;
+    let mid = if inside(direct) {
+        direct
+    } else if inside(direct + PI) {
+        direct + PI
+    } else {
+        return Err(invariant("a miter arc inside both blends"));
+    };
+    let (range, q_first) = arc_between(tq, tp, mid)?;
+    let arc_tol = Tolerance::new(tolerance, tol.angular);
+    let shared = [ka, kb];
+    let lo_first = shared.map(|k| q_first == (k == 0));
+    let mut on_blend: Vec<Curve2> = Vec::with_capacity(2);
+    for (i, s) in [a, b].into_iter().enumerate() {
+        let pcurve = pcurve_on(&curve, range, &s.surface, arc_tol)
+            .map_err(|g| OpError::Internal(Fault::Geometry(g)))?;
+        on_blend.push(placed(
+            pcurve,
+            range.lo(),
+            if lo_first[i] { 0.0 } else { s.beta },
+        ));
+    }
+    let on_blend: [Curve2; 2] = on_blend
+        .try_into()
+        .map_err(|_| invariant("the miter's two pcurves"))?;
+    let mut t = [[0.0; 2]; 2];
+    t[0][ka] = tqa;
+    t[0][1 - ka] = tpa;
+    t[1][kb] = tqb;
+    t[1][1 - kb] = tpb;
+    Ok(Miter {
+        edges: [a.edge, b.edge],
+        shared,
+        t,
+        q,
+        p3,
+        curve,
+        range,
+        q_first,
+        lo_first,
+        on_blend,
+        trim,
+        tolerance,
+        q_tolerance: tolerance,
+        p3_tolerance: tolerance.max(e3_entity.tolerance()),
+    })
+}
+
+/// The tolerance a face end's trim vertex carries: the largest of the
+/// entities that meet there — the contact, the arc and the corner edge —
+/// at either end of the contact.
+fn vertex_tolerance_of(ends: &[EndKind; 2], k: usize) -> f64 {
+    ends.iter()
+        .filter_map(|end| end.vertex_tolerance(k))
+        .fold(0.0, f64::max)
 }
 
 /// The arc inserted into the face across a corner, at the junction the
@@ -606,13 +988,36 @@ struct Cuts {
 
 /// The rewrite's indices of one blend's entities: its four trim vertices
 /// `[end][contact]`, its two contact edges, its two end arcs and its
-/// added face.
+/// added face. At a miter the vertices and the arc are the miter's,
+/// shared with the other blend.
 #[derive(Default, Clone, Copy)]
 struct Made {
     vertices: [[usize; 2]; 2],
     contacts: [usize; 2],
     arcs: [usize; 2],
     added: usize,
+}
+
+/// The rewrite's indices of one miter's entities: its two vertices, `q`
+/// then `p3`, and its edge.
+#[derive(Clone, Copy)]
+struct MiterMade {
+    vertices: [usize; 2],
+    edge: usize,
+}
+
+/// Records `cut` at one end of a corner edge, once.
+fn cut_once(cuts: &mut BTreeMap<EdgeId, Cuts>, trim: &Trim, vertex: usize) -> Result<(), OpError> {
+    let cut = cuts.entry(trim.edge).or_default();
+    let slot = if trim.cuts_lo {
+        &mut cut.lo
+    } else {
+        &mut cut.hi
+    };
+    if slot.replace((vertex, trim.t)).is_some() {
+        return Err(invariant("one cut per end of a corner edge"));
+    }
+    Ok(())
 }
 
 /// Builds the blends of `edges`, in that order, into a rewrite of `body`
@@ -625,39 +1030,126 @@ fn build(
 ) -> Result<(Body, Provenance), OpError> {
     let precision = m.precision();
     let tol = precision.tolerance();
+    let samples = precision.check_samples;
     let view = View::of(m, body)?;
-    // Two blended edges meeting at a vertex are a corner the closed forms
-    // do not cover yet.
-    let mut at_vertex: BTreeMap<VertexId, EdgeId> = BTreeMap::new();
+    // The blended edges at each vertex: two meet in a miter, three are
+    // the sphere corner the closed forms do not cover yet.
+    let mut at_vertex: BTreeMap<VertexId, Vec<EdgeId>> = BTreeMap::new();
     for &e in edges {
         let entity = *m.edge(e)?;
         for v in [entity.start(), entity.end()] {
-            if at_vertex.insert(v, e).is_some() {
-                return Err(degenerate(
-                    vec![forward(e), forward(v)],
-                    Reason::VertexBlend,
-                ));
-            }
+            at_vertex.entry(v).or_default().push(e);
         }
     }
-    let mut blends: Vec<Blend> = Vec::with_capacity(edges.len());
+    for (&v, es) in &at_vertex {
+        if es.len() > 2 {
+            let entities = es.iter().map(|&e| forward(e)).chain([forward(v)]).collect();
+            return Err(degenerate(entities, Reason::VertexBlend));
+        }
+    }
+    let mut stripes: Vec<Stripe> = Vec::with_capacity(edges.len());
     for &e in edges {
-        blends.push(plan(m, &view, e, radius, tol, precision.check_samples)?);
+        stripes.push(stripe(m, &view, e, radius, tol)?);
+    }
+    let index_of: BTreeMap<EdgeId, usize> =
+        edges.iter().enumerate().map(|(i, &e)| (e, i)).collect();
+    // The miters, in vertex order.
+    let mut miters: Vec<Miter> = Vec::new();
+    let mut miter_at: BTreeMap<VertexId, usize> = BTreeMap::new();
+    for (&v, es) in &at_vertex {
+        if let [ea, eb] = es[..] {
+            miter_at.insert(v, miters.len());
+            miters.push(miter(
+                m,
+                &view,
+                &stripes[index_of[&ea]],
+                &stripes[index_of[&eb]],
+                v,
+                tol,
+            )?);
+        }
+    }
+    // Each stripe's ends, then its contacts between them.
+    let mut blends: Vec<Blend> = Vec::with_capacity(stripes.len());
+    for s in stripes {
+        let mut ends: Vec<EndKind> = Vec::with_capacity(2);
+        for (at_lo, vertex) in [(true, s.start), (false, s.end)] {
+            ends.push(match miter_at.get(&vertex) {
+                Some(&at) => EndKind::Miter {
+                    at,
+                    side: usize::from(miters[at].edges[0] != s.edge),
+                },
+                None => EndKind::Face(Box::new(face_end(m, &view, &s, at_lo, tol, samples)?)),
+            });
+        }
+        let ends: [EndKind; 2] = ends
+            .try_into()
+            .map_err(|_| invariant("two ends of the blend"))?;
+        let t = [0, 1].map(|end| [0, 1].map(|k| ends[end].t(&miters, k)));
+        let contacts = contacts(m, &s, t, tol, samples)?;
+        blends.push(Blend {
+            stripe: s,
+            contacts,
+            ends,
+        });
     }
 
     let mut rw = Rewrite::default();
     let mut cuts: BTreeMap<EdgeId, Cuts> = BTreeMap::new();
     let mut edits: BTreeMap<FaceId, FaceEdit> = BTreeMap::new();
+    // The miters first: their two vertices, their edge, the third edge
+    // cut.
+    let mut miter_made: Vec<MiterMade> = Vec::with_capacity(miters.len());
+    for mt in &miters {
+        let q = rw.vertices.len();
+        rw.vertices.push(VertexSpec::New {
+            point: mt.q,
+            tolerance: mt.q_tolerance,
+        });
+        let p3 = rw.vertices.len();
+        rw.vertices.push(VertexSpec::New {
+            point: mt.p3,
+            tolerance: mt.p3_tolerance,
+        });
+        let (first, second) = if mt.q_first { (q, p3) } else { (p3, q) };
+        let edge = rw.edges.len();
+        rw.edges.push((
+            EdgeSpec::New {
+                geometry: EdgeGeometry::Curve {
+                    curve: m.add_curve(mt.curve.clone()),
+                    range: mt.range,
+                },
+                start: VertexKey::New(first),
+                end: VertexKey::New(second),
+                tolerance: mt.tolerance,
+            },
+            None,
+        ));
+        cut_once(&mut cuts, &mt.trim, p3)?;
+        miter_made.push(MiterMade {
+            vertices: [q, p3],
+            edge,
+        });
+    }
     let mut made: Vec<Made> = Vec::with_capacity(blends.len());
     for blend in &blends {
         let mut vertices = [[0usize; 2]; 2];
         for (end_index, end) in blend.ends.iter().enumerate() {
-            for (k, slot) in vertices[end_index].iter_mut().enumerate() {
-                *slot = rw.vertices.len();
-                rw.vertices.push(VertexSpec::New {
-                    point: end.points[k],
-                    tolerance: vertex_tolerance_of(&blend.ends[0], &blend.ends[1], k),
-                });
+            match end {
+                EndKind::Face(face_end) => {
+                    for (k, slot) in vertices[end_index].iter_mut().enumerate() {
+                        *slot = rw.vertices.len();
+                        rw.vertices.push(VertexSpec::New {
+                            point: face_end.points[k],
+                            tolerance: vertex_tolerance_of(&blend.ends, k),
+                        });
+                    }
+                }
+                EndKind::Miter { at, side } => {
+                    let shared = miters[*at].shared[*side];
+                    vertices[end_index][shared] = miter_made[*at].vertices[0];
+                    vertices[end_index][1 - shared] = miter_made[*at].vertices[1];
+                }
             }
         }
         let mut contact_edges = [0usize; 2];
@@ -678,39 +1170,42 @@ fn build(
         }
         let mut arcs = [0usize; 2];
         for (end_index, end) in blend.ends.iter().enumerate() {
-            let (first, second) = if end.arc.lo_first { (0, 1) } else { (1, 0) };
+            let face_end = match end {
+                EndKind::Face(face_end) => face_end,
+                EndKind::Miter { at, .. } => {
+                    arcs[end_index] = miter_made[*at].edge;
+                    continue;
+                }
+            };
+            let (first, second) = if face_end.arc.lo_first {
+                (0, 1)
+            } else {
+                (1, 0)
+            };
             arcs[end_index] = rw.edges.len();
             rw.edges.push((
                 EdgeSpec::New {
                     geometry: EdgeGeometry::Curve {
-                        curve: m.add_curve(end.arc.curve.clone()),
-                        range: end.arc.range,
+                        curve: m.add_curve(face_end.arc.curve.clone()),
+                        range: face_end.arc.range,
                     },
                     start: VertexKey::New(vertices[end_index][first]),
                     end: VertexKey::New(vertices[end_index][second]),
-                    tolerance: end.arc.tolerance,
+                    tolerance: face_end.arc.tolerance,
                 },
                 None,
             ));
-            for (k, trim) in end.trims.iter().enumerate() {
-                let cut = cuts.entry(trim.edge).or_default();
-                let slot = if trim.cuts_lo {
-                    &mut cut.lo
-                } else {
-                    &mut cut.hi
-                };
-                if slot.replace((vertices[end_index][k], trim.t)).is_some() {
-                    return Err(invariant("one cut per end of a corner edge"));
-                }
+            for (k, trim) in face_end.trims.iter().enumerate() {
+                cut_once(&mut cuts, trim, vertices[end_index][k])?;
             }
-            let pcurve = m.add_curve2(end.arc.on_face.clone());
-            edits.entry(end.face).or_default().insert.insert(
-                end.vertex,
+            let pcurve = m.add_curve2(face_end.arc.on_face.clone());
+            edits.entry(face_end.face).or_default().insert.insert(
+                face_end.vertex,
                 Insertion {
                     arc: EdgeKey::New(arcs[end_index]),
                     pcurve,
-                    lo_first: end.arc.lo_first,
-                    edge_at_lo: end.trims[0].edge,
+                    lo_first: face_end.arc.lo_first,
+                    edge_at_lo: face_end.trims[0].edge,
                 },
             );
         }
@@ -720,7 +1215,7 @@ fn build(
                 .entry(contact.face)
                 .or_default()
                 .replace
-                .insert(blend.edge, (EdgeKey::New(contact_edges[k]), pcurve));
+                .insert(blend.stripe.edge, (EdgeKey::New(contact_edges[k]), pcurve));
         }
         made.push(Made {
             vertices,
@@ -811,29 +1306,36 @@ fn build(
         }
         rw.faces.insert(face, loops);
     }
-    // The blend faces, one per edge, after the shell's own.
+    // The blend faces, one per edge, after the shell's own: each end's
+    // arc walked from one contact to the other, the miter's with its
+    // pcurve on this blend's cylinder.
     for (blend, made) in blends.iter().zip(made.iter_mut()) {
         let (contact_edges, arcs) = (made.contacts, made.arcs);
-        let [start, end] = &blend.ends;
         let [lo, hi] = &blend.contacts;
-        let surface = m.add_surface(blend.surface.clone());
-        let start_arc = StoredUse {
-            edge: EdgeKey::New(arcs[0]),
-            orientation: if start.arc.lo_first {
-                Orientation::Forward
-            } else {
-                Orientation::Reversed
-            },
-            pcurve: m.add_curve2(start.arc.on_blend.clone()),
-        };
-        let end_arc = StoredUse {
-            edge: EdgeKey::New(arcs[1]),
-            orientation: if end.arc.lo_first {
-                Orientation::Reversed
-            } else {
-                Orientation::Forward
-            },
-            pcurve: m.add_curve2(end.arc.on_blend.clone()),
+        let surface = m.add_surface(blend.stripe.surface.clone());
+        let mut end_uses = [None; 2];
+        for (end_index, end) in blend.ends.iter().enumerate() {
+            let (lo_first, pcurve) = match end {
+                EndKind::Face(face_end) => (face_end.arc.lo_first, &face_end.arc.on_blend),
+                EndKind::Miter { at, side } => {
+                    (miters[*at].lo_first[*side], &miters[*at].on_blend[*side])
+                }
+            };
+            // The start arc is walked from `u = 0` to `u = β`, the end
+            // arc back.
+            let along = lo_first == (end_index == 0);
+            end_uses[end_index] = Some(StoredUse {
+                edge: EdgeKey::New(arcs[end_index]),
+                orientation: if along {
+                    Orientation::Forward
+                } else {
+                    Orientation::Reversed
+                },
+                pcurve: m.add_curve2(pcurve.clone()),
+            });
+        }
+        let [Some(start_arc), Some(end_arc)] = end_uses else {
+            return Err(invariant("two ends of the blend"));
         };
         let loop_uses = vec![
             start_arc,
@@ -853,16 +1355,22 @@ fn build(
         rw.added.push(AddedFace {
             shell: view.shell_of[&lo.face],
             surface,
-            orientation: blend.orientation,
+            orientation: if blend.stripe.convex {
+                Orientation::Forward
+            } else {
+                Orientation::Reversed
+            },
             loops: vec![loop_uses],
-            tolerance: blend.tolerance,
+            tolerance: blend.stripe.tolerance,
         });
     }
 
     let out = rebuild::rewrite(m, body, rw)?;
     let mut p = out.provenance;
+    // Every record against the blended edge; a miter's edge and vertices
+    // are generated from both edges it joins, so each records them.
     for (blend, made) in blends.iter().zip(&made) {
-        let origin = forward(blend.edge);
+        let origin = forward(blend.stripe.edge);
         p.add_generated(origin, forward(out.added[made.added]));
         for &k in made.contacts.iter().chain(&made.arcs) {
             p.add_generated(origin, forward(out.edges[k]));
@@ -887,17 +1395,24 @@ fn build(
 /// `r tan(φ/2)` from the edge on each face; the arc across an end is a
 /// circle when that face is perpendicular to the edge and an ellipse
 /// otherwise, exact on the plane and a `Line` or a fitted `Nurbs` on the
-/// cylinder. Convex or concave is read from the dihedral. Every surface
-/// is exact, every untouched entity keeps its id, and the result's ids
-/// are the same for any order of the same edges (the blends are built
-/// in the body's iteration order of them).
+/// cylinder. Two blends meeting at a vertex whose third edge stays sharp
+/// meet in a miter: the ellipse of the two cylinders in the plane
+/// through the ball's centre bisecting their axes, from where the two
+/// contacts on the shared face cross to where the other two meet the
+/// third edge, a fitted `Nurbs` pcurve on each cylinder; the third edge
+/// is shortened to that point and no face takes an arc. Convex or
+/// concave is read from the dihedral. Every surface is exact, every
+/// untouched entity keeps its id, and the result's ids are the same for
+/// any order of the same edges (the blends are built in the body's
+/// iteration order of them).
 ///
 /// Provenance, every record against the blended edge: the blend face, its
 /// two contact edges, its two end arcs and the four trim vertices
 /// `Generated` from it; each of the edge's faces, each face across an
 /// end and each corner edge the trim shortens `Modified` into its new
 /// self; the edge and the two corner vertices `Deleted`; the shell and
-/// the body `Modified`. `arris_topo::provenance::audit` holds on every
+/// the body `Modified`. A miter's edge and two vertices are `Generated`
+/// from both edges they join. `arris_topo::provenance::audit` holds on every
 /// result (`docs/DATA-MODEL.md` §Provenance).
 ///
 /// Errors, the model untouched: [`OpError::Degenerate`] with
@@ -906,8 +1421,10 @@ fn build(
 /// an edge listed twice, [`Reason::EdgeNotInBody`] for one that is not
 /// the body's, [`Reason::TangentChain`] where the edge's faces meet at a
 /// tangent dihedral, [`Reason::VertexBlend`] at a corner the closed
-/// forms do not cover — a vertex of other than three edges, or one that
-/// two blended edges meet at, until the miter lands — and
+/// forms do not cover — a vertex of other than three edges, a miter
+/// whose two blends have unequal dihedrals or are not both convex or
+/// both concave, or three blended edges at one vertex until the sphere
+/// corner lands — and
 /// [`Reason::BlendTooLarge`] where a contact line or an end arc leaves
 /// its face through an edge that is not the corner's own or a corner
 /// edge is shorter than the trim; [`OpError::Unsupported`] naming the

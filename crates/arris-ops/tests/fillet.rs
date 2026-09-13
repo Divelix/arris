@@ -1,14 +1,20 @@
 //! `ops::fillet` (ADR-0007): one convex box edge end to end — the blend
 //! cylinder, its contacts and its end arcs — clean at `Full` with nothing
 //! unchecked, the closed-form volume, the provenance rooted at the edge
-//! and audited, identical over two runs; and every typed refusal.
+//! and audited, identical over two runs; two edges meeting in a miter,
+//! held to the oracle's numbers while its S5 row waits; and every typed
+//! refusal.
 
-use arris_debug::dump_text;
-use arris_ops::arris_check::arris_topo::arris_geom::{Profile, ProfileLoop, ProfileSegment};
+use arris_debug::fixtures::Class;
+use arris_debug::{corpus, dump_text, fixtures};
+use arris_ops::arris_check::arris_topo::arris_geom::{
+    Profile, ProfileLoop, ProfileSegment, SurfaceKind,
+};
 use arris_ops::arris_check::arris_topo::arris_math::{Axis, Frame, Point2, Point3, Vec3};
 use arris_ops::arris_check::arris_topo::provenance::audit;
 use arris_ops::arris_check::arris_topo::{Body, Edge, EntityId, Model, Orientation, Shape};
-use arris_ops::arris_check::{Level, check};
+use arris_ops::arris_check::classify::{Classification, classify_point};
+use arris_ops::arris_check::{Level, Unchecked, check};
 use arris_ops::measure::mass_properties;
 use arris_ops::{OpError, Reason, extrude, fillet, primitive_box, revolve};
 
@@ -271,16 +277,223 @@ fn a_pair_outside_the_table_is_unsupported() {
     assert!(matches!(err, OpError::Unsupported { .. }), "{err}");
 }
 
-/// Two blended edges meeting at a vertex are the miter, which is not
+/// The miter (ADR-0007): the vertical and the cap edge at one corner of
+/// the 2-cube blended in one call, the fixture `regression/fillet-miter`
+/// held to the oracle's numbers here while the corpus's checker stage
+/// waits for the cylinder–cylinder arm: `Full` is clean but for exactly
+/// one S5 row, the two blend cylinders with crossing axes; counts,
+/// volume, area, centroid and every probe are the oracle's; the miter
+/// edge and its two vertices are generated from both edges; the record
+/// audits; and the two edges in either order build the same result.
+#[test]
+fn two_edges_at_a_vertex_meet_in_a_miter() {
+    let dir = fixtures::corpus_root().join("regression/fillet-miter");
+    let fixture = fixtures::load(&dir).unwrap();
+    let chain = corpus::chain(&dir, "default").unwrap();
+    let (m, blended) = (&chain.model, chain.result().unwrap());
+    let result = &chain.steps["result"];
+
+    let report = check(m, blended, Level::Full);
+    assert!(report.is_ok(), "{report}");
+    let [row] = report.unchecked() else {
+        panic!("one unchecked row, the miter's cylinders:\n{report}");
+    };
+    assert!(
+        matches!(
+            row,
+            Unchecked::FacePair {
+                kinds: (SurfaceKind::Cylinder, SurfaceKind::Cylinder),
+                ..
+            }
+        ),
+        "{row}"
+    );
+
+    let expected = &fixture.expected.results["default"];
+    let line = report.euler().unwrap();
+    assert_eq!(
+        (
+            line.vertices,
+            line.edges,
+            line.faces,
+            line.loops,
+            line.shells,
+            line.genus
+        ),
+        (
+            expected.counts.vertices,
+            expected.counts.edges,
+            expected.counts.faces,
+            expected.counts.loops,
+            expected.counts.shells,
+            expected.genus.unwrap()
+        )
+    );
+    let tolerances = fixture.recipe.tolerances;
+    let props = mass_properties(m, blended).unwrap();
+    let (volume, area) = (expected.volume.unwrap(), expected.area.unwrap());
+    assert!(
+        (props.volume - volume).abs() <= tolerances.volume_rel * volume,
+        "volume {} vs the oracle's {volume}",
+        props.volume
+    );
+    assert!(
+        (props.area - area).abs() <= tolerances.area_rel * area,
+        "area {} vs the oracle's {area}",
+        props.area
+    );
+    let centroid = expected.centroid.unwrap();
+    let centroid = Point3::new(centroid[0], centroid[1], centroid[2]);
+    assert!(
+        (props.centroid - centroid).norm() <= tolerances.centroid_abs,
+        "centroid {} vs the oracle's {centroid}",
+        props.centroid
+    );
+    for probe in &expected.probes {
+        let point = Point3::new(probe.point[0], probe.point[1], probe.point[2]);
+        let found = match classify_point(m, blended, point).unwrap() {
+            Classification::Inside => Class::In,
+            Classification::Outside => Class::Out,
+            Classification::On(_) => Class::On,
+        };
+        assert_eq!(found, probe.class, "probe {}", probe.label);
+    }
+
+    // Provenance: the miter edge and its two vertices from both edges,
+    // the rest of each blend from its own, the third edge shortened.
+    audit(m, &result.inputs, blended, &result.provenance).unwrap();
+    let cube = result.inputs[0];
+    let vertical = edge_at(m, cube, Point3::new(2.0, 2.0, 1.0));
+    let cap = edge_at(m, cube, Point3::new(1.0, 2.0, 2.0));
+    let third = edge_at(m, cube, Point3::new(2.0, 1.0, 2.0));
+    let fwd = |e: Edge| Shape::new(e.id, Orientation::Forward);
+    let shared = result.provenance.generated_pair(fwd(vertical), fwd(cap));
+    let (edges, vertices): (Vec<Shape>, Vec<Shape>) = shared
+        .iter()
+        .copied()
+        .partition(|s| matches!(s.id, EntityId::Edge(_)));
+    assert_eq!((edges.len(), vertices.len()), (1, 2), "{shared:?}");
+    for edge in [vertical, cap] {
+        let generated = result.provenance.generated_from(fwd(edge));
+        assert_eq!(generated.len(), 9, "{generated:?}");
+    }
+    assert_eq!(result.provenance.modified_from(fwd(third)).len(), 1);
+    let corner = m.edge(vertical.id).unwrap().end();
+    assert!(
+        result
+            .provenance
+            .is_deleted(Shape::new(corner, Orientation::Forward))
+    );
+
+    // The same set in the other order is the same result.
+    let mut again = Model::default();
+    let cube2 = cube_body(&mut again);
+    let vertical2 = edge_at(&again, cube2, Point3::new(2.0, 2.0, 1.0));
+    let cap2 = edge_at(&again, cube2, Point3::new(1.0, 2.0, 2.0));
+    let (blended2, provenance2) = fillet(&mut again, cube2, &[cap2, vertical2], 0.2).unwrap();
+    assert_eq!(
+        dump_text(m, blended).unwrap(),
+        dump_text(&again, blended2).unwrap()
+    );
+    assert_eq!(result.provenance, provenance2);
+}
+
+fn cube_body(m: &mut Model) -> Body {
+    cube(m, 2.0)
+}
+
+/// Two cap edges at a corner: the same solid rotated, so the same
+/// numbers as the vertical-plus-cap miter.
+#[test]
+fn two_cap_edges_are_the_same_miter_rotated() {
+    let mut m = Model::default();
+    let body = cube(&mut m, 2.0);
+    let along_x = edge_at(&m, body, Point3::new(1.0, 2.0, 2.0));
+    let along_y = edge_at(&m, body, Point3::new(2.0, 1.0, 2.0));
+    let (blended, provenance) = fillet(&mut m, body, &[along_x, along_y], 0.2).unwrap();
+    let report = check(&m, blended, Level::Full);
+    assert!(report.is_ok(), "{report}");
+    assert_eq!(report.unchecked().len(), 1, "{report}");
+    let line = report.euler().unwrap();
+    assert_eq!(
+        (line.vertices, line.edges, line.faces, line.loops),
+        (11, 17, 8, 8)
+    );
+    let r: f64 = 0.2;
+    let props = mass_properties(&m, blended).unwrap();
+    let volume = 8.0 - 4.0 * (1.0 - core::f64::consts::FRAC_PI_4) * r * r
+        + (5.0 / 3.0 - core::f64::consts::FRAC_PI_2) * r * r * r;
+    assert!(
+        (props.volume - volume).abs() <= 1e-9 * volume,
+        "{}",
+        props.volume
+    );
+    let area = 4.0 * (2.0 - r)
+        + (2.0 - r) * (2.0 - r)
+        + 4.0
+        + 2.0 * (4.0 - (1.0 - core::f64::consts::FRAC_PI_4) * r * r)
+        + 2.0 * (core::f64::consts::FRAC_PI_2 * r * (2.0 - r) + r * r);
+    assert!((props.area - area).abs() <= 1e-9 * area, "{}", props.area);
+    audit(&m, &[body], blended, &provenance).unwrap();
+    // The third edge, the vertical one, is shortened to z = 2 − r.
+    let vertical = edge_at(&m, body, Point3::new(2.0, 2.0, 1.0));
+    let [shortened] = provenance.modified_from(Shape::new(vertical.id, Orientation::Forward))
+    else {
+        panic!("{provenance}");
+    };
+    let EntityId::Edge(id) = shortened.id else {
+        panic!("{shortened:?}")
+    };
+    let entity = m.edge(id).unwrap();
+    let (curve, range) = entity.curve().unwrap();
+    let top = m.curve(curve).unwrap().point(range.hi());
+    assert!((top - Point3::new(2.0, 2.0, 1.8)).norm() < 1e-9, "{top}");
+}
+
+/// A corner whose two blended edges have different dihedrals — the
+/// slanted vertical edge of an extruded parallelogram and its cap edge
+/// — is not one ellipse: the two far contacts meet the third edge at two
+/// points. Refused by name, the model untouched (C6's).
+#[test]
+fn a_miter_of_unequal_dihedrals_is_a_vertex_blend() {
+    let mut m = Model::default();
+    let p = |u, v| Point2::new(u, v);
+    let profile = Profile {
+        plane: Frame::world(),
+        outer: ProfileLoop::Path {
+            start: p(0.0, 0.0),
+            segments: vec![
+                ProfileSegment::LineTo(p(2.0, 0.0)),
+                ProfileSegment::LineTo(p(3.0, 2.0)),
+                ProfileSegment::LineTo(p(1.0, 2.0)),
+                ProfileSegment::LineTo(p(0.0, 0.0)),
+            ],
+        },
+        holes: Vec::new(),
+    };
+    let prism = extrude(&mut m, &profile, Vec3::z(), 2.0).unwrap().0;
+    let vertical = edge_at(&m, prism, Point3::new(3.0, 2.0, 1.0));
+    let cap = edge_at(&m, prism, Point3::new(2.0, 2.0, 2.0));
+    let before = dump_text(&m, prism).unwrap();
+    let err = fillet(&mut m, prism, &[vertical, cap], 0.2).unwrap_err();
+    assert_eq!(reason(&err), Some(Reason::VertexBlend), "{err}");
+    assert_eq!(dump_text(&m, prism).unwrap(), before);
+    // Each edge alone blends.
+    fillet(&mut m, prism, &[vertical], 0.2).unwrap();
+    fillet(&mut m, prism, &[cap], 0.2).unwrap();
+}
+
+/// Three blended edges at a vertex are the sphere corner, which is not
 /// built yet: refused by name, the model untouched.
 #[test]
-fn two_edges_at_a_vertex_are_a_vertex_blend_for_now() {
+fn three_edges_at_a_vertex_are_a_vertex_blend_for_now() {
     let mut m = Model::default();
     let body = cube(&mut m, 2.0);
     let vertical = edge_at(&m, body, Point3::new(2.0, 2.0, 1.0));
-    let cap = edge_at(&m, body, Point3::new(1.0, 2.0, 2.0));
+    let cap_x = edge_at(&m, body, Point3::new(1.0, 2.0, 2.0));
+    let cap_y = edge_at(&m, body, Point3::new(2.0, 1.0, 2.0));
     let before = dump_text(&m, body).unwrap();
-    let err = fillet(&mut m, body, &[vertical, cap], 0.2).unwrap_err();
+    let err = fillet(&mut m, body, &[vertical, cap_x, cap_y], 0.2).unwrap_err();
     assert_eq!(reason(&err), Some(Reason::VertexBlend), "{err}");
     assert_eq!(dump_text(&m, body).unwrap(), before);
 }

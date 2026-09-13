@@ -1,0 +1,27 @@
+{
+  "description": "the consumer's vertical-plus-cap pair: the 2-cube's vertical edge at x = 2, y = 2 and the cap edge at y = 2, z = 2 filleted at r 0.2 in one call. The two equal-radius blend cylinders' axes cross at the ball's centre (2 - r, 2 - r, 2 - r) and the blends meet in the miter: the ellipse of their bisecting plane x = z, minor radius r and major radius r sqrt(2), from Q = (2 - r, 2, 2 - r), where the two contacts on the shared face y = 2 cross, to P = (2, 2 - r, 2) on the third edge, which stays sharp and is shortened to P (ADR-0007). Volume: the two stripes' prisms less their common corner, (5/3 - pi/2) r^3. Under regression/ because S5 has no closed form for two cylinders with crossing axes: the corpus's checker stage reports that one pair unchecked until the cylinder-cylinder plan lands the equal-radius crossing arm, and plans/fillet-and-chamfer step 7 moves it to blend/",
+  "params": {"r": 0.2},
+  "steps": [
+    {"name": "cube", "op": "box", "min": [0, 0, 0], "max": [2, 2, 2]},
+    {"name": "result", "op": "fillet", "of": "cube", "edges": [[2, 2, 1], [1, 2, 2]], "radius": "r"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [1, 1, 1], "expect": "in"},
+    {"label": "corner_gone", "point": [1.95, 1.95, 1.95], "expect": "out"},
+    {"label": "on_miter", "point": ["2 - r + r / sqrt(2)", "2 - r + r / sqrt(2)", "2 - r + r / sqrt(2)"], "expect": "on"},
+    {"label": "on_vertical_blend", "point": ["2 - r + r / sqrt(2)", "2 - r + r / sqrt(2)", 1], "expect": "on"},
+    {"label": "on_cap_blend", "point": [1, "2 - r + r / sqrt(2)", "2 - r + r / sqrt(2)"], "expect": "on"},
+    {"label": "on_shared_contact", "point": ["2 - r", 2, 1], "expect": "on"},
+    {"label": "third_edge_kept", "point": [2, 1, 2], "expect": "on"},
+    {"label": "third_edge_gone", "point": [2, 1.95, 2], "expect": "out"},
+    {"label": "on_top", "point": [1, 1, 2], "expect": "on"},
+    {"label": "far_vertex", "point": [0, 0, 0], "expect": "on"}
+  ],
+  "analytic": {
+    "volume": "8 - 4 * (1 - pi / 4) * r^2 + (5 / 3 - pi / 2) * r^3",
+    "area": "4 * (2 - r) + (2 - r)^2 + 4 + 2 * (4 - (1 - pi / 4) * r^2) + 2 * (pi / 2 * r * (2 - r) + r^2)",
+    "counts": {"vertices": 11, "edges": 17, "faces": 8, "loops": 8, "shells": 1},
+    "genus": 0
+  }
+}

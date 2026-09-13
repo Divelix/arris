@@ -1038,9 +1038,12 @@ across an end and each corner edge the trim shortens is `Modified` into
 its new self; the edge and the two corner vertices it consumes are
 `Deleted`; the shell and the body are `Modified` one-to-one, and every
 other entity of the body is kept by id. Two blends that share a face
-modify it once, into the face rewritten by both. A miter edge is
-`Generated` from both edges it joins, so `generated_pair` finds it, and a
-sphere corner face from its three. `audit` holds on every result.
+modify it once, into the face rewritten by both. At a miter the two
+blends' ends are one edge and two vertices, `Generated` from both edges
+they join, so `generated_pair` finds them; the corner's third edge,
+shortened, is `Modified`; no face across takes an arc. A sphere corner
+face is `Generated` from its three edges. `audit` holds on every
+result.
 
 Queries: `generated_from(origin) -> &[Shape]`, `modified_from(origin)`,
 `is_deleted(input)`, `origins(output) -> Vec<(Relation, Origin)>` (the

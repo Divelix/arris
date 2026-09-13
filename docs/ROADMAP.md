@@ -286,7 +286,9 @@ with their `#[ignore]`d twins — green.*
   rolling-ball stripes built in closed form on analytic face pairs,
   ADR-0007: `ops::fillet` on a plane–plane edge with its ends trimmed by
   the face across is in (`blend/box-edge-fillet`, `box-cap-edge-fillet`,
-  `box-posed-edge-fillet`, `box-oblique-end`).
+  `box-posed-edge-fillet`, `box-oblique-end`), and the miter builds and
+  matches the oracle (`regression/fillet-miter`, waiting on the
+  cylinder–cylinder line below for its one S5 row).
 - Cone, sphere and torus in the intersector in the positions a blend and
   M5's revolves put them, every one a conic: a plane against a quadric
   with the plane perpendicular to the axis, a cylinder against a quadric

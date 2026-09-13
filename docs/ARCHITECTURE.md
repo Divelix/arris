@@ -374,16 +374,30 @@ and an ellipse when oblique, exact on the plane and a `Line` or a
 fitted `Nurbs` on the cylinder by the oblique-section rule, at the arc's
 own tolerance; the corner vertex goes, the corner's other two edges are
 shortened on their own curves to the arc's ends, and the face across
-takes the arc in its loop. The edges are blended in the body's iteration
-order, whatever order they are listed in, so the result and its ids are
-the same for any order of one set. A contact line or an end arc that
+takes the arc in its loop. Two blends meeting at a vertex whose third
+edge stays sharp meet in a miter: the two equal-radius cylinders' axes
+cross at the ball's one centre, and the miter is the ellipse of the
+plane through it bisecting the axes — minor radius `r` toward the shared
+face, major radius `r / sin(ψ/2)` for the edges `ψ` apart — from the
+point where the two contacts on the shared face cross to the point on
+the third edge where the other two contacts meet it, written from the
+construction and fitted as a `Nurbs` pcurve on each cylinder; the third
+edge is shortened to that point, no arc enters any face, and the miter
+edge belongs to both blend faces. The two far contacts meet the third
+edge at one point exactly when the two edges' dihedrals are equal (a box
+corner, any right-angled prism), which the operation requires; a corner
+of unequal dihedrals is two arcs and C6's. The edges are blended in the
+body's iteration order, whatever order they are listed in, so the result
+and its ids are the same for any order of one set. A contact line or an end arc that
 would leave its face through an edge that is not the corner's own, or a
 corner edge shorter than the trim — decided in the face's own (u, v)
 through `FaceDomain::side` at `check_samples` interior parameters — is
 `Reason::BlendTooLarge` naming the edge and the face or edge the blend
 runs out of; a tangent dihedral is `Reason::TangentChain`; a vertex of
-other than three edges, or one that two blended edges meet at until the
-miter lands, is `Reason::VertexBlend` naming the vertex; a surface pair
+other than three edges, a miter whose two blends have unequal dihedrals
+or are not both convex or both concave, or three blended edges at one
+vertex until the sphere corner lands, is `Reason::VertexBlend` naming
+the vertex; a surface pair
 outside the table, or a face across an end that is not a plane, is
 `OpError::Unsupported` naming the kinds and the faces; an empty list,
 an edge listed twice and an edge of another body are `Reason::NoEdges`,

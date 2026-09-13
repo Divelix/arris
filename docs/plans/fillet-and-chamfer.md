@@ -207,8 +207,27 @@ bound has to be established here.
     perpendicular to the blended edge (an extruded parallelogram), so
     the end trim is an ellipse arc.
   - ADR-0007 and the ROADMAP §C2 narrowing in this commit.
-- [ ] Step 2 **[3]** — **The miter: the spike that decides the corner
-  steps and the cylinder–cylinder plan's scope.**
+- [x] Step 2 **[3]** — **The miter: the spike that decides the corner
+  steps and the cylinder–cylinder plan's scope.** Landed 2026-09-14. The
+  gate holds: the box corner needs the one ellipse and nothing else —
+  no face takes an arc, the third edge is cut at the ellipse's end, and
+  the result matches Open CASCADE's counts (11/17/8), volume and area to
+  3e-10 and every probe. Findings: the two far contacts meet the third
+  edge at one point exactly when the two edges' **dihedrals are equal**
+  (by the spherical law of sines: the distance along the third edge is
+  `r cot(θ/2) / sin α`, and `sin α` is proportional to the other edge's
+  `sin θ`), so a corner of unequal dihedrals is two arcs and is refused
+  as `VertexBlend` with a backlog line for C6 — every corner in this
+  plan's fixtures and step 6's operands is right-angled; the ellipse's
+  frame is built from the construction (normal the difference of the
+  edge directions toward the vertex, minor axis toward the shared face,
+  major `r / sin(ψ/2)`), not from its end points, since the third-edge
+  point is at the major axis only for right dihedrals; the arc is the
+  way round whose midpoint lies inside both blends' `u` ranges; the
+  fitted pcurves pass the corpus tolerance as `box-oblique-end`'s do.
+  `blend.rs` is split into a per-edge `stripe`, a `face_end` (step 1's)
+  and a `miter` built once per vertex, which step 4's chamfer corner
+  and step 9's sphere corner extend.
   - Two blended edges at a vertex whose third edge stays sharp — the
     consumer's vertical-plus-cap pair, and two cap edges, which is the
     same solid rotated.
