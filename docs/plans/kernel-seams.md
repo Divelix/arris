@@ -282,7 +282,7 @@ bound has to be established here.
   - Corpus dumps unchanged, since no C1 or C2 fixture has a degenerate
     edge used twice. If one does, stop: the rule is wrong for that body,
     and the step returns to the human.
-- [ ] Step 6 **[1]** — **`assemble` hands back its slots.**
+- [x] Step 6 **[1]** — **`assemble` hands back its slots.**
   - `AssemblySlots` per the delta.
   - `sweep::record`, `transform` and the boolean's output-id tables
     look ids up by slot; the three zips and their "one slot per spec in

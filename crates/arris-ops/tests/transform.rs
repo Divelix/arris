@@ -87,6 +87,7 @@ fn a_body_of_two_shells_moves_shell_by_shell() {
     };
     let body = Builder::assemble(&m, m.precision().default_tolerance, assembly)
         .unwrap()
+        .0
         .finish(&mut m, BodyKind::Solid)
         .unwrap()
         .body;

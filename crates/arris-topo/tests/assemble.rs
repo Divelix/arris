@@ -14,7 +14,8 @@ use arris_debug::{corpus, dump_text, euler_line, fixtures, sample};
 use arris_topo::arris_geom::{Curve2, Profile, ProfileLoop, ProfileSegment, Surface};
 use arris_topo::arris_math::{Axis, Frame, Frame2, Interval, Point2, Point3, Vec3};
 use arris_topo::builder::{
-    Assembly, BuildError, Builder, EdgeKey, EdgeSpec, FaceSpec, UseSpec, VertexKey, VertexSpec,
+    Assembly, AssemblySlots, BuildError, Builder, EdgeKey, EdgeSpec, FaceSpec, UseSpec, VertexKey,
+    VertexSpec,
 };
 use arris_topo::entity::BodyKind;
 use arris_topo::euler::EulerLine;
@@ -164,7 +165,7 @@ fn describe(m: &Model, body: Body, keep: bool) -> Assembly {
     }
 }
 
-fn assemble(m: &Model, assembly: Assembly) -> Result<Builder, BuildError> {
+fn assemble(m: &Model, assembly: Assembly) -> Result<(Builder, AssemblySlots), BuildError> {
     Builder::assemble(m, m.precision().default_tolerance, assembly)
 }
 
@@ -251,7 +252,7 @@ fn a_body_with_degenerate_edges_has_one_euler_line() {
             format!("euler {line}"),
             "{name}"
         );
-        let builder = assemble(m, describe_shells(m, *body))
+        let (builder, _) = assemble(m, describe_shells(m, *body))
             .unwrap_or_else(|e| panic!("{name}: {e}\n{}", dump_text(m, *body).unwrap()));
         assert_eq!(builder.counts().line(), line, "{name}");
         assert_eq!(builder.counts().to_string(), line.to_string(), "{name}");
@@ -397,6 +398,7 @@ fn every_face_kept_is_the_same_body_with_nothing_appended() {
         let before = dump_text(&m, body).unwrap();
         let built = assemble(&m, describe(&m, body, true))
             .unwrap_or_else(|e| panic!("{name}: {e}"))
+            .0
             .finish(&mut m, BodyKind::Solid)
             .unwrap_or_else(|e| panic!("{name}: {e}"));
         assert_eq!(
@@ -445,6 +447,7 @@ fn every_face_new_is_the_same_body_under_new_ids() {
         let before = dump_text(&m, body).unwrap();
         let built = assemble(&m, describe(&m, body, false))
             .unwrap()
+            .0
             .finish(&mut m, BodyKind::Solid)
             .unwrap();
         assert_ne!(built.body.id, body.id, "{name}");
@@ -461,11 +464,11 @@ fn every_face_new_is_the_same_body_under_new_ids() {
 fn the_counts_and_the_genus_are_the_bodys() {
     let mut m = Model::default();
     let torus = sample::torus(&mut m, Point3::origin(), 5.0, 2.0).unwrap();
-    let b = assemble(&m, describe(&m, torus, true)).unwrap();
+    let (b, _) = assemble(&m, describe(&m, torus, true)).unwrap();
     assert_eq!(b.counts().to_string(), "1/2/1/1/1 g1 = 0");
     let mut m = Model::default();
     let sphere = sample::sphere(&mut m, Point3::origin(), 3.0).unwrap();
-    let b = assemble(&m, describe(&m, sphere, true)).unwrap();
+    let (b, _) = assemble(&m, describe(&m, sphere, true)).unwrap();
     assert_eq!(
         b.counts().to_string(),
         "2/1/1/1/1 g0 = 0",
@@ -480,7 +483,7 @@ fn the_counts_and_the_genus_are_the_bodys() {
         Point2::new(30.0, 20.0),
     )
     .unwrap();
-    let b = assemble(&m, describe(&m, frame, true)).unwrap();
+    let (b, _) = assemble(&m, describe(&m, frame, true)).unwrap();
     assert_eq!(b.counts().genus, 1);
     assert_eq!(b.counts().euler(), 0);
 }
@@ -490,7 +493,7 @@ fn an_operator_on_a_kept_face_drops_the_mark_and_finish_appends_it() {
     let mut m = Model::default();
     let body = sample::cylinder(&mut m, 4.0, 12.0).unwrap();
     let faces = m.faces(body).unwrap();
-    let mut b = assemble(&m, describe(&m, body, true)).unwrap();
+    let (mut b, _) = assemble(&m, describe(&m, body, true)).unwrap();
     let touched = b.faces().next().map(|(f, _)| f).unwrap();
     let pcurve = b.face(touched).unwrap().loops()[0].uses()[0]
         .pcurve
@@ -680,7 +683,7 @@ fn two_components_as_two_shells_are_one_body() {
     let (a, b) = two_boxes(&mut m);
     let mut assembly = describe(&m, a, true);
     assembly.shells.extend(describe(&m, b, true).shells);
-    let builder = assemble(&m, assembly).unwrap();
+    let (builder, _) = assemble(&m, assembly).unwrap();
     assert_eq!(builder.counts().to_string(), "16/24/12/12/2 g0 = 0");
     assert!(builder.dump().contains(" shell 1 "), "{}", builder.dump());
     let built = builder.finish(&mut m, BodyKind::Solid).unwrap();
@@ -723,7 +726,7 @@ fn two_components_as_two_shells_are_one_body() {
             .into_iter()
             .map(|faces| faces.into_iter().map(|f| shifted_face(f, ne)).collect()),
     );
-    let builder = assemble(&m, assembly).unwrap();
+    let (builder, _) = assemble(&m, assembly).unwrap();
     assert_eq!(builder.counts().to_string(), "16/24/12/12/2 g0 = 0");
 }
 
@@ -940,6 +943,202 @@ fn keeping_one_entity_twice_is_refused() {
         assemble(&m, assembly),
         Err(BuildError::Duplicate(_))
     ));
+}
+
+/// `perm[old] = new`, from `order[new] = old`.
+fn permutation(order: &[usize]) -> Vec<usize> {
+    let mut perm = vec![0; order.len()];
+    for (new, &old) in order.iter().enumerate() {
+        perm[old] = new;
+    }
+    perm
+}
+
+/// `items` reordered so that position `new` holds `items[order[new]]`.
+fn reordered<T: Clone>(items: &[T], order: &[usize]) -> Vec<T> {
+    order.iter().map(|&old| items[old].clone()).collect()
+}
+
+fn permute_vertex_key(k: VertexKey, perm: &[usize]) -> VertexKey {
+    match k {
+        VertexKey::New(i) => VertexKey::New(perm[i]),
+        kept @ VertexKey::Kept(_) => kept,
+    }
+}
+
+fn permute_edge_spec(e: EdgeSpec, perm: &[usize]) -> EdgeSpec {
+    match e {
+        EdgeSpec::New {
+            geometry,
+            start,
+            end,
+            tolerance,
+        } => EdgeSpec::New {
+            geometry,
+            start: permute_vertex_key(start, perm),
+            end: permute_vertex_key(end, perm),
+            tolerance,
+        },
+        kept @ EdgeSpec::Keep(_) => kept,
+    }
+}
+
+fn permute_edge_key(k: EdgeKey, perm: &[usize]) -> EdgeKey {
+    match k {
+        EdgeKey::New(i) => EdgeKey::New(perm[i]),
+        kept @ EdgeKey::Kept(_) => kept,
+    }
+}
+
+fn permute_face_spec(f: FaceSpec, perm: &[usize]) -> FaceSpec {
+    match f {
+        FaceSpec::New {
+            surface,
+            orientation,
+            loops,
+            tolerance,
+        } => FaceSpec::New {
+            surface,
+            orientation,
+            loops: loops
+                .into_iter()
+                .map(|l| {
+                    l.into_iter()
+                        .map(|u| UseSpec {
+                            edge: permute_edge_key(u.edge, perm),
+                            ..u
+                        })
+                        .collect()
+                })
+                .collect(),
+            tolerance,
+        },
+        kept @ FaceSpec::Keep(_) => kept,
+    }
+}
+
+/// `assemble` hands back one slot per spec, in spec order — not the order
+/// `built.*` would fall in under some other, equally plausible order such
+/// as ascending arena id. An assembly interleaving `Keep` and `New` specs,
+/// and ordered by a permutation of the body's own ascending-id order,
+/// proves it: `built.*[&slot]` names exactly the entity each spec named,
+/// while pairing the body's ascending-id lists with `built.*.values()` —
+/// what a positional zip assumes — does not.
+#[test]
+fn assemble_hands_back_a_slot_per_spec_in_spec_order() {
+    let mut m = Model::default();
+    let body = sample::cylinder(&mut m, 4.0, 12.0).unwrap();
+
+    let mut vertex_ids: Vec<VertexId> = m.vertices(body).unwrap().iter().map(|v| v.id).collect();
+    vertex_ids.sort_unstable();
+    let mut edge_ids: Vec<EdgeId> = m.edges(body).unwrap().iter().map(|e| e.id).collect();
+    edge_ids.sort_unstable();
+    let faces = m.faces(body).unwrap();
+
+    let mut assembly = describe(&m, body, false);
+
+    // Vertices: the two swapped, the one now at position 0 turned `Keep`.
+    let v_order = [1_usize, 0];
+    let v_perm = permutation(&v_order);
+    assembly.vertices = reordered(&assembly.vertices, &v_order);
+    let kept_vertex = vertex_ids[v_order[0]];
+    assembly.vertices[0] = VertexSpec::Keep(kept_vertex);
+
+    // Edges: a 3-cycle. The one closed edge whose single vertex is
+    // `kept_vertex` is turned `Keep` too — a `Keep` edge resolves its ends
+    // by arena identity, bypassing the position, so it may only name
+    // vertices `Keep` at the same identity, which only `kept_vertex` is.
+    let e_order = [2_usize, 0, 1];
+    let e_perm = permutation(&e_order);
+    assembly.edges = reordered(&assembly.edges, &e_order)
+        .into_iter()
+        .map(|e| permute_edge_spec(e, &v_perm))
+        .collect();
+    let keep_edge = edge_ids
+        .iter()
+        .copied()
+        .find(|&e| {
+            let edge = m.edge(e).unwrap();
+            edge.is_closed() && edge.start() == kept_vertex
+        })
+        .expect("the cap circle at the kept vertex");
+    let ie_keep = edge_ids.iter().position(|&e| e == keep_edge).unwrap();
+    assembly.edges[e_perm[ie_keep]] = EdgeSpec::Keep(keep_edge);
+
+    // Faces: a 3-cycle. The one face bounded solely by `keep_edge` — the
+    // flat cap at `kept_vertex`, not the wall — is turned `Keep` too, for
+    // the same reason: every edge and vertex it names must already be
+    // `Keep` at the same identity, and that face names only `keep_edge`.
+    let f_order = [1_usize, 2, 0];
+    let f_perm = permutation(&f_order);
+    assembly.shells[0] = reordered(&assembly.shells[0], &f_order)
+        .into_iter()
+        .map(|f| permute_face_spec(f, &e_perm))
+        .collect();
+    let keep_face = faces
+        .iter()
+        .copied()
+        .find(|f| {
+            let entity = m.face(f.id).unwrap();
+            matches!(entity.loops(), [l] if matches!(l.coedges(), [c] if c.edge() == keep_edge))
+        })
+        .expect("the cap face over the kept edge");
+    let if_keep = faces.iter().position(|f| f.id == keep_face.id).unwrap();
+    assembly.shells[0][f_perm[if_keep]] = FaceSpec::Keep(keep_face);
+
+    let (builder, slots) = assemble(&m, assembly).unwrap();
+    let built = builder.finish(&mut m, BodyKind::Solid).unwrap();
+
+    for (i, &slot) in slots.vertices.iter().enumerate() {
+        let id = built.vertices[&slot];
+        let named = vertex_ids[v_order[i]];
+        if i == 0 {
+            assert_eq!(id, named, "spec {i} keeps {named}");
+        } else {
+            assert_eq!(
+                m.vertex(id).unwrap().point(),
+                m.vertex(named).unwrap().point(),
+                "spec {i} is new, at {named}'s point"
+            );
+        }
+    }
+    for (i, &slot) in slots.edges.iter().enumerate() {
+        let id = built.edges[&slot];
+        let named = edge_ids[e_order[i]];
+        if named == keep_edge {
+            assert_eq!(id, named, "spec {i} keeps {named}");
+        } else {
+            assert_eq!(
+                m.edge(id).unwrap().geometry(),
+                m.edge(named).unwrap().geometry(),
+                "spec {i} is new, over {named}'s geometry"
+            );
+        }
+    }
+    for (i, &slot) in slots.faces[0].iter().enumerate() {
+        let id = built.faces[&slot];
+        let named = faces[f_order[i]];
+        if named.id == keep_face.id {
+            assert_eq!(id, named.id, "spec {i} keeps {}", named.id);
+        } else {
+            assert_eq!(
+                m.face(id).unwrap().surface(),
+                m.face(named.id).unwrap().surface(),
+                "spec {i} is new, on {}'s surface",
+                named.id
+            );
+        }
+    }
+
+    // A positional zip against the body's own ascending-id order — what
+    // `slots` replaces — pairs spec 0 with `vertex_ids[0]`, not the vertex
+    // it keeps.
+    let by_slot: Vec<VertexId> = built.vertices.values().copied().collect();
+    assert_eq!(by_slot[0], kept_vertex, "spec 0 keeps {kept_vertex}");
+    assert_ne!(
+        by_slot[0], vertex_ids[0],
+        "ascending-id order and spec order disagree at 0"
+    );
 }
 
 #[test]

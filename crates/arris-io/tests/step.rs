@@ -200,6 +200,7 @@ fn solid_of_shells(m: &mut Model, shells: &[(Body, bool)]) -> Body {
     };
     Builder::assemble(m, m.precision().default_tolerance, assembly)
         .unwrap()
+        .0
         .finish(m, BodyKind::Solid)
         .unwrap()
         .body

@@ -994,17 +994,17 @@ pub(super) fn boolean(
             ..
         } = b;
 
-        let builder = Builder::assemble(m, precision.default_tolerance, plan.assembly)?;
+        let (builder, slots) = Builder::assemble(m, precision.default_tolerance, plan.assembly)?;
         let built = builder.finish(m, BodyKind::Solid)?;
 
         // The output ids behind every reference.
         let mut out_vertex: BTreeMap<VRef, VertexId> = BTreeMap::new();
-        for (v, &id) in plan.new_vertices.iter().zip(built.vertices.values()) {
-            out_vertex.insert(*v, id);
+        for (v, &slot) in plan.new_vertices.iter().zip(&slots.vertices) {
+            out_vertex.insert(*v, built.vertices[&slot]);
         }
         let mut out_edge: BTreeMap<ERef, EdgeId> = BTreeMap::new();
-        for (e, &id) in plan.new_edges.iter().zip(built.edges.values()) {
-            out_edge.insert(*e, id);
+        for (e, &slot) in plan.new_edges.iter().zip(&slots.edges) {
+            out_edge.insert(*e, built.edges[&slot]);
         }
         // Face slots follow the assembly's shells; `plan.faces` is the kept
         // piece behind each.
@@ -1012,7 +1012,7 @@ pub(super) fn boolean(
             .faces
             .iter()
             .copied()
-            .zip(built.faces.values().copied())
+            .zip(slots.faces.iter().flatten().map(|&slot| built.faces[&slot]))
             .collect();
         let vertex_id = |v: VRef| -> Option<VertexId> {
             match v {
@@ -1198,6 +1198,7 @@ impl Build<'_> {
         let plan = self.assembly(&shells)?;
         let mut scratch = self.m.clone();
         let built = Builder::assemble(&scratch, self.precision.default_tolerance, plan.assembly)?
+            .0
             .finish(&mut scratch, BodyKind::Solid)?;
         let found = lumps(&scratch, built.body).map_err(|e| OpError::Internal(Fault::Lumps(e)))?;
         let index: BTreeMap<ShellId, usize> = built

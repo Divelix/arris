@@ -156,24 +156,25 @@ pub fn transform(
             edges,
             shells: shell_specs,
         };
-        let b = Builder::assemble(m, tolerance, assembly)?;
+        let (b, slots) = Builder::assemble(m, tolerance, assembly)?;
         let built = b.finish(m, entity.kind())?;
 
         fn forward(id: impl Into<EntityId>) -> Shape {
             Shape::new(id, Orientation::Forward)
         }
         let mut provenance = Provenance::new();
-        for (&old, &new) in closure.vertices.iter().zip(built.vertices.values()) {
-            provenance.add_modified(forward(old), forward(new));
+        for (&old, &slot) in closure.vertices.iter().zip(&slots.vertices) {
+            provenance.add_modified(forward(old), forward(built.vertices[&slot]));
         }
-        for (&old, &new) in closure.edges.iter().zip(built.edges.values()) {
-            provenance.add_modified(forward(old), forward(new));
+        for (&old, &slot) in closure.edges.iter().zip(&slots.edges) {
+            provenance.add_modified(forward(old), forward(built.edges[&slot]));
         }
-        // `assemble` makes one face slot per spec in spec order, and one
-        // shell per assembly shell in order, so both zip.
-        let faces = shells.iter().flat_map(|(_, faces)| faces);
-        for (old, &new) in faces.zip(built.faces.values()) {
-            provenance.add_modified(forward(old.id), forward(new));
+        // `assemble` hands back one face slot per spec, shell by shell in
+        // spec order, matching how `shells` was built.
+        for ((_, faces), face_slots) in shells.iter().zip(&slots.faces) {
+            for (old, &slot) in faces.iter().zip(face_slots) {
+                provenance.add_modified(forward(old.id), forward(built.faces[&slot]));
+            }
         }
         for ((old, _), &new) in shells.iter().zip(&built.shells) {
             provenance.add_modified(forward(old.id), forward(new));

@@ -952,6 +952,22 @@ pub struct Assembly {
     pub shells: Vec<Vec<FaceSpec>>,
 }
 
+/// The slot [`Builder::assemble`] gave to each spec of the [`Assembly`] it
+/// took, in spec order: a caller that has a slot per entity of its own
+/// operands — a boolean, a sweep, a transform — looks its output up as
+/// `built.vertices[&slots.vertices[i]]` rather than assuming the builder's
+/// slot order matches the spec order, which interleaved `Keep` and `New`
+/// specs need not.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct AssemblySlots {
+    /// The slot of `assembly.vertices[i]`, at index `i`.
+    pub vertices: Vec<VertexRef>,
+    /// The slot of `assembly.edges[i]`, at index `i`.
+    pub edges: Vec<EdgeRef>,
+    /// The slot of `assembly.shells[s][i]`, at `[s][i]`.
+    pub faces: Vec<Vec<FaceRef>>,
+}
+
 /// ` kept f3` for a slot [`Builder::assemble`] took from the model and no
 /// operator has touched since, the empty string for one that will be
 /// appended: what tells two [`Builder::dump`]s of the same shape apart.
@@ -2075,7 +2091,7 @@ impl Builder {
     /// let body = sample::cylinder(&mut m, 4.0, 12.0)?;
     /// let faces = m.faces(body)?.into_iter().map(FaceSpec::Keep).collect();
     /// let assembly = Assembly { shells: vec![faces], ..Assembly::default() };
-    /// let b = Builder::assemble(&m, m.precision().default_tolerance, assembly)?;
+    /// let (b, _slots) = Builder::assemble(&m, m.precision().default_tolerance, assembly)?;
     /// assert_eq!(b.counts().to_string(), "2/3/3/3/1 g0 = 0");
     /// let again = b.finish(&mut m, BodyKind::Solid)?;
     /// assert_eq!(m.faces(again.body)?, m.faces(body)?, "the same faces, kept");
@@ -2085,7 +2101,7 @@ impl Builder {
         model: &Model,
         tolerance: f64,
         assembly: Assembly,
-    ) -> Result<Builder, BuildError> {
+    ) -> Result<(Builder, AssemblySlots), BuildError> {
         let mut b = Builder::new(tolerance);
         let mut at = Assembled::default();
         for spec in &assembly.vertices {
@@ -2123,15 +2139,15 @@ impl Builder {
             };
             at.edge_of.push(slot);
         }
+        let mut face_slots: Vec<Vec<FaceRef>> = Vec::with_capacity(assembly.shells.len());
         for (shell, specs) in assembly.shells.iter().enumerate() {
             if specs.is_empty() {
                 return Err(BuildError::EmptyShell { shell });
             }
+            let mut shell_slots = Vec::with_capacity(specs.len());
             for spec in specs {
-                match spec {
-                    FaceSpec::Keep(face) => {
-                        b.keep_face(model, &mut at, *face, shell)?;
-                    }
+                let slot = match spec {
+                    FaceSpec::Keep(face) => b.keep_face(model, &mut at, *face, shell)?,
                     FaceSpec::New {
                         surface,
                         orientation,
@@ -2161,13 +2177,20 @@ impl Builder {
                             kept: None,
                         };
                         face.canonicalise();
-                        b.faces.insert(face);
+                        FaceRef(b.faces.insert(face))
                     }
-                }
+                };
+                shell_slots.push(slot);
             }
+            face_slots.push(shell_slots);
         }
         b.genus = b.assembled_genus()?;
-        Ok(b)
+        let slots = AssemblySlots {
+            vertices: at.vertex_of,
+            edges: at.edge_of,
+            faces: face_slots,
+        };
+        Ok((b, slots))
     }
 
     /// The slot of the kept vertex `id`, made on first mention. `named`

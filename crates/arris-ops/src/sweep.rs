@@ -18,7 +18,8 @@ use arris_check::arris_topo::arris_math::{
     wrap_angle,
 };
 use arris_check::arris_topo::builder::{
-    Assembly, Builder, Built, EdgeKey, EdgeSpec, FaceSpec, UseSpec, VertexKey, VertexSpec,
+    Assembly, AssemblySlots, Builder, Built, EdgeKey, EdgeSpec, FaceSpec, UseSpec, VertexKey,
+    VertexSpec,
 };
 use arris_check::arris_topo::entity::{BodyKind, EdgeGeometry};
 use arris_check::arris_topo::provenance::SweepPart;
@@ -493,12 +494,14 @@ fn side_face(
     }
 }
 
-/// The roles of an assembled sweep, running parallel to its specs, as
-/// one `Generated` per entity. `assemble` makes one slot per spec in spec
-/// order and the built maps are ordered by slot, so the vertex, edge and
-/// face maps zip with the role lists, and the shells with theirs.
+/// The roles of an assembled sweep, running parallel to its specs, as one
+/// `Generated` per entity. `slots` names the entity behind each spec, in
+/// spec order, so the vertex, edge and face role lists zip with `slots`'
+/// lists, and the shells zip with `built.shells` directly, one per
+/// assembly shell in order.
 fn record(
     built: &Built,
+    slots: &AssemblySlots,
     vertex_roles: &[Role],
     edge_roles: &[Role],
     face_roles: &[Role],
@@ -507,14 +510,14 @@ fn record(
 ) -> Provenance {
     let mut provenance = Provenance::new();
     let forward = |id: EntityId| Shape::new(id, Orientation::Forward);
-    for (&id, &role) in built.vertices.values().zip(vertex_roles) {
-        provenance.add_generated(role, forward(id.into()));
+    for (&slot, &role) in slots.vertices.iter().zip(vertex_roles) {
+        provenance.add_generated(role, forward(built.vertices[&slot].into()));
     }
-    for (&id, &role) in built.edges.values().zip(edge_roles) {
-        provenance.add_generated(role, forward(id.into()));
+    for (&slot, &role) in slots.edges.iter().zip(edge_roles) {
+        provenance.add_generated(role, forward(built.edges[&slot].into()));
     }
-    for (&id, &role) in built.faces.values().zip(face_roles) {
-        provenance.add_generated(role, forward(id.into()));
+    for (&slot, &role) in slots.faces.iter().flatten().zip(face_roles) {
+        provenance.add_generated(role, forward(built.faces[&slot].into()));
     }
     for (&shell, &role) in built.shells.iter().zip(shell_roles) {
         provenance.add_generated(role, forward(shell.into()));
@@ -1158,11 +1161,12 @@ pub fn revolve(
             edges,
             shells,
         };
-        let b = Builder::assemble(m, tolerance, assembly)?;
+        let (b, slots) = Builder::assemble(m, tolerance, assembly)?;
         let built = b.finish(m, BodyKind::Solid)?;
         verify(m, built.body)?;
         let provenance = record(
             &built,
+            &slots,
             &vertex_roles,
             &edge_roles,
             &face_roles,
@@ -1521,11 +1525,12 @@ pub fn extrude(
             edges,
             shells: vec![faces],
         };
-        let b = Builder::assemble(m, tolerance, assembly)?;
+        let (b, slots) = Builder::assemble(m, tolerance, assembly)?;
         let built = b.finish(m, BodyKind::Solid)?;
         verify(m, built.body)?;
         let provenance = record(
             &built,
+            &slots,
             &vertex_roles,
             &edge_roles,
             &face_roles,
