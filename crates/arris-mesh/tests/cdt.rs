@@ -10,6 +10,7 @@ use core::f64::consts::TAU;
 use std::collections::BTreeMap;
 
 use arris_debug::prop::{DEFAULT_SCALE, check, finite_f64, radius};
+use arris_debug::testing::fail;
 use arris_mesh::cdt::{CdtError, SegmentRef, Triangulation2, VertexRef, triangulate};
 use arris_topo::arris_geom::region2::Polygon2;
 use arris_topo::arris_math::Point2;
@@ -203,13 +204,11 @@ fn random_stars_with_holes_and_interior_points_triangulate_validly() {
                 .map(|&(x, y)| p(centre.x + x * r, centre.y + y * r))
                 .filter(|q| !polygons.iter().any(|poly| poly.contains(*q)))
                 .collect();
-            let t = triangulate(&polygons, &interior)
-                .map_err(|e| TestCaseError::fail(e.to_string()))?;
+            let t = triangulate(&polygons, &interior).map_err(fail)?;
             let expected: f64 = rings.iter().map(|ring| area_of(ring)).sum();
             assert_valid(&t, &rings, expected, DEFAULT_SCALE)?;
             // Determinism: the same input gives the same lists.
-            let again = triangulate(&polygons, &interior)
-                .map_err(|e| TestCaseError::fail(e.to_string()))?;
+            let again = triangulate(&polygons, &interior).map_err(fail)?;
             prop_assert_eq!(&t, &again);
             Ok(())
         },

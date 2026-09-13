@@ -6,6 +6,7 @@
 
 use core::f64::consts::PI;
 
+use arris_debug::testing::close_to;
 use arris_debug::{fixtures, prop, sample};
 use arris_ops::arris_check::arris_topo::arris_geom::Surface;
 use arris_ops::arris_check::arris_topo::arris_math::{
@@ -17,11 +18,9 @@ use arris_ops::measure::{MassProperties, mass_properties};
 use arris_ops::{OpError, Reason, primitive_box, primitive_cylinder};
 use proptest::prelude::*;
 
-/// `|a − b| ≤ rel · max(|a|, |b|, 1)`: the relative comparison every
-/// closed form below is stated with, with an absolute floor so a
-/// quantity that is exactly zero is not compared relatively.
+/// [`arris_debug::testing::close_to`] at a floor of `1.0`.
 fn close(a: f64, b: f64, rel: f64) -> bool {
-    (a - b).abs() <= rel * a.abs().max(b.abs()).max(1.0)
+    close_to(a, b, 1.0, rel)
 }
 
 fn assert_matrix(found: Matrix3, expected: Matrix3, rel: f64, what: &str) {

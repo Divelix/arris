@@ -33,13 +33,20 @@ pub enum Kind {
 /// The kind of the fixture in `dir`, from its `fixture.json`.
 pub fn kind_of(dir: &Path) -> Result<Kind, FixtureError> {
     let raw: serde_json::Value = read_json(&dir.join("fixture.json"))?;
-    Ok(kind_of_raw(&raw))
+    kind_of_raw(&raw).map_err(|kind| FixtureError::UnknownKind {
+        path: dir.join("fixture.json"),
+        kind,
+    })
 }
 
-fn kind_of_raw(raw: &serde_json::Value) -> Kind {
+/// `"kind"` absent or `"solid"` is [`Kind::Solid`], `"geometry"` is
+/// [`Kind::Geometry`]; anything else is `Err` with the string found, as
+/// the oracle's `fixture_kind` also refuses it.
+fn kind_of_raw(raw: &serde_json::Value) -> Result<Kind, String> {
     match raw.get("kind").and_then(|k| k.as_str()) {
-        Some("geometry") => Kind::Geometry,
-        _ => Kind::Solid,
+        None | Some("solid") => Ok(Kind::Solid),
+        Some("geometry") => Ok(Kind::Geometry),
+        Some(other) => Err(other.to_string()),
     }
 }
 
@@ -553,6 +560,14 @@ pub enum FixtureError {
         /// The cause.
         source: serde_json::Error,
     },
+    /// `"kind"` is neither absent, `"solid"` nor `"geometry"`.
+    #[error("{path}: unknown fixture kind {kind:?}")]
+    UnknownKind {
+        /// The file.
+        path: PathBuf,
+        /// The value found.
+        kind: String,
+    },
 }
 
 /// The corpus root: `tests/fixtures/` at the workspace root.
@@ -604,9 +619,9 @@ pub const GEOMETRY_KEYS: [&str; 6] = ["kind", "params", "surfaces", "curves", "s
 /// parsed — [`SOLID_KEYS`] or [`GEOMETRY_KEYS`] by [`Kind`] — encoded
 /// with sorted keys and no whitespace (serde_json's float formatting; the
 /// oracle matches it). Editing `analytic` or `description` does not
-/// change it.
-pub fn recipe_hash(raw: &serde_json::Value) -> String {
-    let keys: &[&str] = match kind_of_raw(raw) {
+/// change it. `Err` is the unknown `"kind"` string, when there is one.
+pub fn recipe_hash(raw: &serde_json::Value) -> Result<String, String> {
+    let keys: &[&str] = match kind_of_raw(raw)? {
         Kind::Solid => &SOLID_KEYS,
         Kind::Geometry => &GEOMETRY_KEYS,
     };
@@ -619,7 +634,7 @@ pub fn recipe_hash(raw: &serde_json::Value) -> String {
     }
     let text = serde_json::Value::Object(evaluated).to_string();
     let digest = Sha256::digest(text.as_bytes());
-    digest.iter().map(|b| format!("{b:02x}")).collect()
+    Ok(digest.iter().map(|b| format!("{b:02x}")).collect())
 }
 
 /// Loads a fixture directory: both files, and the recipe's hash.
@@ -631,10 +646,14 @@ pub fn load(dir: &Path) -> Result<Fixture, FixtureError> {
             source,
         })?;
     let expected: Expected = read_json(&dir.join("expected.json"))?;
+    let recipe_sha256 = recipe_hash(&raw).map_err(|kind| FixtureError::UnknownKind {
+        path: dir.join("fixture.json"),
+        kind,
+    })?;
     Ok(Fixture {
         dir: dir.to_path_buf(),
         name: name_of(dir),
-        recipe_sha256: recipe_hash(&raw),
+        recipe_sha256,
         recipe,
         expected,
     })
@@ -910,9 +929,9 @@ mod tests {
         .unwrap();
         let c: serde_json::Value =
             serde_json::from_str(r#"{"steps": [1], "result": "x"}"#).unwrap();
-        assert_eq!(recipe_hash(&a), recipe_hash(&b));
-        assert_ne!(recipe_hash(&a), recipe_hash(&c));
-        assert_eq!(recipe_hash(&a).len(), 64);
+        assert_eq!(recipe_hash(&a).unwrap(), recipe_hash(&b).unwrap());
+        assert_ne!(recipe_hash(&a).unwrap(), recipe_hash(&c).unwrap());
+        assert_eq!(recipe_hash(&a).unwrap().len(), 64);
     }
 
     #[test]
@@ -925,6 +944,14 @@ mod tests {
             .iter()
             .map(|b| format!("{b:02x}"))
             .collect::<String>();
-        assert_eq!(recipe_hash(&v), expected);
+        assert_eq!(recipe_hash(&v).unwrap(), expected);
+    }
+
+    #[test]
+    fn an_unknown_kind_is_an_error_as_it_is_in_python() {
+        let v: serde_json::Value =
+            serde_json::from_str(r#"{"kind": "wire", "steps": [], "result": "x"}"#).unwrap();
+        assert_eq!(kind_of_raw(&v), Err("wire".to_string()));
+        assert_eq!(recipe_hash(&v), Err("wire".to_string()));
     }
 }

@@ -12,15 +12,13 @@ use arris_debug::fixtures::geom::{
     Evaluation, GeomFixture, PairResult, Projection, build_curve, build_surface,
 };
 use arris_debug::fixtures::{Kind, corpus, kind_of};
+use arris_debug::testing::{REL, close, close_param};
 use arris_geom::{
     Curve, CurveSurfaceIntersection, Surface, SurfaceIntersection, intersect_curve_surface,
     intersect_surfaces,
 };
 use arris_math::{Point3, Precision, Tolerance, Vec3};
 
-/// Relative agreement on every evaluated and projected quantity: the
-/// oracle's own rounding, several orders above it.
-const REL: f64 = 1e-9;
 /// Where a curve touches a surface the crossing's location is
 /// conditioned as the square root of the rounding — a touch perturbed
 /// by 1e-15 in distance moves its point by 1e-7·√R — so the oracle's
@@ -40,24 +38,8 @@ fn v3(a: &[f64; 3]) -> Vec3 {
     Vec3::new(a[0], a[1], a[2])
 }
 
-/// `|a − b| ≤ REL · max(1, |a|, |b|)`.
-fn close(a: f64, b: f64) -> bool {
-    (a - b).abs() <= REL * a.abs().max(b.abs()).max(1.0)
-}
-
 fn close3(a: Vec3, b: Vec3) -> bool {
     (a - b).norm() <= REL * a.norm().max(b.norm()).max(1.0)
-}
-
-/// Equal modulo `period`, when there is one.
-fn close_param(a: f64, b: f64, period: Option<f64>) -> bool {
-    match period {
-        Some(p) => {
-            let d = (a - b).rem_euclid(p);
-            d.min(p - d) <= REL * a.abs().max(b.abs()).max(1.0)
-        }
-        None => close(a, b),
-    }
 }
 
 struct Built {

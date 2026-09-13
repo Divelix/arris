@@ -91,8 +91,12 @@ of the step that made the fixture pass, and a later change to it is a
 
 - **Numbers** anywhere in `steps`, `probes` and `analytic` may be a JSON
   number or a string expression over `params`: `+ - * / ^`, parentheses,
-  `pi`, and `sin cos tan sqrt radians degrees abs`. Both sides evaluate the
-  same grammar.
+  `pi`, and `sin cos tan sqrt radians degrees abs`. `^` is power
+  (`2 ^ 3 ^ 1` is `8`, right-associative); `**` is rejected, not read as
+  power, on both sides. Both sides evaluate the same grammar: proven by
+  `expr-cases.json` (in this directory), which
+  `arris_debug::fixtures::expr`'s own test and the oracle's
+  `selftest.py` both evaluate.
 - **`variants`** override params; every variant gets its own result in
   `expected.json`, and `default` (the base params) always exists. A probe's
   `expect` is checked in every variant, so leave it out (`null`) when the
@@ -112,6 +116,11 @@ of the step that made the fixture pass, and a later change to it is a
 | `fuse`, `common` | `a`, `b` |
 | `cut` | `target`, `tool` |
 
+- **A `profile` plane's `x` and `y`** must be orthogonal (each normalised
+  first): refused on both sides, by the same named tolerance
+  (`arris_math::Precision::DEFAULT.angular_tolerance`, Open CASCADE's
+  `Precision::Angular`, mirrored as a literal in `recipe.py` with a
+  comment pointing back here).
 - **`analytic`** is the author's closed form, the cross-check that catches a
   convention mismatch on either side (profile orientation, seam counting,
   which faces a fuse keeps). Every field is optional; `degenerate: true`
@@ -150,6 +159,11 @@ of the step that made the fixture pass, and a later change to it is a
   the `measure` stage's inertia tensor.
 
 ## Geometry fixtures (`"kind": "geometry"`)
+
+`"kind"` absent or `"solid"` is the recipe above; anything else that is
+not `"geometry"` is an error on both sides (`fixture_kind` in the
+oracle, `arris_debug::fixtures::kind_of` in Rust) — never silently read
+as a solid.
 
 The M1 oracle: no solid, no STEP. `fixture.json` names analytic surfaces
 and curves by their frames and radii, the parameters to evaluate them at,

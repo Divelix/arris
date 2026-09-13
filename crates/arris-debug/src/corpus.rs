@@ -20,7 +20,7 @@
 //! must fail with that typed refusal; either ends the run there, the
 //! oracle's numbers recorded but not compared.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use arris_geom::Profile;
@@ -28,7 +28,7 @@ use arris_io::arris_check::arris_topo::arris_math::nalgebra::UnitQuaternion;
 use arris_io::arris_check::arris_topo::arris_math::{
     Axis, FrameError, Isometry, Point3, UnitVec3, Vec3,
 };
-use arris_io::arris_check::arris_topo::{Body, Model, Orientation, Origin, Provenance, Shape};
+use arris_io::arris_check::arris_topo::{Body, Model, Provenance};
 use arris_io::arris_check::classify::{Classification, classify_point};
 use arris_io::arris_check::{Level, LumpError, Report, check, lumps};
 use arris_io::step::{self, StepError};
@@ -626,10 +626,12 @@ pub fn run(dir: &Path, variant: &str) -> Result<(), CorpusError> {
         let Some(out) = made.get(step.name()) else {
             continue;
         };
-        account(&m, out).map_err(|what| CorpusError::Provenance {
-            fixture: name.clone(),
-            step: step.name().to_string(),
-            what,
+        arris_topo::provenance::audit(&m, &out.inputs, out.body, &out.provenance).map_err(|e| {
+            CorpusError::Provenance {
+                fixture: name.clone(),
+                step: step.name().to_string(),
+                what: e.to_string(),
+            }
         })?;
     }
 
@@ -978,64 +980,6 @@ fn reference<'a>(
         step: step.name().to_string(),
         name: name.to_string(),
     })
-}
-
-/// Every entity of the output body (the body itself included) is kept
-/// from an input or has an origin; every entity of every input body is
-/// kept or recorded; nothing is both deleted and modified
-/// (`docs/DATA-MODEL.md` §Provenance).
-fn account(m: &Model, made: &Made) -> Result<(), String> {
-    let entities = |body: Body| -> Result<BTreeSet<Shape>, String> {
-        let c = m.closure(body).map_err(|e| e.to_string())?;
-        let mut set: BTreeSet<Shape> = BTreeSet::new();
-        set.extend(
-            c.vertices
-                .iter()
-                .map(|&v| Shape::new(v, Orientation::Forward)),
-        );
-        set.extend(c.edges.iter().map(|&e| Shape::new(e, Orientation::Forward)));
-        set.extend(c.faces.iter().map(|&f| Shape::new(f, Orientation::Forward)));
-        set.extend(
-            c.shells
-                .iter()
-                .map(|&s| Shape::new(s, Orientation::Forward)),
-        );
-        set.insert(Shape::new(body.id, Orientation::Forward));
-        Ok(set)
-    };
-    let p = &made.provenance;
-    let output = entities(made.body)?;
-    let mut inputs: BTreeSet<Shape> = BTreeSet::new();
-    for &b in &made.inputs {
-        inputs.extend(entities(b)?);
-    }
-    let recorded = |s: Shape| {
-        let o = Origin::Entity(s);
-        !p.generated_from(o).is_empty() || !p.modified_from(o).is_empty() || p.is_deleted(s)
-    };
-    for &e in &output {
-        let kept = inputs.contains(&e) && !recorded(e);
-        if !kept && p.origins(e).is_empty() {
-            return Err(format!(
-                "{e} is in the output with no origin and is not kept"
-            ));
-        }
-    }
-    for &e in &inputs {
-        let kept = output.contains(&e) && !recorded(e);
-        if !kept && !recorded(e) {
-            return Err(format!("{e} is an input that is neither kept nor recorded"));
-        }
-        if p.is_deleted(e) && !p.modified_from(Origin::Entity(e)).is_empty() {
-            return Err(format!("{e} is both deleted and modified"));
-        }
-    }
-    for s in p.deleted() {
-        if !inputs.contains(&s) {
-            return Err(format!("{s} is deleted but is not an input"));
-        }
-    }
-    Ok(())
 }
 
 /// Compares Arris's mass properties against the oracle's, quantity by

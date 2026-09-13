@@ -23,9 +23,9 @@ from oracle import OracleError, require_ocp
 require_ocp()
 
 from oracle import step  # noqa: E402
-from oracle.fixture import compute_expected, fixture_dirs, load_expected, load_fixture  # noqa: E402
+from oracle.fixture import compute_expected, corpus_root, fixture_dirs, load_expected, load_fixture  # noqa: E402
 from oracle.measure import DEFAULT_TOLERANCES, compare, format_table, measure  # noqa: E402
-from oracle.recipe import build, fixture_kind, probes, variant_names  # noqa: E402
+from oracle.recipe import build, fixture_kind, number, probes, variant_names  # noqa: E402
 
 PI = 3.141592653589793
 
@@ -295,8 +295,39 @@ def check_degenerate_edge_smoke(tmp: Path) -> bool:
     return ok
 
 
+def check_expr_cases() -> bool:
+    """`tests/fixtures/expr-cases.json`: the same grammar cases
+    `arris_debug::fixtures::expr`'s test evaluates too, so `^`, `**` and
+    the rest mean the same thing on both sides."""
+    print("smoke: the expression cases both sides evaluate")
+    cases = json.loads((corpus_root() / "expr-cases.json").read_text())
+    ok = True
+    for case in cases:
+        expr, params = case["expr"], case["params"]
+        if case.get("error"):
+            try:
+                number(expr, params)
+            except OracleError:
+                continue
+            print(f"  {expr!r}: expected an error, got a value")
+            ok = False
+            continue
+        try:
+            got = number(expr, params)
+        except OracleError as e:
+            print(f"  {expr!r}: {e}")
+            ok = False
+            continue
+        expect = case["expect"]
+        if abs(got - expect) > 1e-6:
+            print(f"  {expr!r}: {got} != {expect}")
+            ok = False
+    return ok
+
+
 def run_smokes(tmp: Path) -> bool:
     ok = check_geometry_smoke()
+    ok &= check_expr_cases()
     ok &= check_degenerate_edge_smoke(tmp)
     for smoke in SMOKES:
         recipe = smoke["recipe"]

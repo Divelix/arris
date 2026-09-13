@@ -290,4 +290,44 @@ mod tests {
             Err(ExprError::Unexpected { at: 2, .. })
         ));
     }
+
+    #[derive(serde::Deserialize)]
+    struct Case {
+        expr: String,
+        params: BTreeMap<String, f64>,
+        #[serde(default)]
+        expect: Option<f64>,
+        #[serde(default)]
+        error: bool,
+    }
+
+    /// `tests/fixtures/expr-cases.json`: the same grammar cases the
+    /// oracle's `selftest.py` evaluates too, so `^`, `**` and the rest
+    /// mean the same thing on both sides.
+    #[test]
+    fn the_expression_cases_both_sides_evaluate() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/fixtures/expr-cases.json");
+        let text = std::fs::read_to_string(&path).unwrap();
+        let cases: Vec<Case> = serde_json::from_str(&text).unwrap();
+        assert!(!cases.is_empty());
+        for case in cases {
+            let got = eval(&case.expr, &case.params);
+            if case.error {
+                assert!(
+                    got.is_err(),
+                    "{:?}: expected an error, got {got:?}",
+                    case.expr
+                );
+                continue;
+            }
+            let expect = case.expect.expect("a non-error case names `expect`");
+            let got = got.unwrap_or_else(|e| panic!("{:?}: {e}", case.expr));
+            assert!(
+                (got - expect).abs() <= 1e-6,
+                "{:?}: {got} != {expect}",
+                case.expr
+            );
+        }
+    }
 }

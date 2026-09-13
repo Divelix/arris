@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 
 use arris_geom::profile::{Profile, ProfileLoop, ProfileSegment};
 use arris_geom::{Curve, Surface};
-use arris_math::{Frame, FrameError, Point2, Point3, UnitVec3, Vec3};
+use arris_math::{Frame, FrameError, Point2, Point3, Precision, UnitVec3, Vec3};
 use serde::{Deserialize, Serialize};
 
 use super::{ExprError, FixtureError, Loop, Num, Plane, Segment, read_json, recipe_hash};
@@ -202,6 +202,14 @@ pub enum BuildError {
         /// The spec.
         name: String,
     },
+    /// A profile plane's `x` and `y` are not orthogonal, as the oracle's
+    /// `recipe.py` also refuses (by the same tolerance,
+    /// `Precision::DEFAULT.angular_tolerance`).
+    #[error("{name}: plane x and y are not orthogonal")]
+    NotOrthogonal {
+        /// The spec.
+        name: String,
+    },
 }
 
 fn num(name: &str, n: &Num, params: &BTreeMap<String, f64>) -> Result<f64, BuildError> {
@@ -303,6 +311,13 @@ pub fn build_profile(
     params: &BTreeMap<String, f64>,
 ) -> Result<Profile, BuildError> {
     let (x, y) = (vec3(name, &plane.x, params)?, vec3(name, &plane.y, params)?);
+    if let (Some(ux), Some(uy)) = (UnitVec3::try_new(x, 0.0), UnitVec3::try_new(y, 0.0)) {
+        if ux.dot(&uy).abs() > Precision::DEFAULT.angular_tolerance {
+            return Err(BuildError::NotOrthogonal {
+                name: name.to_string(),
+            });
+        }
+    }
     let frame = Frame::new(
         Point3::from(vec3(name, &plane.origin, params)?),
         x.cross(&y),
@@ -560,10 +575,14 @@ pub fn load(dir: &Path) -> Result<GeomFixture, FixtureError> {
             source,
         })?;
     let expected: GeomExpected = read_json(&dir.join("expected.json"))?;
+    let recipe_sha256 = recipe_hash(&raw).map_err(|kind| FixtureError::UnknownKind {
+        path: dir.join("fixture.json"),
+        kind,
+    })?;
     Ok(GeomFixture {
         dir: dir.to_path_buf(),
         name: super::name_of(dir),
-        recipe_sha256: recipe_hash(&raw),
+        recipe_sha256,
         recipe,
         expected,
     })
@@ -663,4 +682,34 @@ pub fn lint(dir: &Path) -> Vec<String> {
         }
     }
     problems
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn circle_loop() -> Loop {
+        serde_json::from_str(r#"{"circle": {"center": [0, 0], "radius": 1}}"#).unwrap()
+    }
+
+    #[test]
+    fn a_non_orthogonal_plane_is_refused_as_the_oracle_refuses_it() {
+        let plane: Plane =
+            serde_json::from_str(r#"{"origin": [0, 0, 0], "x": [1, 0, 0], "y": [1, 1, 0]}"#)
+                .unwrap();
+        let params = BTreeMap::new();
+        assert!(matches!(
+            build_profile("p", &plane, &circle_loop(), &[], &params),
+            Err(BuildError::NotOrthogonal { .. })
+        ));
+    }
+
+    #[test]
+    fn an_orthogonal_plane_builds() {
+        let plane: Plane =
+            serde_json::from_str(r#"{"origin": [0, 0, 0], "x": [1, 0, 0], "y": [0, 1, 0]}"#)
+                .unwrap();
+        let params = BTreeMap::new();
+        assert!(build_profile("p", &plane, &circle_loop(), &[], &params).is_ok());
+    }
 }

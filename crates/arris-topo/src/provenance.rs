@@ -12,9 +12,11 @@
 use core::fmt;
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::error::NotFound;
 use crate::handle::{Body, Shape};
 use crate::idmap::IdMap;
 use crate::model::Model;
+use crate::orientation::Orientation;
 
 /// How an output entity relates to an origin.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -564,4 +566,104 @@ impl fmt::Display for Provenance {
         }
         Ok(())
     }
+}
+
+/// Why a [`Provenance`] does not account for the operation it claims to
+/// record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum AuditError {
+    /// A body named as an input or the output does not resolve.
+    #[error(transparent)]
+    NotFound(#[from] NotFound),
+    /// An output entity has no origin and is not an unrecorded input kept
+    /// by id.
+    #[error("{0} is in the output with no origin and is not kept")]
+    NoOrigin(Shape),
+    /// An input entity is absent from the output, `Generated` nowhere,
+    /// `Modified` nowhere and not `Deleted`.
+    #[error("{0} is an input that is neither kept nor recorded")]
+    Unaccounted(Shape),
+    /// An input entity is both `Deleted` and `Modified`: a piece keeps
+    /// its parent an image, never both.
+    #[error("{0} is both deleted and modified")]
+    DeletedAndModified(Shape),
+    /// A `Deleted` entity is not one of the audited inputs.
+    #[error("{0} is deleted but is not an input")]
+    NotAnInput(Shape),
+}
+
+/// The accounting rule every operation's record keeps
+/// (`docs/DATA-MODEL.md` §Provenance): every entity of every input
+/// body's closure is either present in `output`'s closure and
+/// unrecorded (kept by id) or recorded — `Generated`, `Modified` into
+/// pieces, `Deleted`, or both `Deleted` and `Generated` from (a tool
+/// face gone, its image the hole's wall) — never both `Deleted` and
+/// `Modified`; every entity of `output`'s closure is either a kept input
+/// or has an origin; and a `Deleted` entity is one of the inputs.
+///
+/// ```
+/// use arris_topo::provenance::{audit, AuditError, Provenance};
+/// use arris_topo::{Body, BodyId, Model};
+///
+/// let m = Model::default();
+/// let missing = Body::forward(BodyId::new(0, 0));
+/// assert!(matches!(
+///     audit(&m, &[], missing, &Provenance::new()),
+///     Err(AuditError::NotFound(_))
+/// ));
+/// ```
+pub fn audit(
+    model: &Model,
+    inputs: &[Body],
+    output: Body,
+    provenance: &Provenance,
+) -> Result<(), AuditError> {
+    let entities = |body: Body| -> Result<BTreeSet<Shape>, AuditError> {
+        let c = model.closure(body)?;
+        let mut set: BTreeSet<Shape> = BTreeSet::new();
+        set.extend(
+            c.vertices
+                .iter()
+                .map(|&v| Shape::new(v, Orientation::Forward)),
+        );
+        set.extend(c.edges.iter().map(|&e| Shape::new(e, Orientation::Forward)));
+        set.extend(c.faces.iter().map(|&f| Shape::new(f, Orientation::Forward)));
+        set.extend(
+            c.shells
+                .iter()
+                .map(|&s| Shape::new(s, Orientation::Forward)),
+        );
+        set.insert(Shape::new(body.id, Orientation::Forward));
+        Ok(set)
+    };
+    let output = entities(output)?;
+    let mut ins: BTreeSet<Shape> = BTreeSet::new();
+    for &b in inputs {
+        ins.extend(entities(b)?);
+    }
+    let recorded = |s: Shape| {
+        !provenance.generated_from(s).is_empty()
+            || !provenance.modified_from(s).is_empty()
+            || provenance.is_deleted(s)
+    };
+    for &e in &output {
+        let kept = ins.contains(&e) && !recorded(e);
+        if !kept && provenance.origins(e).is_empty() {
+            return Err(AuditError::NoOrigin(e));
+        }
+    }
+    for &e in &ins {
+        if !(output.contains(&e) && !recorded(e)) && !recorded(e) {
+            return Err(AuditError::Unaccounted(e));
+        }
+        if provenance.is_deleted(e) && !provenance.modified_from(e).is_empty() {
+            return Err(AuditError::DeletedAndModified(e));
+        }
+    }
+    for s in provenance.deleted() {
+        if !ins.contains(&s) {
+            return Err(AuditError::NotAnInput(s));
+        }
+    }
+    Ok(())
 }

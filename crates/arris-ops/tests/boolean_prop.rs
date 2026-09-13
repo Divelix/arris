@@ -9,31 +9,21 @@
 //! failures).
 
 use arris_debug::prop::body::{Boxed, Cylindrical, OverlappingPair, TangentPair};
+use arris_debug::testing::{REL, close_to, fail};
 use arris_debug::{dump_text, prop, prop_shards};
 use arris_ops::arris_check::arris_topo::arris_math::nalgebra::{Quaternion, UnitQuaternion};
 use arris_ops::arris_check::arris_topo::arris_math::{Axis, Isometry, Point3, Vec3};
+use arris_ops::arris_check::arris_topo::provenance::audit;
 use arris_ops::arris_check::arris_topo::{Body, Model, Provenance};
 use arris_ops::arris_check::{Level, check};
 use arris_ops::measure::{MassProperties, mass_properties};
 use arris_ops::{OpError, Reason, common, cut, fuse};
 use proptest::prelude::*;
 
-/// The relative tolerance every identity holds to.
-const REL: f64 = 1e-9;
-
 /// A boolean of two bodies: `fuse`, `common` or `cut`.
 type Boolean = fn(&mut Model, Body, Body) -> Result<(Body, Provenance), OpError>;
 
-fn fail(what: impl core::fmt::Display) -> TestCaseError {
-    TestCaseError::fail(what.to_string())
-}
-
-/// `|a − b| ≤ rel · max(|a|, |b|, floor)`.
-fn close_to(a: f64, b: f64, floor: f64, rel: f64) -> bool {
-    (a - b).abs() <= rel * a.abs().max(b.abs()).max(floor)
-}
-
-/// `|a − b| ≤ REL · max(|a|, |b|, floor)`.
+/// [`arris_debug::testing::close_to`] at [`REL`].
 fn close(a: f64, b: f64, floor: f64) -> bool {
     close_to(a, b, floor, REL)
 }
@@ -62,11 +52,12 @@ fn run(
     a: Body,
     b: Body,
 ) -> Result<(Body, MassProperties), TestCaseError> {
-    let (body, _) = op(m, a, b).map_err(|e| fail(format!("{name}: {e}")))?;
+    let (body, provenance) = op(m, a, b).map_err(|e| fail(format!("{name}: {e}")))?;
     let report = check(m, body, Level::Full);
     if !report.is_ok() || !report.unchecked().is_empty() {
         return Err(fail(format!("{name}: not clean at Full\n{report}")));
     }
+    audit(m, &[a, b], body, &provenance).map_err(|e| fail(format!("{name}: provenance: {e}")))?;
     let props = mass_properties(m, body).map_err(|e| fail(format!("{name}: measure: {e}")))?;
     Ok((body, props))
 }

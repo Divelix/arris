@@ -7,7 +7,8 @@ use core::f64::consts::{FRAC_PI_2, TAU};
 
 use arris_debug::prop::geom::{cone, curve, sphere, surface};
 use arris_debug::prop::{DEFAULT_SCALE, check, finite_f64, frame, unit_vec3};
-use arris_geom::{Curve, CurveEval, Surface, SurfaceEval};
+use arris_debug::testing::{central_differences_curve, central_differences_surface};
+use arris_geom::{Curve, Surface};
 use arris_math::{Frame, Point3, Vec3};
 use proptest::prelude::*;
 
@@ -16,9 +17,6 @@ use proptest::prelude::*;
 const EXACT: f64 = 1e-12 * DEFAULT_SCALE;
 /// Central differences against the analytic derivatives.
 const DIFFERENCE: f64 = 1e-6 * DEFAULT_SCALE;
-/// The step of the central differences: small enough that the truncation
-/// error is below `DIFFERENCE`, large enough that rounding is too.
-const H: f64 = 1e-4;
 /// A unit vector's length and two orthogonal unit vectors' dot product.
 const UNIT: f64 = 1e-14;
 
@@ -151,32 +149,11 @@ fn posed_curve_equals_the_local_closed_form_moved_by_the_pose() {
     });
 }
 
-fn central_differences(s: &Surface, u: f64, v: f64) -> SurfaceEval {
-    let p = |du: f64, dv: f64| s.point(u + du, v + dv).coords;
-    SurfaceEval {
-        point: s.point(u, v),
-        du: (p(H, 0.0) - p(-H, 0.0)) / (2.0 * H),
-        dv: (p(0.0, H) - p(0.0, -H)) / (2.0 * H),
-        duu: (p(H, 0.0) - 2.0 * p(0.0, 0.0) + p(-H, 0.0)) / (H * H),
-        dvv: (p(0.0, H) - 2.0 * p(0.0, 0.0) + p(0.0, -H)) / (H * H),
-        duv: (p(H, H) - p(H, -H) - p(-H, H) + p(-H, -H)) / (4.0 * H * H),
-    }
-}
-
-fn central_differences_curve(c: &Curve, t: f64) -> CurveEval {
-    let p = |dt: f64| c.point(t + dt).coords;
-    CurveEval {
-        point: c.point(t),
-        d1: (p(H) - p(-H)) / (2.0 * H),
-        d2: (p(H) - 2.0 * p(0.0) + p(-H)) / (H * H),
-    }
-}
-
 #[test]
 fn surface_derivatives_match_central_differences() {
     check((surface(), params()), |(s, (u, v))| {
         let e = s.eval(u, v);
-        let d = central_differences(&s, u, v);
+        let d = central_differences_surface(|u, v| s.point(u, v), u, v);
         for (name, a, b) in [
             ("du", e.du, d.du),
             ("dv", e.dv, d.dv),
@@ -198,7 +175,7 @@ fn surface_derivatives_match_central_differences() {
 fn curve_derivatives_match_central_differences() {
     check((curve(), finite_f64(-1.0..=TAU + 1.0)), |(c, t)| {
         let e = c.eval(t);
-        let d = central_differences_curve(&c, t);
+        let d = central_differences_curve(|t| c.point(t), t);
         prop_assert!((e.d1 - d.d1).norm() <= DIFFERENCE, "d1 of {c:?} at {t}");
         prop_assert!((e.d2 - d.d2).norm() <= DIFFERENCE, "d2 of {c:?} at {t}");
         Ok(())

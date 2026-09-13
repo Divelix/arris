@@ -104,7 +104,7 @@ def _eval(node: ast.AST, params: dict[str, float]) -> float:
             return a * b
         if isinstance(node.op, ast.Div):
             return a / b
-        if isinstance(node.op, ast.Pow):
+        if isinstance(node.op, ast.BitXor):
             return a**b
     if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
         f = _FUNCS.get(node.func.id)
@@ -237,6 +237,9 @@ class _Plane:
             raise OracleError("profile plane axes must be non-zero")
         self.x = [c / nx for c in x]
         self.y = [c / ny for c in y]
+        # Mirrors arris_math::Precision::DEFAULT.angular_tolerance
+        # (Open CASCADE's Precision::Angular), the Rust side's named
+        # tolerance for the same check (arris-debug's fixtures::geom).
         if abs(sum(a * b for a, b in zip(self.x, self.y))) > 1e-12:
             raise OracleError("profile plane axes must be orthogonal")
         self.z = [

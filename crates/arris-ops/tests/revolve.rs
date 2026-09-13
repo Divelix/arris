@@ -19,6 +19,7 @@ use std::collections::BTreeSet;
 use arris_debug::fixtures::{Analytic, Loop, Num, Plane, Recipe, Segment, Step};
 use arris_debug::prop::profile::Sweep;
 use arris_debug::prop::sweep;
+use arris_debug::testing::{close, fail};
 use arris_debug::{corpus, dump_text, euler_line, fixtures, oracle, prop, prop_shards, sample};
 use arris_io::step;
 use arris_mesh::tessellate;
@@ -29,9 +30,7 @@ use arris_ops::arris_check::arris_topo::arris_math::{
     Axis, Frame, Point2, Point3, Tolerance, Vec2, Vec3,
 };
 use arris_ops::arris_check::arris_topo::provenance::SweepPart;
-use arris_ops::arris_check::arris_topo::{
-    Body, EntityId, Model, Orientation, Origin, Provenance, Relation, Role, Shape,
-};
+use arris_ops::arris_check::arris_topo::{Body, EntityId, Model, Provenance, Role, Shape};
 use arris_ops::arris_check::{Level, Unchecked, check, lumps};
 use arris_ops::measure::mass_properties;
 use arris_ops::{OpError, Reason, revolve};
@@ -46,70 +45,16 @@ const REL: f64 = 1e-9;
 /// area of the exact volume.
 const MESH_CHORD: f64 = 1e-2;
 
-fn fail(what: impl core::fmt::Display) -> TestCaseError {
-    TestCaseError::fail(what.to_string())
-}
-
-fn close(a: f64, b: f64) -> bool {
-    (a - b).abs() <= REL * a.abs().max(b.abs()).max(1.0)
-}
-
-/// The vertices, edges, faces, shells and the body itself, each once as a
-/// `Forward` [`Shape`].
-fn entities_of(m: &Model, body: Body) -> BTreeSet<Shape> {
-    let c = m.closure(body).unwrap();
-    let mut set: BTreeSet<Shape> = BTreeSet::new();
-    set.extend(
-        c.vertices
-            .iter()
-            .map(|&v| Shape::new(v, Orientation::Forward)),
-    );
-    set.extend(c.edges.iter().map(|&e| Shape::new(e, Orientation::Forward)));
-    set.extend(c.faces.iter().map(|&f| Shape::new(f, Orientation::Forward)));
-    set.extend(
-        c.shells
-            .iter()
-            .map(|&s| Shape::new(s, Orientation::Forward)),
-    );
-    set.insert(Shape::from(body));
-    set
-}
-
-/// Every entity of the body generated from exactly one `Role::Revolve`,
-/// every role naming one entity, nothing modified or deleted: the set of
-/// parts recorded.
+/// [`arris_debug::testing::recorded_parts`] over `Role::Revolve`.
 fn recorded_parts(
     m: &Model,
     body: Body,
     p: &Provenance,
 ) -> Result<BTreeSet<SweepPart>, TestCaseError> {
-    let entities = entities_of(m, body);
-    let mut parts = BTreeSet::new();
-    for &e in &entities {
-        let origins = p.origins(e);
-        prop_assert_eq!(origins.len(), 1, "{}: {:?}\n{}", e, origins, p);
-        let (relation, origin) = origins[0];
-        prop_assert_eq!(relation, Relation::Generated, "{}", e);
-        let Origin::Role(Role::Revolve(part)) = origin else {
-            return Err(fail(format!(
-                "{e}: generated from {origin}, not a revolve part"
-            )));
-        };
-        // A `Rise` names the degenerate edge of every face closing at a
-        // vertex on the axis, so at a pinch it names two.
-        let degenerate =
-            matches!(e.id, EntityId::Edge(id) if m.edge(id).is_ok_and(|x| x.is_degenerate()));
-        prop_assert!(
-            parts.insert(part) || (degenerate && matches!(part, SweepPart::Rise { .. })),
-            "{:?} names two entities",
-            part
-        );
-        prop_assert!(p.modified_from(origin).is_empty());
-        prop_assert!(!p.is_deleted(e));
-    }
-    prop_assert_eq!(p.deleted().count(), 0);
-    prop_assert_eq!(p.outputs().len(), entities.len(), "{}", p);
-    Ok(parts)
+    arris_debug::testing::recorded_parts(m, body, p, |role| match role {
+        Role::Revolve(part) => Some(part),
+        _ => None,
+    })
 }
 
 /// A chain of a loop's segments off the axis, as the sketch alone gives

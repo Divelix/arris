@@ -14,6 +14,7 @@ use std::collections::BTreeSet;
 
 use arris_debug::prop::profile::{PROFILE_RADIUS, Sweep};
 use arris_debug::prop::{finite_f64, frame, sweep};
+use arris_debug::testing::{close, fail};
 use arris_debug::{dump_text, prop, prop_shards};
 use arris_mesh::tessellate;
 use arris_ops::arris_check::arris_topo::arris_geom::{
@@ -21,9 +22,7 @@ use arris_ops::arris_check::arris_topo::arris_geom::{
 };
 use arris_ops::arris_check::arris_topo::arris_math::{Axis, Frame, Point2, Tolerance, Vec2, Vec3};
 use arris_ops::arris_check::arris_topo::provenance::SweepPart;
-use arris_ops::arris_check::arris_topo::{
-    Body, EntityId, Model, Orientation, Origin, Provenance, Relation, Role, Shape,
-};
+use arris_ops::arris_check::arris_topo::{Body, EntityId, Model, Orientation, Provenance, Role};
 use arris_ops::arris_check::{Level, Unchecked, check};
 use arris_ops::measure::mass_properties;
 use arris_ops::{OpError, Reason, cut, extrude, primitive_cylinder};
@@ -44,47 +43,16 @@ const MESH_CHORD: f64 = 1e-2;
 /// than the property's thousand.
 const CROSS_CHECK_CASES: u32 = 200;
 
-fn fail(what: impl core::fmt::Display) -> TestCaseError {
-    TestCaseError::fail(what.to_string())
-}
-
-fn close(a: f64, b: f64) -> bool {
-    (a - b).abs() <= REL * a.abs().max(b.abs()).max(1.0)
-}
-
-/// Every entity of the body generated from exactly one `Role::Extrude`,
-/// every role naming one entity, nothing modified or deleted: the set of
-/// parts recorded.
+/// [`arris_debug::testing::recorded_parts`] over `Role::Extrude`.
 fn recorded_parts(
     m: &Model,
     body: Body,
     p: &Provenance,
 ) -> Result<BTreeSet<SweepPart>, TestCaseError> {
-    let c = m.closure(body).map_err(fail)?;
-    let mut entities: BTreeSet<Shape> = BTreeSet::new();
-    let forward = |id: EntityId| Shape::new(id, Orientation::Forward);
-    entities.extend(c.vertices.iter().map(|&v| forward(v.into())));
-    entities.extend(c.edges.iter().map(|&e| forward(e.into())));
-    entities.extend(c.faces.iter().map(|&f| forward(f.into())));
-    entities.extend(c.shells.iter().map(|&s| forward(s.into())));
-    entities.insert(Shape::from(body));
-    let mut parts = BTreeSet::new();
-    for &e in &entities {
-        let origins = p.origins(e);
-        prop_assert_eq!(origins.len(), 1, "{}: {:?}\n{}", e, origins, p);
-        let (relation, origin) = origins[0];
-        prop_assert_eq!(relation, Relation::Generated, "{}", e);
-        let Origin::Role(Role::Extrude(part)) = origin else {
-            return Err(fail(format!(
-                "{e}: generated from {origin}, not an extrude part"
-            )));
-        };
-        prop_assert!(parts.insert(part), "{:?} names two entities", part);
-        prop_assert!(!p.is_deleted(e));
-    }
-    prop_assert_eq!(p.deleted().count(), 0);
-    prop_assert_eq!(p.outputs().len(), entities.len(), "{}", p);
-    Ok(parts)
+    arris_debug::testing::recorded_parts(m, body, p, |role| match role {
+        Role::Extrude(part) => Some(part),
+        _ => None,
+    })
 }
 
 /// The parts an extrude of `profile` makes, from the sketch alone: two

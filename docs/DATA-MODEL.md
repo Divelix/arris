@@ -962,8 +962,11 @@ Every entity of every input body is accounted for: it is kept, or it is
 recorded — `Modified` into pieces, `Generated` from, `Deleted`, or both
 `Deleted` and `Generated` from (the tool face that is gone and whose
 image is the hole's wall); never both `Deleted` and `Modified`, since a
-piece is an image. The ops tests assert that accounting on every fixture,
-and that the relations are the same on every run.
+piece is an image; and every entity of the output is a kept input or has
+an origin. `arris_topo::provenance::audit(model, inputs, output,
+&provenance) -> Result<(), AuditError>` is that rule, once: the corpus
+runner and the ops property tests call it on every fixture and every
+random case, and that the relations are the same on every run.
 
 A boolean writes its record from the pieces as it makes them
 (ADR-0004). An entity of an operand whose ids are reused is kept when

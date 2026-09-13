@@ -435,7 +435,7 @@ bound has to be established here.
     whichever future caller does (a blend keeping a shell whose face
     `retain` already dropped, say). The two `?` conversions stay: cheap,
     correct, and named by the same rule as every other site in step 10.
-- [ ] Step 12 **[1]** — **Fixture grammar parity, the provenance audit,
+- [x] Step 12 **[1]** — **Fixture grammar parity, the provenance audit,
   shared test helpers.**
   - Python maps `BitXor` to power and rejects `Pow`.
   - Rust rejects an unknown `kind` and a non-orthogonal profile plane,
@@ -448,6 +448,32 @@ bound has to be established here.
     tests import them.
   - The whole corpus runs green with `recipe_sha256` unchanged, since no
     recipe text changes.
+  - Finding (step 12): `revolve.rs`'s and `extrude.rs`'s `recorded_parts`
+    were not byte-identical — revolve's alone allows a degenerate `Rise`
+    to name two entities (a pinch) and asserts `modified_from(origin)` is
+    empty. The shared `arris_debug::testing::recorded_parts` keeps both:
+    the degenerate exception is a no-op for `Role::Extrude` (extrude
+    never makes a degenerate `Rise`), and the `modified_from` check
+    extrude's copy skipped was already implied by its own `origins.len()
+    == 1` check, so it costs it nothing. Parametrised by `role_part:
+    impl Fn(Role) -> Option<SweepPart>` so one function serves both
+    roles.
+  - Finding (step 12): `eval.rs`'s and `nurbs.rs`'s central-difference
+    helpers were genuinely different numerical methods, not copies — a
+    second-order stencil in `eval.rs`, a fourth-order one in `nurbs.rs`
+    (a rational piece's higher derivatives grow with its weights' ratio,
+    past what the second-order stencil's truncation error at any usable
+    step clears). Unified on the fourth order one, generic over a
+    `point: impl Fn(...) -> Point3` closure instead of a concrete
+    `Surface`/`Curve`/`NurbsSurface`/`NurbsCurve` so both callers share
+    it; `eval.rs`'s own `DIFFERENCE` tolerance already held (a tighter
+    stencil only shrinks the gap), confirmed by both crates' full test
+    runs.
+  - `arris-mesh`'s `cdt.rs` and `tessellate.rs` inlined
+    `TestCaseError::fail(e.to_string())` at every `?` site rather than
+    naming a local `fail`; moved onto `arris_debug::testing::fail` too,
+    the "mesh tests import them" the step names, since there was nothing
+    else there to share.
 - [ ] Step 13 **[1]** — **No plan references in code, and the lint.**
   - Every `docs/plans/…` and `plans/…` citation in `crates/`, `tools/`,
     `Cargo.toml` and test headers is replaced by the ADR or design-doc

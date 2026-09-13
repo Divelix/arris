@@ -7,33 +7,23 @@ use core::f64::consts::FRAC_1_SQRT_2;
 
 use arris_debug::prop::geom::{nurbs_curve, nurbs_surface, plane};
 use arris_debug::prop::{DEFAULT_SCALE, check, finite_f64, frame, point_in_box, pose, radius};
+use arris_debug::testing::{central_differences_curve, central_differences_surface};
 use arris_geom::{
-    Curve, CurveEval, CurveKind, CurveSurfaceIntersection, GeomError, GeomKind, NurbsCurve,
-    NurbsSurface, Surface, SurfaceEval, SurfaceKind, intersect_curve_surface, intersect_surfaces,
+    Curve, CurveKind, CurveSurfaceIntersection, GeomError, GeomKind, NurbsCurve, NurbsSurface,
+    Surface, SurfaceKind, intersect_curve_surface, intersect_surfaces,
 };
 use arris_math::{Frame, Interval, Point3, Precision, Vec3};
 use proptest::prelude::*;
 
 /// Closed form against evaluation.
 const EXACT: f64 = 1e-12 * DEFAULT_SCALE;
-/// Central differences against the analytic derivatives.
+/// Central differences against the analytic derivatives. The shared
+/// stencils (`arris_debug::testing`) are fourth order, because a
+/// rational piece whose weights differ by a factor of four has higher
+/// derivatives that grow like that factor's powers, and the
+/// second-order stencil's truncation error at any usable step is above
+/// this for them.
 const DIFFERENCE: f64 = 1e-6 * DEFAULT_SCALE;
-/// The step of the central differences. The stencils below are fourth
-/// order, because a rational piece whose weights differ by a factor of
-/// four has higher derivatives that grow like that factor's powers, and
-/// the second-order stencil's truncation error at any usable step is
-/// above `DIFFERENCE` for them.
-const H: f64 = 1e-4;
-
-/// Fourth-order first derivative of `f` at `0` from five samples.
-fn d1_stencil(f: impl Fn(f64) -> Vec3) -> Vec3 {
-    (-f(2.0 * H) + 8.0 * f(H) - 8.0 * f(-H) + f(-2.0 * H)) / (12.0 * H)
-}
-
-/// Fourth-order second derivative of `f` at `0` from five samples.
-fn d2_stencil(f: impl Fn(f64) -> Vec3) -> Vec3 {
-    (-f(2.0 * H) + 16.0 * f(H) - 30.0 * f(0.0) + 16.0 * f(-H) - f(-2.0 * H)) / (12.0 * H * H)
-}
 
 /// The full circle of `frame` and `radius` as the rational quadratic
 /// B-spline of nine control points on the circumscribed square, weights
@@ -156,27 +146,6 @@ fn knot_insertion_leaves_the_curve_unchanged() {
     );
 }
 
-fn central_differences_curve(c: &NurbsCurve, t: f64) -> CurveEval {
-    let p = |dt: f64| c.eval(t + dt).point.coords;
-    CurveEval {
-        point: c.eval(t).point,
-        d1: d1_stencil(p),
-        d2: d2_stencil(p),
-    }
-}
-
-fn central_differences_surface(s: &NurbsSurface, u: f64, v: f64) -> SurfaceEval {
-    let p = |du: f64, dv: f64| s.eval(u + du, v + dv).point.coords;
-    SurfaceEval {
-        point: s.eval(u, v).point,
-        du: d1_stencil(|h| p(h, 0.0)),
-        dv: d1_stencil(|h| p(0.0, h)),
-        duu: d2_stencil(|h| p(h, 0.0)),
-        dvv: d2_stencil(|h| p(0.0, h)),
-        duv: d1_stencil(|hu| d1_stencil(|hv| p(hu, hv))),
-    }
-}
-
 #[test]
 fn curve_derivatives_match_central_differences() {
     check((nurbs_curve(), finite_f64(0.0..=1.0)), |(c, at)| {
@@ -189,10 +158,10 @@ fn curve_derivatives_match_central_differences() {
             .iter()
             .map(|k| (k - t).abs())
             .fold(f64::MAX, f64::min);
-        if nearest_knot <= 3.0 * H {
+        if nearest_knot <= 3.0 * arris_debug::testing::FD_STEP {
             return Ok(());
         }
-        let (e, d) = (c.eval(t), central_differences_curve(&c, t));
+        let (e, d) = (c.eval(t), central_differences_curve(|t| c.eval(t).point, t));
         prop_assert!(
             (e.d1 - d.d1).norm() <= DIFFERENCE,
             "d1 of {c:?} at {t}: {} vs {}",
@@ -222,12 +191,16 @@ fn surface_derivatives_match_central_differences() {
             let (u, v) = (du.lerp(au), dv.lerp(av));
             let [ku, kv] = s.knots();
             let near = |knots: &[f64], t: f64| {
-                knots.iter().map(|k| (k - t).abs()).fold(f64::MAX, f64::min) <= 3.0 * H
+                knots.iter().map(|k| (k - t).abs()).fold(f64::MAX, f64::min)
+                    <= 3.0 * arris_debug::testing::FD_STEP
             };
             if near(ku, u) || near(kv, v) {
                 return Ok(());
             }
-            let (e, d) = (s.eval(u, v), central_differences_surface(&s, u, v));
+            let (e, d) = (
+                s.eval(u, v),
+                central_differences_surface(|u, v| s.eval(u, v).point, u, v),
+            );
             for (name, a, b) in [
                 ("du", e.du, d.du),
                 ("dv", e.dv, d.dv),

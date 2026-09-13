@@ -16,6 +16,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use arris_debug::prop::{DEFAULT_SCALE, check, finite_f64, point_in_box, radius, unit_vec3};
 use arris_debug::sample;
+use arris_debug::testing::fail;
 use arris_mesh::{MeshError, TriMesh, tessellate};
 use arris_ops::measure::mass_properties;
 use arris_ops::{primitive_box, primitive_cylinder};
@@ -287,8 +288,7 @@ fn random_cylinders_in_random_poses_mesh_within_the_bound() {
             let mut m = Model::default();
             let axis = Axis::new(origin, direction.into_inner()).unwrap();
             let (body, _) = primitive_cylinder(&mut m, axis, r, h).unwrap();
-            let mesh =
-                tessellate(&m, body, chord).map_err(|e| TestCaseError::fail(e.to_string()))?;
+            let mesh = tessellate(&m, body, chord).map_err(fail)?;
             prop_assert!(mesh.is_closed());
             let n = mesh
                 .edge_polyline(m.edges(body).unwrap()[0].id)
@@ -306,10 +306,7 @@ fn random_cylinders_in_random_poses_mesh_within_the_bound() {
             );
             prop_assert!(1.0 - ratio <= prism_bound(chord, r), "above the bound");
             prop_assert!(1.0 - ratio >= -1e-12, "not inscribed");
-            prop_assert_eq!(
-                &mesh,
-                &tessellate(&m, body, chord).map_err(|e| TestCaseError::fail(e.to_string()))?
-            );
+            prop_assert_eq!(&mesh, &tessellate(&m, body, chord).map_err(fail)?);
             Ok(())
         },
     );
@@ -431,9 +428,7 @@ fn assert_within_chord(mesh: &TriMesh, surface: &Surface, chord: f64) -> Result<
             Point3::from((c.coords + a.coords) / 2.0),
         ];
         for p in probes {
-            let projection = surface
-                .project(p)
-                .map_err(|e| TestCaseError::fail(e.to_string()))?;
+            let projection = surface.project(p).map_err(fail)?;
             prop_assert!(
                 projection.distance <= chord,
                 "{p} is {} off the surface, above the chord {chord}",
@@ -462,10 +457,9 @@ fn a_patch_of_every_surface_kind_meshes_onto_its_surface() {
             ];
             let chord = chord_for(&surface, region);
             let mut m = Model::default();
-            let body = sample::patch(&mut m, surface.clone(), region[0], region[1])
-                .map_err(|e| TestCaseError::fail(e.to_string()))?;
-            let mesh =
-                tessellate(&m, body, chord).map_err(|e| TestCaseError::fail(e.to_string()))?;
+            let body =
+                sample::patch(&mut m, surface.clone(), region[0], region[1]).map_err(fail)?;
+            let mesh = tessellate(&m, body, chord).map_err(fail)?;
             prop_assert!(!mesh.triangles().is_empty());
             assert_within_chord(&mesh, &surface, chord)?;
             // A ruled direction needs no interior point; a plane and a
@@ -487,10 +481,7 @@ fn a_patch_of_every_surface_kind_meshes_onto_its_surface() {
                 // the NURBS arm is `a_nurbs_patch_meshes_through_its_grid`.
                 Surface::Nurbs(_) => prop_assert!(false, "no NURBS in this strategy"),
             }
-            prop_assert_eq!(
-                &mesh,
-                &tessellate(&m, body, chord).map_err(|e| TestCaseError::fail(e.to_string()))?
-            );
+            prop_assert_eq!(&mesh, &tessellate(&m, body, chord).map_err(fail)?);
             Ok(())
         },
     );
@@ -705,15 +696,12 @@ fn an_oblique_hole_meshes_column_by_column_at_random_tilts() {
             let half = (6.0 + r * tilt.sin()) / tilt.cos();
             let body = oblique_hole(&mut m, r, tilt, half);
             let exact = 12000.0 - PI * r * r * 10.0 / tilt.cos();
-            let measured = mass_properties(&m, body)
-                .map_err(|e| TestCaseError::fail(e.to_string()))?
-                .volume;
+            let measured = mass_properties(&m, body).map_err(fail)?.volume;
             prop_assert!(
                 (measured - exact).abs() <= 1e-9 * exact,
                 "the solid is not the closed form's: {measured} vs {exact}"
             );
-            let mesh =
-                tessellate(&m, body, chord).map_err(|e| TestCaseError::fail(e.to_string()))?;
+            let mesh = tessellate(&m, body, chord).map_err(fail)?;
             prop_assert!(mesh.is_closed());
             let volume = mesh.signed_volume().unwrap();
             prop_assert!(

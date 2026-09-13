@@ -3,11 +3,10 @@
 //! new ids over the same shape, a motion then its inverse returns every
 //! vertex, mass properties are covariant, and two runs are identical.
 
-use std::collections::BTreeSet;
-
+use arris_debug::testing::entities_of;
 use arris_debug::{dump_text, prop};
 use arris_ops::arris_check::arris_topo::arris_math::{Axis, Isometry, Point3};
-use arris_ops::arris_check::arris_topo::{Body, Model, Orientation, Shape};
+use arris_ops::arris_check::arris_topo::{Body, Model};
 use arris_ops::arris_check::{Level, check};
 use arris_ops::measure::mass_properties;
 use arris_ops::{primitive_cylinder, transform};
@@ -17,28 +16,6 @@ fn the_cylinder(m: &mut Model) -> Body {
     primitive_cylinder(m, Axis::z_at(Point3::origin()), 4.0, 12.0)
         .unwrap()
         .0
-}
-
-/// The vertices, edges, faces, shells and the body itself, each once as a
-/// `Forward` [`Shape`] — the same set `arris-debug`'s corpus accounting
-/// and `primitives.rs`'s role tests read a closure through.
-fn entities_of(m: &Model, body: Body) -> BTreeSet<Shape> {
-    let c = m.closure(body).unwrap();
-    let mut set: BTreeSet<Shape> = BTreeSet::new();
-    set.extend(
-        c.vertices
-            .iter()
-            .map(|&v| Shape::new(v, Orientation::Forward)),
-    );
-    set.extend(c.edges.iter().map(|&e| Shape::new(e, Orientation::Forward)));
-    set.extend(c.faces.iter().map(|&f| Shape::new(f, Orientation::Forward)));
-    set.extend(
-        c.shells
-            .iter()
-            .map(|&s| Shape::new(s, Orientation::Forward)),
-    );
-    set.insert(Shape::from(body));
-    set
 }
 
 fn a_pose() -> Isometry {
