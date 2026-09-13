@@ -703,8 +703,9 @@ mesh-based mass properties (`ops::measure` integrates the B-Rep).
   then `compare.py` through `uv`, a missing environment a loud error;
   `oracle::scratch_fixture`: a test's own recipe written under
   `target/inspect/<name>/` with its `expected.json` from `expected.py`,
-  for a body the corpus cannot run yet — the quadric-faced revolves of
-  M5 — held to the oracle's reading of its STEP all the same), and
+  for a body the corpus does not hold — the quadric-faced revolves, off
+  the axis or closing on it, and the STEP tests' own bodies — held to the
+  oracle's reading of its STEP all the same), and
   the seeded property-test runner and strategies (`prop`,
   with every analytic surface and curve in a random pose and random
   clamped NURBS curves and surfaces under `prop::geom`; sketches under

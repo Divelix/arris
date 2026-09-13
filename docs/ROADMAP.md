@@ -300,8 +300,10 @@ with their `#[ignore]`d twins — green.*
   as lumps of one `Solid`, two lumps touching along an edge or at a vertex
   refused as `Reason::NonManifold`. **Done 2026-09-13**, ADR-0006.
 - The revolve profile touching its axis (apex and degenerate edges), which
-  M5 refuses as `Reason::ProfileTouchesAxis`. The probe is a rectangle
-  with one side on the axis: plane and cylinder faces only.
+  M5 refused. The probe is a rectangle with one side on the axis: plane
+  and cylinder faces only. **Done 2026-09-13**: `sweep/revolve-onto-axis`
+  and `sweep/revolve-notch-to-axis`, a full-turn pinch refused as
+  `Reason::NonManifold`.
 - `Model::retain` semantics (the compaction `⚠ OPEN`), the `f32`
   boundary `⚠ OPEN`, the origin-name helper `⚠ OPEN` — each an ADR with
   the consumer's adapter as the test.

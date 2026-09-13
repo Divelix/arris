@@ -31,7 +31,8 @@ fixture passing every corpus stage against Open CASCADE; a failure waiting
 for its fix lives under `tests/fixtures/regression/`. ADR-0001 to 0005.
 **C2 under way: the application gate.** Multi-shell results are lumps of
 one `Solid` (ADR-0006): cavities, split cuts, disjoint fuses, full revolves
-with holes. **Next:** `/idea` or `/plan` the remaining C2 lines one at a time.
+with holes. A revolve profile may touch its axis: cones and spheres close
+on degenerate edges, notches to the axis are voids. **Next:** `/idea` or `/plan` the remaining C2 lines one at a time.
 
 ## Rules that are not derivable from the code
 
