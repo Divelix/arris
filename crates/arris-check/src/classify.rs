@@ -327,7 +327,7 @@ impl<'m> Classifier<'m> {
 
 /// The offsets a periodic parameter is tried at: nothing, and a period
 /// either way. A direction with no period is tried once.
-fn shifts(period: Option<f64>) -> impl Iterator<Item = f64> {
+pub(crate) fn shifts(period: Option<f64>) -> impl Iterator<Item = f64> {
     let p = period.unwrap_or(0.0);
     [0.0, p, -p].into_iter().take(if p == 0.0 { 1 } else { 3 })
 }

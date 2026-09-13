@@ -25,7 +25,7 @@ use arris_topo::entity::{BodyKind, Face};
 use arris_topo::{EdgeId, FaceId, Orientation, ShellId, VertexId};
 
 use crate::check::{Checker, coedges, samples};
-use crate::classify::Classifier;
+use crate::classify::{Classifier, shifts};
 use crate::unchecked::Unchecked;
 use crate::violation::{ShellNestingFault, Violation};
 
@@ -83,14 +83,30 @@ impl<'m> Checker<'m> {
 
     /// Where `uv` lies with respect to `face`'s loops, using the
     /// polygons [`Checker::discretise_faces`] built and the model's
-    /// parametric tolerance at that point as the boundary band. A face
-    /// whose loops could not be discretised answers `Outside`.
+    /// parametric tolerance at that point as the boundary band. A
+    /// periodic parameter is tried a period either way as well, since a
+    /// face's loops may be written in any translate of the fundamental
+    /// domain and a projection's `uv` is in its first copy: `Inside` wins
+    /// over `Boundary` over `Outside` across the translates. A face whose
+    /// loops could not be discretised answers `Outside`.
     pub(crate) fn face_side(&self, face_id: FaceId, surface: &Surface, uv: Point2) -> Side {
         let Some(polygons) = self.faces_fine.get(&face_id) else {
             return Side::Outside;
         };
         let bound = self.uv_bounds(surface, uv);
-        point_side(polygons, uv, bound[0].min(bound[1]))
+        let near = bound[0].min(bound[1]);
+        let period = surface.period();
+        let mut best = Side::Outside;
+        for du in shifts(period[0]) {
+            for dv in shifts(period[1]) {
+                match point_side(polygons, Point2::new(uv.x + du, uv.y + dv), near) {
+                    Side::Inside => return Side::Inside,
+                    Side::Boundary => best = Side::Boundary,
+                    Side::Outside => {}
+                }
+            }
+        }
+        best
     }
 
     /// E8: an analytic curve over a range E1 accepted cannot cross
@@ -495,14 +511,14 @@ impl<'m> Checker<'m> {
             let Ok(projection) = curve.project(point) else {
                 continue;
             };
-            // A parameter outside the edge's range is on the curve, not
-            // on the edge; the nearest point of the edge is then an end.
-            let t = if range.contains(projection.t) {
-                projection.t
-            } else {
-                range.clamp(projection.t)
-            };
-            if (curve.point(t) - point).norm() <= edge.tolerance() {
+            // The projection's parameter is in the curve's first period
+            // and the edge's range may be in another. A parameter in no
+            // translate of the range is on the curve, not on the edge: the
+            // nearest point of the edge is then an end, a shared vertex
+            // the loop above answered for within a tolerance no smaller
+            // than the edge's (E5).
+            let within = shifts(curve.period()).any(|d| range.contains(projection.t + d));
+            if within && projection.distance <= edge.tolerance() {
                 return true;
             }
         }

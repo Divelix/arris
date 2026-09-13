@@ -3,17 +3,21 @@
 //! `Full`, and a pair the geometry kernel has no closed form for landing
 //! under `Report::unchecked` rather than passing or failing.
 
+use core::f64::consts::{PI, TAU};
+
 use arris_check::{
     Level, Lump, LumpError, Report, ShellNestingFault, Unchecked, Violation, check, lumps,
 };
 use arris_debug::sample;
 use arris_topo::arris_geom::{Curve, Curve2, NurbsCurve, Surface, SurfaceKind};
-use arris_topo::arris_math::{Frame, Interval, Point2, Point3, UnitVec2, UnitVec3, Vec2, Vec3};
+use arris_topo::arris_math::{
+    Frame, Frame2, Handedness, Interval, Point2, Point3, UnitVec2, UnitVec3, Vec2, Vec3,
+};
 use arris_topo::entity::{
     Body as BodyEntity, BodyKind, Coedge, Edge, EdgeGeometry, Face, Loop, Shell, Vertex,
 };
 use arris_topo::{
-    Body, Edge as EdgeHandle, EdgeId, Face as FaceHandle, FaceId, Model, Orientation,
+    Body, Curve2Id, Edge as EdgeHandle, EdgeId, Face as FaceHandle, FaceId, Model, Orientation,
     Shell as ShellHandle, ShellId, SurfaceId,
 };
 
@@ -368,6 +372,320 @@ fn s5_two_faces_that_cross_along_the_line_of_their_planes() {
             face_b: face_upright,
         }
     );
+}
+
+/// A (u, v) line through `(u, v)`, along `u` or along `v`, at unit speed.
+fn uv_line(m: &mut Model, u: f64, v: f64, along_u: bool) -> Curve2Id {
+    m.add_curve2(Curve2::Line {
+        origin: p2(u, v),
+        direction: if along_u {
+            Vec2::x_axis()
+        } else {
+            Vec2::y_axis()
+        },
+    })
+}
+
+/// S5 on a periodic surface: two faces on one cylinder, the same patch
+/// `[0.5, 1.5] × [0, 10]` written a period along, in `u + 2π`, the second
+/// used the other way. A point of one face projected onto the surface
+/// comes back in `[0, 2π)`, a period from the other face's loops, so only
+/// a side test that tries the period sees the two coincide.
+#[test]
+fn s5_two_coincident_faces_whose_loops_are_a_period_along() {
+    let mut m = Model::default();
+    let tol = m.precision().default_tolerance;
+    let (r, h, a, b) = (4.0, 10.0, 0.5, 1.5);
+    let surface = m.add_surface(Surface::Cylinder {
+        frame: Frame::world(),
+        radius: r,
+    });
+    let at = |angle: f64, z: f64| Point3::new(r * angle.cos(), r * angle.sin(), z);
+    let [v0, v1, v2, v3] = [at(a, 0.0), at(b, 0.0), at(b, h), at(a, h)]
+        .map(|p| m.raw().add_vertex(Vertex::new(p, tol)));
+    let arc = |m: &mut Model, z: f64, from, to| {
+        let curve = m.add_curve(Curve::Circle {
+            frame: Frame::world().with_origin(Point3::new(0.0, 0.0, z)),
+            radius: r,
+        });
+        let range = Interval::new(a, b).unwrap();
+        m.raw().add_edge(Edge::new(
+            EdgeGeometry::Curve { curve, range },
+            from,
+            to,
+            tol,
+        ))
+    };
+    let ruling = |m: &mut Model, angle: f64, from, to| {
+        let curve = m.add_curve(Curve::Line {
+            origin: at(angle, 0.0),
+            direction: Vec3::z_axis(),
+        });
+        let range = Interval::new(0.0, h).unwrap();
+        m.raw().add_edge(Edge::new(
+            EdgeGeometry::Curve { curve, range },
+            from,
+            to,
+            tol,
+        ))
+    };
+    let bottom = arc(&mut m, 0.0, v0, v1);
+    let right = ruling(&mut m, b, v1, v2);
+    let top = arc(&mut m, h, v3, v2);
+    let left = ruling(&mut m, a, v0, v3);
+    let coedges = vec![
+        Coedge::new(
+            bottom,
+            Orientation::Forward,
+            uv_line(&mut m, TAU, 0.0, true),
+        ),
+        Coedge::new(
+            right,
+            Orientation::Forward,
+            uv_line(&mut m, TAU + b, 0.0, false),
+        ),
+        Coedge::new(top, Orientation::Reversed, uv_line(&mut m, TAU, h, true)),
+        Coedge::new(
+            left,
+            Orientation::Reversed,
+            uv_line(&mut m, TAU + a, 0.0, false),
+        ),
+    ];
+    let face_a = m
+        .raw()
+        .add_face(Face::new(surface, vec![Loop::new(coedges.clone())], tol));
+    let face_b = m
+        .raw()
+        .add_face(Face::new(surface, vec![Loop::new(coedges)], tol));
+    let (body, shell) = body_of(
+        &mut m,
+        vec![
+            FaceHandle::forward(face_a),
+            FaceHandle::new(face_b, Orientation::Reversed),
+        ],
+        BodyKind::Sheet,
+    );
+    assert!(check(&m, body, Level::Fast).is_ok());
+    let report = check(&m, body, Level::Full);
+    assert_lines(&report, &[("S5", shell.to_string())]);
+    assert_eq!(
+        report.violations()[0],
+        Violation::FacesIntersect {
+            shell,
+            face_a,
+            face_b,
+        }
+    );
+}
+
+/// The shell of a solid cylinder of radius 4 about the z axis from `z0`
+/// to `z0 + height`, as `sample::cylinder` builds it but with the wall's
+/// loop written a period along, in `u ∈ [2π, 4π]`.
+fn cylinder_a_period_along(m: &mut Model, z0: f64, height: f64) -> ShellId {
+    let tol = m.precision().default_tolerance;
+    let r = 4.0;
+    let base = Frame::world().with_origin(Point3::new(0.0, 0.0, z0));
+    let top = Frame::world().with_origin(Point3::new(0.0, 0.0, z0 + height));
+    let wall = m.add_surface(Surface::Cylinder {
+        frame: Frame::world(),
+        radius: r,
+    });
+    let bottom_plane = m.add_surface(Surface::Plane { frame: base });
+    let top_plane = m.add_surface(Surface::Plane { frame: top });
+    let v0 = m
+        .raw()
+        .add_vertex(Vertex::new(Point3::new(r, 0.0, z0), tol));
+    let v1 = m
+        .raw()
+        .add_vertex(Vertex::new(Point3::new(r, 0.0, z0 + height), tol));
+    let circle = |m: &mut Model, frame: Frame, v| {
+        let curve = m.add_curve(Curve::Circle { frame, radius: r });
+        let range = Interval::TURN;
+        m.raw()
+            .add_edge(Edge::new(EdgeGeometry::Curve { curve, range }, v, v, tol))
+    };
+    let e_bottom = circle(m, base, v0);
+    let e_top = circle(m, top, v1);
+    let seam_curve = m.add_curve(Curve::Line {
+        origin: Point3::new(r, 0.0, z0),
+        direction: Vec3::z_axis(),
+    });
+    let e_seam = m.raw().add_edge(Edge::new(
+        EdgeGeometry::Curve {
+            curve: seam_curve,
+            range: Interval::new(0.0, height).unwrap(),
+        },
+        v0,
+        v1,
+        tol,
+    ));
+    let wall_loop = vec![
+        Coedge::new(e_bottom, Orientation::Forward, uv_line(m, TAU, z0, true)),
+        Coedge::new(
+            e_seam,
+            Orientation::Forward,
+            uv_line(m, 2.0 * TAU, z0, false),
+        ),
+        Coedge::new(
+            e_top,
+            Orientation::Reversed,
+            uv_line(m, TAU, z0 + height, true),
+        ),
+        Coedge::new(e_seam, Orientation::Reversed, uv_line(m, TAU, z0, false)),
+    ];
+    let wall_face = m
+        .raw()
+        .add_face(Face::new(wall, vec![Loop::new(wall_loop)], tol));
+    let cap = |m: &mut Model, plane, edge| {
+        let pcurve = m.add_curve2(Curve2::Circle {
+            frame: Frame2::identity(),
+            radius: r,
+        });
+        let coedge = Coedge::new(edge, Orientation::Forward, pcurve);
+        m.raw()
+            .add_face(Face::new(plane, vec![Loop::new(vec![coedge])], tol))
+    };
+    let bottom_face = cap(m, bottom_plane, e_bottom);
+    let top_face = cap(m, top_plane, e_top);
+    m.raw().add_shell(Shell::new(vec![
+        FaceHandle::forward(wall_face),
+        FaceHandle::new(bottom_face, Orientation::Reversed),
+        FaceHandle::forward(top_face),
+    ]))
+}
+
+/// B1 on a periodic surface: two solid cylinders of one radius on one
+/// axis, overlapping over `z ∈ [6, 12]`, their walls' loops written a
+/// period along. Only the two walls share interior — every other pair of
+/// faces meets on a cap's boundary or not at all — so the overlap is seen
+/// only by a side test that tries the period.
+#[test]
+fn b1_two_cylinders_overlapping_on_walls_written_a_period_along() {
+    let mut m = Model::default();
+    let a = cylinder_a_period_along(&mut m, 0.0, 12.0);
+    let b = cylinder_a_period_along(&mut m, 6.0, 12.0);
+    for shell in [a, b] {
+        let one = solid_of(&mut m, vec![shell]);
+        let report = check(&m, one, Level::Full);
+        assert!(report.is_ok(), "{report}");
+        assert!(report.unchecked().is_empty(), "{report}");
+    }
+    let body = solid_of(&mut m, vec![a, b]);
+    let report = check(&m, body, Level::Full);
+    assert_eq!(
+        only_nesting_fault(&report),
+        ShellNestingFault::Overlap { shells: [a, b] },
+        "{report}"
+    );
+}
+
+/// S5's shared-boundary excuse on a closed edge stored a period along. A
+/// cup's wall and bottom share the rim, a circle turned a half turn and
+/// stored over `[π, 3π]` at a tolerance of 1e-3; the bottom's plane is
+/// 5e-4 above the rim, so it crosses the wall in a whole circle inside
+/// both faces and within the rim's tolerance all round. A point of that
+/// circle projects onto the rim's curve in `[0, 2π)`, and half of those
+/// parameters are a period from the edge's range: they are on the edge
+/// only when the period is tried.
+#[test]
+fn s5_a_rim_stored_a_period_along_excuses_the_faces_it_bounds() {
+    let mut m = Model::default();
+    let tol = m.precision().default_tolerance;
+    let (r, h, lift, loose) = (4.0, 12.0, 5e-4, 1e-3);
+    let half_turn = |z: f64| Frame::new(Point3::new(0.0, 0.0, z), Vec3::z(), -Vec3::x()).unwrap();
+    let wall = m.add_surface(Surface::Cylinder {
+        frame: Frame::world(),
+        radius: r,
+    });
+    let bottom = m.add_surface(Surface::Plane {
+        frame: Frame::world().with_origin(Point3::new(0.0, 0.0, lift)),
+    });
+    let v0 = m
+        .raw()
+        .add_vertex(Vertex::new(Point3::new(r, 0.0, 0.0), loose));
+    let v1 = m.raw().add_vertex(Vertex::new(Point3::new(r, 0.0, h), tol));
+    let range = Interval::new(PI, 3.0 * PI).unwrap();
+    let rim_curve = m.add_curve(Curve::Circle {
+        frame: half_turn(0.0),
+        radius: r,
+    });
+    let top_curve = m.add_curve(Curve::Circle {
+        frame: half_turn(h),
+        radius: r,
+    });
+    let seam_curve = m.add_curve(Curve::Line {
+        origin: Point3::new(r, 0.0, 0.0),
+        direction: Vec3::z_axis(),
+    });
+    let rim = m.raw().add_edge(Edge::new(
+        EdgeGeometry::Curve {
+            curve: rim_curve,
+            range,
+        },
+        v0,
+        v0,
+        loose,
+    ));
+    let seam = m.raw().add_edge(Edge::new(
+        EdgeGeometry::Curve {
+            curve: seam_curve,
+            range: Interval::new(0.0, h).unwrap(),
+        },
+        v0,
+        v1,
+        tol,
+    ));
+    let top = m.raw().add_edge(Edge::new(
+        EdgeGeometry::Curve {
+            curve: top_curve,
+            range,
+        },
+        v1,
+        v1,
+        tol,
+    ));
+    // The wall's loop is in `[0, 2π]`: the circles' parameter `t` is the
+    // angle `t − π`.
+    let wall_loop = vec![
+        Coedge::new(rim, Orientation::Forward, uv_line(&mut m, -PI, 0.0, true)),
+        Coedge::new(seam, Orientation::Forward, uv_line(&mut m, TAU, 0.0, false)),
+        Coedge::new(top, Orientation::Reversed, uv_line(&mut m, -PI, h, true)),
+        Coedge::new(
+            seam,
+            Orientation::Reversed,
+            uv_line(&mut m, 0.0, 0.0, false),
+        ),
+    ];
+    let wall_face = m
+        .raw()
+        .add_face(Face::new(wall, vec![Loop::new(wall_loop)], tol));
+    // The bottom's loop is the rim widened by the lift, at the same
+    // parameter.
+    let widened = m.add_curve2(Curve2::Circle {
+        frame: Frame2::new(Point2::origin(), -Vec2::x(), Handedness::Right).unwrap(),
+        radius: r + lift,
+    });
+    let bottom_face = m.raw().add_face(Face::new(
+        bottom,
+        vec![Loop::new(vec![Coedge::new(
+            rim,
+            Orientation::Forward,
+            widened,
+        )])],
+        tol,
+    ));
+    let (body, _) = body_of(
+        &mut m,
+        vec![
+            FaceHandle::forward(wall_face),
+            FaceHandle::new(bottom_face, Orientation::Reversed),
+        ],
+        BodyKind::Sheet,
+    );
+    assert!(check(&m, body, Level::Fast).is_ok());
+    let report = check(&m, body, Level::Full);
+    assert!(report.is_ok(), "{report}");
+    assert!(report.unchecked().is_empty(), "{report}");
 }
 
 /// B2, and B1's `NoOuter` with it: a cylinder whose every face use is

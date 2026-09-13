@@ -201,7 +201,7 @@ mechanical; **[2]** careful — a geometric or numeric case to get right
 within a given design; **[3]** unproven — an algorithm whose robustness or
 bound has to be established here.
 
-- [ ] Step 1 **[2]** — **The periodic blind spot in S5 and B1, reproduced
+- [x] Step 1 **[2]** — **The periodic blind spot in S5 and B1, reproduced
   and fixed.**
   - Build the smallest body where the checker's `face_side` answers
     `Outside` for a point inside a periodic face: a cylinder face whose
