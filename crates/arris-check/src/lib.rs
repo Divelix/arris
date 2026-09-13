@@ -15,6 +15,7 @@
 mod check;
 pub mod classify;
 pub mod domain;
+pub mod flux;
 mod full;
 mod lumps;
 mod report;
@@ -25,7 +26,7 @@ mod violation;
 pub use arris_topo;
 
 pub use check::check;
-pub use classify::{Classification, ClassifyError, classify_point};
+pub use classify::{Classification, Classifier, ClassifyError, classify_point};
 pub use lumps::{Lump, LumpError, lumps};
 pub use report::{EulerLine, Report};
 pub use unchecked::Unchecked;

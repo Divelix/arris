@@ -17,7 +17,7 @@ use arris_topo::entity::{BodyKind, Face, Loop};
 use arris_topo::{Closure, EdgeId, FaceId, Model, Orientation, ShellId, VertexId};
 
 use crate::check::{Checker, coedges, samples};
-use crate::domain::bands;
+use crate::domain::{bands, bounded_pieces};
 use crate::report::EulerLine;
 use crate::violation::{
     EdgeUseFault, FaceFault, LoopBreak, NestingFault, ToleranceBound, Violation, WireFault,
@@ -221,9 +221,10 @@ impl<'m> Checker<'m> {
 
     /// The polygon of a loop in (u, v) at the minimum segment counts —
     /// all a sign, a winding number and a containment question need.
-    /// `None` when the loop is empty or a reference does not resolve.
+    /// `None` when the loop is empty, a range is not bounded (E1's) or a
+    /// reference does not resolve (M1's).
     fn loop_polygon(&self, l: &'m Loop) -> Option<Polygon2> {
-        let pieces = self.loop_pieces(l)?;
+        let pieces = bounded_pieces(self.model, l).ok()??;
         Some(discretise(&pieces, f64::INFINITY))
     }
 

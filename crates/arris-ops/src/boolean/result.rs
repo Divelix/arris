@@ -19,7 +19,7 @@ use arris_check::arris_topo::{
     Body, Curve2Id, CurveId, EdgeId, EntityId, Face as FaceHandle, FaceId, Model, NotFound,
     Orientation, Provenance, Shape, ShellId, VertexId,
 };
-use arris_check::{Classification, classify_point, lumps};
+use arris_check::{Classification, Classifier, lumps};
 
 use super::pieces::{Alias, ERef, EdgeOnFace, PieceUse, SplitFace, SubEdge, VRef, split_face};
 use super::{Interferences, VertexSource};
@@ -604,15 +604,22 @@ impl<'m> Build<'m> {
         // then the pieces classified and selected in one order.
         let work: Vec<FaceHandle> = (0..2).flat_map(|side| self.faces[side].clone()).collect();
         let splits = self.split_faces(&work, &on)?;
+        // One classifier per operand, its faces read once for every piece
+        // of the other operand's faces.
+        let m = self.m;
+        let fault = |e| OpError::Internal(Fault::Classify(e));
+        let classifiers = [
+            Classifier::of_body(m, self.bodies[0]).map_err(fault)?,
+            Classifier::of_body(m, self.bodies[1]).map_err(fault)?,
+        ];
         let first = self.faces[0].len();
         for (k, (f, split)) in work.into_iter().zip(splits).enumerate() {
             let side = usize::from(k >= first);
-            let other = self.bodies[1 - side];
+            let other = &classifiers[1 - side];
             let policy = self.op.policy(side);
             let mut pieces = Vec::new();
             for piece in split.pieces {
-                let class = classify_point(self.m, other, piece.interior)
-                    .map_err(|e| OpError::Internal(Fault::Classify(e)))?;
+                let class = other.classify(piece.interior).map_err(fault)?;
                 let (flip, stands_for) = match class {
                     Classification::Inside | Classification::Outside => {
                         let inside = class == Classification::Inside;

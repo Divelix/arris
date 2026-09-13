@@ -256,7 +256,7 @@ bound has to be established here.
     directions are abandoned moves. The observable tests are S5 and B1
     by the faces' tolerance, with `classify_point` asserted to decide
     the same loose body.
-- [ ] Step 4 **[1]** — **`Classifier` built once; `face_flux`.**
+- [x] Step 4 **[1]** — **`Classifier` built once; `face_flux`.**
   - `Classifier::of_body` becomes public. `shell_contains`/`nesting`
     reuse one classifier per shell, and the boolean's piece selection
     reuses one per operand.

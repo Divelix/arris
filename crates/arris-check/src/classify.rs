@@ -129,35 +129,72 @@ pub fn classify_point(
     body: Body,
     point: Point3,
 ) -> Result<Classification, ClassifyError> {
-    let faces = model.closure(body)?.faces;
-    let classifier = Classifier::over(model, faces);
-    if let Some(shape) = classifier.on(point)? {
-        return Ok(Classification::On(shape));
-    }
-    match classifier.contains(point)? {
-        Some(true) => Ok(Classification::Inside),
-        Some(false) => Ok(Classification::Outside),
-        None => Err(ClassifyError::Undecided { body, point }),
-    }
+    Classifier::of_body(model, body)?.classify(point)
 }
 
-/// The faces a point is classified against, each read once as a
-/// [`FaceDomain`]: what [`classify_point`] builds over a body and B1
-/// builds over one shell.
-pub(crate) struct Classifier<'m> {
+/// A body's faces read once for classifying many points: what
+/// [`classify_point`] builds for one point and B1 builds over one shell.
+/// Each face is a [`FaceDomain`] at the model's parametric tolerance.
+///
+/// Guarantees: [`Classifier::classify`] answers every point exactly as
+/// [`classify_point`] does for the same body, since that function is this
+/// type built and asked once.
+pub struct Classifier<'m> {
     model: &'m Model,
     precision: Precision,
+    body: Body,
     faces: Vec<FaceId>,
     domains: BTreeMap<FaceId, FaceDomain<'m>>,
 }
 
 impl<'m> Classifier<'m> {
-    /// A classifier over `faces`, their domains read at the model's
-    /// parametric tolerance, as the checker's `Full` rows read them. A
-    /// face whose domain does not resolve has none and is `Outside`
-    /// everywhere; the ray cast reports it by finding no crossing, never
-    /// by panicking.
-    pub(crate) fn over(model: &'m Model, faces: Vec<FaceId>) -> Self {
+    /// A classifier over every face of `body`'s closure. Errors: the body
+    /// does not resolve.
+    ///
+    /// ```
+    /// use arris_check::classify::{Classification, Classifier};
+    /// use arris_debug::sample;
+    /// use arris_topo::Model;
+    /// use arris_topo::arris_math::Point3;
+    ///
+    /// let mut m = Model::default();
+    /// let body = sample::cylinder(&mut m, 4.0, 12.0)?;
+    /// let classifier = Classifier::of_body(&m, body)?;
+    /// for z in [1.0, 6.0, 11.0] {
+    ///     assert_eq!(classifier.classify(Point3::new(0.0, 0.0, z))?, Classification::Inside);
+    /// }
+    /// assert_eq!(classifier.classify(Point3::new(0.0, 0.0, 13.0))?, Classification::Outside);
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    pub fn of_body(model: &'m Model, body: Body) -> Result<Self, ClassifyError> {
+        let faces = model.closure(body)?.faces;
+        Ok(Self::over(model, body, faces))
+    }
+
+    /// Where `point` lies with respect to the body: [`classify_point`]'s
+    /// answer, by its rules, without reading the faces again.
+    ///
+    /// Errors: as [`classify_point`].
+    pub fn classify(&self, point: Point3) -> Result<Classification, ClassifyError> {
+        if let Some(shape) = self.on(point)? {
+            return Ok(Classification::On(shape));
+        }
+        match self.contains(point)? {
+            Some(true) => Ok(Classification::Inside),
+            Some(false) => Ok(Classification::Outside),
+            None => Err(ClassifyError::Undecided {
+                body: self.body,
+                point,
+            }),
+        }
+    }
+
+    /// A classifier over `faces` of `body`, their domains read at the
+    /// model's parametric tolerance, as the checker's `Full` rows read
+    /// them. A face whose domain does not resolve has none and is
+    /// `Outside` everywhere; the ray cast reports it by finding no
+    /// crossing, never by panicking.
+    pub(crate) fn over(model: &'m Model, body: Body, faces: Vec<FaceId>) -> Self {
         let precision = model.precision();
         let tolerance = precision.parametric_tolerance;
         let domains = faces
@@ -167,6 +204,7 @@ impl<'m> Classifier<'m> {
         Classifier {
             model,
             precision,
+            body,
             faces,
             domains,
         }

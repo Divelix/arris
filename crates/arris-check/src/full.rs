@@ -15,8 +15,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use arris_topo::arris_geom::integrate::{inner_step, region_integral};
-use arris_topo::arris_geom::region2::{Piece, Side};
+use arris_topo::arris_geom::region2::Side;
 use arris_topo::arris_geom::{
     Curve, Surface, SurfaceIntersection, SurfaceKind, intersect_surfaces,
 };
@@ -27,6 +26,7 @@ use arris_topo::{EdgeId, FaceId, Orientation, ShellId};
 use crate::check::{Checker, coedges, samples};
 use crate::classify::Classifier;
 use crate::domain::{FaceDomain, boundary_entity};
+use crate::flux::face_flux;
 use crate::unchecked::Unchecked;
 use crate::violation::{ShellNestingFault, Violation};
 
@@ -154,19 +154,6 @@ impl<'m> Checker<'m> {
         for v in found {
             self.push(v);
         }
-    }
-
-    /// The pieces of a loop in (u, v), in walking order
-    /// (`Model::loop_pieces`), or `None` when the loop is empty, a
-    /// reference does not resolve (M1's) or a range is not bounded and
-    /// positive (E1's): the rows here then have nothing to say.
-    pub(crate) fn loop_pieces(&self, l: &'m arris_topo::entity::Loop) -> Option<Vec<Piece<'m>>> {
-        let pieces = self.model.loop_pieces(l).ok()?;
-        let bounded = pieces.iter().all(|p| {
-            let r = p.range;
-            r.lo().is_finite() && r.hi().is_finite() && r.lo() < r.hi()
-        });
-        (bounded && !pieces.is_empty()).then_some(pieces)
     }
 
     /// Every face's box ([`FaceDomain::bounds`]); `None` for a face with
@@ -412,32 +399,17 @@ impl<'m> Checker<'m> {
         of(a).intersection(&of(b)).copied().collect()
     }
 
-    /// The signed volume `∬ p · (r_u × r_v) / 3` over a face's region in
-    /// (u, v), positive when the surface normal points out of the
-    /// material for a forward use. `None` when a reference does not
-    /// resolve.
-    fn face_volume(&self, face_id: FaceId) -> Option<f64> {
-        let model = self.model;
-        let face = model.face(face_id).ok()?;
-        let surface = model.surface(face.surface()).ok()?;
-        let mut total = 0.0;
-        for l in face.loops() {
-            let pieces = self.loop_pieces(l)?;
-            total += region_integral(&pieces, inner_step(surface), |u, v| {
-                let e = surface.eval(u, v);
-                e.point.coords.dot(&e.du.cross(&e.dv)) / 3.0
-            });
-        }
-        Some(total)
-    }
-
-    /// The signed volume a shell encloses, its face uses composed with
-    /// `outer` (the body handle's orientation and the shell use's).
+    /// The signed volume a shell encloses: the flux of `P / 3`, whose
+    /// divergence is one, through each face use composed with `outer`
+    /// (the body handle's orientation and the shell use's). `None` when a
+    /// reference does not resolve or a loop cannot be integrated — M1's,
+    /// L1's and E1's to report.
     pub(crate) fn shell_volume(&self, shell_id: ShellId, outer: Orientation) -> Option<f64> {
         let shell = self.model.shell(shell_id).ok()?;
         let mut total = 0.0;
         for face_use in shell.faces() {
-            total += outer.compose(face_use.orientation).sign() * self.face_volume(face_use.id)?;
+            let volume = face_flux(self.model, face_use.id, |p, n| p.coords.dot(&n) / 3.0).ok()?;
+            total += outer.compose(face_use.orientation).sign() * volume;
         }
         Some(total)
     }
@@ -497,13 +469,14 @@ impl<'m> Checker<'m> {
             .next()
     }
 
-    /// Whether `point` is inside the closed shell `shell`, by
-    /// [`crate::classify`]'s ray cast over that shell's faces alone —
-    /// the same code the public classifier runs, so B1 and a boolean can
-    /// never disagree about a point (ADR-0004). `None` when every
-    /// direction was abandoned or a surface has no closed form against a
-    /// ray, which is what the row records as unchecked.
-    pub(crate) fn shell_contains(&self, shell_id: ShellId, point: Point3) -> Option<bool> {
+    /// The classifier over the closed shell `shell`'s faces alone, in
+    /// stored order: B1's ray cast is [`crate::classify`]'s, the same code
+    /// the public classifier runs, so B1 and a boolean can never disagree
+    /// about a point (ADR-0004). Its `contains` is `None` when every
+    /// direction was abandoned and an error when a surface has no closed
+    /// form against a ray, which the row records as unchecked. `None`
+    /// when the shell does not resolve.
+    pub(crate) fn shell_classifier(&self, shell_id: ShellId) -> Option<Classifier<'m>> {
         let faces = self
             .model
             .shell(shell_id)
@@ -512,7 +485,7 @@ impl<'m> Checker<'m> {
             .iter()
             .map(|f| f.id)
             .collect();
-        Classifier::over(self.model, faces).contains(point).ok()?
+        Some(Classifier::over(self.model, self.body, faces))
     }
 }
 

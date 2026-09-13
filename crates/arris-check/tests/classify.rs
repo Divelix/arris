@@ -2,18 +2,32 @@
 //! and against the entity a point is on (`docs/plans/m4-booleans.md`
 //! step 4, ADR-0004): B1's ray cast made public and complete.
 
-use arris_check::classify::{Classification, ClassifyError, classify_point};
+use arris_check::classify::{Classification, Classifier, ClassifyError, classify_point};
 use arris_debug::prop::{DEFAULT_SCALE, check as prop_check, finite_f64, point_in_box, radius};
 use arris_debug::sample;
 use arris_topo::arris_geom::{GeomError, Surface};
 use arris_topo::arris_math::{Frame, Point2, Point3};
-use arris_topo::{EntityKind, Model};
+use arris_topo::{Body, EntityKind, Model};
 use proptest::prelude::*;
 
 /// How far from the boundary a random probe has to be for the closed form
 /// to be unambiguous: far above the model's default tolerance, far below
 /// the bodies' own size.
 const BAND: f64 = 1e-6;
+
+/// `classify_point`, held to agree with a `Classifier` built once for the
+/// body and asked twice: every point these tests classify checks both.
+fn classify(m: &Model, body: Body, point: Point3) -> Result<Classification, ClassifyError> {
+    let once = classify_point(m, body, point);
+    match Classifier::of_body(m, body) {
+        Ok(classifier) => {
+            assert_eq!(classifier.classify(point), once, "{point:?}");
+            assert_eq!(classifier.classify(point), once, "{point:?}, asked again");
+        }
+        Err(e) => assert_eq!(Err(e), once, "{point:?}"),
+    }
+    once
+}
 
 fn kind_of(c: Classification) -> Option<EntityKind> {
     match c {
@@ -46,19 +60,14 @@ fn random_points_against_a_boxs_closed_form() {
                 // deliberate `On` cases below are where that is tested.
                 return Ok(());
             }
-            let got =
-                classify_point(&m, body, probe).map_err(|e| TestCaseError::fail(e.to_string()))?;
+            let got = classify(&m, body, probe).map_err(|e| TestCaseError::fail(e.to_string()))?;
             let expected = if outside < 0.0 {
                 Classification::Inside
             } else {
                 Classification::Outside
             };
             prop_assert_eq!(got, expected, "{:?} against {:?}..{:?}", probe, min, max);
-            prop_assert_eq!(
-                classify_point(&m, body, probe).ok(),
-                Some(got),
-                "two runs differ"
-            );
+            prop_assert_eq!(classify(&m, body, probe).ok(), Some(got), "two runs differ");
             Ok(())
         },
     );
@@ -83,8 +92,7 @@ fn random_points_against_a_cylinders_closed_form() {
             if radial.abs() <= BAND || axial.abs() <= BAND {
                 return Ok(());
             }
-            let got =
-                classify_point(&m, body, probe).map_err(|e| TestCaseError::fail(e.to_string()))?;
+            let got = classify(&m, body, probe).map_err(|e| TestCaseError::fail(e.to_string()))?;
             let expected = if outside < 0.0 {
                 Classification::Inside
             } else {
@@ -100,7 +108,7 @@ fn random_points_against_a_cylinders_closed_form() {
 fn a_point_on_a_face_an_edge_a_seam_or_a_vertex_names_the_entity() {
     let mut m = Model::default();
     let cylinder = sample::cylinder(&mut m, 4.0, 12.0).unwrap();
-    let at = |p: Point3| classify_point(&m, cylinder, p).unwrap();
+    let at = |p: Point3| classify(&m, cylinder, p).unwrap();
     // The wall, away from the seam and the rims.
     assert_eq!(
         kind_of(at(Point3::new(0.0, 4.0, 6.0))),
@@ -134,7 +142,7 @@ fn a_point_on_a_face_an_edge_a_seam_or_a_vertex_names_the_entity() {
 
     let mut m = Model::default();
     let cuboid = sample::cuboid(&mut m, Point3::origin(), Point3::new(4.0, 3.0, 2.0)).unwrap();
-    let at = |p: Point3| classify_point(&m, cuboid, p).unwrap();
+    let at = |p: Point3| classify(&m, cuboid, p).unwrap();
     assert_eq!(
         kind_of(at(Point3::new(2.0, 1.5, 2.0))),
         Some(EntityKind::Face)
@@ -164,7 +172,7 @@ fn a_point_in_a_hole_of_the_frame_is_outside() {
     // The middle of the window, at every height through it.
     for z in [0.5, 5.0, 9.5] {
         assert_eq!(
-            classify_point(&m, body, Point3::new(20.0, 15.0, z)).unwrap(),
+            classify(&m, body, Point3::new(20.0, 15.0, z)).unwrap(),
             Classification::Outside,
             "the window at z = {z}"
         );
@@ -172,16 +180,16 @@ fn a_point_in_a_hole_of_the_frame_is_outside() {
     // The material either side of it, and above and below the window is
     // material too — the frame is a through window, so only the wall.
     assert_eq!(
-        classify_point(&m, body, Point3::new(5.0, 15.0, 5.0)).unwrap(),
+        classify(&m, body, Point3::new(5.0, 15.0, 5.0)).unwrap(),
         Classification::Inside
     );
     assert_eq!(
-        classify_point(&m, body, Point3::new(35.0, 15.0, 5.0)).unwrap(),
+        classify(&m, body, Point3::new(35.0, 15.0, 5.0)).unwrap(),
         Classification::Inside
     );
     // On the window's own wall.
     assert_eq!(
-        kind_of(classify_point(&m, body, Point3::new(10.0, 15.0, 5.0)).unwrap()),
+        kind_of(classify(&m, body, Point3::new(10.0, 15.0, 5.0)).unwrap()),
         Some(EntityKind::Face)
     );
 }
@@ -192,7 +200,7 @@ fn a_surface_a_ray_has_no_closed_form_against_is_a_typed_error() {
     let body = sample::sphere(&mut m, Point3::origin(), 3.0).unwrap();
     // Far from the sphere, so the boundary test says nothing and the ray
     // cast is reached.
-    match classify_point(&m, body, Point3::new(50.0, 0.0, 0.0)) {
+    match classify(&m, body, Point3::new(50.0, 0.0, 0.0)) {
         Err(ClassifyError::Geometry(GeomError::Unsupported { .. })) => {}
         other => panic!("expected an unsupported ray–sphere pair, got {other:?}"),
     }
@@ -200,17 +208,17 @@ fn a_surface_a_ray_has_no_closed_form_against_is_a_typed_error() {
     // seam meridian runs through `(R, 0, 0)`, and the poles are the
     // sphere sample's two vertices.
     assert_eq!(
-        kind_of(classify_point(&m, body, Point3::new(3.0, 0.0, 0.0)).unwrap()),
+        kind_of(classify(&m, body, Point3::new(3.0, 0.0, 0.0)).unwrap()),
         Some(EntityKind::Edge),
         "on the seam"
     );
     assert_eq!(
-        kind_of(classify_point(&m, body, Point3::new(0.0, 0.0, -3.0)).unwrap()),
+        kind_of(classify(&m, body, Point3::new(0.0, 0.0, -3.0)).unwrap()),
         Some(EntityKind::Vertex),
         "the south pole"
     );
     assert_eq!(
-        kind_of(classify_point(&m, body, Point3::new(0.0, 3.0, 0.0)).unwrap()),
+        kind_of(classify(&m, body, Point3::new(0.0, 3.0, 0.0)).unwrap()),
         Some(EntityKind::Face),
         "the surface away from the seam"
     );
@@ -232,11 +240,11 @@ fn a_patch_is_not_a_solid_and_its_points_are_outside_or_on() {
     )
     .unwrap();
     assert_eq!(
-        kind_of(classify_point(&m, patch, Point3::new(2.0, 1.5, 0.0)).unwrap()),
+        kind_of(classify(&m, patch, Point3::new(2.0, 1.5, 0.0)).unwrap()),
         Some(EntityKind::Face)
     );
     assert_eq!(
-        classify_point(&m, patch, Point3::new(2.0, 1.5, 1.0)).unwrap(),
+        classify(&m, patch, Point3::new(2.0, 1.5, 1.0)).unwrap(),
         Classification::Outside
     );
 }
@@ -246,7 +254,7 @@ fn the_classification_of_a_body_that_does_not_resolve_is_an_error() {
     let m = Model::default();
     let ghost = arris_topo::Body::forward(arris_topo::BodyId::new(3, 0));
     assert!(matches!(
-        classify_point(&m, ghost, Point3::origin()),
+        classify(&m, ghost, Point3::origin()),
         Err(ClassifyError::Unresolved(_))
     ));
 }
@@ -258,7 +266,7 @@ fn a_probe_lands_where_the_corpus_fixtures_say() {
     // regression names the classifier rather than the runner.
     let mut m = Model::default();
     let body = sample::cuboid(&mut m, Point3::origin(), Point3::new(40.0, 30.0, 10.0)).unwrap();
-    let at = |p: [f64; 3]| classify_point(&m, body, Point3::new(p[0], p[1], p[2])).unwrap();
+    let at = |p: [f64; 3]| classify(&m, body, Point3::new(p[0], p[1], p[2])).unwrap();
     assert_eq!(at([20.0, 15.0, 5.0]), Classification::Inside);
     assert_eq!(at([50.0, 15.0, 5.0]), Classification::Outside);
     assert_eq!(kind_of(at([20.0, 15.0, 10.0])), Some(EntityKind::Face));

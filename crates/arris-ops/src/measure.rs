@@ -4,9 +4,9 @@
 //! transaction.
 //!
 //! Every quantity is a flux integral over the body's faces by Green's
-//! theorem, taken in each face's own (u, v) through
-//! [`region_integral`] with the face use's sign —
-//! the way the checker's B2 row already computes an enclosed volume. The
+//! theorem, taken in each face's own (u, v) through [`face_flux`] with
+//! the face use's sign — the one integral the checker's B2 row computes
+//! an enclosed volume by. The
 //! divergence of the field is the integrand of the volume integral:
 //! `P · (∂P/∂u × ∂P/∂v) / 3` for the volume itself, `x² / 2 · n_x` for
 //! `∫ x dV`, `x³ / 3 · n_x` for `∫ x² dV`, `x² y / 2 · n_x` for
@@ -18,6 +18,8 @@ use arris_check::arris_topo::arris_geom::integrate::{inner_step, region_integral
 use arris_check::arris_topo::arris_math::{Matrix3, Point3, Vec3};
 use arris_check::arris_topo::entity::{Body as BodyEntity, BodyKind};
 use arris_check::arris_topo::{Body, FaceId, Model, Orientation, Shape};
+use arris_check::flux::{FluxError, face_flux};
+use arris_check::{Level, check};
 
 use crate::error::{OpError, Reason};
 
@@ -151,7 +153,7 @@ pub fn mass_properties(m: &Model, body: Body) -> Result<MassProperties, OpError>
     }
     let faces = face_uses(m, body, entity)?;
 
-    let first = integrate_faces(m, &faces, Vec3::zeros(), &FIRST)?;
+    let first = integrate_faces(m, body, &faces, Vec3::zeros(), &FIRST)?;
     let volume = first[0];
     if !(volume.is_finite() && volume > 0.0) {
         return Err(OpError::Degenerate {
@@ -163,7 +165,7 @@ pub fn mass_properties(m: &Model, body: Body) -> Result<MassProperties, OpError>
         });
     }
     let centroid = Point3::new(first[1], first[2], first[3]) / volume;
-    let second = integrate_faces(m, &faces, centroid.coords, &SECOND)?;
+    let second = integrate_faces(m, body, &faces, centroid.coords, &SECOND)?;
     // The physical tensor: the diagonal is `∫ (|r|² − x_i²) dV`, the
     // off-diagonal the negated products, symmetric by construction.
     let inertia = Matrix3::new(
@@ -206,32 +208,31 @@ fn face_uses(m: &Model, body: Body, entity: &BodyEntity) -> Result<Vec<(FaceId, 
 }
 
 /// `∬ f du dv` for each of `integrands` over every face, summed with the
-/// face use's sign, the surface's point translated by `−offset` and the
-/// inner integral stepped at the surface's own
-/// [`inner_step`]. A face's stored loops walk
-/// counter-clockwise about its surface normal, so an outer loop
-/// contributes positively and a hole subtracts itself.
+/// face use's sign: the flux of each field out of the body through
+/// [`face_flux`], the checker's own integral, with the surface's point
+/// translated by `−offset`.
+///
+/// Errors: [`OpError::NotFound`] naming a face whose face, surface or
+/// loop does not resolve; [`OpError::InvalidInput`] with the checker's
+/// report for a face whose loops cannot be integrated (L1, E1).
 fn integrate_faces<const N: usize>(
     m: &Model,
+    body: Body,
     faces: &[(FaceId, f64)],
     offset: Vec3,
     integrands: &[Integrand; N],
 ) -> Result<[f64; N], OpError> {
     let mut totals = [0.0; N];
     for &(id, sign) in faces {
-        let not_found = || OpError::NotFound(Shape::new(id, Orientation::Forward));
-        let face = m.face(id).map_err(|_| not_found())?;
-        let surface = m.surface(face.surface()).map_err(|_| not_found())?;
-        let step = inner_step(surface);
-        for l in face.loops() {
-            let pieces = m.loop_pieces(l).map_err(|_| not_found())?;
-            for (total, f) in totals.iter_mut().zip(integrands) {
-                *total += sign
-                    * region_integral(&pieces, step, |u, v| {
-                        let e = surface.eval(u, v);
-                        f(e.point.coords - offset, e.du.cross(&e.dv))
-                    });
-            }
+        for (total, f) in totals.iter_mut().zip(integrands) {
+            let flux = face_flux(m, id, |p, n| f(p.coords - offset, n)).map_err(|e| match e {
+                FluxError::NotFound(_) => OpError::NotFound(Shape::new(id, Orientation::Forward)),
+                FluxError::Unintegrable { .. } => OpError::InvalidInput {
+                    body,
+                    report: Box::new(check(m, body, Level::Fast)),
+                },
+            })?;
+            *total += sign * flux;
         }
     }
     Ok(totals)

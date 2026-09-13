@@ -12,10 +12,26 @@
 use std::collections::BTreeSet;
 
 use arris_topo::arris_geom::Surface;
-use arris_topo::arris_geom::region2::{Polygon2, Side, discretise, point_side};
+use arris_topo::arris_geom::region2::{Piece, Polygon2, Side, discretise, point_side};
 use arris_topo::arris_math::{Aabb, Interval, Point2, Point3, Vec2, is_negligible};
-use arris_topo::entity::Face;
+use arris_topo::entity::{Face, Loop};
 use arris_topo::{EdgeId, FaceId, Model, NotFound, Orientation, Shape};
+
+/// A loop's pieces in (u, v), in walking order (`Model::loop_pieces`), or
+/// `None` when the loop has no coedge or a range is not bounded and
+/// increasing: a loop no polygon, winding or integral is taken over,
+/// which L1 and E1 report. Errors: a reference does not resolve.
+pub(crate) fn bounded_pieces<'m>(
+    model: &'m Model,
+    l: &Loop,
+) -> Result<Option<Vec<Piece<'m>>>, NotFound> {
+    let pieces = model.loop_pieces(l)?;
+    let bounded = pieces.iter().all(|p| {
+        let r = p.range;
+        r.lo().is_finite() && r.hi().is_finite() && r.lo() < r.hi()
+    });
+    Ok((bounded && !pieces.is_empty()).then_some(pieces))
+}
 
 /// The offsets a periodic parameter is tried at: nothing, and a period
 /// either way; once for a direction without a period. A loop written in
@@ -171,12 +187,7 @@ impl<'m> FaceDomain<'m> {
         let chord = chord(model, entity, surface, tolerance);
         let mut polygons = Vec::with_capacity(entity.loops().len());
         for l in entity.loops() {
-            let pieces = model.loop_pieces(l)?;
-            let bounded = pieces.iter().all(|p| {
-                let r = p.range;
-                r.lo().is_finite() && r.hi().is_finite() && r.lo() < r.hi()
-            });
-            if bounded && !pieces.is_empty() {
+            if let Some(pieces) = bounded_pieces(model, l)? {
                 polygons.push(discretise(&pieces, chord));
             }
         }

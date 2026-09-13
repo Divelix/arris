@@ -19,6 +19,7 @@ use arris_topo::entity::BodyKind;
 use arris_topo::{Body, FaceId, Model, NotFound, Shell, ShellId};
 
 use crate::check::Checker;
+use crate::classify::Classifier;
 use crate::unchecked::Unchecked;
 use crate::violation::ShellNestingFault;
 
@@ -270,12 +271,18 @@ impl Checker<'_> {
             return out;
         }
 
-        // Which shells each lies inside, by a vertex of it.
+        // Which shells each lies inside, by a vertex of it: each shell's
+        // classifier is built once and asked for every other's vertex.
+        let classifiers: Vec<Option<Classifier>> = shells
+            .iter()
+            .map(|(s, _)| self.shell_classifier(s.id))
+            .collect();
         let mut inside = vec![vec![false; n]; n];
         for i in 0..n {
             let point = self.shell_point(shells[i].0.id);
             for j in (0..n).filter(|&j| j != i) {
-                match point.and_then(|p| self.shell_contains(shells[j].0.id, p)) {
+                let asked = point.zip(classifiers[j].as_ref());
+                match asked.and_then(|(p, c)| c.contains(p).ok().flatten()) {
                     Some(is) => inside[i][j] = is,
                     None => {
                         out.unchecked.push(Unchecked::ShellNesting {
