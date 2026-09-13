@@ -7,6 +7,7 @@ use core::fmt::Write;
 use arris_geom::{Curve, Curve2, NurbsCurve, NurbsCurve2, NurbsSurface, Surface};
 use arris_math::{Frame, Frame2, Point2, Point3, Vec2, Vec3};
 use arris_topo::entity::EdgeGeometry;
+use arris_topo::euler::EulerLine;
 use arris_topo::{Body, Model, NotFound};
 
 /// Decimal places every number in the dump is rounded to. Twelve is far
@@ -172,34 +173,14 @@ pub fn dump_text(model: &Model, body: Body) -> Result<String, NotFound> {
 /// genus the counts imply through `V − E + F − (L − F) − 2(S − G) = 0`
 /// and the residual what is left once `G` is rounded down to an integer —
 /// `0` for a line that closes, `1` for one that does not
-/// (`docs/DATA-MODEL.md` §Euler–Poincaré). `E` leaves degenerate edges
-/// out, as `arris_check::Report::euler` does. Errors: the body does not
-/// resolve.
+/// (`docs/DATA-MODEL.md` §Euler–Poincaré): [`EulerLine::of`] the body's
+/// closure, the one count `arris_check::Report::euler` carries too.
+/// Errors: the body does not resolve.
 pub fn euler_line(model: &Model, body: Body) -> Result<String, NotFound> {
-    let c = model.closure(body)?;
-    let loops: usize = c
-        .faces
-        .iter()
-        .filter_map(|&f| model.face(f).ok())
-        .map(|f| f.loops().len())
-        .sum();
-    let edges = c
-        .edges
-        .iter()
-        .filter(|&&e| !model.edge(e).is_ok_and(|e| e.is_degenerate()))
-        .count();
-    let (v, e, f, l, s) = (
-        c.vertices.len() as i64,
-        edges as i64,
-        c.faces.len() as i64,
-        loops as i64,
-        c.shells.len() as i64,
-    );
-    // V − E + F − (L − F) − 2(S − G) = 0  ⇒  2G = 2S − (V − E + 2F − L).
-    let x = v - e + 2 * f - l;
-    let genus = s - x.div_euclid(2);
-    let residual = x.rem_euclid(2);
-    Ok(format!("euler {v}/{e}/{f}/{l}/{s} g{genus} = {residual}"))
+    Ok(format!(
+        "euler {}",
+        EulerLine::of(model, &model.closure(body)?)
+    ))
 }
 
 /// `x` fixed to [`DUMP_DECIMALS`] places with trailing zeros trimmed, so

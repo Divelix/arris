@@ -6,16 +6,18 @@
 //! closed surfaces that share nothing, and every way of describing
 //! something that is not is a typed refusal.
 
+use core::f64::consts::{FRAC_1_SQRT_2, TAU};
 use std::collections::BTreeMap;
 
 use arris_check::{Level, check};
-use arris_debug::{dump_text, sample};
-use arris_topo::arris_geom::{Curve2, Surface};
-use arris_topo::arris_math::{Axis, Frame, Frame2, Interval, Point2, Point3};
+use arris_debug::{corpus, dump_text, euler_line, fixtures, sample};
+use arris_topo::arris_geom::{Curve2, Profile, ProfileLoop, ProfileSegment, Surface};
+use arris_topo::arris_math::{Axis, Frame, Frame2, Interval, Point2, Point3, Vec3};
 use arris_topo::builder::{
     Assembly, BuildError, Builder, EdgeKey, EdgeSpec, FaceSpec, UseSpec, VertexKey, VertexSpec,
 };
 use arris_topo::entity::BodyKind;
+use arris_topo::euler::EulerLine;
 use arris_topo::{Body, EdgeId, FaceId, Model, Orientation, VertexId};
 
 /// One named body in its own model.
@@ -164,6 +166,104 @@ fn describe(m: &Model, body: Body, keep: bool) -> Assembly {
 
 fn assemble(m: &Model, assembly: Assembly) -> Result<Builder, BuildError> {
     Builder::assemble(m, m.precision().default_tolerance, assembly)
+}
+
+/// [`describe`] with every entity `New`, its one list of faces cut into
+/// the body's own shells: `Model::faces` walks them shell by shell in
+/// stored order.
+fn describe_shells(m: &Model, body: Body) -> Assembly {
+    let mut assembly = describe(m, body, false);
+    let mut faces = assembly.shells.remove(0).into_iter();
+    assembly.shells = m
+        .shells(body)
+        .unwrap()
+        .iter()
+        .map(|s| {
+            let n = m.shell(s.id).unwrap().faces().len();
+            faces.by_ref().take(n).collect()
+        })
+        .collect();
+    assembly
+}
+
+/// One Euler line (`docs/DATA-MODEL.md` §Euler–Poincaré): on bodies with
+/// degenerate edges — the sphere sample's two poles, and a cone and a
+/// hemisphere revolved down to the axis, which close on it — and on the
+/// notch-to-axis revolve's lump with its voids, the counts of a builder
+/// assembled from the body, `EulerLine::of` its closure, the checker's
+/// line and the dump's all print the same, every degenerate edge left
+/// out.
+#[test]
+fn a_body_with_degenerate_edges_has_one_euler_line() {
+    let p = Point2::new;
+    let plane = Frame::new(Point3::origin(), -Vec3::y(), Vec3::x()).unwrap();
+    let revolved = |segments: Vec<ProfileSegment>| {
+        let mut m = Model::default();
+        let profile = Profile {
+            plane,
+            outer: ProfileLoop::Path {
+                start: p(0.0, 0.0),
+                segments,
+            },
+            holes: Vec::new(),
+        };
+        let axis = Axis::z_at(Point3::origin());
+        let (body, _) = arris_ops::revolve(&mut m, &profile, axis, TAU).unwrap();
+        (m, body)
+    };
+    let mut bodies: Vec<(String, Model, Body)> = Vec::new();
+    let mut m = Model::default();
+    let sphere = sample::sphere(&mut m, Point3::origin(), 3.0).unwrap();
+    bodies.push(("sphere".into(), m, sphere));
+    let (m, cone) = revolved(vec![
+        ProfileSegment::LineTo(p(2.0, 0.0)),
+        ProfileSegment::LineTo(p(0.0, 3.0)),
+        ProfileSegment::LineTo(p(0.0, 0.0)),
+    ]);
+    bodies.push(("cone".into(), m, cone));
+    let (m, hemisphere) = revolved(vec![
+        ProfileSegment::LineTo(p(2.0, 0.0)),
+        ProfileSegment::ArcTo {
+            to: p(0.0, 2.0),
+            via: p(2.0 * FRAC_1_SQRT_2, 2.0 * FRAC_1_SQRT_2),
+        },
+        ProfileSegment::LineTo(p(0.0, 0.0)),
+    ]);
+    bodies.push(("hemisphere".into(), m, hemisphere));
+    let dir = fixtures::corpus_root().join("sweep/revolve-notch-to-axis");
+    for variant in fixtures::load(&dir).unwrap().recipe.variant_names() {
+        let chain = corpus::chain(&dir, &variant).unwrap();
+        let body = chain.result().unwrap();
+        bodies.push((format!("notch-to-axis [{variant}]"), chain.model, body));
+    }
+    for (name, m, body) in &bodies {
+        let closure = m.closure(*body).unwrap();
+        let line = EulerLine::of(m, &closure);
+        let report = check(m, *body, Level::Fast);
+        assert!(report.is_ok(), "{name}:\n{report}");
+        assert_eq!(
+            report.euler().map(|l| l.to_string()),
+            Some(line.to_string()),
+            "{name}"
+        );
+        assert_eq!(
+            euler_line(m, *body).unwrap(),
+            format!("euler {line}"),
+            "{name}"
+        );
+        let builder = assemble(m, describe_shells(m, *body))
+            .unwrap_or_else(|e| panic!("{name}: {e}\n{}", dump_text(m, *body).unwrap()));
+        assert_eq!(builder.counts().line(), line, "{name}");
+        assert_eq!(builder.counts().to_string(), line.to_string(), "{name}");
+    }
+    // The poles and the apex are in the closures, and out of the lines.
+    for (name, m, body) in &bodies[..3] {
+        let closure = m.closure(*body).unwrap();
+        assert!(
+            closure.edges.len() > EulerLine::of(m, &closure).edges,
+            "{name} has a degenerate edge"
+        );
+    }
 }
 
 /// The dump's `edges` and `vertices` listings sorted by geometry, which no

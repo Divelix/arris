@@ -25,10 +25,11 @@ mod violation;
 
 pub use arris_topo;
 
+pub use arris_topo::euler::EulerLine;
 pub use check::check;
 pub use classify::{Classification, Classifier, ClassifyError, classify_point};
 pub use lumps::{Lump, LumpError, lumps};
-pub use report::{EulerLine, Report};
+pub use report::Report;
 pub use unchecked::Unchecked;
 pub use violation::{
     DegenerateFault, EdgeUseFault, EndMismatch, FaceFault, Level, LoopBreak, NestingFault,

@@ -15,6 +15,7 @@ mod arena;
 pub mod builder;
 pub mod entity;
 mod error;
+pub mod euler;
 mod handle;
 mod id;
 mod idmap;

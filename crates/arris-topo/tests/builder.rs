@@ -868,6 +868,44 @@ fn finish_stores_reversed_faces_backwards_and_returns_the_maps() {
     );
 }
 
+/// `finish` holds a degenerate edge to one use: a closed degenerate edge
+/// splitting a cap off the cylinder's top face is used by the cap and by
+/// the face it leaves — twice — and is refused as `EdgeUses`, since no
+/// surface closes on one singular point twice (`docs/DATA-MODEL.md`
+/// §Euler operators). Every pcurve and surface resolves, so the edge rule
+/// is what refuses it.
+#[test]
+fn finish_refuses_a_degenerate_edge_used_twice() {
+    let mut m = Model::default();
+    let (mut b, f_top) = cylinder_in(&mut m);
+    let plane = m.add_surface(Surface::Plane {
+        frame: Frame::world(),
+    });
+    let point = m.add_curve2(Curve2::Line {
+        origin: Point2::origin(),
+        direction: Vec2::x_axis(),
+    });
+    let at = Position::new(f_top, 0, 0);
+    let (edge, _) = b
+        .mef(
+            at,
+            at,
+            Split {
+                geometry: EdgeGeometry::Degenerate {
+                    range: Interval::UNIT,
+                },
+                surface: plane,
+                orientation: Orientation::Forward,
+                pcurves: [Some(point), Some(point)],
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        b.finish(&mut m, BodyKind::Solid),
+        Err(BuildError::EdgeUses { edge, uses: 2 })
+    );
+}
+
 #[test]
 fn finish_refuses_what_cannot_be_stored_and_the_transaction_leaves_nothing() {
     let mut m = Model::default();

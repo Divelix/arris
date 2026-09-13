@@ -266,7 +266,7 @@ bound has to be established here.
     agree on every point of the existing classify tests. The measure
     and B2 tests unchanged. `tools/test-timings.sh` before and after is
     in the commit body.
-- [ ] Step 5 **[2]** — **One Euler line.**
+- [x] Step 5 **[2]** — **One Euler line.**
   - `arris_topo::euler::EulerLine` per the delta, used by the five
     callers.
   - Every degenerate edge is left out of the count, and `finish` and

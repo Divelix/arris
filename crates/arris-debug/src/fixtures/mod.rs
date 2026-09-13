@@ -7,6 +7,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use arris_topo::euler::EulerLine;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -752,8 +753,8 @@ pub fn lint(dir: &Path) -> Vec<String> {
             continue;
         };
         let c = m.counts;
-        let chi_from_counts =
-            c.vertices as i64 - c.edges as i64 + 2 * c.faces as i64 - c.loops as i64;
+        let counted = EulerLine::new(c.vertices, c.edges, c.faces, c.loops, c.shells);
+        let chi_from_counts = counted.characteristic();
         if chi != chi_from_counts {
             problem(format!(
                 "[{variant}] euler_characteristic {chi} does not match the counts ({chi_from_counts})"
@@ -778,16 +779,15 @@ pub fn lint(dir: &Path) -> Vec<String> {
         };
         if let (Some(g), Some(genus)) = (a.genus, genus) {
             // The Euler line: V − E + F − (L − F) − 2(S − G) = 0.
-            let line = chi - 2 * (c.shells as i64 - g);
+            let line = counted.at_genus(g);
             if line != 0 {
                 problem(format!(
                     "[{variant}] Euler line is {line}, not 0: counts {c:?} with analytic genus {g} (oracle genus {genus})"
                 ));
             }
             if let (Some(_), Some(ac)) = (&a.counts_differ, a.counts) {
-                let chi =
-                    ac.vertices as i64 - ac.edges as i64 + 2 * ac.faces as i64 - ac.loops as i64;
-                let line = chi - 2 * (ac.shells as i64 - g);
+                let line = EulerLine::new(ac.vertices, ac.edges, ac.faces, ac.loops, ac.shells)
+                    .at_genus(g);
                 if line != 0 {
                     problem(format!(
                         "[{variant}] Euler line of Arris's counts is {line}, not 0: {ac:?} with analytic genus {g}"

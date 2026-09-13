@@ -12,13 +12,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use arris_topo::arris_geom::{Curve, Curve2, Surface};
 use arris_topo::arris_math::{Frame, Frame2, Interval, Point3, Precision};
 use arris_topo::entity::{BodyKind, Coedge, Edge, EdgeGeometry, Face};
+use arris_topo::euler::EulerLine;
 use arris_topo::{
     Body, Closure, CoedgeRef, EdgeId, EntityId, FaceId, Model, NotFound, Orientation, VertexId,
 };
 
 use crate::domain::{FaceDomain, bands};
 use crate::report::Report;
-use crate::topology::euler_line;
 use crate::unchecked::Unchecked;
 use crate::violation::{
     DegenerateFault, EndMismatch, Level, Quantity, Reference, SeamFault, ToleranceBound, Violation,
@@ -58,7 +58,8 @@ pub fn check(model: &Model, body: Body, level: Level) -> Report {
     if level == Level::Full {
         c.full_rows();
     }
-    let line = euler_line(model, &c.closure);
+    // Linear in the closure, so it is taken at every level.
+    let line = EulerLine::of(model, &c.closure);
     let unchecked = core::mem::take(&mut c.unchecked);
     let violations = c
         .violations

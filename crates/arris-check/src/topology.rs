@@ -1,6 +1,6 @@
 //! The loop, face, shell and body rows of `Level::Fast` — L1–L4, F1–F2,
-//! S1–S4 and B3 of `docs/DATA-MODEL.md` §Invariants — and the
-//! Euler–Poincaré line every report carries.
+//! S1–S4 and B3 of `docs/DATA-MODEL.md` §Invariants. The Euler–Poincaré
+//! line every report carries is `arris_topo::euler::EulerLine`.
 //!
 //! Every row here reads the face's own loops and the shell's own face
 //! uses, never the arena's adjacency indices (M2 is the only row that
@@ -14,38 +14,13 @@ use arris_topo::arris_geom::region2::{Polygon2, discretise};
 use arris_topo::arris_geom::{Curve2, Surface};
 use arris_topo::arris_math::{Point2, Vec2};
 use arris_topo::entity::{BodyKind, Face, Loop};
-use arris_topo::{Closure, EdgeId, FaceId, Model, Orientation, ShellId, VertexId};
+use arris_topo::{EdgeId, FaceId, Orientation, ShellId, VertexId};
 
 use crate::check::{Checker, coedges, samples};
 use crate::domain::{bands, bounded_pieces};
-use crate::report::EulerLine;
 use crate::violation::{
     EdgeUseFault, FaceFault, LoopBreak, NestingFault, ToleranceBound, Violation, WireFault,
 };
-
-/// The Euler–Poincaré line of the closure: the five counts and the genus
-/// they imply, degenerate edges left out. Linear in the closure, so it is
-/// taken at every level.
-pub(crate) fn euler_line(model: &Model, closure: &Closure) -> EulerLine {
-    let loops: usize = closure
-        .faces
-        .iter()
-        .filter_map(|&f| model.face(f).ok())
-        .map(|f| f.loops().len())
-        .sum();
-    let edges = closure
-        .edges
-        .iter()
-        .filter(|&&e| !model.edge(e).is_ok_and(|e| e.is_degenerate()))
-        .count();
-    EulerLine::new(
-        closure.vertices.len(),
-        edges,
-        closure.faces.len(),
-        loops,
-        closure.shells.len(),
-    )
-}
 
 impl<'m> Checker<'m> {
     /// L1–L4 and F1–F2, face by face in closure order.

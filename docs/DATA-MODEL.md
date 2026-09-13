@@ -701,7 +701,8 @@ which use it is drawing; `mef` takes the curve, the range, the new face's
 moves to a face on another surface keeps a pcurve id that is no longer
 its own, and a strut in a face it will leave has none worth giving.
 `finish` refuses a coedge without a pcurve, a loop without coedges, an
-edge not used exactly twice (a degenerate edge: once) or twice the same way, a geometry id that
+edge not used exactly twice (a degenerate edge: exactly once, since no
+surface closes on one singular point twice) or twice the same way, a geometry id that
 does not resolve, and any kind but `Solid` — each a typed `BuildError`,
 and the model exactly as it was — and never evaluates geometry: the
 checker, above this crate, is where the finished body is proven.
@@ -728,8 +729,8 @@ and `finish` appends that slot instead, so the two entry points compose;
 `Builder::dump` writes ` kept f3` on a slot that still carries a mark.
 `assemble` proves what the operators would have kept true of each shell:
 every loop has coedges and closes through effective vertices, every edge
-is used exactly twice and in opposite directions — a degenerate edge once,
-the singular point of its face, which the line below does not count — no arena entity is kept
+is used exactly twice and in opposite directions — a degenerate edge exactly
+once, the singular point of its face, which no Euler line counts — no arena entity is kept
 twice, no shell is empty, no edge is used by and no vertex is an end of
 edges of two shells, the faces of each shell are one edge-connected
 component, and each shell's Euler–Poincaré line closes at a whole genus,
@@ -884,7 +885,11 @@ and `S` the number of shells. `E` leaves degenerate edges out: a cone's apex
 or a sphere's pole is a singular point of the surface, not a boundary
 between faces (S2's exemption), and counting it would give a sphere genus 1
 and a cone an odd line; the oracle leaves out the edges Open CASCADE marks
-degenerate, so both sides count alike. The genus `G` is *derived* from the counts,
+degenerate, so both sides count alike. The count is one function,
+`arris_topo::euler::EulerLine::of`, which the checker's report, `Builder::counts`,
+`assemble`'s per-shell test, the dump and the fixture lint all take; a builder
+counts no degenerate edge either, and `finish` refuses one not used exactly
+once. The genus `G` is *derived* from the counts,
 as the oracle derives it, so the line cannot fail on its genus; what it
 checks is its parity — a count set that leaves a residual of one cannot
 come from any closed orientable surface, whatever its genus. `Report::euler`

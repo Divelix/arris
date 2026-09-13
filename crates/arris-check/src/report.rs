@@ -2,100 +2,10 @@
 
 use core::fmt;
 
+use arris_topo::euler::EulerLine;
+
 use crate::unchecked::Unchecked;
 use crate::violation::{Level, Violation};
-
-/// The Euler–Poincaré line of a body (`docs/DATA-MODEL.md`
-/// §Euler–Poincaré): the five counts of its closure and the genus they
-/// imply through `V − E + F − (L − F) − 2(S − G) = 0`. The genus is
-/// *derived*, as the oracle derives it, so the line is not a violation on
-/// its own; what it checks is its parity — a count set that leaves a
-/// [`EulerLine::residual`] of one cannot come from any closed orientable
-/// surface, whatever its genus. A degenerate edge is not counted: it is a
-/// singular point of its surface (a cone's apex, a sphere's pole), not a
-/// boundary between faces — S2's reading of it — and counting it would
-/// give a sphere genus 1 and a cone an odd line.
-///
-/// ```
-/// use arris_check::{Level, check};
-/// use arris_debug::sample;
-/// use arris_topo::Model;
-///
-/// let mut m = Model::default();
-/// let body = sample::cylinder(&mut m, 4.0, 12.0).unwrap();
-/// let line = check(&m, body, Level::Fast).euler().unwrap();
-/// assert_eq!(line.to_string(), "2/3/3/3/1 g0 = 0");
-/// assert!(line.closes());
-/// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct EulerLine {
-    /// Vertices in the closure.
-    pub vertices: usize,
-    /// Edges in the closure that are not degenerate.
-    pub edges: usize,
-    /// Faces in the closure.
-    pub faces: usize,
-    /// Loops over those faces.
-    pub loops: usize,
-    /// Shells in the closure.
-    pub shells: usize,
-    /// The genus the counts imply, `S − ⌊(V − E + 2F − L) / 2⌋`.
-    pub genus: i64,
-}
-
-impl EulerLine {
-    /// The line of the counts, with the genus derived from them.
-    pub const fn new(
-        vertices: usize,
-        edges: usize,
-        faces: usize,
-        loops: usize,
-        shells: usize,
-    ) -> Self {
-        // V − E + F − (L − F) − 2(S − G) = 0  ⇒  2G = 2S − (V − E + 2F − L).
-        let x = Self::characteristic(vertices, edges, faces, loops);
-        EulerLine {
-            vertices,
-            edges,
-            faces,
-            loops,
-            shells,
-            genus: shells as i64 - x.div_euclid(2),
-        }
-    }
-
-    const fn characteristic(vertices: usize, edges: usize, faces: usize, loops: usize) -> i64 {
-        vertices as i64 - edges as i64 + 2 * faces as i64 - loops as i64
-    }
-
-    /// What the counts leave once the genus is taken out: `0` for a line
-    /// that closes, `1` for one that cannot come from any genus.
-    pub const fn residual(&self) -> i64 {
-        Self::characteristic(self.vertices, self.edges, self.faces, self.loops).rem_euclid(2)
-    }
-
-    /// `true` when [`EulerLine::residual`] is zero.
-    pub const fn closes(&self) -> bool {
-        self.residual() == 0
-    }
-}
-
-impl fmt::Display for EulerLine {
-    /// `V/E/F/L/S g<genus> = <residual>`.
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}/{}/{}/{}/{} g{} = {}",
-            self.vertices,
-            self.edges,
-            self.faces,
-            self.loops,
-            self.shells,
-            self.genus,
-            self.residual()
-        )
-    }
-}
 
 /// Every violation the checker found, in a deterministic order: by
 /// entity (kind, then id), then by invariant code, then by content. Two
