@@ -19,8 +19,8 @@ re-exports the public API. Lower crates never name types from upper ones.
 |---|---|---|---|
 | `arris-math` | `Point3`/`Vec3`/`UnitVec3` (over `nalgebra`, ADR-0001), `Frame`, `Frame2`, `Axis`, `Isometry`, `Interval`, `Aabb`, `wrap_angle`, exact orientation predicates (over `robust`), polynomial and interval-guarded Newton root finding, `Precision` and `Tolerance` | `nalgebra`, `robust`, `serde` (feature) | 0 — representation |
 | `arris-geom` | `Surface`, `Curve`, `Curve2` (analytic + NURBS): evaluation, derivatives, point projection, curve/curve, curve/surface and surface/surface intersection, bounding boxes over a parameter range, pcurves and the NURBS fit behind them; the (u, v) toolkit `region2` and `integrate` shared by the checker, tessellation, mass properties and classification; `Profile`, the planar sketch of lines and arcs a sweep takes, validated and oriented by `Profile::edges`; `GeomError` | `arris-math`, `thiserror`, `serde` (feature) | 0 — representation |
-| `arris-topo` | `Model` (the arena), typed ids, `Shape`/`Body`/`Face`/… handles, orientation, entities, pcurves, per-entity tolerances, Euler operators, adjacency and iteration, `Provenance`; re-exports `arris-geom` and `arris-math` | `arris-geom`, `arris-math`, `thiserror`, `serde` (feature) | 0 — representation |
-| `arris-check` | The invariant checker: `check(&Model, Body, Level) -> Report` and the `Violation` list of data-model §Invariants; re-exports `arris-topo` | `arris-topo` | 1 |
+| `arris-topo` | `Model` (the arena), typed ids, `Shape`/`Body`/`Face`/… handles, orientation, entities, pcurves, per-entity tolerances, Euler operators including the assembly seam (`Assembly::of_body`, `effective_uses`, `AssemblySlots`), the Euler line (`euler::EulerLine`), adjacency and iteration, `Provenance` and its audit; re-exports `arris-geom` and `arris-math` | `arris-geom`, `arris-math`, `thiserror`, `serde` (feature) | 0 — representation |
+| `arris-check` | The invariant checker: `check(&Model, Body, Level) -> Report` and the `Violation` list of data-model §Invariants; the shared face domain (`domain::FaceDomain`), point classifier (`classify::Classifier`, `classify_point`) and region flux (`flux::face_flux`) every `Full` row, the boolean and tessellation read a face through; re-exports `arris-topo` | `arris-topo`, `serde` (feature, forwarded to `arris-topo`) | 1 |
 | `arris-ops` | Primitives, extrude and revolve of a `Profile`, transform, booleans, later blends; `measure` (mass properties); each returns `Provenance` | `arris-check`, `thiserror`, `rayon` (feature) | 2 — algorithms |
 | `arris-mesh` | `TriMesh`, `Polyline`, the constrained Delaunay triangulation in (u, v) (`cdt`, ADR-0003), tessellation of faces and edges with shared edge discretisation; re-exports `arris-math`'s `Aabb` | `arris-check`, `arris-topo`, `thiserror`, `rayon` (feature) | 2 — algorithms |
 | `arris-io` | STEP AP214 Part 21 writer (later reader), the native format (`native`); re-exports `arris-check` | `arris-check`, `thiserror`, `serde`, `serde_json`, `postcard` (the last three behind the `serde` feature) | 2 — algorithms |
@@ -49,10 +49,23 @@ Every crate has `#![forbid(unsafe_code)]` and `#![warn(missing_docs)]`.
 Feature flags are few and named the same in every crate that has them:
 `serde` (on by default in `topo` and `io`; off by default in `math` and
 `geom`, where `topo`'s feature turns both on because `Precision` and the
-geometry are part of the native format), `parallel` (`rayon` inside `ops` and `mesh`; never enabled on
+geometry are part of the native format; `check` carries the same feature
+forwarded to `arris-topo/serde` and nothing of its own, the one path `io`
+has there without depending on `topo`'s own default features), `parallel`
+(`rayon` inside `ops` and `mesh`; never enabled on
 `wasm32`), `paranoid` (`ops`: run the checker after every operation in
-release builds too, §The checker), `rerun` (`debug` only). The facade
-forwards `serde`, `parallel` and `paranoid`.
+release builds too, §The checker), `rerun` (`debug` only). Every internal
+workspace dependency is declared `default-features = false` at
+`[workspace.dependencies]`, so `default = [...]` on a member (`topo`,
+`io`, `arris`) is what a plain path or version dependency on it actually
+gets; a consumer that wants the layer-legal path without a crate's own
+defaults depends on it directly with `default-features = false` and
+forwards the feature itself, as `arris`'s own `serde` feature and
+`cargo check -p arris --no-default-features` do (`arris-ops`, `-mesh`
+and `-io` reach no serde type at all with it off — `cargo tree -p arris
+--no-default-features -e normal` has neither `serde` nor `serde_json`,
+which CI asserts). The facade forwards `serde`, `parallel` and
+`paranoid`.
 
 ## The model, the arena and handles
 
@@ -168,7 +181,13 @@ body is an operand a boolean can take beside the original. It reaches
 exactly as far as `assemble` does — shells that share nothing, each one
 edge-connected, carried shell by shell in the body's stored order, each
 `Modified` from the one it moved — and it is how the property tests put
-their operands in random poses.
+their operands in random poses. It is `arris_topo::builder::Assembly::
+of_body(m, body, &mut remap) -> Result<(Assembly, BodyIndex), NotFound>`
+(data-model §Euler operators) plus a `GeometryRemap` that moves a point,
+a curve and a surface by the motion: the walk over the body's closure, the
+`Assembly` it describes and the `BodyIndex` provenance is built from are
+shared with a boolean's own assembly, so `transform`'s own work is the
+remap alone.
 
 A **query** has a different shape: it takes `&Model`, makes no body and
 records no provenance, because there is nothing for a later operation to
@@ -315,6 +334,21 @@ came from, and a cavity made of a cut tool's pieces alone is `Generated`
 from the tool's shell. Tolerances follow data-model §Tolerances' growth rule and a
 piece keeps its parent's.
 
+The keep-by-id assembly and the provenance writer above are
+`arris-ops`'s own `rebuild` module (ADR-0004), not the boolean's: a
+`Policy` per operand (`Reuse`, an untouched entity kept by id and a piece
+`Modified` from its parent; `Regenerate`, every entity `Deleted` and a
+surviving piece `Generated` from it, the tool of a `cut`) turns the
+pieces a boolean or a future blend has already decided on into an
+`Assembly` and, once `Builder::assemble` returns it, writes the generic
+half of their provenance — every operand entity kept, modified or
+deleted, the shell reconciliation, a coincident piece's stand-in — from
+the same `AssemblySlots` `transform` reads its own outputs through. The
+boolean layers its own two relations on top — a section vertex's or
+edge's `Generated` from the face pair that made it, meaningless without
+`Interferences` — inline, over the `Provenance` the writer returns.
+`boolean()` is `rebuild`'s first caller; a blend is its second.
+
 Sweeps take a planar `geom::Profile` — an outer loop and holes of lines
 and arcs in a plane's own (u, v), validated and oriented by
 `Profile::edges` (data-model §Profiles) — so a consumer's sketch never has
@@ -421,8 +455,8 @@ involved, so the message a consumer shows — or the agent reads — says
 | `Degenerate` | the requested result has no valid representation: a parameter that makes no geometry (`Reason::NonFinite`, `Reason::NotPositive` naming it — a zero radius, a box whose `min` is not below its `max`, a revolve angle at or below zero, a zero extrude direction; `Reason::AngleAboveTurn` past `2π`), a zero-thickness intersection or an extrude of zero length (`Reason::ZeroThickness`), a revolve whose axis is off the profile's plane (`Reason::AxisNotInProfilePlane`), whose profile crosses its axis (`Reason::ProfileCrossesAxis`) or lies within the tolerance of it everywhere (`Reason::ZeroThickness`), or whose arc's circle crosses it (`Reason::SpindleTorus`); an extrude off its plane's normal (`Reason::DirectionNotNormal`); a boolean that selects no material (`Reason::Empty`: a target inside its tool, a `common` of disjoint operands); result shells that would touch along an edge or at a vertex, or a full revolve touching its axis at a vertex with no segment along it (`Reason::NonManifold`, naming the shared edges or vertices, none for a sweep); faces touching along a curve interior to both result faces (`Reason::TangentContact`); a query on a body that is not a `Solid` (`Reason::NotSolid`) | the entities (none for a primitive or a sweep) and a `Reason` enum |
 | `Profile` | a sweep's sketch is not a valid profile: `Profile::edges` refused it (data-model §Profiles). An invalid profile has no entities to name, so it is neither `InvalidInput` nor `Degenerate` | the `ProfileError`, naming the loop and segment |
 | `Tolerance` | the result would need an entity tolerance above `Precision::max_tolerance` | the entity, the tolerance it wanted |
-| `NotFound` | a handle does not resolve in this model (wrong model, or compacted away) | the `Shape` |
-| `Internal` | a kernel bug the operation caught: the checker rejected its own output, the builder refused a step of its fixed sequence, a frame could not be placed from inputs it had validated, a point it had to classify could not be, a geometry query failed on validated input for a reason other than a missing closed form, a section edge crossed a seam the seam's own hit should have paved, a piece of a coincident face pair's edge matched no piece of the edge it lies along, the (u, v) arrangement of a face was not the subdivision the pave model promised (`SplitFault`: a dangling section edge, a cycle not turning once, a hole inside no piece, a piece with no interior point, a pave at an edge's end), the shells a boolean kept did not nest into lumps | a `Fault` — the `Report`, the `BuildError`, the `FrameError`, the `ClassifyError`, the `GeomError`, the two faces of the seam crossing, the edge and face of the unmatched common block, the `SplitFault` naming the face, or the `LumpError` |
+| `NotFound` | an id does not resolve in this model (wrong model, or compacted away) | the `AnyId` that failed to resolve itself, never an entity that merely holds it |
+| `Internal` | a kernel bug the operation caught: the checker rejected its own output, the builder refused a step of its fixed sequence, a frame could not be placed from inputs it had validated, a point it had to classify could not be, a geometry query failed on validated input for a reason other than a missing closed form, a section edge crossed a seam the seam's own hit should have paved, a piece of a coincident face pair's edge matched no piece of the edge it lies along, the (u, v) arrangement of a face was not the subdivision the pave model promised (`SplitFault`: a dangling section edge, a cycle not turning once, a hole inside no piece, a piece with no interior point, a pave at an edge's end), the shells a boolean kept did not nest into lumps, an operation's own fixed sequence broke an invariant it should have kept — an internal lookup by index or key, never a model id, found nothing (`Fault::Invariant { what }`), a sweep's own later step needed an entity its earlier step did not make for a segment (`Fault::Unmade { segment }`), a surface had no normal at a point on a face an operation needed one at, every partial derivative degenerate where the checker's own tolerances should have ruled that out (`Fault::NoNormal { face }`), or a profile edge's curve was not one of the kinds `Profile::edges` makes (`Fault::ProfileCurve(GeomError)`) | a `Fault` — the `Report`, the `BuildError`, the `FrameError`, the `ClassifyError`, the `GeomError`, the two faces of the seam crossing, the edge and face of the unmatched common block, the `SplitFault` naming the face, the `LumpError`, or one of the four bookkeeping variants above |
 
 `Internal(Fault::Checker)` is returned only in release builds with
 `paranoid` on, since a debug build panics on the same report (below);
@@ -458,20 +492,62 @@ that constructs it and sees it reported, and a level:
   shared edges, shells nest, a solid encloses positive volume. Not
   linear. Runs on demand, in the fixture corpus and in `/close-cycle`.
 
-`arris_check::classify::classify_point(&model, body, point) ->
-Result<Classification, ClassifyError>` is B1's ray cast made public and
-complete: `Inside`, `Outside`, or `On(Shape)` naming the most specific
-entity the point is within the tolerance of — the vertex, else the edge,
-else the face. The boundary test comes first, by the entities' own
+`arris_check::domain::FaceDomain::of(&model, face, tolerance) ->
+Result<FaceDomain, NotFound>` is the one answer to "where is this (u, v)
+point on this face": a face's loops read once as polygons within a chord
+of their pcurves, its (u, v) and 3D boxes, and `FaceDomain::side(uv) ->
+(Side, Vec2)`, which tries every period translate of the surface
+(`domain::shifts`) before answering `Outside`, so a periodic face's loops
+need only be written in one translate and S5, B1, the boolean and
+tessellation can never disagree about a point past a period —
+`FaceDomain::winds_around` and `FaceDomain::boundary_entity` resolve a
+point on the boundary to its vertex, else its edge, the same way, also
+trying periods on a closed edge; the free `domain::boundary_entity(model,
+edges, point)` does the same over a whole body's edges, which the
+classifier below asks of one. It replaced `Checker::face_side` and
+`faces_fine`, the classifier's own polygons, `check::uv_bounds`, the
+boolean's `FaceInfo`'s domain part and mesh's padded (u, v) box — one
+definition, not five (ADR-0004). The checker's `Full` rows and the
+classifier build it at the model's parametric tolerance; a boolean builds
+it at the pair's own face tolerance — S5's `regions_overlap` and
+`curve_is_interior_to_both`, and the classifier's boundary and ray tests,
+take the larger of the two faces' own tolerances at a pair, not the
+model's, so a face modelled looser than the default is judged by its own
+tolerance there too. It lives in `check` because the classifier and B1
+are already there, and `ops` and `mesh` already depend on `check`.
+
+`arris_check::classify::Classifier` is B1's ray cast made public and
+complete, built once and asked of many points: `Classifier::of_body(model,
+body)` reads the body's faces — their `FaceDomain`s — once, and
+`.classify(point) -> Result<Classification, ClassifyError>` answers
+`Inside`, `Outside`, or `On(Shape)` naming the most specific entity the
+point is within the tolerance of — the vertex, else the edge, else the
+face. `classify_point(&model, body, point)` is the one-shot wrapper over
+a fresh `Classifier`. The boundary test comes first, by the entities' own
 tolerances; only a point that is on nothing is cast for, and then the
 eight fixed directions are tried in order, a direction abandoned on a
 boundary, tangent or coincident hit, with all eight abandoned reported as
 `ClassifyError::Undecided` naming the body and the point. B1 is the same
-code over one shell's faces, so the row that proves a shell nesting and
-the predicate that decides which piece of a split face a boolean keeps
-can never disagree about a point (ADR-0004). It lives in `check` because
-that is where B1 already was, and `ops` depends on `check`; the facade
-re-exports it.
+code over one shell's faces — `Checker::shell_contains` and `nesting`
+build one `Classifier` per shell rather than one per ray, and a boolean's
+piece selection builds one per operand rather than one per piece it
+classifies — so the row that proves a shell nesting and the predicate
+that decides which piece of a split face a boolean keeps can never
+disagree about a point (ADR-0004). It lives in `check` because that is
+where B1 already was, and `ops` depends on `check`; the facade re-exports
+it.
+
+`arris_check::flux::face_flux(&model, face, integrand) -> Result<f64,
+FluxError>` is the one `∬ integrand(P, ∂P/∂u × ∂P/∂v) du dv` over a
+face's region, by Green's theorem through its loops
+(`geom::integrate::region_integral` at the surface's own `inner_step`):
+B2's enclosed volume, `arris_check::lumps`'s per-shell volume (both
+`P/3`'s flux, whose divergence is one) and `ops::measure`'s mass
+properties (the same integral with the density's and the moments' fields)
+are this integral with a different field each time, so the checker and a
+measurement can never read one face's region differently.
+`ops::measure::face_area` stays in `ops`: it integrates the surface's own
+area element, not the flux of a vector field.
 
 `arris_check::lumps(&model, body) -> Result<Vec<Lump>, LumpError>` is
 B1's nesting as a value (ADR-0006): each outer shell of a solid with the
@@ -575,6 +651,15 @@ depends on `check`. The mesh guarantees (ADR-0003):
   across the hole rather than column by column.
 - A face whose loops are not the simple nested polygons the checker
   promises is `MeshError::Face` with the `CdtError` naming the segments.
+- The interior lattice is capped by its total point count, not per
+  direction: a face whose curvature varies enormously over its domain — a
+  torus with a minor radius far smaller than its major one, at a fine
+  chord — that would need more than `MAX_INTERIOR_POINTS` points is
+  `MeshError::GridTooLarge { face, points }` naming how many it would
+  need, never an allocation the machine cannot make. `MeshError::Internal`
+  is tessellation's own bookkeeping breaking on already-validated input —
+  never a property of the body or the chord, and never the CDT's own
+  fault, so never a `MeshError::Face`.
 
 No adaptive refinement: interior points, where a face needs them, lie on
 a uniform (u, v) grid sized by the chord bound. No `f32` output (the
@@ -642,6 +727,15 @@ mesh-based mass properties (`ops::measure` integrates the B-Rep).
 - **Text dump** (`arris-debug::dump_text`): the deterministic, diffable
   rendering of a body that fixtures store and tests compare. Not a format:
   it has no reader.
+- **The docs-refs lint** (`crates/arris/tests/docs_refs.rs`): a plan file
+  is deleted on retirement (`.agents/rules/docs-lifecycle.md`), so a
+  citation of `docs/plans/<slug>` or `plans/<slug>` — the commit-message
+  form `(plans/<slug> step N)` included — left behind under `crates/`,
+  `tools/`, `.githooks/` or the root `Cargo.toml` after that outlives the
+  file it points at. Proven the way `corpus_lint.rs` proves its own
+  rules: against a scratch tree with a citation deliberately left
+  dangling next to one that still resolves, not just by running clean
+  against the real tree.
 - **`tools/test-timings.sh`**: the suite's wall clock, per test binary and
   whole, at whatever `ARRIS_PROPTEST_CASES` is set to. Sharding the boolean
   properties and moving the suite onto `cargo nextest` took
@@ -734,7 +828,16 @@ mesh-based mass properties (`ops::measure` integrates the B-Rep).
   the crates below it (`math`, `geom`, `topo`) that dev-dependency is a
   cycle, so their property tests are integration tests under
   `crates/<crate>/tests/`, where the crate is linked once and its types
-  unify; a `#[cfg(test)]` module would see two copies.
+  unify; a `#[cfg(test)]` module would see two copies), and `testing`
+  (dev-only, not built for wasm32 since it takes `prop`'s
+  `TestCaseError`: the helpers that used to be copied across test files —
+  a relative-tolerance and period-aware numeric comparison (`close`,
+  `close_param`), the provenance accounting a generated body's record
+  owes (`entities_of`, `recorded_parts`, data-model §Provenance), and
+  central differences against a curve's or surface's own analytic
+  derivatives (`central_differences_curve`, `central_differences_surface`)
+  — now imported once by `ops`, `geom` and `mesh`'s tests instead of held
+  per file).
 
 ## How a consumer's kernel facade maps on
 

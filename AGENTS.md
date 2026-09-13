@@ -32,7 +32,10 @@ for its fix lives under `tests/fixtures/regression/`. ADR-0001 to 0005.
 **C2 under way: the application gate.** Multi-shell results are lumps of
 one `Solid` (ADR-0006): cavities, split cuts, disjoint fuses, full revolves
 with holes. A revolve profile may touch its axis: cones and spheres close
-on degenerate edges, notches to the axis are voids. **Next:** `/idea` or `/plan` the remaining C2 lines one at a time.
+on degenerate edges, notches to the axis are voids. `kernel-seams` (done
+2026-09-13) laid the shared seams — `FaceDomain`, `Classifier`, the Euler
+line, `AssemblySlots`, `Assembly::of_body`, `ops::rebuild` — a blend
+builds on. **Next:** `/plan fillet-and-chamfer`.
 
 ## Rules that are not derivable from the code
 

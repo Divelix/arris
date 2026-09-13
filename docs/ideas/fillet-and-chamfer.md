@@ -1,9 +1,10 @@
 # Idea: fillet-and-chamfer
 
 - Status: Parked — decided 2026-09-13 ("yes": the four decisions below as
-  recommended, the box edge and the miter first). Planned once
-  `plans/kernel-seams` retires: its assembly, provenance and face-domain
-  seams are what the blend builds on.
+  recommended, the box edge and the miter first). `kernel-seams` retired
+  2026-09-13: its assembly, provenance and face-domain seams are what the
+  blend builds on. The plan can now be written (`/plan
+  fillet-and-chamfer`).
 - Raised: 2026-09-12
 - Prompt (verbatim from the human): "do all 3" — accepting "`/idea` for
   fillet and chamfer, before any intersector work"

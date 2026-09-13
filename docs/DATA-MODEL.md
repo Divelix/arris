@@ -710,15 +710,43 @@ checker, above this crate, is where the finished body is proven.
 **Assembly, and kept ids.** An operation that computes its result's faces
 outright rather than reaching them by a sequence of edits — a boolean, a
 sweep, a transform — enters the builder through `assemble(&Model, tolerance, Assembly) ->
-Result<Builder, BuildError>` instead (ADR-0004). An `Assembly` is a list
-of `VertexSpec`s, a list of `EdgeSpec`s and the body's shells, each a list
-of `FaceSpec`s, every spec `Keep` (an entity the model already holds) or
-`New`, with
+Result<(Builder, AssemblySlots), BuildError>` instead (ADR-0004). An
+`Assembly` is a list of `VertexSpec`s, a list of `EdgeSpec`s and the
+body's shells, each a list of `FaceSpec`s, every spec `Keep` (an entity
+the model already holds) or `New`, with
 `VertexKey`/`EdgeKey` naming either an arena id or a position in the
 list; a `New` face's loops are `UseSpec`s in effective orientation, as
 the operators take them. A `Keep` face is kept whole — its loops,
 pcurves, edges and vertices are the model's, and the edges and vertices
-are kept with it.
+are kept with it. `AssemblySlots { vertices, edges, faces }` gives back
+the slot `assemble` assigned to each spec, in spec order — `faces` shell
+by shell — so a caller that holds a slot per entity of its own operands
+looks an output up as `built.vertices[&slots.vertices[i]]` rather than
+zipping the builder's slot order against its own list, which an
+`Assembly` interleaving `Keep` and `New` specs need not agree with.
+
+`builder::effective_uses(face_orientation, uses)` walks a loop's coedges
+between *stored* order (the loop's own, on its own surface) and
+*effective* order (as seen from outside the material, each orientation
+composed with `face_orientation`, the whole walk reversed when it is
+`Reversed`) — composing an orientation with itself and reversing a list
+are each their own inverse, so one function walks both ways.
+`FaceSpec::from_face(model, face_use, edge_key)` reads a face whole into
+a `FaceSpec::New` through it — the surface, the tolerance, every loop's
+uses in effective order, each edge named through the caller's own
+`edge_key` — what `finish`, `keep_face`, `transform` and a boolean's own
+assembly each used to walk by hand; now one function does, and they
+differ only in the `edge_key` they pass. `Assembly::of_body(model, body,
+remap: &mut impl GeometryRemap) -> Result<(Assembly, BodyIndex),
+NotFound>` builds on it to describe a whole body shell by shell with
+every entity `New`, its curves, surfaces and vertex points named through
+`remap` — the identity, `KeepGeometry`, for a caller that wants the same
+geometry; `transform`'s own remap moves each by its motion. `BodyIndex`
+maps every vertex, edge, shell and face (its shell and spec index) of the
+body read to its spec index in the `Assembly` — what provenance is built
+from, once `assemble` returns the matching `AssemblySlots`; `transform`
+is `of_body` plus this remap, its own work reduced to the geometry move
+alone.
 
 A kept slot *is* the arena's entity: `finish` appends nothing for it and
 returns its id, so a face an operation did not touch keeps its `FaceId`
@@ -735,9 +763,9 @@ twice, no shell is empty, no edge is used by and no vertex is an end of
 edges of two shells, the faces of each shell are one edge-connected
 component, and each shell's Euler–Poincaré line closes at a whole genus,
 their sum becoming the builder's — each failure a typed `BuildError`
-(`LoopOpen`, `EdgeUses`, `SameDirection`, `Duplicate`, `EmptyShell`,
-`SharedEdge`, `SharedVertex`, `Disconnected`, `NotClosed`, `EmptyLoop`,
-`NoSpec`, `NotFound`), and the model is only read. How the shells nest is
+(`LoopOpen`, `EdgeUses`, `SameDirection`, `Duplicate`, `Empty`,
+`EmptyShell`, `SharedEdge`, `SharedVertex`, `Disconnected`, `NotClosed`,
+`EmptyLoop`, `NoSpec`, `NotFound`), and the model is only read. How the shells nest is
 not the builder's to prove: it is B1's. `finish` appends one shell per
 shell of the assembly, in order, and `Built::shells` lists them; a face an
 operator makes out of another belongs to that face's shell, so a builder
