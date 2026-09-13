@@ -18,7 +18,7 @@ use arris_check::arris_topo::arris_math::{
     Interval, Point2, Point3, Precision, Tolerance, Vec2, period_end, wrap_angle,
 };
 use arris_check::arris_topo::{
-    Body, EdgeId, FaceId, Model, NotFound, Shape, Vertex as VertexHandle, VertexId,
+    Body, EdgeId, FaceId, Model, Shape, Vertex as VertexHandle, VertexId,
 };
 
 use arris_check::domain::band;
@@ -126,15 +126,8 @@ struct Build<'m> {
 }
 
 pub(super) fn build(m: &Model, a: Body, b: Body) -> Result<Interferences, OpError> {
-    let of = |body: Body| move |_: NotFound| OpError::NotFound(shape_of(body));
-    let faces = [
-        FaceInfo::of_body(m, a).map_err(of(a))?,
-        FaceInfo::of_body(m, b).map_err(of(b))?,
-    ];
-    let edges = [
-        EdgeInfo::of_body(m, a).map_err(of(a))?,
-        EdgeInfo::of_body(m, b).map_err(of(b))?,
-    ];
+    let faces = [FaceInfo::of_body(m, a)?, FaceInfo::of_body(m, b)?];
+    let edges = [EdgeInfo::of_body(m, a)?, EdgeInfo::of_body(m, b)?];
     let mut build = Build {
         m,
         precision: m.precision(),
@@ -201,10 +194,6 @@ fn samples(range: Interval, n: usize) -> Vec<f64> {
 }
 
 impl<'m> Build<'m> {
-    fn not_found(&self, side: usize) -> OpError {
-        OpError::NotFound(shape_of(if side == 0 { self.a } else { self.b }))
-    }
-
     /// The edge of operand `side` with this id, when it has a curve.
     fn edge_info(&self, side: usize, id: EdgeId) -> Option<&EdgeInfo<'m>> {
         self.edges[side].iter().find(|e| e.id == id)
@@ -275,7 +264,7 @@ impl<'m> Build<'m> {
                     if !e.bounds.intersects(&f.bounds) {
                         continue;
                     }
-                    self.hit_edge_face(e, f, other, &mut found, &mut coincident)?;
+                    self.hit_edge_face(e, f, &mut found, &mut coincident)?;
                 }
             }
         }
@@ -298,7 +287,6 @@ impl<'m> Build<'m> {
         &self,
         e: &EdgeInfo<'m>,
         f: &FaceInfo<'m>,
-        face_side: usize,
         found: &mut Vec<(EdgeFaceHit, f64)>,
         coincident: &mut Vec<(EdgeId, FaceId)>,
     ) -> Result<(), OpError> {
@@ -320,11 +308,7 @@ impl<'m> Build<'m> {
             let landing = match side {
                 Side::Outside => continue,
                 Side::Inside => Landing::Interior,
-                Side::Boundary => match f
-                    .domain
-                    .boundary_entity(self.m, h.point)
-                    .map_err(|_| self.not_found(face_side))?
-                {
+                Side::Boundary => match f.domain.boundary_entity(self.m, h.point)? {
                     Some(shape) => Landing::Boundary(shape),
                     // Within the (u, v) band of a loop's polygon but within
                     // no edge's or vertex's own tolerance: not on the
@@ -442,7 +426,7 @@ impl<'m> Build<'m> {
         let m = self.m;
         let mut base = tolerance;
         for &v in &existing {
-            base = base.max(m.vertex(v).map_err(|_| self.not_found(0))?.tolerance());
+            base = base.max(m.vertex(v)?.tolerance());
         }
         let found = self.vertices.iter().position(|v| {
             v.existing.iter().any(|x| existing.contains(x))
@@ -777,7 +761,9 @@ impl<'m> Build<'m> {
         }
         if periodic {
             if let (Some(first), Some(last)) = (paves.first(), paves.last()) {
-                let period = curve.period().unwrap_or(0.0);
+                let period = curve.period().ok_or(OpError::Internal(Fault::Invariant {
+                    what: "a periodic curve's period",
+                }))?;
                 // A block that wraps ends one period after the first
                 // pave, and never more than one period after the last —
                 // with a single pave the two are the same turn, and the
@@ -1196,7 +1182,11 @@ impl<'m> Build<'m> {
         reversed: bool,
     ) -> Result<(CommonBlock, f64), OpError> {
         let m = self.m;
-        let g = self.edge_info(0, gid).ok_or_else(|| self.not_found(0))?;
+        let g = self
+            .edge_info(0, gid)
+            .ok_or(OpError::Internal(Fault::Invariant {
+                what: "a's edge info for a common block",
+            }))?;
         let g_mid = g.curve.point(gb.range.midpoint());
         // `b`'s parameter of `a`'s midpoint: where each use's own pcurve
         // gives the (u, v) the fitted one has to be placed at.
@@ -1211,12 +1201,12 @@ impl<'m> Build<'m> {
             if !fb.edges().contains(&e.id) {
                 continue;
             }
-            let face = m.face(fb.id).map_err(|_| self.not_found(1))?;
+            let face = m.face(fb.id)?;
             for c in face.loops().iter().flat_map(|l| l.coedges()) {
                 if c.edge() != e.id {
                     continue;
                 }
-                let own = m.curve2(c.pcurve()).map_err(|_| self.not_found(1))?;
+                let own = m.curve2(c.pcurve())?;
                 let uv_mid = own.point(t_e);
                 let fit = g.tolerance.max(e.tolerance) + fb.tolerance;
                 let (pc, residual) =

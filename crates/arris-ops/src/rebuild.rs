@@ -75,7 +75,6 @@ pub(crate) struct Plan {
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn assembly(
     m: &Model,
-    bodies: [Body; 2],
     policy: [Policy; 2],
     vertices: &[Vec<VertexId>; 2],
     edges: &[Vec<EdgeId>; 2],
@@ -90,8 +89,6 @@ pub(crate) fn assembly(
     shells: &[Vec<usize>],
 ) -> Result<Plan, OpError> {
     let side_of_vertex = |v: VertexId| usize::from(vertices[0].binary_search(&v).is_err());
-    let not_found =
-        |side: usize| OpError::NotFound(Shape::new(bodies[side].id, bodies[side].orientation));
     let vertex_new = |v: VRef| match v {
         VRef::Section(_) => true,
         VRef::Existing(id) => {
@@ -139,7 +136,7 @@ pub(crate) fn assembly(
             let (point, tolerance) = match v {
                 VRef::Section(k) => (i.vertices[k].point, i.vertices[k].tolerance),
                 VRef::Existing(id) => {
-                    let stored = m.vertex(id).map_err(|_| not_found(side_of_vertex(id)))?;
+                    let stored = m.vertex(id)?;
                     (
                         stored.point(),
                         retolerated.get(&id).copied().unwrap_or(stored.tolerance()),
@@ -160,7 +157,7 @@ pub(crate) fn assembly(
     let mut ekey: BTreeMap<ERef, EdgeKey> = BTreeMap::new();
     for (side, side_edges) in edges.iter().enumerate() {
         for &e in side_edges {
-            let edge = *m.edge(e).map_err(|_| not_found(side))?;
+            let edge = *m.edge(e)?;
             let subs = &sub_edges[&e];
             if !edge_new(e, side) {
                 let whole = ERef::Sub { edge: e, index: 0 };
@@ -232,7 +229,7 @@ pub(crate) fn assembly(
                 )));
                 continue;
             }
-            let entity = m.face(piece.face.id).map_err(|_| not_found(piece.side))?;
+            let entity = m.face(piece.face.id)?;
             let loops = piece
                 .loops
                 .iter()

@@ -32,7 +32,7 @@ pub use primitive::{primitive_box, primitive_cylinder};
 pub use sweep::{extrude, revolve};
 pub use transform::transform;
 
-use arris_check::arris_topo::{Body, Model, Shape};
+use arris_check::arris_topo::{Body, Model};
 
 /// The input check every operation and query runs before it reads a
 /// body: the handle resolves ([`OpError::NotFound`] otherwise), and in
@@ -40,8 +40,7 @@ use arris_check::arris_topo::{Body, Model, Shape};
 /// passes the checker at `Level::Fast` ([`OpError::InvalidInput`] with
 /// the report otherwise).
 fn verify_input(m: &Model, body: Body) -> Result<(), OpError> {
-    m.body(body.id)
-        .map_err(|_| OpError::NotFound(Shape::new(body.id, body.orientation)))?;
+    m.body(body.id)?;
     #[cfg(any(debug_assertions, feature = "paranoid"))]
     {
         let report = arris_check::check(m, body, arris_check::Level::Fast);

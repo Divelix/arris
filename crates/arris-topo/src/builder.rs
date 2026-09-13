@@ -746,6 +746,15 @@ pub enum BuildError {
         /// The two shells, ascending.
         shells: [usize; 2],
     },
+    /// A kill operator's own bookkeeping broke: neither the use it left a
+    /// position after, nor the empty loop it seeded, was on `face` — one
+    /// of the two always is by construction. Never a property of the
+    /// input.
+    #[error("{face} has neither the use nor the empty loop a kill left a position after")]
+    Invariant {
+        /// The face.
+        face: FaceRef,
+    },
 }
 
 /// Tombstoned slots with a LIFO free list: a kill leaves a hole and the
@@ -1495,12 +1504,12 @@ impl Builder {
         f: FaceRef,
         key: Option<(EdgeRef, Orientation)>,
         seed: VertexRef,
-    ) -> Position {
+    ) -> Result<Position, BuildError> {
         let (li, ci) = key
             .and_then(|k| self.locate(f, k))
             .or_else(|| self.empty_loop(f, seed).map(|li| (li, 0)))
-            .unwrap_or((0, 0));
-        Position::new(f, li, ci)
+            .ok_or(BuildError::Invariant { face: f })?;
+        Ok(Position::new(f, li, ci))
     }
 
     /// **mvfs** — make vertex, face, shell: the first vertex of a body, a
@@ -1662,7 +1671,7 @@ impl Builder {
         self.vertices.remove(tip.0);
         self.edges.remove(edge.0);
         self.canonicalise(f);
-        let at = self.position_after(f, following, e.start);
+        let at = self.position_after(f, following, e.start)?;
         Ok((
             at,
             Strut {
@@ -1805,7 +1814,7 @@ impl Builder {
         }
         self.edges.remove(edge.0);
         self.canonicalise(fb);
-        let to = self.position_after(fb, first_spliced.or(following), e.start);
+        let to = self.position_after(fb, first_spliced.or(following), e.start)?;
         let n = self.loop_ref(fb, to.loop_index)?.uses.len();
         let mut from = to;
         if first_spliced.is_some() {
@@ -1922,8 +1931,8 @@ impl Builder {
         });
         self.edges.remove(edge.0);
         self.canonicalise(f);
-        let from = self.position_after(f, rest_first, e.start);
-        let to = self.position_after(f, ring_first, e.end);
+        let from = self.position_after(f, rest_first, e.start)?;
+        let to = self.position_after(f, ring_first, e.end)?;
         Ok((
             from,
             to,
@@ -1976,7 +1985,7 @@ impl Builder {
         self.face_mut(into)?.loops.push(ring);
         self.genus += 1;
         self.canonicalise(into);
-        Ok(self.position_after(into, key, seed).loop_index)
+        Ok(self.position_after(into, key, seed)?.loop_index)
     }
 
     /// **mfkrh** — make face, kill ring, hole: the inverse of

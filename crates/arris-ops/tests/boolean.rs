@@ -343,7 +343,7 @@ fn random_overlapping_pairs_pave_consistently() {
 
 use arris_ops::arris_check::arris_topo::arris_math::Point2;
 use arris_ops::arris_check::arris_topo::{
-    EntityId, Face as FaceHandle, Orientation, Origin, Provenance, Shape,
+    AnyId, EntityId, Face as FaceHandle, Orientation, Origin, Provenance, Shape,
 };
 use arris_ops::arris_check::{Level, check, lumps};
 use arris_ops::measure::mass_properties;
@@ -539,6 +539,25 @@ fn a_swallowed_target_is_a_typed_refusal() {
     }
     assert_eq!(arris_debug::dump_text(&m, a).unwrap(), before);
     assert_eq!(m.faces(a).unwrap().len(), faces);
+}
+
+/// A tool that does not resolve in the target's model — the wrong model,
+/// `NotFound`'s own words — is named by its own id, not by the target's:
+/// `OpError::NotFound` never substitutes an unrelated body for the one
+/// that failed to resolve.
+#[test]
+fn a_boolean_over_a_body_that_does_not_resolve_still_names_that_body() {
+    let mut m = Model::default();
+    let (a, _) = primitive_box(&mut m, Point3::origin(), Point3::new(1.0, 1.0, 1.0)).unwrap();
+    let mut other = Model::default();
+    // A first body in `other` so `b`'s id is one `m` never assigned, not
+    // one that happens to alias `a`'s.
+    primitive_box(&mut other, Point3::origin(), Point3::new(1.0, 1.0, 1.0)).unwrap();
+    let (b, _) = primitive_box(&mut other, Point3::origin(), Point3::new(1.0, 1.0, 1.0)).unwrap();
+    match cut(&mut m, a, b).unwrap_err() {
+        OpError::NotFound(id) => assert_eq!(id, AnyId::from(EntityId::from(b.id))),
+        other => panic!("{other:?}"),
+    }
 }
 
 /// Two boxes touching along an edge, and two touching at a corner, fused:

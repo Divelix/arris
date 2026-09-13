@@ -4,7 +4,7 @@
 use arris_check::arris_topo::arris_geom::{GeomError, GeomKind, ProfileError};
 use arris_check::arris_topo::arris_math::FrameError;
 use arris_check::arris_topo::builder::BuildError;
-use arris_check::arris_topo::{Body, EdgeId, FaceId, Shape};
+use arris_check::arris_topo::{AnyId, Body, EdgeId, FaceId, NotFound, Shape};
 use arris_check::{ClassifyError, LumpError, Report};
 
 /// Why a requested result has no valid representation.
@@ -150,6 +150,31 @@ pub enum Fault {
     /// which share no edge and no vertex between shells, did not nest, or
     /// their nesting could not be decided.
     Lumps(LumpError),
+    /// An invariant the operation's own fixed sequence should have kept
+    /// broke: an internal lookup by index or key, never a model id, found
+    /// nothing. Never a property of the input.
+    Invariant {
+        /// What was missing.
+        what: &'static str,
+    },
+    /// A sweep's fixed sequence did not make an entity for `segment` that
+    /// its own later step needed: a kernel bug, never a property of the
+    /// validated sketch.
+    Unmade {
+        /// The profile segment.
+        segment: usize,
+    },
+    /// A surface has no normal at the point on `face` an operation needed
+    /// one at: every partial derivative it tried was degenerate there,
+    /// which the checker's own tolerances should have ruled out.
+    NoNormal {
+        /// The face.
+        face: FaceId,
+    },
+    /// A profile edge's curve is not one of the kinds `Profile::edges`
+    /// makes: a kernel bug in the fixed sequence, never a property of the
+    /// validated sketch.
+    ProfileCurve(GeomError),
 }
 
 /// How the arrangement a boolean splits a face by failed to be a planar
@@ -234,6 +259,12 @@ impl core::fmt::Display for Fault {
                 "a piece of {edge} lies along the boundary of {face} but matches no piece of it"
             ),
             Fault::Lumps(e) => write!(f, "the result's shells are not lumps: {e}"),
+            Fault::Invariant { what } => write!(f, "{what} was not found"),
+            Fault::Unmade { segment } => {
+                write!(f, "segment {segment} was not made")
+            }
+            Fault::NoNormal { face } => write!(f, "{face} has no normal there"),
+            Fault::ProfileCurve(e) => write!(f, "a profile edge's curve is invalid: {e}"),
         }
     }
 }
@@ -286,10 +317,11 @@ pub enum OpError {
         /// The tolerance it wanted.
         wanted: f64,
     },
-    /// A handle does not resolve in this model: the wrong model, or
-    /// compacted away.
+    /// An id does not resolve in this model: the wrong model, or
+    /// compacted away. Names the id that failed to resolve itself, not an
+    /// entity that holds it.
     #[error("{0} does not resolve in this model")]
-    NotFound(Shape),
+    NotFound(AnyId),
     /// A kernel bug, caught: see [`Fault`].
     #[error("kernel bug: {0}")]
     Internal(Fault),
@@ -319,5 +351,11 @@ impl From<BuildError> for OpError {
 impl From<FrameError> for OpError {
     fn from(e: FrameError) -> Self {
         OpError::Internal(Fault::Frame(e))
+    }
+}
+
+impl From<NotFound> for OpError {
+    fn from(e: NotFound) -> Self {
+        OpError::NotFound(e.id)
     }
 }

@@ -345,7 +345,7 @@ bound has to be established here.
     provenance — meaningless without `Interferences`) stay inline in
     `boolean::result::boolean`, layered on the `Provenance` the writer
     returns.
-- [ ] Step 10 **[1]** — **Errors that name what failed.**
+- [x] Step 10 **[1]** — **Errors that name what failed.**
   - `OpError::NotFound(AnyId)` and the new `Fault` variants per the
     delta. The 36 `map_err(|_| …)` sites carry the id.
   - Silent fallbacks become faults: `Builder::position_after`'s
@@ -355,6 +355,33 @@ bound has to be established here.
   - Tests: a measure over a body whose surface id was compacted away
     names the surface; a boolean over a body that does not resolve still
     names the body.
+  - Finding (step 10): `Builder::position_after`'s fallback lives in
+    `arris-topo`, below `arris-ops`, so its typed error is a `BuildError`
+    variant, not an `arris-ops::Fault` one — a lower crate never names an
+    upper one's types. Added `BuildError::Invariant { face: FaceRef }`,
+    named here as the public-type change it is; `position_after` and its
+    five callers (`kev`, `kef`, `kemr`, `kfmrh`) now return
+    `Result<Position, BuildError>` through it.
+  - Finding (step 10): most `map_err(|_| …)`/`ok_or_else(|| …)` sites
+    were wrapping a real `Result<_, NotFound>` (`m.vertex`, `m.edge`,
+    `m.face`, `m.surface`, `Assembly::of_body`, `FaceInfo::of_body`,
+    `FluxError::NotFound`, `domain::boundary_entity`, …) and discarding
+    the id it already carried in favour of a body or face id that merely
+    held it; those became a bare `?` (`OpError: From<NotFound>`, added).
+    A handful were `Option`-based internal-table lookups with no model id
+    at all (a Vec index, a private `edge_info`/`find` slice search); those
+    became `Fault::Invariant { what }`, the one generic "an operation's
+    own bookkeeping broke" variant, since none names a distinct property
+    worth its own variant. `rebuild::assembly` lost its now-unused
+    `bodies: [Body; 2]` parameter, since every one of its `not_found`
+    sites turned out to be a real `NotFound` conversion.
+  - The `mass_properties`/surface test is white-box (`measure`'s own
+    `#[cfg(test)] mod tests`, calling private `face_area` directly): the
+    checker's M1 already refuses a body whose face names a surface that
+    does not resolve before `mass_properties` reaches its own lookup, so
+    the only way to observe *that* lookup's own id naming is to call it
+    directly, past `verify_input`. Precedented broadly elsewhere in the
+    workspace (`arris-topo`, `arris-check`, …), new for `arris-ops`.
 - [ ] Step 11 **[1]** — **Rule fixes in check, mesh and io; features.**
   - `Violation::level` exhaustive; `cdt::classify`'s wildcard →
     `Fail::Internal`.

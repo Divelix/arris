@@ -9,13 +9,13 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use arris_check::arris_topo::arris_geom::{GeomError, GeomKind, Surface, SurfaceIntersection};
+use arris_check::arris_topo::arris_geom::{GeomKind, Surface, SurfaceIntersection};
 use arris_check::arris_topo::arris_math::{Interval, Point2, Point3, Precision, Vec3};
 use arris_check::arris_topo::builder::Builder;
 use arris_check::arris_topo::entity::BodyKind;
 use arris_check::arris_topo::{
-    Body, Curve2Id, CurveId, EdgeId, EntityId, Face as FaceHandle, FaceId, Model, NotFound,
-    Provenance, Shape, ShellId, VertexId,
+    Body, Curve2Id, CurveId, EdgeId, EntityId, Face as FaceHandle, FaceId, Model, Provenance,
+    Shape, ShellId, VertexId,
 };
 use arris_check::{Classification, Classifier, lumps};
 
@@ -149,13 +149,6 @@ impl<'m> Build<'m> {
         usize::from(self.vertices[0].binary_search(&v).is_err())
     }
 
-    fn not_found(&self, side: usize) -> OpError {
-        OpError::NotFound(Shape::new(
-            self.bodies[side].id,
-            self.bodies[side].orientation,
-        ))
-    }
-
     /// The vertex an operand vertex is realised as: itself, or the one
     /// standing for the section vertex it was merged into.
     fn vref_of_operand(&self, v: VertexId) -> VRef {
@@ -181,12 +174,10 @@ impl<'m> Build<'m> {
                 .copied()
                 .find(|&x| self.op.policy(self.side_of_vertex(x)) == Policy::Reuse)
                 .or_else(|| v.existing.first().copied())
-                .ok_or_else(|| self.not_found(0))?;
-            let stored = self
-                .m
-                .vertex(rep)
-                .map_err(|_| self.not_found(self.side_of_vertex(rep)))?
-                .tolerance();
+                .ok_or(OpError::Internal(Fault::Invariant {
+                    what: "a section vertex's existing operand vertices",
+                }))?;
+            let stored = self.m.vertex(rep)?.tolerance();
             if v.tolerance > stored {
                 self.retolerated.insert(rep, v.tolerance);
             }
@@ -207,7 +198,7 @@ impl<'m> Build<'m> {
     fn sub_edges(&mut self) -> Result<(), OpError> {
         for side in 0..2 {
             for &e in &self.edges[side] {
-                let edge = *self.m.edge(e).map_err(|_| self.not_found(side))?;
+                let edge = *self.m.edge(e)?;
                 let ends = [edge.start(), edge.end()].map(|v| self.vref_of_operand(v));
                 let mut params = vec![edge.range().lo()];
                 let mut vrefs = vec![ends[0]];
@@ -302,12 +293,7 @@ impl<'m> Build<'m> {
             let ERef::Sub { edge, index } = r else {
                 continue;
             };
-            let side = usize::from(!self.edges[0].contains(&edge));
-            let stored = self
-                .m
-                .edge(edge)
-                .map_err(|_| self.not_found(side))?
-                .tolerance();
+            let stored = self.m.edge(edge)?.tolerance();
             if tolerance <= stored {
                 continue;
             }
@@ -319,11 +305,7 @@ impl<'m> Build<'m> {
                 let VRef::Existing(v) = end else {
                     continue;
                 };
-                let stored = self
-                    .m
-                    .vertex(v)
-                    .map_err(|_| self.not_found(self.side_of_vertex(v)))?
-                    .tolerance();
+                let stored = self.m.vertex(v)?.tolerance();
                 let current = self.retolerated.get(&v).copied().unwrap_or(stored);
                 if tolerance > current {
                     self.retolerated.insert(v, tolerance);
@@ -427,10 +409,8 @@ impl<'m> Build<'m> {
     }
 
     fn surface_of(&self, h: FaceHandle) -> Result<&'m Surface, OpError> {
-        let face = self.m.face(h.id).map_err(|_| self.not_found(0))?;
-        self.m
-            .surface(face.surface())
-            .map_err(|_| self.not_found(0))
+        let face = self.m.face(h.id)?;
+        Ok(self.m.surface(face.surface())?)
     }
 
     /// The effective outward normal of face `h` at `point` — at its
@@ -451,12 +431,9 @@ impl<'m> Build<'m> {
                     .uv
             }
         };
-        let n = surface.normal(uv.x, uv.y).ok_or_else(|| {
-            OpError::Internal(Fault::Geometry(GeomError::Degenerate {
-                kind: GeomKind::Surface(surface.kind()),
-                reason: "no normal at a piece's interior point".into(),
-            }))
-        })?;
+        let n = surface
+            .normal(uv.x, uv.y)
+            .ok_or(OpError::Internal(Fault::NoNormal { face: h.id }))?;
         let n = n.into_inner();
         Ok(if h.orientation.is_reversed() { -n } else { n })
     }
@@ -532,13 +509,21 @@ impl<'m> Build<'m> {
     /// a curve interior to both, the slit refused by name (ADR-0004).
     fn contacts(&self) -> Result<(), OpError> {
         for c in &self.i.contacts {
-            let pair = self.i.pairs.get(c.pair).ok_or_else(|| self.not_found(0))?;
+            let pair = self
+                .i
+                .pairs
+                .get(c.pair)
+                .ok_or(OpError::Internal(Fault::Invariant {
+                    what: "a contact's face pair",
+                }))?;
             let find = |side: usize, id: FaceId| {
                 self.faces[side]
                     .iter()
                     .copied()
                     .find(|h| h.id == id)
-                    .ok_or_else(|| self.not_found(side))
+                    .ok_or(OpError::Internal(Fault::Invariant {
+                        what: "a contact's face among its operand",
+                    }))
             };
             let (fa, fb) = (find(0, pair.a)?, find(1, pair.b)?);
             let (Some(inside_a), Some(inside_b)) = (
@@ -833,31 +818,20 @@ pub(super) fn boolean(
     op: Op,
 ) -> Result<(Body, Provenance), OpError> {
     let bodies = [i.a, i.b];
-    let of = |side: usize| {
-        move |_: NotFound| OpError::NotFound(Shape::new(bodies[side].id, bodies[side].orientation))
-    };
-    let closures = [
-        m.closure(i.a).map_err(of(0))?,
-        m.closure(i.b).map_err(of(1))?,
-    ];
+    let closures = [m.closure(i.a)?, m.closure(i.b)?];
     let vertices = [closures[0].vertices.clone(), closures[1].vertices.clone()];
     let mut edges: [Vec<EdgeId>; 2] = [Vec::new(), Vec::new()];
     let mut faces: [Vec<FaceHandle>; 2] = [Vec::new(), Vec::new()];
     for side in 0..2 {
-        edges[side] = m
-            .edges(bodies[side])
-            .map_err(of(side))?
-            .into_iter()
-            .map(|e| e.id)
-            .collect();
-        faces[side] = m.faces(bodies[side]).map_err(of(side))?;
+        edges[side] = m.edges(bodies[side])?.into_iter().map(|e| e.id).collect();
+        faces[side] = m.faces(bodies[side])?;
     }
     // The shell of each operand face: what a result shell's provenance is
     // written against.
     let mut shell_of: [BTreeMap<FaceId, ShellId>; 2] = [BTreeMap::new(), BTreeMap::new()];
     for side in 0..2 {
-        for shell in m.shells(bodies[side]).map_err(of(side))? {
-            let entity = m.shell(shell.id).map_err(of(side))?;
+        for shell in m.shells(bodies[side])? {
+            let entity = m.shell(shell.id)?;
             for face in entity.faces() {
                 shell_of[side].entry(face.id).or_insert(shell.id);
             }
@@ -1079,7 +1053,6 @@ impl Build<'_> {
     fn assembly(&self, shells: &[Vec<usize>]) -> Result<Plan, OpError> {
         rebuild::assembly(
             self.m,
-            self.bodies,
             [self.op.policy(0), self.op.policy(1)],
             &self.vertices,
             &self.edges,

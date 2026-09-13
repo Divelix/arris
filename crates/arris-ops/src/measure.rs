@@ -17,7 +17,7 @@
 use arris_check::arris_topo::arris_geom::integrate::{inner_step, region_integral};
 use arris_check::arris_topo::arris_math::{Matrix3, Point3, Vec3};
 use arris_check::arris_topo::entity::{Body as BodyEntity, BodyKind};
-use arris_check::arris_topo::{Body, FaceId, Model, Orientation, Shape};
+use arris_check::arris_topo::{Body, FaceId, Model, Shape};
 use arris_check::flux::{FluxError, face_flux};
 use arris_check::{Level, check};
 
@@ -142,9 +142,7 @@ const SECOND: [Integrand; 6] = [
 /// ```
 pub fn mass_properties(m: &Model, body: Body) -> Result<MassProperties, OpError> {
     crate::verify_input(m, body)?;
-    let entity = m
-        .body(body.id)
-        .map_err(|_| OpError::NotFound(Shape::new(body.id, body.orientation)))?;
+    let entity = m.body(body.id)?;
     if entity.kind() != BodyKind::Solid {
         return Err(OpError::Degenerate {
             entities: vec![Shape::new(body.id, body.orientation)],
@@ -194,9 +192,7 @@ fn face_uses(m: &Model, body: Body, entity: &BodyEntity) -> Result<Vec<(FaceId, 
     let mut out = Vec::new();
     for shell_use in entity.shells() {
         let orientation = body.orientation.compose(shell_use.orientation);
-        let shell = m
-            .shell(shell_use.id)
-            .map_err(|_| OpError::NotFound(Shape::new(shell_use.id, orientation)))?;
+        let shell = m.shell(shell_use.id)?;
         for face_use in shell.faces() {
             out.push((
                 face_use.id,
@@ -226,7 +222,7 @@ fn integrate_faces<const N: usize>(
     for &(id, sign) in faces {
         for (total, f) in totals.iter_mut().zip(integrands) {
             let flux = face_flux(m, id, |p, n| f(p.coords - offset, n)).map_err(|e| match e {
-                FluxError::NotFound(_) => OpError::NotFound(Shape::new(id, Orientation::Forward)),
+                FluxError::NotFound(e) => OpError::from(e),
                 FluxError::Unintegrable { .. } => OpError::InvalidInput {
                     body,
                     report: Box::new(check(m, body, Level::Fast)),
@@ -244,12 +240,11 @@ fn integrate_faces<const N: usize>(
 fn face_area(m: &Model, faces: &[(FaceId, f64)]) -> Result<f64, OpError> {
     let mut area = 0.0;
     for &(id, _) in faces {
-        let not_found = || OpError::NotFound(Shape::new(id, Orientation::Forward));
-        let face = m.face(id).map_err(|_| not_found())?;
-        let surface = m.surface(face.surface()).map_err(|_| not_found())?;
+        let face = m.face(id)?;
+        let surface = m.surface(face.surface())?;
         let step = inner_step(surface);
         for l in face.loops() {
-            let pieces = m.loop_pieces(l).map_err(|_| not_found())?;
+            let pieces = m.loop_pieces(l)?;
             area += region_integral(&pieces, step, |u, v| {
                 let e = surface.eval(u, v);
                 e.du.cross(&e.dv).norm()
@@ -257,4 +252,26 @@ fn face_area(m: &Model, faces: &[(FaceId, f64)]) -> Result<f64, OpError> {
         }
     }
     Ok(area)
+}
+
+#[cfg(test)]
+mod tests {
+    use arris_check::arris_topo::entity::Face;
+    use arris_check::arris_topo::{AnyId, SurfaceId};
+
+    use super::*;
+
+    /// A face whose surface id was compacted away: `face_area` names the
+    /// surface, not the face that holds it — the id that failed to
+    /// resolve, itself.
+    #[test]
+    fn face_area_names_the_surface_when_it_does_not_resolve() {
+        let mut m = Model::default();
+        let gone = SurfaceId::new(0, 0);
+        let f = m.raw().add_face(Face::new(gone, Vec::new(), 1e-7));
+        match face_area(&m, &[(f, 1.0)]).unwrap_err() {
+            OpError::NotFound(id) => assert_eq!(id, AnyId::from(gone)),
+            other => panic!("{other:?}"),
+        }
+    }
 }

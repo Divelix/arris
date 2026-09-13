@@ -25,9 +25,7 @@ use arris_check::arris_topo::arris_geom::{Curve2, Surface};
 use arris_check::arris_topo::arris_math::{
     Interval, Point2, Point3, Precision, is_negligible, wrap_angle,
 };
-use arris_check::arris_topo::{
-    Curve2Id, EdgeId, FaceId, Model, NotFound, Orientation, Shape, VertexId,
-};
+use arris_check::arris_topo::{Curve2Id, EdgeId, FaceId, Model, Orientation, Shape, VertexId};
 
 use arris_check::domain::chord;
 
@@ -241,24 +239,15 @@ impl<'m> Arrangement<'m> {
         OpError::Internal(Fault::Split(fault))
     }
 
-    /// An id the face reaches that does not resolve, named by the face.
-    fn not_found(&self, _: NotFound) -> OpError {
-        OpError::NotFound(Shape::new(self.face, Orientation::Forward))
-    }
-
     /// A direction of `pcurve` at `t`, or the arrangement's fault.
     fn dir(&self, pcurve: Curve2Id, t: f64, reversed: bool) -> Result<Dir, OpError> {
-        let c = self.m.curve2(pcurve).map_err(|e| self.not_found(e))?;
+        let c = self.m.curve2(pcurve)?;
         leaving(c, t, reversed).ok_or_else(|| self.fault(SplitFault::Turn { face: self.face }))
     }
 
     /// The (u, v) of `pcurve` at `t`.
     fn uv(&self, pcurve: Curve2Id, t: f64) -> Result<Point2, OpError> {
-        Ok(self
-            .m
-            .curve2(pcurve)
-            .map_err(|e| self.not_found(e))?
-            .point(t))
+        Ok(self.m.curve2(pcurve)?.point(t))
     }
 
     /// A new node, an image of `vertex`.
@@ -329,18 +318,16 @@ impl<'m> Arrangement<'m> {
         sub_edges: &BTreeMap<EdgeId, Vec<SubEdge>>,
         alias: &BTreeMap<(ERef, Curve2Id), Alias>,
     ) -> Result<(), OpError> {
-        let face = self
-            .m
-            .face(self.face)
-            .map_err(|e| self.not_found(e))?
-            .clone();
+        let face = self.m.face(self.face)?.clone();
         for l in face.loops() {
             let mut steps: Vec<(VRef, Curve2Id, Interval, bool, ERef, Orientation, Shape)> =
                 Vec::new();
             for c in l.coedges() {
                 let subs = sub_edges
                     .get(&c.edge())
-                    .ok_or_else(|| OpError::NotFound(Shape::new(c.edge(), Orientation::Forward)))?;
+                    .ok_or(OpError::Internal(Fault::Invariant {
+                        what: "an edge's sub-edges",
+                    }))?;
                 let named = Shape::new(c.edge(), Orientation::Forward);
                 let reversed = c.orientation().is_reversed();
                 let indices: Vec<usize> = if reversed {
@@ -594,7 +581,7 @@ impl<'m> Arrangement<'m> {
             .iter()
             .map(|&h| {
                 let half = &self.halves[h];
-                let curve = self.m.curve2(half.pcurve).map_err(|e| self.not_found(e))?;
+                let curve = self.m.curve2(half.pcurve)?;
                 Ok(Walk {
                     curve,
                     range: half.range,
@@ -726,9 +713,8 @@ pub(super) fn split_face(
     sections: &[EdgeOnFace],
     alias: &BTreeMap<(ERef, Curve2Id), Alias>,
 ) -> Result<SplitFace, OpError> {
-    let not_found = |_: NotFound| OpError::NotFound(Shape::new(face, Orientation::Forward));
-    let entity = m.face(face).map_err(not_found)?;
-    let surface = m.surface(entity.surface()).map_err(not_found)?;
+    let entity = m.face(face)?;
+    let surface = m.surface(entity.surface())?;
     let untouched = sections.is_empty()
         && !entity
             .loops()

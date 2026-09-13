@@ -15,7 +15,7 @@ use arris_check::arris_topo::entity::{BodyKind, EdgeGeometry};
 use arris_check::arris_topo::provenance::{BoxPart, Coord, CylinderPart, Side};
 use arris_check::arris_topo::{Body, Model, Orientation, Provenance, Role, Shape};
 
-use crate::error::{OpError, Reason};
+use crate::error::{Fault, OpError, Reason};
 use crate::verify;
 
 fn finite(what: &'static str, p: Point3) -> Result<(), OpError> {
@@ -80,11 +80,11 @@ fn line_in_plane(
 fn plane_pcurves(
     m: &mut Model,
     b: &mut Builder,
-    plane_of: impl Fn(FaceRef) -> Frame,
-) -> Result<(), BuildError> {
+    plane_of: impl Fn(FaceRef) -> Result<Frame, OpError>,
+) -> Result<(), OpError> {
     let mut wanted = Vec::new();
     for (f, face) in b.faces() {
-        let frame = plane_of(f);
+        let frame = plane_of(f)?;
         for (li, lp) in face.loops().iter().enumerate() {
             for (ci, u) in lp.uses().iter().enumerate() {
                 let e = b.edge(u.edge)?;
@@ -104,27 +104,27 @@ fn plane_pcurves(
 /// The provenance of a body every entity of which has a role.
 fn roles(
     built: &Built,
-    vertex: impl Fn(VertexRef) -> Role,
-    edge: impl Fn(EdgeRef) -> Role,
-    face: impl Fn(FaceRef) -> Role,
+    vertex: impl Fn(VertexRef) -> Result<Role, OpError>,
+    edge: impl Fn(EdgeRef) -> Result<Role, OpError>,
+    face: impl Fn(FaceRef) -> Result<Role, OpError>,
     shell: Role,
     body: Role,
-) -> Provenance {
+) -> Result<Provenance, OpError> {
     let mut p = Provenance::new();
     for (&r, &id) in &built.vertices {
-        p.add_generated(vertex(r), Shape::new(id, Orientation::Forward));
+        p.add_generated(vertex(r)?, Shape::new(id, Orientation::Forward));
     }
     for (&r, &id) in &built.edges {
-        p.add_generated(edge(r), Shape::new(id, Orientation::Forward));
+        p.add_generated(edge(r)?, Shape::new(id, Orientation::Forward));
     }
     for (&r, &id) in &built.faces {
-        p.add_generated(face(r), Shape::new(id, Orientation::Forward));
+        p.add_generated(face(r)?, Shape::new(id, Orientation::Forward));
     }
     for &id in &built.shells {
         p.add_generated(shell, Shape::new(id, Orientation::Forward));
     }
     p.add_generated(body, built.body);
-    p
+    Ok(p)
 }
 
 /// The axis-aligned box from `min` to `max` as a solid: eight vertices,
@@ -263,42 +263,42 @@ pub fn primitive_box(
             let (_, f) = bd.mef(from, to, split)?;
             face_of.push((f, 2 + i));
         }
-        let which = |f: FaceRef| face_of.iter().find(|(r, _)| *r == f).map_or(0, |(_, i)| *i);
-        plane_pcurves(m, &mut bd, |f| frames[which(f)])?;
+        let invariant = |what: &'static str| OpError::Internal(Fault::Invariant { what });
+        let which = |f: FaceRef| -> Result<usize, OpError> {
+            face_of
+                .iter()
+                .find(|(r, _)| *r == f)
+                .map(|(_, i)| *i)
+                .ok_or_else(|| invariant("a box face's role index"))
+        };
+        plane_pcurves(m, &mut bd, |f| Ok(frames[which(f)?]))?;
         let points: Vec<(VertexRef, Point3)> = bd.vertices().map(|(v, s)| (v, s.point())).collect();
+        let point_of = |v: VertexRef| -> Result<Point3, OpError> {
+            points
+                .iter()
+                .find(|(r, _)| *r == v)
+                .map(|(_, p)| *p)
+                .ok_or_else(|| invariant("a box vertex's point"))
+        };
         let ends: Vec<(EdgeRef, Point3, Point3)> = bd
             .edges()
-            .map(|(e, s)| {
-                let at = |v: VertexRef| {
-                    points
-                        .iter()
-                        .find(|(r, _)| *r == v)
-                        .map_or(min, |(_, p)| *p)
-                };
-                (e, at(s.start()), at(s.end()))
-            })
-            .collect();
+            .map(|(e, s)| Ok((e, point_of(s.start())?, point_of(s.end())?)))
+            .collect::<Result<_, OpError>>()?;
         let built = bd.finish(m, BodyKind::Solid)?;
         verify(m, built.body)?;
         let provenance = roles(
             &built,
-            |v| {
-                vertex_role(
-                    points
-                        .iter()
-                        .find(|(r, _)| *r == v)
-                        .map_or(min, |(_, p)| *p),
-                )
-            },
+            |v| Ok(vertex_role(point_of(v)?)),
             |e| {
                 ends.iter()
                     .find(|(r, _, _)| *r == e)
-                    .map_or(Role::Box(BoxPart::Body), |(_, p, q)| edge_role(*p, *q))
+                    .map(|(_, p, q)| edge_role(*p, *q))
+                    .ok_or_else(|| invariant("a box edge's endpoints"))
             },
-            |f| face_roles[which(f)],
+            |f| Ok(face_roles[which(f)?]),
             Role::Box(BoxPart::Shell),
             Role::Box(BoxPart::Body),
-        );
+        )?;
         Ok((built.body, provenance))
     })
 }
@@ -434,14 +434,14 @@ pub fn primitive_cylinder(
         let provenance = roles(
             &built,
             |v| {
-                part(if v == v0 {
+                Ok(part(if v == v0 {
                     CylinderPart::BottomVertex
                 } else {
                     CylinderPart::TopVertex
-                })
+                }))
             },
             |e| {
-                part(if e == e_bottom {
+                Ok(part(if e == e_bottom {
                     CylinderPart::BottomRim
                 } else if e == e_seam {
                     CylinderPart::Seam
@@ -449,10 +449,10 @@ pub fn primitive_cylinder(
                     CylinderPart::TopRim
                 } else {
                     CylinderPart::Body
-                })
+                }))
             },
             |f| {
-                part(if f == f_bottom {
+                Ok(part(if f == f_bottom {
                     CylinderPart::BottomCap
                 } else if f == f_wall {
                     CylinderPart::Wall
@@ -460,11 +460,11 @@ pub fn primitive_cylinder(
                     CylinderPart::TopCap
                 } else {
                     CylinderPart::Body
-                })
+                }))
             },
             part(CylinderPart::Shell),
             part(CylinderPart::Body),
-        );
+        )?;
         Ok((built.body, provenance))
     })
 }

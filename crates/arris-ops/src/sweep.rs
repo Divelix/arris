@@ -317,17 +317,16 @@ fn apex_pcurve(surface: &Surface, axis: &Axis, v: f64) -> Curve2 {
 
 /// An entity the fixed sequence of a sweep should have made for `edge`
 /// and did not: a kernel bug, never a property of the sketch.
-fn unmade(edge: &ProfileEdge, what: &str) -> OpError {
-    OpError::Internal(Fault::Geometry(GeomError::Degenerate {
-        kind: GeomKind::Curve(edge.curve.kind()),
-        reason: format!("{what} of segment {} was not made", edge.segment),
-    }))
+fn unmade(edge: &ProfileEdge) -> OpError {
+    OpError::Internal(Fault::Unmade {
+        segment: edge.segment,
+    })
 }
 
 /// A profile edge whose curve is not one `Profile::edges` makes: a
 /// kernel bug, never a property of the sketch.
 fn profile_curve_fault(edge: &ProfileEdge) -> OpError {
-    OpError::Internal(Fault::Geometry(GeomError::Unsupported {
+    OpError::Internal(Fault::ProfileCurve(GeomError::Unsupported {
         a: GeomKind::Curve(edge.curve.kind()),
         b: GeomKind::Curve2(edge.pcurve.kind()),
     }))
@@ -388,12 +387,11 @@ fn side_orientation(
     let tangent = edge.curve.eval(t).d1;
     let outward = tangent.cross(&normal);
     let uv = pcurve.point(t);
-    let surface_normal = surface.normal(uv.x, uv.y).ok_or_else(|| {
-        OpError::Internal(Fault::Geometry(GeomError::Degenerate {
-            kind: GeomKind::Surface(surface.kind()),
-            reason: "the swept surface has no normal at the segment's midpoint".into(),
-        }))
-    })?;
+    let surface_normal = surface
+        .normal(uv.x, uv.y)
+        .ok_or(OpError::Internal(Fault::Invariant {
+            what: "the swept surface's normal at the segment's midpoint",
+        }))?;
     Ok(if surface_normal.dot(&outward) > 0.0 {
         Orientation::Forward
     } else {
@@ -834,8 +832,7 @@ pub fn revolve(
             }
         }
         let key = |slot: Option<usize>, edge: &ProfileEdge| {
-            slot.map(VertexKey::New)
-                .ok_or_else(|| unmade(edge, "a vertex"))
+            slot.map(VertexKey::New).ok_or_else(|| unmade(edge))
         };
 
         // The start edges, the end edges, then the rises.
@@ -1078,10 +1075,9 @@ pub fn revolve(
                     }),
                     (None, _, None) => {}
                     (Some(_), None, _) => {
-                        return Err(OpError::Internal(Fault::Geometry(GeomError::Degenerate {
-                            kind: GeomKind::Surface(surface.kind()),
-                            reason: "an end edge with no curve".into(),
-                        })));
+                        return Err(OpError::Internal(Fault::Invariant {
+                            what: "an end edge's curve",
+                        }));
                     }
                 }
                 if let (Some(slot), Some(rise)) = (rise_edge[li][j], &rises[li][j]) {
@@ -1131,7 +1127,7 @@ pub fn revolve(
                 chains.iter().map(|_| Vec::new()).collect();
             for ((face, role), (c, edge)) in faces.into_iter().zip(face_roles).zip(side_chain) {
                 let Some(bucket) = c.and_then(|c| buckets.get_mut(c)) else {
-                    return Err(unmade(edge, "the shell of a side"));
+                    return Err(unmade(edge));
                 };
                 bucket.push((face, role));
             }

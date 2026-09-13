@@ -75,14 +75,12 @@ pub fn transform(
     body: Body,
     motion: &Isometry,
 ) -> Result<(Body, Provenance), OpError> {
-    let not_found = || OpError::NotFound(Shape::new(body.id, body.orientation));
     crate::verify_input(m, body)?;
-    let entity = m.body(body.id).map_err(|_| not_found())?.clone();
+    let entity = m.body(body.id)?.clone();
     let tolerance = m.precision().default_tolerance;
 
     m.transaction(|m| {
-        let (assembly, index) =
-            Assembly::of_body(m, body, &mut Move(motion)).map_err(|_| not_found())?;
+        let (assembly, index) = Assembly::of_body(m, body, &mut Move(motion))?;
         let (b, slots) = Builder::assemble(m, tolerance, assembly)?;
         let built = b.finish(m, entity.kind())?;
 
