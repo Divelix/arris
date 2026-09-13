@@ -14,8 +14,8 @@ use arris_debug::{corpus, dump_text, euler_line, fixtures, sample};
 use arris_topo::arris_geom::{Curve2, Profile, ProfileLoop, ProfileSegment, Surface};
 use arris_topo::arris_math::{Axis, Frame, Frame2, Interval, Point2, Point3, Vec3};
 use arris_topo::builder::{
-    Assembly, AssemblySlots, BuildError, Builder, EdgeKey, EdgeSpec, FaceSpec, UseSpec, VertexKey,
-    VertexSpec, effective_uses,
+    Assembly, AssemblySlots, BuildError, Builder, EdgeKey, EdgeSpec, FaceSpec, KeepGeometry,
+    UseSpec, VertexKey, VertexSpec, effective_uses,
 };
 use arris_topo::entity::BodyKind;
 use arris_topo::euler::EulerLine;
@@ -73,64 +73,29 @@ fn solids() -> Vec<Solid> {
 /// `keep`, every entity `New` otherwise, in the body's own iteration
 /// order, so the slot order is the arena's.
 fn describe(m: &Model, body: Body, keep: bool) -> Assembly {
+    if !keep {
+        // `of_body` needs `&mut Model` only for a remap that might add
+        // geometry; `KeepGeometry` never does, so a scratch clone is safe
+        // and the ids it returns are the original model's.
+        let mut scratch = m.clone();
+        return Assembly::of_body(&mut scratch, body, &mut KeepGeometry)
+            .unwrap()
+            .0;
+    }
     // Ascending by id, so the assembled body's slot order — and hence the
     // ids `finish` appends — keep the original's relative order.
     let mut vertices: Vec<VertexId> = m.vertices(body).unwrap().iter().map(|v| v.id).collect();
     let mut edges: Vec<EdgeId> = m.edges(body).unwrap().iter().map(|e| e.id).collect();
     vertices.sort_unstable();
     edges.sort_unstable();
-    let vertex_index: BTreeMap<VertexId, usize> =
-        vertices.iter().enumerate().map(|(i, &v)| (v, i)).collect();
-    let edge_index: BTreeMap<EdgeId, usize> =
-        edges.iter().enumerate().map(|(i, &e)| (e, i)).collect();
-    let key = |v: VertexId| {
-        if keep {
-            VertexKey::Kept(v)
-        } else {
-            VertexKey::New(vertex_index[&v])
-        }
-    };
     Assembly {
-        vertices: vertices
-            .iter()
-            .map(|&id| {
-                let v = m.vertex(id).unwrap();
-                if keep {
-                    VertexSpec::Keep(id)
-                } else {
-                    VertexSpec::New {
-                        point: v.point(),
-                        tolerance: v.tolerance(),
-                    }
-                }
-            })
-            .collect(),
-        edges: edges
-            .iter()
-            .map(|&id| {
-                let e = m.edge(id).unwrap();
-                if keep {
-                    EdgeSpec::Keep(id)
-                } else {
-                    EdgeSpec::New {
-                        geometry: e.geometry(),
-                        start: key(e.start()),
-                        end: key(e.end()),
-                        tolerance: e.tolerance(),
-                    }
-                }
-            })
-            .collect(),
+        vertices: vertices.iter().map(|&id| VertexSpec::Keep(id)).collect(),
+        edges: edges.iter().map(|&id| EdgeSpec::Keep(id)).collect(),
         shells: vec![
             m.faces(body)
                 .unwrap()
                 .into_iter()
-                .map(|face| {
-                    if keep {
-                        return FaceSpec::Keep(face);
-                    }
-                    FaceSpec::from_face(m, face, |id| EdgeKey::New(edge_index[&id])).unwrap()
-                })
+                .map(FaceSpec::Keep)
                 .collect(),
         ],
     }
@@ -138,24 +103,6 @@ fn describe(m: &Model, body: Body, keep: bool) -> Assembly {
 
 fn assemble(m: &Model, assembly: Assembly) -> Result<(Builder, AssemblySlots), BuildError> {
     Builder::assemble(m, m.precision().default_tolerance, assembly)
-}
-
-/// [`describe`] with every entity `New`, its one list of faces cut into
-/// the body's own shells: `Model::faces` walks them shell by shell in
-/// stored order.
-fn describe_shells(m: &Model, body: Body) -> Assembly {
-    let mut assembly = describe(m, body, false);
-    let mut faces = assembly.shells.remove(0).into_iter();
-    assembly.shells = m
-        .shells(body)
-        .unwrap()
-        .iter()
-        .map(|s| {
-            let n = m.shell(s.id).unwrap().faces().len();
-            faces.by_ref().take(n).collect()
-        })
-        .collect();
-    assembly
 }
 
 /// One Euler line (`docs/DATA-MODEL.md` §Euler–Poincaré): on bodies with
@@ -223,7 +170,7 @@ fn a_body_with_degenerate_edges_has_one_euler_line() {
             format!("euler {line}"),
             "{name}"
         );
-        let (builder, _) = assemble(m, describe_shells(m, *body))
+        let (builder, _) = assemble(m, describe(m, *body, false))
             .unwrap_or_else(|e| panic!("{name}: {e}\n{}", dump_text(m, *body).unwrap()));
         assert_eq!(builder.counts().line(), line, "{name}");
         assert_eq!(builder.counts().to_string(), line.to_string(), "{name}");
@@ -429,6 +376,46 @@ fn every_face_new_is_the_same_body_under_new_ids() {
         let after = dump_text(&m, built.body).unwrap();
         assert_eq!(up_to_ids(&before), up_to_ids(&after), "{name}");
     }
+}
+
+/// `Assembly::of_body` with the identity remap describes a body exactly:
+/// assembled and finished, its dump equals the original's up to ids —
+/// proven above of every Euler-operator-built sample through
+/// `describe(false)`, which calls it; here of a multi-shell body from an
+/// actual boolean result (two boxes apart, two lumps of one solid,
+/// ADR-0006), which no `describe` caller builds.
+#[test]
+fn of_body_with_the_identity_remap_reproduces_a_multi_shell_boolean_result() {
+    let mut m = Model::default();
+    let a = arris_ops::primitive_box(&mut m, Point3::origin(), Point3::new(1.0, 1.0, 1.0))
+        .unwrap()
+        .0;
+    let b = arris_ops::primitive_box(
+        &mut m,
+        Point3::new(5.0, 0.0, 0.0),
+        Point3::new(6.0, 1.0, 1.0),
+    )
+    .unwrap()
+    .0;
+    let (body, _) = arris_ops::fuse(&mut m, a, b).unwrap();
+    assert_eq!(
+        m.shells(body).unwrap().len(),
+        2,
+        "two boxes apart are two lumps"
+    );
+
+    let before = dump_text(&m, body).unwrap();
+    let (assembly, _index) = Assembly::of_body(&mut m, body, &mut KeepGeometry).unwrap();
+    let built = assemble(&m, assembly)
+        .unwrap()
+        .0
+        .finish(&mut m, BodyKind::Solid)
+        .unwrap();
+    assert_ne!(built.body.id, body.id);
+    let report = check(&m, built.body, Level::Full);
+    assert!(report.is_ok(), "{report}");
+    let after = dump_text(&m, built.body).unwrap();
+    assert_eq!(up_to_ids(&before), up_to_ids(&after));
 }
 
 /// `effective_uses` walks a loop both ways with the same function

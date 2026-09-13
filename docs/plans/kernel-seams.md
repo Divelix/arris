@@ -142,6 +142,10 @@ says `fixtures:` and why.
     Result<(Assembly, BodyIndex), NotFound>` describes a body shell by
     shell with every entity `New`.
   - `remap` maps curve and surface ids; the identity keeps them.
+  - Finding (step 8): a vertex's point is not a curve or a surface, and
+    `transform` needs it moved too, so `GeometryRemap` gained a third
+    method, `point(model, p) -> Point3`, the identity returning `p`
+    unchanged (`KeepGeometry`).
   - `BodyIndex` maps each vertex, edge, face and shell to its spec
     index, which is what provenance is built from.
   - `transform` becomes a remap plus this. The fillet's `keep` variant is
@@ -299,7 +303,7 @@ bound has to be established here.
   - Test: for every face of every `arris_debug::sample` body under both
     orientations, `effective_uses` followed by `keep_face`'s inverse
     returns the stored loop.
-- [ ] Step 8 **[1]** — **`Assembly::of_body`, and `transform` over it.**
+- [x] Step 8 **[1]** — **`Assembly::of_body`, and `transform` over it.**
   - Per the delta. `transform` becomes the curve and surface remap plus
     `of_body`, and its provenance comes from `BodyIndex` and step 6's
     slots.

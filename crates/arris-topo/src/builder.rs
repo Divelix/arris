@@ -41,7 +41,9 @@ use crate::entity::{self, BodyKind, Coedge, EdgeGeometry, Loop};
 use crate::error::NotFound;
 use crate::euler::EulerLine;
 use crate::handle::{self, Body};
-use crate::id::{Curve2Id, EdgeId, EntityId, EntityKind, FaceId, ShellId, SurfaceId, VertexId};
+use crate::id::{
+    Curve2Id, CurveId, EdgeId, EntityId, EntityKind, FaceId, ShellId, SurfaceId, VertexId,
+};
 use crate::model::Model;
 use crate::orientation::Orientation;
 
@@ -1027,6 +1029,170 @@ pub struct AssemblySlots {
     pub edges: Vec<EdgeRef>,
     /// The slot of `assembly.shells[s][i]`, at `[s][i]`.
     pub faces: Vec<Vec<FaceRef>>,
+}
+
+/// How [`Assembly::of_body`] treats a body's geometry as it copies it,
+/// each asked once per occurrence: the identity ([`KeepGeometry`]) keeps
+/// it; a transform moves it and, for a curve or surface, adds the result
+/// (a vertex's point is a value, not an id, and has no arena entry of its
+/// own to add).
+pub trait GeometryRemap {
+    /// The point to give a copied vertex, in place of `p`.
+    fn point(&mut self, model: &mut Model, p: Point3) -> Point3;
+    /// The curve to describe an edge over `c` with.
+    fn curve(&mut self, model: &mut Model, c: CurveId) -> CurveId;
+    /// The surface to describe a face over `s` with.
+    fn surface(&mut self, model: &mut Model, s: SurfaceId) -> SurfaceId;
+}
+
+/// A [`GeometryRemap`] that keeps every point, curve and surface as it is:
+/// what a caller that copies a body's geometry unchanged passes.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct KeepGeometry;
+
+impl GeometryRemap for KeepGeometry {
+    fn point(&mut self, _model: &mut Model, p: Point3) -> Point3 {
+        p
+    }
+
+    fn curve(&mut self, _model: &mut Model, c: CurveId) -> CurveId {
+        c
+    }
+
+    fn surface(&mut self, _model: &mut Model, s: SurfaceId) -> SurfaceId {
+        s
+    }
+}
+
+/// Where [`Assembly::of_body`] put each entity of the body it read: which
+/// spec of the [`Assembly`], or, for a face, which shell and which spec
+/// within it. What provenance is built from, reading the built id behind
+/// a spec out of the matching [`AssemblySlots`].
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct BodyIndex {
+    /// The vertex's spec index in [`Assembly::vertices`].
+    pub vertices: BTreeMap<VertexId, usize>,
+    /// The edge's spec index in [`Assembly::edges`].
+    pub edges: BTreeMap<EdgeId, usize>,
+    /// The face's shell index and spec index within it, into
+    /// [`Assembly::shells`].
+    pub faces: BTreeMap<FaceId, (usize, usize)>,
+    /// The shell's index into [`Assembly::shells`].
+    pub shells: BTreeMap<ShellId, usize>,
+}
+
+impl Assembly {
+    /// The [`Assembly`] that describes `body` shell by shell with every
+    /// entity `New`: a copy of its vertices, edges and faces, each curve
+    /// and surface named through `remap` (the identity, [`KeepGeometry`],
+    /// for a caller that wants the same geometry). What [`transform`]
+    /// builds over, its own work reduced to `remap` and the provenance
+    /// [`BodyIndex`] gives.
+    ///
+    /// Errors: `body` does not resolve.
+    ///
+    /// [`transform`]: ../../arris_ops/fn.transform.html
+    ///
+    /// ```
+    /// use arris_topo::builder::{Assembly, Builder, KeepGeometry};
+    /// use arris_topo::entity::BodyKind;
+    /// use arris_topo::Model;
+    /// use arris_debug::{dump_text, sample};
+    ///
+    /// let mut m = Model::default();
+    /// let body = sample::cylinder(&mut m, 4.0, 12.0)?;
+    /// let before = dump_text(&m, body)?;
+    /// let (assembly, _index) = Assembly::of_body(&mut m, body, &mut KeepGeometry)?;
+    /// let (b, _slots) = Builder::assemble(&m, m.precision().default_tolerance, assembly)?;
+    /// let built = b.finish(&mut m, BodyKind::Solid)?;
+    /// assert_ne!(built.body.id, body.id, "every entity is new");
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    pub fn of_body(
+        model: &mut Model,
+        body: Body,
+        remap: &mut impl GeometryRemap,
+    ) -> Result<(Assembly, BodyIndex), NotFound> {
+        let closure = model.closure(body)?;
+
+        let mut curve_of: BTreeMap<CurveId, CurveId> = BTreeMap::new();
+        for &c in &closure.curves {
+            curve_of.insert(c, remap.curve(model, c));
+        }
+        let mut surface_of: BTreeMap<SurfaceId, SurfaceId> = BTreeMap::new();
+        for &s in &closure.surfaces {
+            surface_of.insert(s, remap.surface(model, s));
+        }
+
+        let mut vertex_index = BTreeMap::new();
+        let mut vertices = Vec::with_capacity(closure.vertices.len());
+        for (i, &v) in closure.vertices.iter().enumerate() {
+            let old = *model.vertex(v)?;
+            vertices.push(VertexSpec::New {
+                point: remap.point(model, old.point()),
+                tolerance: old.tolerance(),
+            });
+            vertex_index.insert(v, i);
+        }
+
+        let mut edge_index = BTreeMap::new();
+        let mut edges = Vec::with_capacity(closure.edges.len());
+        for (i, &e) in closure.edges.iter().enumerate() {
+            let old = *model.edge(e)?;
+            let geometry = match old.geometry() {
+                EdgeGeometry::Curve { curve, range } => EdgeGeometry::Curve {
+                    curve: curve_of[&curve],
+                    range,
+                },
+                degenerate @ EdgeGeometry::Degenerate { .. } => degenerate,
+            };
+            edges.push(EdgeSpec::New {
+                geometry,
+                start: VertexKey::New(vertex_index[&old.start()]),
+                end: VertexKey::New(vertex_index[&old.end()]),
+                tolerance: old.tolerance(),
+            });
+            edge_index.insert(e, i);
+        }
+
+        let mut face_index: BTreeMap<FaceId, (usize, usize)> = BTreeMap::new();
+        let mut shell_index: BTreeMap<ShellId, usize> = BTreeMap::new();
+        let mut shells = Vec::new();
+        for (si, shell) in model.shells(body)?.into_iter().enumerate() {
+            let uses: Vec<handle::Face> = model
+                .shell(shell.id)?
+                .faces()
+                .iter()
+                .map(|f| f.oriented_by(shell.orientation))
+                .collect();
+            let mut face_specs = Vec::with_capacity(uses.len());
+            for (fi, f) in uses.iter().enumerate() {
+                let old_surface = model.face(f.id)?.surface();
+                let mut spec = FaceSpec::from_face(model, *f, |id| EdgeKey::New(edge_index[&id]))?;
+                if let FaceSpec::New { surface, .. } = &mut spec {
+                    *surface = surface_of[&old_surface];
+                }
+                face_specs.push(spec);
+                face_index.insert(f.id, (si, fi));
+            }
+            shell_index.insert(shell.id, si);
+            shells.push(face_specs);
+        }
+
+        Ok((
+            Assembly {
+                vertices,
+                edges,
+                shells,
+            },
+            BodyIndex {
+                vertices: vertex_index,
+                edges: edge_index,
+                faces: face_index,
+                shells: shell_index,
+            },
+        ))
+    }
 }
 
 /// ` kept f3` for a slot [`Builder::assemble`] took from the model and no

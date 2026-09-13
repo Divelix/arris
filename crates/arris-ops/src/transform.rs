@@ -1,17 +1,42 @@
 //! `transform`: a rigid motion of a body (`docs/ARCHITECTURE.md`
 //! §Operations).
 
-use std::collections::BTreeMap;
-
-use arris_check::arris_topo::arris_math::Isometry;
-use arris_check::arris_topo::builder::{
-    Assembly, Builder, EdgeKey, EdgeSpec, FaceSpec, VertexKey, VertexSpec,
+use arris_check::arris_topo::arris_math::{Isometry, Point3};
+use arris_check::arris_topo::builder::{Assembly, Builder, GeometryRemap};
+use arris_check::arris_topo::{
+    Body, CurveId, EntityId, Model, Orientation, Provenance, Shape, SurfaceId,
 };
-use arris_check::arris_topo::entity::EdgeGeometry;
-use arris_check::arris_topo::{Body, EntityId, Model, Orientation, Provenance, Shape};
 
 use crate::error::OpError;
 use crate::verify;
+
+/// Moves every point, curve and surface [`Assembly::of_body`] asks for by
+/// `motion`, adding the result curve or surface: `Curve::transformed` and
+/// `Surface::transformed` carry the parametrisation along, so every
+/// pcurve id is reused as it stands.
+struct Move<'a>(&'a Isometry);
+
+impl GeometryRemap for Move<'_> {
+    fn point(&mut self, _model: &mut Model, p: Point3) -> Point3 {
+        self.0.apply(p)
+    }
+
+    fn curve(&mut self, model: &mut Model, c: CurveId) -> CurveId {
+        let moved = model
+            .curve(c)
+            .expect("of_body's closure names a live curve")
+            .transformed(self.0);
+        model.add_curve(moved)
+    }
+
+    fn surface(&mut self, model: &mut Model, s: SurfaceId) -> SurfaceId {
+        let moved = model
+            .surface(s)
+            .expect("of_body's closure names a live surface")
+            .transformed(self.0);
+        model.add_surface(moved)
+    }
+}
 
 /// Moves `body` rigidly by `motion`: every curve and surface appended
 /// transformed (`Curve::transformed`, `Surface::transformed` carry the
@@ -53,84 +78,11 @@ pub fn transform(
     let not_found = || OpError::NotFound(Shape::new(body.id, body.orientation));
     crate::verify_input(m, body)?;
     let entity = m.body(body.id).map_err(|_| not_found())?.clone();
-    // Every shell use with its faces seen through it, in stored order.
-    let mut shells = Vec::new();
-    for shell in m.shells(body).map_err(|_| not_found())? {
-        let faces: Vec<_> = m
-            .shell(shell.id)
-            .map_err(|_| not_found())?
-            .faces()
-            .iter()
-            .map(|f| f.oriented_by(shell.orientation))
-            .collect();
-        shells.push((shell, faces));
-    }
-    let closure = m.closure(body).map_err(|_| not_found())?;
     let tolerance = m.precision().default_tolerance;
 
     m.transaction(|m| {
-        let mut curve_of = BTreeMap::new();
-        for &c in &closure.curves {
-            let moved = m.curve(c).map_err(|_| not_found())?.transformed(motion);
-            curve_of.insert(c, m.add_curve(moved));
-        }
-        let mut surface_of = BTreeMap::new();
-        for &s in &closure.surfaces {
-            let moved = m.surface(s).map_err(|_| not_found())?.transformed(motion);
-            surface_of.insert(s, m.add_surface(moved));
-        }
-
-        let mut vertex_index = BTreeMap::new();
-        let mut vertices = Vec::with_capacity(closure.vertices.len());
-        for (i, &v) in closure.vertices.iter().enumerate() {
-            let old = *m.vertex(v).map_err(|_| not_found())?;
-            vertices.push(VertexSpec::New {
-                point: motion.apply(old.point()),
-                tolerance: old.tolerance(),
-            });
-            vertex_index.insert(v, i);
-        }
-
-        let mut edge_index = BTreeMap::new();
-        let mut edges = Vec::with_capacity(closure.edges.len());
-        for (i, &e) in closure.edges.iter().enumerate() {
-            let old = *m.edge(e).map_err(|_| not_found())?;
-            let geometry = match old.geometry() {
-                EdgeGeometry::Curve { curve, range } => EdgeGeometry::Curve {
-                    curve: curve_of[&curve],
-                    range,
-                },
-                degenerate @ EdgeGeometry::Degenerate { .. } => degenerate,
-            };
-            edges.push(EdgeSpec::New {
-                geometry,
-                start: VertexKey::New(vertex_index[&old.start()]),
-                end: VertexKey::New(vertex_index[&old.end()]),
-                tolerance: old.tolerance(),
-            });
-            edge_index.insert(e, i);
-        }
-
-        let mut shell_specs = Vec::with_capacity(shells.len());
-        for (_, faces) in &shells {
-            let mut face_specs = Vec::with_capacity(faces.len());
-            for f in faces {
-                let old_surface = m.face(f.id).map_err(|_| not_found())?.surface();
-                let mut spec = FaceSpec::from_face(m, *f, |id| EdgeKey::New(edge_index[&id]))
-                    .map_err(|_| not_found())?;
-                if let FaceSpec::New { surface, .. } = &mut spec {
-                    *surface = surface_of[&old_surface];
-                }
-                face_specs.push(spec);
-            }
-            shell_specs.push(face_specs);
-        }
-
-        let assembly = Assembly {
-            vertices,
-            edges,
-            shells: shell_specs,
-        };
+        let (assembly, index) =
+            Assembly::of_body(m, body, &mut Move(motion)).map_err(|_| not_found())?;
         let (b, slots) = Builder::assemble(m, tolerance, assembly)?;
         let built = b.finish(m, entity.kind())?;
 
@@ -138,21 +90,17 @@ pub fn transform(
             Shape::new(id, Orientation::Forward)
         }
         let mut provenance = Provenance::new();
-        for (&old, &slot) in closure.vertices.iter().zip(&slots.vertices) {
-            provenance.add_modified(forward(old), forward(built.vertices[&slot]));
+        for (&old, &i) in &index.vertices {
+            provenance.add_modified(forward(old), forward(built.vertices[&slots.vertices[i]]));
         }
-        for (&old, &slot) in closure.edges.iter().zip(&slots.edges) {
-            provenance.add_modified(forward(old), forward(built.edges[&slot]));
+        for (&old, &i) in &index.edges {
+            provenance.add_modified(forward(old), forward(built.edges[&slots.edges[i]]));
         }
-        // `assemble` hands back one face slot per spec, shell by shell in
-        // spec order, matching how `shells` was built.
-        for ((_, faces), face_slots) in shells.iter().zip(&slots.faces) {
-            for (old, &slot) in faces.iter().zip(face_slots) {
-                provenance.add_modified(forward(old.id), forward(built.faces[&slot]));
-            }
+        for (&old, &(si, fi)) in &index.faces {
+            provenance.add_modified(forward(old), forward(built.faces[&slots.faces[si][fi]]));
         }
-        for ((old, _), &new) in shells.iter().zip(&built.shells) {
-            provenance.add_modified(forward(old.id), forward(new));
+        for (&old, &si) in &index.shells {
+            provenance.add_modified(forward(old), forward(built.shells[si]));
         }
         provenance.add_modified(forward(body.id), forward(built.body.id));
 
