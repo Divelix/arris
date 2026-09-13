@@ -35,7 +35,7 @@ use crate::error::{Fault, OpError, Reason, SplitFault};
 
 /// A vertex of the result as the split names it before it has an id.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub(super) enum VRef {
+pub(crate) enum VRef {
     /// A vertex of an operand, kept or re-tolerated.
     Existing(VertexId),
     /// A section vertex, an index into `Interferences::vertices`.
@@ -44,7 +44,7 @@ pub(super) enum VRef {
 
 /// An edge of the result as the split names it before it has an id.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub(super) enum ERef {
+pub(crate) enum ERef {
     /// The `index`-th piece of an operand edge between consecutive paves;
     /// index 0 is the whole edge when it has none.
     Sub {
@@ -59,7 +59,7 @@ pub(super) enum ERef {
 
 /// A piece of an operand edge between consecutive paves.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(super) struct SubEdge {
+pub(crate) struct SubEdge {
     /// The parameter range on the edge's curve.
     pub range: Interval,
     /// The vertex at `range.lo()`.
@@ -110,7 +110,7 @@ pub(super) struct Alias {
 /// One use of an edge piece by a piece's loop, in the *stored* sense:
 /// `Forward` walks along the edge's parameter.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct PieceUse {
+pub(crate) struct PieceUse {
     /// The edge piece.
     pub edge: ERef,
     /// Along or against its parameter.

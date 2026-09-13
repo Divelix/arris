@@ -20,6 +20,7 @@ pub mod boolean;
 mod error;
 pub mod measure;
 mod primitive;
+mod rebuild;
 mod sweep;
 mod transform;
 

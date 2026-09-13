@@ -11,19 +11,18 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use arris_check::arris_topo::arris_geom::{GeomError, GeomKind, Surface, SurfaceIntersection};
 use arris_check::arris_topo::arris_math::{Interval, Point2, Point3, Precision, Vec3};
-use arris_check::arris_topo::builder::{
-    Assembly, Builder, EdgeKey, EdgeSpec, FaceSpec, UseSpec, VertexKey, VertexSpec, effective_uses,
-};
-use arris_check::arris_topo::entity::{BodyKind, EdgeGeometry};
+use arris_check::arris_topo::builder::Builder;
+use arris_check::arris_topo::entity::BodyKind;
 use arris_check::arris_topo::{
     Body, Curve2Id, CurveId, EdgeId, EntityId, Face as FaceHandle, FaceId, Model, NotFound,
-    Orientation, Provenance, Shape, ShellId, VertexId,
+    Provenance, Shape, ShellId, VertexId,
 };
 use arris_check::{Classification, Classifier, lumps};
 
-use super::pieces::{Alias, ERef, EdgeOnFace, PieceUse, SplitFace, SubEdge, VRef, split_face};
+use super::pieces::{Alias, ERef, EdgeOnFace, SplitFace, SubEdge, VRef, split_face};
 use super::{Interferences, VertexSource};
 use crate::error::{Fault, OpError, Reason, SplitFault};
+use crate::rebuild::{self, Kept, Plan, Policy, forward};
 
 /// Which selection over the decomposition: one table, three
 /// operations (`docs/ARCHITECTURE.md` §Operations).
@@ -36,17 +35,6 @@ pub(super) enum Op {
     /// Keep the target outside the tool and the tool inside the target,
     /// reversed.
     Cut,
-}
-
-/// What happens to an operand's entities that survive.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Policy {
-    /// An untouched entity keeps its id; a piece is `Modified` from its
-    /// parent.
-    Reuse,
-    /// Every entity is `Deleted`; a surviving piece is a new entity
-    /// `Generated` from its parent — the tool of a `cut`.
-    Regenerate,
 }
 
 impl Op {
@@ -80,26 +68,6 @@ impl Op {
             _ => Policy::Reuse,
         }
     }
-}
-
-/// A surviving piece, before assembly.
-struct Kept {
-    side: usize,
-    /// The input face, with the operand's use of it.
-    face: FaceHandle,
-    /// The whole face, untouched and reusable by id.
-    whole: bool,
-    /// The result's use of it.
-    orientation: Orientation,
-    /// In the stored sense.
-    loops: Vec<Vec<PieceUse>>,
-    /// The coincident face of the other operand the piece lies on and
-    /// stands in for, when it does.
-    stands_for: Option<FaceId>,
-}
-
-fn forward(id: impl Into<EntityId>) -> Shape {
-    Shape::new(id, Orientation::Forward)
 }
 
 /// A piece classified `On` something of the other operand its own face
@@ -856,24 +824,6 @@ impl<'m> Build<'m> {
             }
         }
     }
-
-    /// `true` when the vertex is appended rather than kept by id: a
-    /// section vertex, a re-tolerated one, or any of a `Regenerate`
-    /// operand.
-    fn vertex_new(&self, v: VRef) -> bool {
-        match v {
-            VRef::Section(_) => true,
-            VRef::Existing(id) => {
-                self.retolerated.contains_key(&id)
-                    || self.op.policy(self.side_of_vertex(id)) == Policy::Regenerate
-            }
-        }
-    }
-
-    /// `true` when the edge piece is appended rather than kept by id.
-    fn edge_new(&self, e: EdgeId, side: usize) -> bool {
-        self.touched.contains(&e) || self.op.policy(side) == Policy::Regenerate
-    }
 }
 
 /// The result of a boolean over the pave model `i` under `op`.
@@ -1028,112 +978,29 @@ pub(super) fn boolean(
             }
         };
 
-        let mut p = Provenance::new();
-        for side in 0..2 {
-            let policy = op.policy(side);
-            let body = bodies[side];
-            let record = |p: &mut Provenance, input: Shape, images: Vec<Shape>| match policy {
-                Policy::Reuse => {
-                    if images.is_empty() {
-                        p.add_deleted(input);
-                    } else if images != [input] {
-                        for image in images {
-                            p.add_modified(input, image);
-                        }
-                    }
-                }
-                Policy::Regenerate => {
-                    p.add_deleted(input);
-                    for image in images {
-                        p.add_generated(input, image);
-                    }
-                }
-            };
-            for &v in &vertices[side] {
-                let image = match merged_into.get(&v) {
-                    Some(&k) => vertex_id(vref_of[k]),
-                    None => vertex_id(VRef::Existing(v)),
-                };
-                record(&mut p, forward(v), image.into_iter().map(forward).collect());
-            }
-            for &e in &edges[side] {
-                let n = sub_edges.get(&e).map_or(0, Vec::len);
-                let mut images: Vec<Shape> = Vec::new();
-                for index in 0..n {
-                    if let Some(id) = edge_id(ERef::Sub { edge: e, index }) {
-                        let image = forward(id);
-                        if !images.contains(&image) {
-                            images.push(image);
-                        }
-                    }
-                }
-                record(&mut p, forward(e), images);
-            }
-            for f in &faces[side] {
-                let images: Vec<Shape> = face_pieces
-                    .get(&f.id)
-                    .map(|(_, pieces)| {
-                        pieces
-                            .iter()
-                            .filter_map(|k| out_faces.get(k))
-                            .map(|&id| forward(id))
-                            .collect()
-                    })
-                    .unwrap_or_default();
-                record(&mut p, forward(f.id), images);
-            }
-            if policy == Policy::Regenerate {
-                for &s in &closures[side].shells {
-                    p.add_deleted(forward(s));
-                }
-            }
-            match policy {
-                Policy::Reuse => p.add_modified(forward(body.id), forward(built.body.id)),
-                Policy::Regenerate => p.add_deleted(forward(body.id)),
-            }
-        }
-        // A result shell is `Modified` from every shell of a kept-by-id
-        // operand a piece of it came from, and one made of a cut tool's
-        // pieces alone is `Generated` from the tool's shell; a shell of a
-        // kept-by-id operand no result shell came from is gone.
-        let mut reached: BTreeSet<ShellId> = BTreeSet::new();
-        for (pieces, &out) in shells.iter().zip(&built.shells) {
-            let mut from: [BTreeSet<ShellId>; 2] = [BTreeSet::new(), BTreeSet::new()];
-            for piece in pieces.iter().filter_map(|&k| kept.get(k)) {
-                if let Some(&s) = shell_of[piece.side].get(&piece.face.id) {
-                    from[piece.side].insert(s);
-                }
-            }
-            let reused: Vec<ShellId> = (0..2)
-                .filter(|&side| op.policy(side) == Policy::Reuse)
-                .flat_map(|side| from[side].iter().copied())
-                .collect();
-            if reused.is_empty() {
-                for s in from.iter().flatten() {
-                    p.add_generated(forward(*s), forward(out));
-                }
-            }
-            for s in reused {
-                p.add_modified(forward(s), forward(out));
-                reached.insert(s);
-            }
-        }
-        for side in (0..2).filter(|&side| op.policy(side) == Policy::Reuse) {
-            for &s in closures[side]
-                .shells
-                .iter()
-                .filter(|s| !reached.contains(s))
-            {
-                p.add_deleted(forward(s));
-            }
-        }
-        // A piece kept once from a coincident pair stands for the other
-        // operand's face too.
-        for (k, piece) in kept.iter().enumerate() {
-            if let (Some(g), Some(&id)) = (piece.stands_for, out_faces.get(&k)) {
-                p.add_generated(forward(g), forward(id));
-            }
-        }
+        let operand = |side: usize| rebuild::OperandWrite {
+            body: bodies[side],
+            policy: op.policy(side),
+            vertices: &vertices[side],
+            edges: &edges[side],
+            faces: &faces[side],
+            shells: &closures[side].shells,
+            shell_of: &shell_of[side],
+        };
+        let mut p = rebuild::write_provenance(
+            [operand(0), operand(1)],
+            built.body,
+            &sub_edges,
+            &merged_into,
+            &vref_of,
+            vertex_id,
+            edge_id,
+            &face_pieces,
+            &out_faces,
+            &kept,
+            &shells,
+            &built.shells,
+        );
         for (k, v) in i.vertices.iter().enumerate() {
             let VRef::Section(_) = vref_of[k] else {
                 continue;
@@ -1169,21 +1036,6 @@ pub(super) fn boolean(
         crate::verify(m, built.body)?;
         Ok((built.body, p))
     })
-}
-
-/// The assembly and the order its new slots were given in.
-struct Plan {
-    assembly: Assembly,
-    /// The kept piece behind each face spec, shell by shell in order.
-    faces: Vec<usize>,
-    /// The `VRef` behind each `VertexSpec::New`, in order.
-    new_vertices: Vec<VRef>,
-    /// The `ERef` behind each `EdgeSpec::New`, in order.
-    new_edges: Vec<ERef>,
-    /// Operand vertices kept by id.
-    kept_vertices: BTreeSet<VertexId>,
-    /// Operand edges kept by id.
-    kept_edges: BTreeSet<EdgeId>,
 }
 
 impl Build<'_> {
@@ -1222,184 +1074,24 @@ impl Build<'_> {
     /// vertex they reach, an edge spec for every new edge piece, a face
     /// spec per piece — `Keep` for a whole untouched face of a `Reuse`
     /// operand — shell by shell in `shells`' order, in a deterministic
-    /// order.
+    /// order. `rebuild::assembly` does the work; this is the boolean's
+    /// `Build` handed to it as explicit pieces and a per-operand policy.
     fn assembly(&self, shells: &[Vec<usize>]) -> Result<Plan, OpError> {
-        let m = self.m;
-        let mut used_edges: BTreeSet<ERef> = BTreeSet::new();
-        for piece in &self.kept {
-            for u in piece.loops.iter().flatten() {
-                used_edges.insert(u.edge);
-            }
-        }
-        let mut used_vertices: BTreeSet<VRef> = BTreeSet::new();
-        for &e in &used_edges {
-            let (start, end) = match e {
-                ERef::Sub { edge, index } => {
-                    let s = &self.sub_edges[&edge][index];
-                    (s.start, s.end)
-                }
-                ERef::Section(k) => {
-                    let s = &self.i.sections[k];
-                    (self.vref_of[s.start], self.vref_of[s.end])
-                }
-            };
-            used_vertices.insert(start);
-            used_vertices.insert(end);
-        }
-
-        let mut assembly = Assembly::default();
-        let mut new_vertices = Vec::new();
-        let mut kept_vertices = BTreeSet::new();
-        let mut vkey: BTreeMap<VRef, VertexKey> = BTreeMap::new();
-        // Section vertices first, ascending; then operand vertices that
-        // are appended, ascending by id; the rest kept.
-        let mut order: Vec<VRef> = used_vertices.iter().copied().collect();
-        order.sort_by_key(|v| match *v {
-            VRef::Section(k) => (0, k, None),
-            VRef::Existing(id) => (1, 0, Some(id)),
-        });
-        for v in order {
-            if self.vertex_new(v) {
-                let (point, tolerance) = match v {
-                    VRef::Section(k) => (self.i.vertices[k].point, self.i.vertices[k].tolerance),
-                    VRef::Existing(id) => {
-                        let stored = self
-                            .m
-                            .vertex(id)
-                            .map_err(|_| self.not_found(self.side_of_vertex(id)))?;
-                        (
-                            stored.point(),
-                            self.retolerated
-                                .get(&id)
-                                .copied()
-                                .unwrap_or(stored.tolerance()),
-                        )
-                    }
-                };
-                assembly.vertices.push(VertexSpec::New { point, tolerance });
-                vkey.insert(v, VertexKey::New(new_vertices.len()));
-                new_vertices.push(v);
-            } else if let VRef::Existing(id) = v {
-                vkey.insert(v, VertexKey::Kept(id));
-                kept_vertices.insert(id);
-            }
-        }
-
-        let mut new_edges = Vec::new();
-        let mut kept_edges = BTreeSet::new();
-        let mut ekey: BTreeMap<ERef, EdgeKey> = BTreeMap::new();
-        for side in 0..2 {
-            for &e in &self.edges[side] {
-                let edge = *m.edge(e).map_err(|_| self.not_found(side))?;
-                let subs = &self.sub_edges[&e];
-                if !self.edge_new(e, side) {
-                    let whole = ERef::Sub { edge: e, index: 0 };
-                    if used_edges.contains(&whole) {
-                        ekey.insert(whole, EdgeKey::Kept(e));
-                        kept_edges.insert(e);
-                    }
-                    continue;
-                }
-                for (index, s) in subs.iter().enumerate() {
-                    let r = ERef::Sub { edge: e, index };
-                    if !used_edges.contains(&r) {
-                        continue;
-                    }
-                    let geometry = match edge.geometry() {
-                        EdgeGeometry::Curve { curve, .. } => EdgeGeometry::Curve {
-                            curve,
-                            range: s.range,
-                        },
-                        EdgeGeometry::Degenerate { .. } => {
-                            EdgeGeometry::Degenerate { range: s.range }
-                        }
-                    };
-                    let tolerance = self
-                        .edge_tolerance
-                        .get(&r)
-                        .copied()
-                        .unwrap_or(0.0)
-                        .max(edge.tolerance());
-                    assembly.edges.push(EdgeSpec::New {
-                        geometry,
-                        start: vkey[&s.start],
-                        end: vkey[&s.end],
-                        tolerance,
-                    });
-                    ekey.insert(r, EdgeKey::New(new_edges.len()));
-                    new_edges.push(r);
-                }
-            }
-        }
-        for (k, s) in self.i.sections.iter().enumerate() {
-            let r = ERef::Section(k);
-            if !used_edges.contains(&r) {
-                continue;
-            }
-            assembly.edges.push(EdgeSpec::New {
-                geometry: EdgeGeometry::Curve {
-                    curve: self.curve_ids[s.curve],
-                    range: s.range,
-                },
-                start: vkey[&self.vref_of[s.start]],
-                end: vkey[&self.vref_of[s.end]],
-                tolerance: s.tolerance,
-            });
-            ekey.insert(r, EdgeKey::New(new_edges.len()));
-            new_edges.push(r);
-        }
-
-        let mut face_pieces = Vec::with_capacity(self.kept.len());
-        for shell in shells {
-            let mut faces = Vec::with_capacity(shell.len());
-            for &k in shell {
-                let Some(piece) = self.kept.get(k) else {
-                    continue;
-                };
-                face_pieces.push(k);
-                if piece.whole {
-                    faces.push(FaceSpec::Keep(FaceHandle::new(
-                        piece.face.id,
-                        piece.orientation,
-                    )));
-                    continue;
-                }
-                let entity = m
-                    .face(piece.face.id)
-                    .map_err(|_| self.not_found(piece.side))?;
-                let loops = piece
-                    .loops
-                    .iter()
-                    .map(|l| {
-                        effective_uses(
-                            piece.orientation,
-                            l.iter().map(|u| (ekey[&u.edge], u.orientation, u.pcurve)),
-                        )
-                        .into_iter()
-                        .map(|(edge, orientation, pcurve)| UseSpec {
-                            edge,
-                            orientation,
-                            pcurve,
-                        })
-                        .collect()
-                    })
-                    .collect();
-                faces.push(FaceSpec::New {
-                    surface: entity.surface(),
-                    orientation: piece.orientation,
-                    loops,
-                    tolerance: entity.tolerance(),
-                });
-            }
-            assembly.shells.push(faces);
-        }
-        Ok(Plan {
-            assembly,
-            faces: face_pieces,
-            new_vertices,
-            new_edges,
-            kept_vertices,
-            kept_edges,
-        })
+        rebuild::assembly(
+            self.m,
+            self.bodies,
+            [self.op.policy(0), self.op.policy(1)],
+            &self.vertices,
+            &self.edges,
+            &self.sub_edges,
+            &self.touched,
+            &self.retolerated,
+            &self.edge_tolerance,
+            self.i,
+            &self.curve_ids,
+            &self.vref_of,
+            &self.kept,
+            shells,
+        )
     }
 }

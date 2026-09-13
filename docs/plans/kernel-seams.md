@@ -312,7 +312,7 @@ bound has to be established here.
     dumps equal to the input up to ids, for every sample body and a
     multi-shell boolean result. The transform tests and property tests
     unchanged.
-- [ ] Step 9 **[2]** — **`ops::rebuild`, out of the boolean.**
+- [x] Step 9 **[2]** — **`ops::rebuild`, out of the boolean.**
   - `Kept`, `Policy`, `Plan`, `assembly()` and the provenance writer
     move from `boolean/result.rs` to `src/rebuild.rs`, taking pieces and
     a per-operand policy. `boolean()` calls it.
@@ -326,6 +326,25 @@ bound has to be established here.
   - The `unwrap_or(0.0)` edge-tolerance fallback becomes a `Fault`.
   - Test: every `boolean/` and `provenance/` fixture dump and provenance
     record byte-identical; the boolean property tests green.
+  - Finding (step 9): the `unwrap_or(0.0)` did not become a `Fault`. Its
+    "missing" case is not an error: a `cut`'s tool side is `Regenerate`
+    for every edge whether or not an image or common block touched it,
+    so a whole, otherwise-untouched tool edge reaches this line on
+    every ordinary cut with no `edge_tolerance` entry, and the correct
+    tolerance is just the edge's own — that's what `.max` already
+    computed. Refusing on a missing entry would refuse every such cut.
+    Landed instead as `edge_tolerance.get(&r).map_or(edge.tolerance(),
+    |t| t.max(edge.tolerance()))`: no literal `0.0`, same value, no new
+    `Fault` variant. `rebuild::assembly`'s own doc comment says why.
+  - The provenance writer split at its natural seam instead of moving
+    whole: `rebuild::write_provenance` covers the generic part (every
+    operand entity's deleted/modified/generated record, the shell
+    reconciliation, a coincident piece's stand-in) that a blend's own
+    pieces and policy can drive; the two loops specific to *why* the
+    boolean generated a section vertex or edge (`VertexSource`, pair
+    provenance — meaningless without `Interferences`) stay inline in
+    `boolean::result::boolean`, layered on the `Provenance` the writer
+    returns.
 - [ ] Step 10 **[1]** — **Errors that name what failed.**
   - `OpError::NotFound(AnyId)` and the new `Fault` variants per the
     delta. The 36 `map_err(|_| …)` sites carry the id.

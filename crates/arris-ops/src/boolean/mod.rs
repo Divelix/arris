@@ -12,7 +12,7 @@
 
 mod faces;
 mod pave;
-mod pieces;
+pub(crate) mod pieces;
 mod result;
 
 use core::fmt;
