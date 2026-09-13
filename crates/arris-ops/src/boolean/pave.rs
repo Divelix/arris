@@ -21,7 +21,9 @@ use arris_check::arris_topo::{
     Body, EdgeId, FaceId, Model, NotFound, Shape, Vertex as VertexHandle, VertexId,
 };
 
-use super::faces::{EdgeInfo, FaceInfo, band};
+use arris_check::domain::band;
+
+use super::faces::{EdgeInfo, FaceInfo};
 use super::{
     CommonBlock, Contact, EdgeEdgeHit, EdgeFaceHit, EdgeImage, FacePair, Interferences, Landing,
     Pave, SectionCurve, SectionEdge, SectionVertex, VertexSource,
@@ -314,11 +316,12 @@ impl<'m> Build<'m> {
             let Some(t) = e.in_range(h.t) else {
                 continue;
             };
-            let (side, shift) = f.side(h.uv);
+            let (side, shift) = f.domain.side(h.uv);
             let landing = match side {
                 Side::Outside => continue,
                 Side::Inside => Landing::Interior,
                 Side::Boundary => match f
+                    .domain
                     .boundary_entity(self.m, h.point)
                     .map_err(|_| self.not_found(face_side))?
                 {
@@ -326,7 +329,7 @@ impl<'m> Build<'m> {
                     // Within the (u, v) band of a loop's polygon but within
                     // no edge's or vertex's own tolerance: not on the
                     // boundary, so the winding number alone decides.
-                    None if f.winds_around(h.uv) => Landing::Interior,
+                    None if f.domain.winds_around(h.uv) => Landing::Interior,
                     None => continue,
                 },
             };
@@ -362,11 +365,11 @@ impl<'m> Build<'m> {
             }
             let (ia, ib) = self.pair_faces[pi];
             let (fa, fb) = (&self.faces[0][ia], &self.faces[1][ib]);
-            for &ea in &fa.edges {
+            for &ea in fa.edges() {
                 let Some(ea) = self.edge_info(0, ea) else {
                     continue;
                 };
-                for &eb in &fb.edges {
+                for &eb in fb.edges() {
                     let Some(eb) = self.edge_info(1, eb) else {
                         continue;
                     };
@@ -583,8 +586,8 @@ impl<'m> Build<'m> {
                 continue;
             }
             let (ia, ib) = self.pair_faces[pi];
-            edges.extend(self.faces[0][ia].edges.iter().map(|&e| (0, e)));
-            edges.extend(self.faces[1][ib].edges.iter().map(|&e| (1, e)));
+            edges.extend(self.faces[0][ia].edges().iter().map(|&e| (0, e)));
+            edges.extend(self.faces[1][ib].edges().iter().map(|&e| (1, e)));
         }
         let mut wanted: Vec<(EdgeId, f64, usize)> = Vec::new();
         for (side, id) in edges {
@@ -627,7 +630,7 @@ impl<'m> Build<'m> {
         let mut out = [Point2::origin(); 2];
         for (i, f) in [fa, fb].into_iter().enumerate() {
             let projection = f.surface.project(point).ok()?;
-            let (side, shift) = f.side(projection.uv);
+            let (side, shift) = f.domain.side(projection.uv);
             if side != Side::Inside {
                 return None;
             }
@@ -684,8 +687,8 @@ impl<'m> Build<'m> {
         let (fa, fb) = (&self.faces[0][ia], &self.faces[1][ib]);
         let mut paves: Vec<f64> = Vec::new();
         for (k, h) in self.hits.iter().enumerate() {
-            let on_pair = (h.face == fb.id && fa.edges.contains(&h.edge))
-                || (h.face == fa.id && fb.edges.contains(&h.edge));
+            let on_pair = (h.face == fb.id && fa.edges().contains(&h.edge))
+                || (h.face == fa.id && fb.edges().contains(&h.edge));
             if !on_pair {
                 continue;
             }
@@ -791,7 +794,7 @@ impl<'m> Build<'m> {
         // image through the coincident neighbour (ADR-0004).
         let mut along: Vec<&EdgeInfo<'m>> = Vec::new();
         for (side, f) in [(0, fa), (1, fb)] {
-            for &eid in &f.edges {
+            for &eid in f.edges() {
                 let Some(e) = self.edge_info(side, eid) else {
                     continue;
                 };
@@ -1029,7 +1032,7 @@ impl<'m> Build<'m> {
             })
         };
         let mid = e.curve.point(block.range.midpoint());
-        for &gid in &other.edges {
+        for &gid in other.edges() {
             let same = if side == 0 {
                 self.same_curve.contains(&(e.id, gid))
             } else {
@@ -1099,7 +1102,7 @@ impl<'m> Build<'m> {
                 } else {
                     (&self.faces[1][ib], &self.faces[0][ia])
                 };
-                for &eid in &f.edges {
+                for &eid in f.edges() {
                     let Some(e) = self.edge_info(side, eid) else {
                         continue;
                     };
@@ -1133,12 +1136,12 @@ impl<'m> Build<'m> {
                             .surface
                             .project(mid)
                             .map_err(|err| geometry(err, e.shape(), other.shape()))?;
-                        let (s, shift) = other.side(projection.uv);
+                        let (s, shift) = other.domain.side(projection.uv);
                         let uv_mid = projection.uv + shift;
                         let inside = match s {
                             Side::Outside => false,
                             Side::Inside => true,
-                            Side::Boundary => other.winds_around(projection.uv),
+                            Side::Boundary => other.domain.winds_around(projection.uv),
                         };
                         if !inside {
                             continue;
@@ -1205,7 +1208,7 @@ impl<'m> Build<'m> {
         let mut tolerance = g.tolerance.max(e.tolerance);
         let mut pcurves = Vec::new();
         for fb in &self.faces[1] {
-            if !fb.edges.contains(&e.id) {
+            if !fb.edges().contains(&e.id) {
                 continue;
             }
             let face = m.face(fb.id).map_err(|_| self.not_found(1))?;
@@ -1267,6 +1270,6 @@ impl<'m> Build<'m> {
 fn g_face_of<'b, 'm>(build: &'b Build<'m>, gid: EdgeId) -> &'b FaceInfo<'m> {
     build.faces[0]
         .iter()
-        .find(|f| f.edges.contains(&gid))
+        .find(|f| f.edges().contains(&gid))
         .unwrap_or(&build.faces[0][0])
 }

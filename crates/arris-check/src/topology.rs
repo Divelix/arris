@@ -17,6 +17,7 @@ use arris_topo::entity::{BodyKind, Face, Loop};
 use arris_topo::{Closure, EdgeId, FaceId, Model, Orientation, ShellId, VertexId};
 
 use crate::check::{Checker, coedges, samples};
+use crate::domain::bands;
 use crate::report::EulerLine;
 use crate::violation::{
     EdgeUseFault, FaceFault, LoopBreak, NestingFault, ToleranceBound, Violation, WireFault,
@@ -172,7 +173,7 @@ impl<'m> Checker<'m> {
     /// the model's parametric tolerance, or is exactly one period of a
     /// periodic parameter with no step in the other.
     fn uv_jump_ok(&self, surface: &Surface, uv: Point2, d: Vec2) -> bool {
-        let bound = self.uv_bounds(surface, uv);
+        let bound = bands(surface, uv, self.precision.parametric_tolerance);
         if d[0].abs() <= bound[0] && d[1].abs() <= bound[1] {
             return true;
         }
@@ -247,7 +248,7 @@ impl<'m> Checker<'m> {
             let perimeter: f64 = polygon.segments().map(|(a, b)| (b - a).norm()).sum();
             let width = match polygon.points().first() {
                 Some(&p) => {
-                    let bound = self.uv_bounds(surface, p);
+                    let bound = bands(surface, p, self.precision.parametric_tolerance);
                     bound[0].min(bound[1])
                 }
                 None => return,
@@ -326,7 +327,7 @@ impl<'m> Checker<'m> {
             }
             for t in samples(range, self.precision.check_samples) {
                 let uv = pcurve.point(t);
-                let bound = self.uv_bounds(surface, uv);
+                let bound = bands(surface, uv, self.precision.parametric_tolerance);
                 for dir in 0..2 {
                     if periods[dir].is_some() {
                         continue;

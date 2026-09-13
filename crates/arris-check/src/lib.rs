@@ -14,6 +14,7 @@
 
 mod check;
 pub mod classify;
+pub mod domain;
 mod full;
 mod lumps;
 mod report;

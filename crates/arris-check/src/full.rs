@@ -16,16 +16,17 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use arris_topo::arris_geom::integrate::{inner_step, region_integral};
-use arris_topo::arris_geom::region2::{Piece, Polygon2, Side, discretise, point_side};
+use arris_topo::arris_geom::region2::{Piece, Side};
 use arris_topo::arris_geom::{
     Curve, Surface, SurfaceIntersection, SurfaceKind, intersect_surfaces,
 };
 use arris_topo::arris_math::{Aabb, Interval, Point2, Point3};
-use arris_topo::entity::{BodyKind, Face};
-use arris_topo::{EdgeId, FaceId, Orientation, ShellId, VertexId};
+use arris_topo::entity::BodyKind;
+use arris_topo::{EdgeId, FaceId, Orientation, ShellId};
 
 use crate::check::{Checker, coedges, samples};
-use crate::classify::{Classifier, shifts};
+use crate::classify::Classifier;
+use crate::domain::{FaceDomain, boundary_entity};
 use crate::unchecked::Unchecked;
 use crate::violation::{ShellNestingFault, Violation};
 
@@ -43,70 +44,19 @@ impl<'m> Checker<'m> {
         self.b1_b2_shells();
     }
 
-    /// Every face's loops as polygons in (u, v), within the model's
-    /// parametric tolerance of the pcurves: what L5, S5 and B1 all ask.
+    /// Every face's [`FaceDomain`] at the model's parametric tolerance:
+    /// what L5, S5 and B1 all ask. A face whose domain does not resolve
+    /// has none, answers `Outside` everywhere and is never rejected by a
+    /// box; M1 reports why.
     pub(crate) fn discretise_faces(&mut self) {
         let model = self.model;
-        let mut fine: BTreeMap<FaceId, Vec<Polygon2>> = BTreeMap::new();
-        for &face_id in &self.closure.faces {
-            let Ok(face) = model.face(face_id) else {
-                continue;
-            };
-            let Ok(surface) = model.surface(face.surface()) else {
-                continue;
-            };
-            let chord = self.chord_tolerance(surface, face);
-            let polygons = face
-                .loops()
-                .iter()
-                .filter_map(|l| self.loop_pieces(l).map(|ps| discretise(&ps, chord)))
-                .collect();
-            fine.insert(face_id, polygons);
-        }
-        self.faces_fine = fine;
-    }
-
-    /// The chord tolerance a face's loops are discretised at: the model's
-    /// parametric tolerance at the first point of its first pcurve,
-    /// taken in the tighter of the two directions so neither is coarser
-    /// than the model allows.
-    fn chord_tolerance(&self, surface: &Surface, face: &Face) -> f64 {
-        let at = face
-            .loops()
+        let tolerance = self.precision.parametric_tolerance;
+        self.domains = self
+            .closure
+            .faces
             .iter()
-            .flat_map(|l| l.coedges())
-            .find_map(|c| self.model.curve2(c.pcurve()).ok())
-            .map_or(Point2::origin(), |p| p.point(0.0));
-        let bound = self.uv_bounds(surface, at);
-        bound[0].min(bound[1])
-    }
-
-    /// Where `uv` lies with respect to `face`'s loops, using the
-    /// polygons [`Checker::discretise_faces`] built and the model's
-    /// parametric tolerance at that point as the boundary band. A
-    /// periodic parameter is tried a period either way as well, since a
-    /// face's loops may be written in any translate of the fundamental
-    /// domain and a projection's `uv` is in its first copy: `Inside` wins
-    /// over `Boundary` over `Outside` across the translates. A face whose
-    /// loops could not be discretised answers `Outside`.
-    pub(crate) fn face_side(&self, face_id: FaceId, surface: &Surface, uv: Point2) -> Side {
-        let Some(polygons) = self.faces_fine.get(&face_id) else {
-            return Side::Outside;
-        };
-        let bound = self.uv_bounds(surface, uv);
-        let near = bound[0].min(bound[1]);
-        let period = surface.period();
-        let mut best = Side::Outside;
-        for du in shifts(period[0]) {
-            for dv in shifts(period[1]) {
-                match point_side(polygons, Point2::new(uv.x + du, uv.y + dv), near) {
-                    Side::Inside => return Side::Inside,
-                    Side::Boundary => best = Side::Boundary,
-                    Side::Outside => {}
-                }
-            }
-        }
-        best
+            .filter_map(|&face| Some((face, FaceDomain::of(model, face, tolerance).ok()?)))
+            .collect();
     }
 
     /// E8: an analytic curve over a range E1 accepted cannot cross
@@ -180,7 +130,8 @@ impl<'m> Checker<'m> {
     /// L5: no loop of a face crosses itself or another of its loops.
     fn l5_loops_intersect(&mut self) {
         let mut found = Vec::new();
-        for (&face_id, polygons) in &self.faces_fine {
+        for (&face_id, domain) in &self.domains {
+            let polygons = domain.polygons();
             for (i, a) in polygons.iter().enumerate() {
                 if !a.self_intersections().is_empty() {
                     found.push(Violation::LoopsIntersect {
@@ -218,58 +169,14 @@ impl<'m> Checker<'m> {
         (bounded && !pieces.is_empty()).then_some(pieces)
     }
 
-    /// The box of a face, grown by its tolerance: the union of its
-    /// edges' curve boxes, each grown by the edge's tolerance, and of
-    /// the surface's box over the (u, v) box of its discretised loops
-    /// grown by their chord deviation. `None` for a face reaching an
-    /// unbounded range or nothing that resolves — a face S5 never
-    /// rejects by its box.
-    fn face_bounds(&self, face_id: FaceId, face: &Face, surface: &Surface) -> Option<Aabb> {
-        let model = self.model;
-        let mut bounds: Option<Aabb> = None;
-        for (_, _, coedge) in coedges(face) {
-            let edge = model.edge(coedge.edge()).ok()?;
-            let Some((curve_id, range)) = edge.curve() else {
-                continue;
-            };
-            let b = model
-                .curve(curve_id)
-                .ok()?
-                .bounds(range)?
-                .inflated(edge.tolerance());
-            bounds = Some(bounds.map_or(b, |acc| acc.union(b)));
-        }
-        let polygons = self.faces_fine.get(&face_id)?;
-        let mut lo = Point2::new(f64::INFINITY, f64::INFINITY);
-        let mut hi = Point2::new(f64::NEG_INFINITY, f64::NEG_INFINITY);
-        for polygon in polygons {
-            let d = polygon.chord_deviation();
-            for p in polygon.points() {
-                lo = Point2::new(lo.x.min(p.x - d), lo.y.min(p.y - d));
-                hi = Point2::new(hi.x.max(p.x + d), hi.y.max(p.y + d));
-            }
-        }
-        let (u, v) = (
-            Interval::new(lo.x, hi.x).ok()?,
-            Interval::new(lo.y, hi.y).ok()?,
-        );
-        let b = surface.bounds([u, v])?;
-        bounds = Some(bounds.map_or(b, |acc| acc.union(b)));
-        bounds.map(|b| b.inflated(face.tolerance()))
-    }
-
-    /// Every face's box ([`Checker::face_bounds`]).
+    /// Every face's box ([`FaceDomain::bounds`]); `None` for a face with
+    /// no domain or no bounded box, which S5 never rejects by its box.
     pub(crate) fn face_boxes(&self) -> FaceBoxes {
-        let model = self.model;
-        let mut boxes = FaceBoxes::new();
-        for &face_id in &self.closure.faces {
-            let b = model.face(face_id).ok().and_then(|face| {
-                let surface = model.surface(face.surface()).ok()?;
-                self.face_bounds(face_id, face, surface)
-            });
-            boxes.insert(face_id, b);
-        }
-        boxes
+        self.closure
+            .faces
+            .iter()
+            .map(|&face| (face, self.domains.get(&face).and_then(FaceDomain::bounds)))
+            .collect()
     }
 
     /// Whether faces `a` and `b` meet away from the edges and vertices
@@ -361,10 +268,15 @@ impl<'m> Checker<'m> {
     fn regions_overlap(&self, a: FaceId, sa: &Surface, b: FaceId, sb: &Surface) -> bool {
         let n = self.precision.check_samples.max(2);
         for (from, from_surface, to, to_surface) in [(a, sa, b, sb), (b, sb, a, sa)] {
-            let Some(polygons) = self.faces_fine.get(&from) else {
+            let Some(domain) = self.domains.get(&from) else {
                 continue;
             };
-            let points: Vec<Point2> = polygons.iter().flat_map(|p| p.points()).copied().collect();
+            let points: Vec<Point2> = domain
+                .polygons()
+                .iter()
+                .flat_map(|p| p.points())
+                .copied()
+                .collect();
             let (Some(lo), Some(hi)) = (corner(&points, f64::min), corner(&points, f64::max))
             else {
                 continue;
@@ -375,7 +287,7 @@ impl<'m> Checker<'m> {
                         lerp(lo.x, hi.x, i as f64 / (n - 1) as f64),
                         lerp(lo.y, hi.y, j as f64 / (n - 1) as f64),
                     );
-                    if self.face_side(from, from_surface, uv) != Side::Inside {
+                    if domain.side(uv).0 != Side::Inside {
                         continue;
                     }
                     let point = from_surface.point(uv.x, uv.y);
@@ -385,7 +297,11 @@ impl<'m> Checker<'m> {
                     if projection.distance > self.precision.default_tolerance {
                         continue;
                     }
-                    if self.face_side(to, to_surface, projection.uv) == Side::Inside {
+                    if self
+                        .domains
+                        .get(&to)
+                        .is_some_and(|d| d.side(projection.uv).0 == Side::Inside)
+                    {
                         return true;
                     }
                 }
@@ -409,10 +325,19 @@ impl<'m> Checker<'m> {
         let Some(range) = self.curve_range(a, sa, b, sb, curve) else {
             return false;
         };
-        let shared = self.shared_boundary(a, b);
+        let shared = self.shared_edges(a, b);
+        let inside = |face: FaceId, uv: Point2| {
+            self.domains
+                .get(&face)
+                .is_some_and(|d| d.side(uv).0 == Side::Inside)
+        };
         for t in samples(range, self.precision.check_samples.max(2)) {
             let point = curve.point(t);
-            if self.on_shared_boundary(&shared, point) {
+            // On an edge or vertex the two faces share, where the
+            // surfaces are allowed to meet.
+            if boundary_entity(self.model, shared.iter().copied(), point)
+                .is_ok_and(|on| on.is_some())
+            {
                 continue;
             }
             let (Ok(pa), Ok(pb)) = (sa.project(point), sb.project(point)) else {
@@ -422,9 +347,7 @@ impl<'m> Checker<'m> {
             if pa.distance > far || pb.distance > far {
                 continue;
             }
-            if self.face_side(a, sa, pa.uv) == Side::Inside
-                && self.face_side(b, sb, pb.uv) == Side::Inside
-            {
+            if inside(a, pa.uv) && inside(b, pb.uv) {
                 return true;
             }
         }
@@ -448,7 +371,7 @@ impl<'m> Checker<'m> {
         }
         let mut hulls = Vec::with_capacity(2);
         for (face, surface) in [(a, sa), (b, sb)] {
-            let polygons = self.faces_fine.get(&face)?;
+            let polygons = self.domains.get(&face)?.polygons();
             let mut hull: Option<Interval> = None;
             for uv in polygons.iter().flat_map(|p| p.points()) {
                 let Ok(projection) = curve.project(surface.point(uv.x, uv.y)) else {
@@ -465,8 +388,8 @@ impl<'m> Checker<'m> {
         hulls[0].intersection(&hulls[1])
     }
 
-    /// The edges and vertices two faces share.
-    fn shared_boundary(&self, a: FaceId, b: FaceId) -> (Vec<EdgeId>, BTreeSet<VertexId>) {
+    /// The edges two faces share, in id order.
+    fn shared_edges(&self, a: FaceId, b: FaceId) -> Vec<EdgeId> {
         let model = self.model;
         let of = |face: FaceId| -> BTreeSet<EdgeId> {
             model.face(face).map_or_else(
@@ -474,55 +397,7 @@ impl<'m> Checker<'m> {
                 |f| coedges(f).map(|(_, _, c)| c.edge()).collect(),
             )
         };
-        let edges: Vec<EdgeId> = of(a).intersection(&of(b)).copied().collect();
-        let vertices = edges
-            .iter()
-            .filter_map(|&e| model.edge(e).ok())
-            .flat_map(|e| [e.start(), e.end()])
-            .collect();
-        (edges, vertices)
-    }
-
-    /// `true` when `point` is within tolerance of an edge or vertex the
-    /// two faces share, where the surfaces are allowed to meet.
-    fn on_shared_boundary(
-        &self,
-        (edges, vertices): &(Vec<EdgeId>, BTreeSet<VertexId>),
-        point: Point3,
-    ) -> bool {
-        let model = self.model;
-        for &vertex in vertices {
-            if let Ok(v) = model.vertex(vertex) {
-                if (v.point() - point).norm() <= v.tolerance() {
-                    return true;
-                }
-            }
-        }
-        for &edge_id in edges {
-            let Ok(edge) = model.edge(edge_id) else {
-                continue;
-            };
-            let Some((curve_id, range)) = edge.curve() else {
-                continue;
-            };
-            let Ok(curve) = model.curve(curve_id) else {
-                continue;
-            };
-            let Ok(projection) = curve.project(point) else {
-                continue;
-            };
-            // The projection's parameter is in the curve's first period
-            // and the edge's range may be in another. A parameter in no
-            // translate of the range is on the curve, not on the edge: the
-            // nearest point of the edge is then an end, a shared vertex
-            // the loop above answered for within a tolerance no smaller
-            // than the edge's (E5).
-            let within = shifts(curve.period()).any(|d| range.contains(projection.t + d));
-            if within && projection.distance <= edge.tolerance() {
-                return true;
-            }
-        }
-        false
+        of(a).intersection(&of(b)).copied().collect()
     }
 
     /// The signed volume `∬ p · (r_u × r_v) / 3` over a face's region in

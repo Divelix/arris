@@ -10,15 +10,12 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use arris_topo::arris_geom::region2::{Polygon2, Side, discretise, point_side};
-use arris_topo::arris_geom::{
-    Curve, CurveSurfaceIntersection, GeomError, Surface, intersect_curve_surface,
-};
-use arris_topo::arris_math::{Point2, Point3, Precision, UnitVec3, Vec3};
-use arris_topo::entity::EdgeGeometry;
-use arris_topo::{Body, EdgeId, FaceId, Model, NotFound, Orientation, Shape, VertexId};
+use arris_topo::arris_geom::region2::Side;
+use arris_topo::arris_geom::{Curve, CurveSurfaceIntersection, GeomError, intersect_curve_surface};
+use arris_topo::arris_math::{Point3, Precision, UnitVec3, Vec3};
+use arris_topo::{Body, FaceId, Model, NotFound, Orientation, Shape};
 
-use crate::check::uv_bounds;
+use crate::domain::{FaceDomain, boundary_entity};
 
 /// The directions a containment ray is tried in, in order: the axes
 /// first, then directions no two faces of an axis-aligned body share a
@@ -143,122 +140,58 @@ pub fn classify_point(
     }
 }
 
-/// The faces a point is classified against, with their loops discretised
-/// once: what [`classify_point`] builds over a body and B1 builds over one
-/// shell.
+/// The faces a point is classified against, each read once as a
+/// [`FaceDomain`]: what [`classify_point`] builds over a body and B1
+/// builds over one shell.
 pub(crate) struct Classifier<'m> {
     model: &'m Model,
     precision: Precision,
     faces: Vec<FaceId>,
-    polygons: BTreeMap<FaceId, Vec<Polygon2>>,
+    domains: BTreeMap<FaceId, FaceDomain<'m>>,
 }
 
 impl<'m> Classifier<'m> {
-    /// A classifier over `faces`, their loops discretised at the model's
-    /// parametric tolerance. Faces that do not resolve are skipped; the
-    /// ray cast reports them by finding no crossing, never by panicking.
+    /// A classifier over `faces`, their domains read at the model's
+    /// parametric tolerance, as the checker's `Full` rows read them. A
+    /// face whose domain does not resolve has none and is `Outside`
+    /// everywhere; the ray cast reports it by finding no crossing, never
+    /// by panicking.
     pub(crate) fn over(model: &'m Model, faces: Vec<FaceId>) -> Self {
         let precision = model.precision();
-        let mut polygons = BTreeMap::new();
-        for &id in &faces {
-            let Ok(face) = model.face(id) else {
-                continue;
-            };
-            let Ok(surface) = model.surface(face.surface()) else {
-                continue;
-            };
-            // The chord tolerance is the model's parametric tolerance at
-            // the first point of the face's first pcurve, in the tighter
-            // of the two directions — what the checker's `Full` rows use.
-            let at = face
-                .loops()
-                .iter()
-                .flat_map(|l| l.coedges())
-                .find_map(|c| model.curve2(c.pcurve()).ok())
-                .map_or(Point2::origin(), |p| p.point(0.0));
-            let bound = uv_bounds(&precision, surface, at);
-            let chord = bound[0].min(bound[1]);
-            let rings = face
-                .loops()
-                .iter()
-                .filter_map(|l| model.loop_pieces(l).ok().map(|ps| discretise(&ps, chord)))
-                .collect();
-            polygons.insert(id, rings);
-        }
+        let tolerance = precision.parametric_tolerance;
+        let domains = faces
+            .iter()
+            .filter_map(|&id| Some((id, FaceDomain::of(model, id, tolerance).ok()?)))
+            .collect();
         Classifier {
             model,
             precision,
             faces,
-            polygons,
+            domains,
         }
     }
 
-    /// Where `uv` lies with respect to `face`'s loops. A periodic
-    /// parameter is tried a period either way as well, since a face's
-    /// loops may be written in any translate of the fundamental domain
-    /// and the projection's `uv` is in the domain's first copy.
-    fn face_side(&self, face: FaceId, surface: &Surface, uv: Point2) -> Side {
-        let Some(polygons) = self.polygons.get(&face) else {
-            return Side::Outside;
-        };
-        let bound = uv_bounds(&self.precision, surface, uv);
-        let near = bound[0].min(bound[1]);
-        let period = surface.period();
-        let mut best = Side::Outside;
-        for du in shifts(period[0]) {
-            for dv in shifts(period[1]) {
-                match point_side(polygons, Point2::new(uv.x + du, uv.y + dv), near) {
-                    Side::Inside => return Side::Inside,
-                    Side::Boundary => best = Side::Boundary,
-                    Side::Outside => {}
-                }
-            }
-        }
-        best
+    /// Where `uv` lies with respect to `face`'s loops, in whichever
+    /// translate they are written ([`FaceDomain::side`]).
+    fn side(&self, face: FaceId, uv: arris_topo::arris_math::Point2) -> Side {
+        self.domains
+            .get(&face)
+            .map_or(Side::Outside, |d| d.side(uv).0)
     }
 
-    /// The entity `point` is on, most specific first, or `None`.
+    /// The entity `point` is on, most specific first, or `None`: a vertex
+    /// or edge of any of the faces ([`boundary_entity`]), else a face.
     pub(crate) fn on(&self, point: Point3) -> Result<Option<Shape>, ClassifyError> {
         let model = self.model;
-        let mut vertices: Vec<VertexId> = Vec::new();
-        let mut edges: Vec<EdgeId> = Vec::new();
-        for &id in &self.faces {
-            let Ok(face) = model.face(id) else { continue };
-            for coedge in face.loops().iter().flat_map(|l| l.coedges()) {
-                edges.push(coedge.edge());
-                if let Ok(edge) = model.edge(coedge.edge()) {
-                    vertices.extend([edge.start(), edge.end()]);
-                }
-            }
-        }
-        vertices.sort_unstable();
-        vertices.dedup();
-        edges.sort_unstable();
-        edges.dedup();
-        for id in vertices {
-            let v = model.vertex(id)?;
-            if (point - v.point()).norm() <= v.tolerance() {
-                return Ok(Some(Shape::new(id, Orientation::Forward)));
-            }
-        }
-        for id in edges {
-            let edge = model.edge(id)?;
-            let EdgeGeometry::Curve { curve, range } = edge.geometry() else {
-                // A degenerate edge's locus is its vertex, which the loop
-                // above already answered for.
-                continue;
-            };
-            let curve = model.curve(curve)?;
-            // A point on the axis of a circle has no nearest parameter;
-            // it is a radius away from the curve, so it is not on it.
-            let Ok(projection) = curve.project(point) else {
-                continue;
-            };
-            let period = curve.period();
-            let within = shifts(period).any(|d| range.contains(projection.t + d));
-            if within && projection.distance <= edge.tolerance() {
-                return Ok(Some(Shape::new(id, Orientation::Forward)));
-            }
+        let edges: Vec<_> = self
+            .faces
+            .iter()
+            .filter_map(|&id| model.face(id).ok())
+            .flat_map(|face| face.loops().iter().flat_map(|l| l.coedges()))
+            .map(|c| c.edge())
+            .collect();
+        if let Some(shape) = boundary_entity(model, edges, point)? {
+            return Ok(Some(shape));
         }
         for &id in &self.faces {
             let face = model.face(id)?;
@@ -267,7 +200,7 @@ impl<'m> Classifier<'m> {
                 continue;
             };
             if projection.distance <= face.tolerance()
-                && self.face_side(id, surface, projection.uv) != Side::Outside
+                && self.side(id, projection.uv) != Side::Outside
             {
                 return Ok(Some(Shape::new(id, Orientation::Forward)));
             }
@@ -303,7 +236,7 @@ impl<'m> Classifier<'m> {
                         // itself the point has no parity to take; off
                         // it, the surface is merely passed through at
                         // the origin, which is no crossing.
-                        match self.face_side(id, surface, hit.uv) {
+                        match self.side(id, hit.uv) {
                             Side::Outside => continue,
                             Side::Inside | Side::Boundary => continue 'direction,
                         }
@@ -311,7 +244,7 @@ impl<'m> Classifier<'m> {
                     if hit.t < 0.0 {
                         continue;
                     }
-                    match self.face_side(id, surface, hit.uv) {
+                    match self.side(id, hit.uv) {
                         Side::Inside if hit.tangent => continue 'direction,
                         Side::Inside => crossings += 1,
                         Side::Boundary => continue 'direction,
@@ -323,11 +256,4 @@ impl<'m> Classifier<'m> {
         }
         Ok(None)
     }
-}
-
-/// The offsets a periodic parameter is tried at: nothing, and a period
-/// either way. A direction with no period is tried once.
-pub(crate) fn shifts(period: Option<f64>) -> impl Iterator<Item = f64> {
-    let p = period.unwrap_or(0.0);
-    [0.0, p, -p].into_iter().take(if p == 0.0 { 1 } else { 3 })
 }

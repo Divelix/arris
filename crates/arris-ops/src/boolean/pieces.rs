@@ -29,7 +29,8 @@ use arris_check::arris_topo::{
     Curve2Id, EdgeId, FaceId, Model, NotFound, Orientation, Shape, VertexId,
 };
 
-use super::faces::band;
+use arris_check::domain::chord;
+
 use crate::error::{Fault, OpError, Reason, SplitFault};
 
 /// A vertex of the result as the split names it before it has an id.
@@ -734,17 +735,11 @@ pub(super) fn split_face(
             .iter()
             .flat_map(|l| l.coedges())
             .any(|c| touched.contains(&c.edge()));
-    let at = entity
-        .loops()
-        .iter()
-        .flat_map(|l| l.coedges())
-        .find_map(|c| m.curve2(c.pcurve()).ok())
-        .map_or(Point2::origin(), |p| p.point(0.0));
     let mut a = Arrangement {
         m,
         face,
         surface,
-        chord: band(surface, at, entity.tolerance()),
+        chord: chord(m, entity, surface, entity.tolerance()),
         angular: precision.angular_tolerance,
         nodes: Vec::new(),
         halves: Vec::new(),

@@ -4,10 +4,11 @@
 
 use std::collections::BTreeMap;
 
+use arris_check::domain::FaceDomain;
 use arris_topo::arris_geom::Surface;
-use arris_topo::arris_geom::region2::{MAX_SEGMENTS_PER_PIECE, Polygon2, discretise};
+use arris_topo::arris_geom::region2::{MAX_SEGMENTS_PER_PIECE, Polygon2};
 use arris_topo::arris_math::{Interval, Point2};
-use arris_topo::entity::{EdgeGeometry, Face as FaceEntity};
+use arris_topo::entity::EdgeGeometry;
 use arris_topo::{Body, EdgeId, FaceId, Model, NotFound, Orientation, VertexId};
 
 use crate::cdt::{self, CdtError, VertexRef};
@@ -108,7 +109,11 @@ pub fn tessellate(m: &Model, body: Body, chord: f64) -> Result<TriMesh, MeshErro
     for f in &faces {
         let face = m.face(f.id)?;
         let surface = m.surface(face.surface())?;
-        let bounds = region_bounds(m, face)?;
+        // The (u, v) box holding the loops' true boundary, read at the
+        // requested chord; the whole plane for a face with no loop.
+        let bounds = FaceDomain::of(m, f.id, chord)?
+            .uv_box()
+            .unwrap_or([Interval::REAL; 2]);
         let steps = surface.chord_steps(chord, bounds);
         domains.push((bounds, steps));
         for coedge in face.loops().iter().flat_map(|l| l.coedges()) {
@@ -489,26 +494,6 @@ fn interior_grid(polygons: &[Polygon2], bounds: [Interval; 2], steps: [f64; 2]) 
         }
     }
     points
-}
-
-/// The (u, v) box a face's loops span, padded by the chord deviation of
-/// the polygons they were read from so it holds the true boundary; the
-/// whole plane when the face has no loop.
-fn region_bounds(m: &Model, face: &FaceEntity) -> Result<[Interval; 2], NotFound> {
-    let (mut lo, mut hi) = ([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]);
-    for l in face.loops() {
-        let pieces = m.loop_pieces(l)?;
-        let polygon = discretise(&pieces, f64::INFINITY);
-        let pad = polygon.chord_deviation();
-        for p in polygon.points() {
-            lo = [lo[0].min(p.x - pad), lo[1].min(p.y - pad)];
-            hi = [hi[0].max(p.x + pad), hi[1].max(p.y + pad)];
-        }
-    }
-    Ok([
-        Interval::new(lo[0], hi[0]).unwrap_or(Interval::REAL),
-        Interval::new(lo[1], hi[1]).unwrap_or(Interval::REAL),
-    ])
 }
 
 #[cfg(test)]

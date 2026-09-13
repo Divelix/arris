@@ -10,12 +10,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use arris_topo::arris_geom::{Curve, Curve2, Surface};
-use arris_topo::arris_math::{Frame, Frame2, Interval, Point2, Point3, Precision, is_negligible};
+use arris_topo::arris_math::{Frame, Frame2, Interval, Point3, Precision};
 use arris_topo::entity::{BodyKind, Coedge, Edge, EdgeGeometry, Face};
 use arris_topo::{
     Body, Closure, CoedgeRef, EdgeId, EntityId, FaceId, Model, NotFound, Orientation, VertexId,
 };
 
+use crate::domain::{FaceDomain, bands};
 use crate::report::Report;
 use crate::topology::euler_line;
 use crate::unchecked::Unchecked;
@@ -79,9 +80,9 @@ pub(crate) struct Checker<'m> {
     /// Vertex → the body's edges that end at it, each once.
     pub(crate) vertex_edges: BTreeMap<VertexId, Vec<EdgeId>>,
     pub(crate) violations: Vec<Violation>,
-    /// Every face's loops as polygons in (u, v), built by the `Full`
-    /// rows and empty at `Fast`.
-    pub(crate) faces_fine: BTreeMap<FaceId, Vec<arris_topo::arris_geom::region2::Polygon2>>,
+    /// Every face's domain at the model's parametric tolerance, built by
+    /// the `Full` rows and empty at `Fast`.
+    pub(crate) domains: BTreeMap<FaceId, FaceDomain<'m>>,
     /// The `Full` rows this body could not be decided on.
     pub(crate) unchecked: Vec<Unchecked>,
 }
@@ -131,7 +132,7 @@ impl<'m> Checker<'m> {
             uses,
             vertex_edges,
             violations: Vec::new(),
-            faces_fine: BTreeMap::new(),
+            domains: BTreeMap::new(),
             unchecked: Vec::new(),
         })
     }
@@ -825,7 +826,7 @@ impl Checker<'_> {
         for t in [range.lo(), range.midpoint(), range.hi()] {
             let (u1, u2) = (p1.point(t), p2.point(t));
             let d = u2 - u1;
-            let bound = self.uv_bounds(surface, u1);
+            let bound = bands(surface, u1, self.precision.parametric_tolerance);
             let matches = |dir: usize| {
                 let Some(period) = periods[dir] else {
                     return false;
@@ -845,29 +846,4 @@ impl Checker<'_> {
         }
         fault
     }
-
-    /// `parametric_tolerance` in each parameter at `uv`: the model's
-    /// (u, v) bound divided by the surface's speed in that direction, so
-    /// it is one length everywhere; unscaled where a direction is singular
-    /// to rounding against the other.
-    pub(crate) fn uv_bounds(&self, surface: &Surface, uv: Point2) -> [f64; 2] {
-        uv_bounds(&self.precision, surface, uv)
-    }
-}
-
-/// How far a (u, v) step may be and still be within the model's
-/// parametric tolerance in 3D, per direction, at `uv`: the tolerance
-/// divided by the surface's speed there, and the raw tolerance where a
-/// speed is zero or negligible beside the other (a pole).
-pub(crate) fn uv_bounds(precision: &Precision, surface: &Surface, uv: Point2) -> [f64; 2] {
-    let e = surface.eval(uv.x, uv.y);
-    let speeds = [e.du.norm(), e.dv.norm()];
-    let ptol = precision.parametric_tolerance;
-    [0, 1].map(|i| {
-        if is_negligible(speeds[i], speeds[1 - i]) || speeds[i] == 0.0 {
-            ptol
-        } else {
-            ptol / speeds[i]
-        }
-    })
 }

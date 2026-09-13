@@ -71,7 +71,13 @@ says `fixtures:` and why.
 - **`arris-check` gains `pub mod domain` (public addition).**
   - `FaceDomain::of(model, face, tolerance)` holds a face's loops as
     polygons, its (u, v) box padded by chord deviation, and its 3D box
-    grown by `tolerance`.
+    grown by the face's own tolerance. (Step 2 found both callers grew
+    the box by the face's tolerance, the checker too; `tolerance` sets
+    the chord and the side band only.)
+  - Free functions beside it: `shifts`, `bands` (per direction, which
+    E7 and the loop rows read) and `band`, `chord` (the arrangement's),
+    and `boundary_entity` over an edge set, vertices before edges in id
+    order, which the classifier asks of a whole body.
   - `side(uv) -> (Side, Vec2)` tries every period translate.
     `winds_around(uv)` and `boundary_entity(model, point)` resolve a
     point to a vertex, else an edge, trying periods on closed edges.
@@ -218,7 +224,7 @@ bound has to be established here.
     which it was.
   - The corpus runs green with dumps unchanged. A dump that changes is a
     `fixtures:` commit naming the fixture the checker had passed wrongly.
-- [ ] Step 2 **[2]** — **One `FaceDomain`.**
+- [x] Step 2 **[2]** — **One `FaceDomain`.**
   - Add `arris_check::domain` per the delta. The checker's `Full` rows,
     the classifier, ops `FaceInfo` (which keeps its edge list and
     `EdgeInfo`) and mesh's padded box all move onto it.
