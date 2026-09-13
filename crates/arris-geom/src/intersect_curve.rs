@@ -1,4 +1,4 @@
-//! Curve–surface intersection: the closed-form table of cycle 1.
+//! Curve–surface intersection: the closed-form table.
 
 use core::f64::consts::{PI, TAU};
 

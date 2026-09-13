@@ -1,4 +1,4 @@
-//! The chord bounds of `docs/plans/m3-tessellation.md` step 2:
+//! The chord bounds (`docs/ARCHITECTURE.md` §Tessellation):
 //! `Curve::chord_segments` agrees with its (u, v) twin, and
 //! `Surface::chord_steps` is the second fundamental form per kind — flat
 //! or ruled directions unbounded, the cone read at its far bound, the

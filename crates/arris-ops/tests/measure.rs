@@ -1,4 +1,4 @@
-//! `measure::mass_properties` (`docs/plans/m3-tessellation.md` step 5):
+//! `measure::mass_properties` (`docs/ARCHITECTURE.md` §Operations):
 //! the closed forms of the box, the cylinder and the sphere, the hand-built
 //! frame against the oracle's reading of `boolean/frame-cut`, the
 //! parallel-axis theorem against a direct integral, and the typed errors

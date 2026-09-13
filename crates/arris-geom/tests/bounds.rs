@@ -1,7 +1,7 @@
 //! `Curve::bounds` and `Surface::bounds` contain what they bound in any
 //! pose over any finite range, are tight where the geometry is affine,
-//! and refuse a range that is not finite (`docs/plans/m4-booleans.md`
-//! step 3): the cheap reject a boolean's face pairs go through.
+//! and refuse a range that is not finite: the cheap reject a boolean's
+//! face pairs go through (ADR-0004).
 
 use arris_debug::prop::geom::{curve, nurbs_curve, nurbs_surface, surface};
 use arris_debug::prop::{DEFAULT_SCALE, check, finite_f64};

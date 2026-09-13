@@ -1,4 +1,4 @@
-//! Checker `Fast`, part 2 (`docs/plans/m2-topology.md` step 7): one
+//! Checker `Fast`, part 2 (`docs/DATA-MODEL.md` §Invariants): one
 //! violation test per row of L1–L4, F1–F2, S1–S4 and B3, and the
 //! Euler–Poincaré line every report carries.
 //!

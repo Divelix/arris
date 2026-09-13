@@ -1,4 +1,4 @@
-//! The primitives (`docs/plans/m2-topology.md` step 10): clean at `Full`,
+//! The primitives (`docs/ARCHITECTURE.md` §Operations): clean at `Full`,
 //! deterministic across runs and models, every entity under exactly one
 //! `Role` and nothing `Modified` or `Deleted`, typed errors for bad
 //! parameters with the model untouched, an axis normalised by

@@ -1,4 +1,4 @@
-//! The native format (`docs/plans/m2-topology.md` step 11): the box, the
+//! The native format (`docs/DATA-MODEL.md` §Native format): the box, the
 //! cylinder and the frame round-trip through both encodings to a
 //! byte-identical dump with the same ids; two writes are byte-identical;
 //! a bumped version and a truncated stream are typed errors; a value that

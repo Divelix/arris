@@ -1,7 +1,7 @@
-//! Pappus's centroid theorems as the oracle of the sweeps
-//! (`docs/plans/m5-sweeps.md`): the volume and the area a revolve or an
-//! extrude must have, computed in the profile's plane and never over the
-//! swept faces — an independent path from `measure`'s flux over the B-Rep.
+//! Pappus's centroid theorems as the oracle of the sweeps: the volume and
+//! the area a revolve or an extrude must have, computed in the profile's
+//! plane and never over the swept faces — an independent path from
+//! `measure`'s flux over the B-Rep.
 //!
 //! An extrude by `L` of a region of area `A` and perimeter `P` has volume
 //! `A L` and area `2A + P L`, the degenerate case of the theorems with the

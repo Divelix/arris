@@ -246,7 +246,7 @@ fn swept_surface(
                 ))
             }
         }
-        &Curve::Circle { ref frame, radius } => {
+        &Curve::Circle { radius, .. } => {
             // The centre in the profile's (u, v): the arc's pcurve is the
             // same circle there, so its frame's origin is exact.
             let Curve2::Circle {
@@ -255,7 +255,6 @@ fn swept_surface(
             else {
                 return Err(profile_curve_fault(edge));
             };
-            let _ = frame;
             let centre = in_plane.origin();
             let origin = axis_point(axis.t(centre));
             let major = axis.rho(centre);

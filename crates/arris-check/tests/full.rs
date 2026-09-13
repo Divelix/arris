@@ -1,4 +1,4 @@
-//! Checker `Full` (`docs/plans/m2-topology.md` step 8): one violation
+//! Checker `Full` (`docs/DATA-MODEL.md` §Invariants): one violation
 //! test per row of E8, L5, S5, B1 and B2, the sample bodies clean at
 //! `Full`, and a pair the geometry kernel has no closed form for landing
 //! under `Report::unchecked` rather than passing or failing.

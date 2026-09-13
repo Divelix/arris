@@ -1,4 +1,4 @@
-//! `ops::boolean::interferences` (`docs/plans/m4-booleans.md` step 6):
+//! `ops::boolean::interferences` (ADR-0004):
 //! the pave model on the corpus's boolean fixtures — the section curves,
 //! their paves and the hits that made them — at random poses of a box
 //! and a cylinder, and identical over two runs.

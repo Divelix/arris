@@ -1,9 +1,9 @@
 //! `classify_point` against the closed forms of the bodies it is run on,
-//! and against the entity a point is on (`docs/plans/m4-booleans.md`
-//! step 4, ADR-0004): B1's ray cast made public and complete.
+//! and against the entity a point is on (ADR-0004): B1's ray cast
+//! made public and complete.
 
 use arris_check::classify::{Classification, Classifier, ClassifyError, classify_point};
-use arris_debug::prop::{DEFAULT_SCALE, check as prop_check, finite_f64, point_in_box, radius};
+use arris_debug::prop::{DEFAULT_SCALE, check as prop_check, point_in_box, radius};
 use arris_debug::sample;
 use arris_topo::arris_geom::{GeomError, Surface};
 use arris_topo::arris_math::{Frame, Point2, Point3};
@@ -272,5 +272,4 @@ fn a_probe_lands_where_the_corpus_fixtures_say() {
     assert_eq!(kind_of(at([20.0, 15.0, 10.0])), Some(EntityKind::Face));
     assert_eq!(kind_of(at([40.0, 15.0, 10.0])), Some(EntityKind::Edge));
     assert_eq!(kind_of(at([40.0, 30.0, 10.0])), Some(EntityKind::Vertex));
-    let _ = finite_f64(0.0..=1.0);
 }

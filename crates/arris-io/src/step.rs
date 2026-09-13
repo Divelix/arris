@@ -48,7 +48,7 @@
 //!   only the direction of traversal is lost — a reader that trusts
 //!   pcurves reprojects one whose sense disagrees with the edge, and Open
 //!   CASCADE ignores pcurves on planes altogether, where every
-//!   left-handed conic of cycle 1 lives (`docs/DATA-MODEL.md`
+//!   left-handed conic lives (`docs/DATA-MODEL.md`
 //!   §Pcurves). The native format is the lossless one.
 
 use core::fmt::Write as _;
@@ -106,7 +106,7 @@ pub enum StepError {
 /// What [`StepError::Unsupported`] could not write.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Unsupported {
-    /// Only a `Solid` is written in cycle 1.
+    /// Only a `Solid` is written.
     Kind(BodyKind),
     /// A loop whose every coedge is degenerate has no `EDGE_LOOP`.
     DegenerateLoop {

@@ -1,5 +1,5 @@
-//! A surface and curves without a body render through the rasteriser: the
-//! picture `docs/plans/m1-geometry.md` step 2 asks for, written to
+//! A surface and curves without a body render through the rasteriser
+//! (`docs/ARCHITECTURE.md` §Formats and tools), written to
 //! `target/inspect/cylinder-wireframe.png` for the agent to read.
 
 use arris_debug::render::colors;
@@ -60,8 +60,7 @@ fn cylinder_wireframe_with_a_circle_and_an_ellipse_renders() {
 /// The curves `intersect_surfaces` returns for a cylinder cut by a
 /// parallel plane (circle), an oblique plane (ellipse) and a perpendicular
 /// plane through the axis (two rulings) render on the cylinder's
-/// wireframe: `target/inspect/plane-cylinder-sections.png`
-/// (`docs/plans/m1-geometry.md` step 4).
+/// wireframe: `target/inspect/plane-cylinder-sections.png`.
 #[test]
 fn plane_cylinder_sections_render() {
     use arris_geom::{SurfaceIntersection, intersect_surfaces};

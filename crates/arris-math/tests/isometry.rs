@@ -1,5 +1,5 @@
 //! `Isometry` composes like sequential application and inverts exactly
-//! enough (`docs/plans/m1-geometry.md` step 1).
+//! enough.
 
 use arris_debug::prop::{DEFAULT_SCALE, check, point_in_box, pose};
 use arris_math::{Isometry, UnitVec3};

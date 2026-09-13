@@ -1,4 +1,5 @@
-//! `import` and `retain` (`docs/plans/m2-topology.md` step 12): an
+//! `import` and `retain` (`docs/ARCHITECTURE.md` §The model, the arena
+//! and handles): an
 //! imported body dumps identically up to the id map and its provenance
 //! translates through `Provenance::mapped`; importing twice gives
 //! distinct ids; `retain` frees what is unreachable, the survivors are
@@ -6,7 +7,7 @@
 //! generation, and two models built by the same calls agree on every id.
 
 use arris_debug::{dump_text, sample};
-use arris_math::{Point3, Precision};
+use arris_math::Point3;
 use arris_topo::entity::Vertex;
 use arris_topo::provenance::{CylinderPart, Role};
 use arris_topo::{
@@ -251,5 +252,4 @@ fn a_failed_transaction_after_a_retain_empties_the_slots_it_filled() {
     });
     assert!(r.is_err());
     assert!(m.body(cube.id).is_err() && m.body(cylinder.id).is_err());
-    let _ = Precision::DEFAULT;
 }

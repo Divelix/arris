@@ -1,4 +1,4 @@
-//! Surface–surface intersection: the closed-form table of cycle 1.
+//! Surface–surface intersection: the closed-form table.
 
 use core::f64::consts::FRAC_PI_2;
 
@@ -31,7 +31,7 @@ pub enum SurfaceIntersection {
     Tangent(Vec<Curve>),
 }
 
-/// The intersection of two surfaces, by the case table of cycle 1: every
+/// The intersection of two surfaces, by the case table: every
 /// pair with a closed form is computed exactly, every other pair is an
 /// explicit [`GeomError::Unsupported`] arm — no wildcard, no marcher.
 ///
@@ -109,7 +109,7 @@ pub fn intersect_surfaces(
     }
 }
 
-/// Two cylinders, as far as cycle 1 has a closed form: `Coincident` when
+/// Two cylinders, as far as there is a closed form: `Coincident` when
 /// the axes are the same line and the radii agree, `Empty` when they are
 /// the same line and the radii do not (two coaxial tubes never meet), and
 /// [`GeomError::Unsupported`] otherwise — the curve of two crossing

@@ -1,5 +1,5 @@
-//! The Euler operators against the checker and the oracle
-//! (`docs/plans/m2-topology.md` step 9): the cylinder built by
+//! The Euler operators against the checker and the oracle (ADR-0002):
+//! the cylinder built by
 //! `mvfs → mef → mev → mef` is clean at `Full` and matches
 //! `primitive/cylinder`; `sample::frame`, built with `mef`/`mev` for the
 //! window's rim and walls and `kfmrh` to open the floor, is clean at

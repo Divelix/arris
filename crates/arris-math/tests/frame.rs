@@ -1,6 +1,5 @@
 //! `Frame` is orthonormal and right-handed from any input, and its two
-//! coordinate maps invert each other under any pose
-//! (`docs/plans/m1-geometry.md` step 1).
+//! coordinate maps invert each other under any pose.
 
 use arris_debug::prop::{
     DEFAULT_SCALE, check, finite_f64, frame, point_in_box, pose, rotation, unit_vec3,
@@ -9,8 +8,7 @@ use arris_math::{Frame, Point3, Vec3};
 use proptest::prelude::*;
 
 /// How far from orthonormal a frame may be: a few rounding errors on unit
-/// vectors. A test tolerance, not an algorithm's (`docs/plans/m1-geometry.md`
-/// §Design deltas).
+/// vectors. A test tolerance, not an algorithm's.
 const ORTHONORMAL: f64 = 1e-15;
 /// Round trips through a frame in the default box.
 const ROUND_TRIP: f64 = 1e-12 * DEFAULT_SCALE;

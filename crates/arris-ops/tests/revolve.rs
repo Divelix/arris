@@ -1,5 +1,4 @@
-//! `ops::revolve` (`docs/plans/m5-sweeps.md` steps 3 and 4,
-//! `docs/plans/revolve-touching-axis.md`): a thousand rectilinear
+//! `ops::revolve` (`docs/ARCHITECTURE.md` §Operations): a thousand rectilinear
 //! staircases beside an axis or reaching it in random poses — the checker
 //! at `Full` with nothing violated and nothing unchecked, volume and
 //! area to Pappus's theorems, the mesh closed and within its chord of
@@ -614,8 +613,8 @@ fn a_profile_along_its_axis_sweeps_nothing_there() {
     }
 }
 
-/// Notches cut in from the axis (`docs/plans/revolve-touching-axis.md`
-/// step 4): in a full turn the profile's chains — its runs of segments off
+/// Notches cut in from the axis (`docs/ARCHITECTURE.md` §Operations): in
+/// a full turn the profile's chains — its runs of segments off
 /// the axis — are shells, the one spanning the others the lump's outer
 /// shell and each notch a void of it, named by its loop and the lowest
 /// segment the consumer wrote in it, so two notches of one loop are two
@@ -755,8 +754,8 @@ fn the_general_profile_sweeps_every_surface_kind() {
 }
 
 /// The profile strategies reach the axis, so the properties above hold
-/// over every case of `docs/plans/revolve-touching-axis.md` rather than
-/// merely admit them: over the configured cases a staircase's full turn
+/// over every case that touches it rather than merely admit them: over
+/// the configured cases a staircase's full turn
 /// closes a notch cut in from the axis into a void and its partial turn
 /// shares an edge on the axis between the flat ends, and a general
 /// profile's revolve closes on a degenerate edge at a cone's apex and at a
@@ -1029,8 +1028,8 @@ fn the_frustum_the_zone_and_the_ring_have_their_closed_forms_and_the_oracles_vol
     assert_eq!(counts(&m, ring), counts(&n, torus));
 }
 
-/// A face closing at the axis (`docs/plans/revolve-touching-axis.md` step
-/// 3): a right triangle with a leg on the axis turns into a cone, its apex
+/// A face closing at the axis (`docs/DATA-MODEL.md` §Invariants, E6):
+/// a right triangle with a leg on the axis turns into a cone, its apex
 /// a degenerate edge, in a full turn and a quarter; a half disc on the
 /// axis into a ball with a degenerate edge at each pole — `sample::sphere`
 /// as a revolve builds it; and a quarter turn of a kite touching the axis

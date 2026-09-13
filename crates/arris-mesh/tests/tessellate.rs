@@ -1,15 +1,13 @@
-//! Tessellation (`docs/plans/m3-tessellation.md` steps 2 and 3,
-//! ADR-0003): the
-//! sample bodies and both primitives mesh closed, with one range per
-//! entity in iteration order, the seam used twice, every position on its
-//! geometry, and a volume the closed form of an inscribed prism bounds;
-//! a thousand random cylinders in random poses do the same; bad chords
-//! and bodies are typed errors; two runs are identical. Step 3: a patch
-//! of every surface kind in a random pose stays within its chord, the
-//! sphere and the torus mesh closed through their interior grids, and a
-//! ruled surface takes no grid at all. M4 step 14 (ADR-0005): the wall
-//! of a hole drilled at an angle — a strip oblique to the ruling —
-//! meshes column by column, at the fixture's tilt and at random ones.
+//! Tessellation (ADR-0003): the sample bodies and both primitives mesh
+//! closed, with one range per entity in iteration order, the seam used
+//! twice, every position on its geometry, and a volume the closed form
+//! of an inscribed prism bounds; a thousand random cylinders in random
+//! poses do the same; bad chords and bodies are typed errors; two runs
+//! are identical. A patch of every surface kind in a random pose stays
+//! within its chord, the sphere and the torus mesh closed through their
+//! interior grids, and a ruled surface takes no grid at all. The wall of
+//! a hole drilled at an angle (ADR-0005) — a strip oblique to the ruling
+//! — meshes column by column, at the fixture's tilt and at random ones.
 
 use core::f64::consts::{PI, TAU};
 use std::collections::{BTreeMap, BTreeSet};

@@ -1,6 +1,5 @@
 //! `Aabb`: the box of a point set, the union, and the three the boolean's
-//! cheap reject uses — `of_point`, `intersects` and `inflated`
-//! (`docs/plans/m4-booleans.md` step 3).
+//! cheap reject uses — `of_point`, `intersects` and `inflated`.
 
 use arris_debug::prop::{DEFAULT_SCALE, check, finite_f64, point_in_box};
 use arris_math::{Aabb, Point3};

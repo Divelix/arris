@@ -1,4 +1,4 @@
-//! `ops::extrude` (`docs/plans/m5-sweeps.md` step 5): a thousand general
+//! `ops::extrude` (`docs/ARCHITECTURE.md` §Operations): a thousand general
 //! profiles — lines, outward and inward arcs, circular and polygonal
 //! holes, in random poses — extruded along their plane's normal and
 //! against it: the checker at `Full` with no violation and every

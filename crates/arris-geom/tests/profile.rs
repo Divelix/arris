@@ -4,7 +4,7 @@
 //! of a rectangle, a disc, a stadium and a rectangle with a hole are the
 //! areas and centroids `region_integral` reports; and every committed
 //! `sweep/*` recipe loads into a profile the validator accepts
-//! (`docs/plans/m5-sweeps.md` step 1).
+//! (`docs/DATA-MODEL.md` §Profiles).
 
 use std::collections::BTreeMap;
 

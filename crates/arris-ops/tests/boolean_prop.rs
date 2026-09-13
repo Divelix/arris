@@ -1,4 +1,4 @@
-//! The booleans at random poses (`docs/plans/m4-booleans.md` step 9): a
+//! The booleans at random poses (ADR-0004): a
 //! box and a cylinder from `prop::body`, both operand orders — volume
 //! and area additivity, the cut identity, commutativity of `fuse` and
 //! `common`, results of several lumps held to the same identities
@@ -36,9 +36,9 @@ fn close(a: f64, b: f64, floor: f64) -> bool {
 /// integral over that boundary — carries a relative error of order
 /// `tol` over a length of the body, taken as `√A`. Measured on the case
 /// below: the difference scales linearly with the model's tolerance,
-/// 7.4e-9 in a volume of 7.2 at `tol` 1e-7 and 8.3e-11 at 1e-9
-/// (`docs/plans/m4-booleans.md` step 10). `REL` alone is a literal, and
-/// the kernel's rule is that the tolerance is the model's.
+/// 7.4e-9 in a volume of 7.2 at `tol` 1e-7 and 8.3e-11 at 1e-9. `REL`
+/// alone is a literal, and the kernel's rule is that the tolerance is
+/// the model's.
 fn fitted_rel(m: &Model, p: &MassProperties) -> f64 {
     REL + m.precision().default_tolerance / p.area.sqrt()
 }

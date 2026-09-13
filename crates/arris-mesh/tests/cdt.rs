@@ -1,10 +1,9 @@
-//! The constrained Delaunay triangulation (`docs/plans/m3-tessellation.md`
-//! step 1, ADR-0003): on random star-shaped outers with disjoint
-//! star-shaped holes and random interior points, every polygon segment is
-//! a triangle edge, every triangle is counter-clockwise, the areas add up
-//! to the region's, every other edge is shared by two triangles and is
-//! locally Delaunay, and no triangle lies outside the region; plus the
-//! hand-picked shapes the step names.
+//! The constrained Delaunay triangulation (ADR-0003): on random
+//! star-shaped outers with disjoint star-shaped holes and random
+//! interior points, every polygon segment is a triangle edge, every
+//! triangle is counter-clockwise, the areas add up to the region's,
+//! every other edge is shared by two triangles and is locally Delaunay,
+//! and no triangle lies outside the region; plus hand-picked shapes.
 
 use core::f64::consts::TAU;
 use std::collections::BTreeMap;

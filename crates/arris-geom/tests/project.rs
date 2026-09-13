@@ -1,8 +1,7 @@
 //! Every analytic surface, the line and the circle project a point to
 //! their nearest point: the result is on the target, idempotent, at the
 //! closed-form distance, recovers a displaced point's parameters, and the
-//! ambiguous loci are reported rather than guessed
-//! (`docs/plans/m1-geometry.md` step 3).
+//! ambiguous loci are reported rather than guessed.
 
 use core::f64::consts::{FRAC_PI_2, TAU};
 

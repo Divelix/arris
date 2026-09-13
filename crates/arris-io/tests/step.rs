@@ -1,7 +1,7 @@
-//! The STEP writer against the Open CASCADE oracle (`docs/plans/m2-topology.md`
-//! step 4): the sample bodies, written by Arris and read by the oracle,
-//! match the `primitive/*` fixtures' numbers; the file is deterministic;
-//! what the writer cannot hold is a typed error.
+//! The STEP writer against the Open CASCADE oracle (`docs/ARCHITECTURE.md`
+//! §Formats and tools): the sample bodies, written by Arris and read by
+//! the oracle, match the `primitive/*` fixtures' numbers; the file is
+//! deterministic; what the writer cannot hold is a typed error.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -326,8 +326,8 @@ fn a_wire_body_and_an_empty_list_are_typed_errors() {
 /// reaches its own per-face lookups, and folds the dangling reference
 /// into `LumpError::Unmeasurable` there — the writer's own `NotFound`
 /// sites (the edge-use cross-reference, a NURBS control point) guard
-/// paths `lumps` does not also cover; see the finding at this step in
-/// `docs/plans/kernel-seams.md`.
+/// paths `lumps` does not also cover, and are not reachable from a live
+/// `&Model` through this one; this test stands in for them.
 #[test]
 fn a_face_removed_from_a_shell_is_a_typed_refusal_not_a_panic() {
     let mut m = Model::default();

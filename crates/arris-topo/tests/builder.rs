@@ -1,5 +1,5 @@
-//! The builder and the Euler operators (`docs/plans/m2-topology.md` step
-//! 9): every operator keeps the Euler line at zero, every operator
+//! The builder and the Euler operators (ADR-0002): every operator keeps
+//! the Euler line at zero, every operator
 //! followed by its inverse restores the builder's dump (a property over
 //! random small sequences), an operator that refuses leaves the builder
 //! untouched, and `finish` refuses what cannot be stored while the
@@ -571,13 +571,9 @@ fn every_operator_keeps_euler_zero_and_its_inverse_restores_the_dump() {
         let mut b = Builder::new(1e-7);
         b.mvfs(seed())
             .map_err(|e| TestCaseError::fail(e.to_string()))?;
-        let mut applied = 0;
         for (k, p) in picks.iter().enumerate() {
-            if apply(&mut b, p, k as u32 + 1)? {
-                applied += 1;
-            }
+            apply(&mut b, p, k as u32 + 1)?;
         }
-        let _ = applied;
         Ok(())
     });
 }

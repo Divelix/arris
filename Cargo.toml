@@ -60,8 +60,8 @@ missing_docs = "warn"
 # tooling — runs with light optimisation and debug assertions on, so the
 # checker still runs after every operation (`.agents/rules/kernel.md`) while
 # the property tests over bodies whose (u, v) polygons hold tens of
-# thousands of points finish: at `opt-level = 0` a boolean at a random pose
-# took a second and its `Full` check up to forty (docs/plans/m4-booleans.md
-# step 9); at 1 both are twenty to forty times faster. Debug info stays.
+# thousands of points finish: at `opt-level = 0` a boolean at a random
+# pose took a second and its `Full` check up to forty; at 1 both are
+# twenty to forty times faster. Debug info stays.
 [profile.dev]
 opt-level = 1

@@ -1,7 +1,6 @@
 //! Pcurves: `Curve2` circles of both handedness evaluate and project,
 //! and `fit_curve2` approximates the ellipse-on-cylinder sinusoid at the
-//! caller's parameter within the tolerance, or says it cannot
-//! (`docs/plans/m1-geometry.md` step 9).
+//! caller's parameter within the tolerance, or says it cannot.
 
 use core::f64::consts::TAU;
 

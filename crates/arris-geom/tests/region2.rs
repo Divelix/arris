@@ -1,9 +1,8 @@
-//! The (u, v) toolkit (`docs/plans/m2-topology.md` step 6): discretised
-//! loops have the areas, winding numbers and intersections their pcurves
-//! say, across the seam range too, and the region integral recovers areas
-//! and the sample cylinder's volume; `point_side` and `interior_point`
-//! answer for a region what a boolean's piece classification asks
-//! (`docs/plans/m4-booleans.md` step 3).
+//! The (u, v) toolkit: discretised loops have the areas, winding numbers
+//! and intersections their pcurves say, across the seam range too, and
+//! the region integral recovers areas and the sample cylinder's volume;
+//! `point_side` and `interior_point` answer for a region what a
+//! boolean's piece classification asks (ADR-0004).
 
 use core::f64::consts::{PI, TAU};
 

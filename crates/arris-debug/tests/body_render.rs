@@ -1,5 +1,5 @@
 //! A body to a mesh and a picture, and a face to its (u, v) domain
-//! (`docs/plans/m3-tessellation.md` step 4): the pictures the agent reads
+//! (`docs/ARCHITECTURE.md` §Formats and tools): the pictures the agent reads
 //! before trusting the tessellator on a real shape, written under
 //! `target/inspect/` like every render.
 

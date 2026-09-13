@@ -1,0 +1,125 @@
+//! The docs-reference lint: a plan is deleted on retirement
+//! (`.agents/rules/docs-lifecycle.md`), so a citation of
+//! `docs/plans/<slug>` or `plans/<slug>` left behind in source, tooling or
+//! `Cargo.toml` after that outlives the file it points at. This proves the
+//! lint catches that the way `corpus_lint.rs` proves its own rules: against
+//! a scratch tree with a citation deliberately left dangling, not just by
+//! running clean against the real one.
+
+use std::path::{Path, PathBuf};
+
+/// Every `plans/<slug>` substring in `text`, deduplicated. `docs/plans/x`
+/// and the commit-message form `(plans/x step N)` both end in `plans/x`,
+/// so one scan catches both.
+fn plan_refs(text: &str) -> Vec<String> {
+    let mut refs = Vec::new();
+    let mut from = 0;
+    while let Some(pos) = text[from..].find("plans/") {
+        let slug_start = from + pos + "plans/".len();
+        let slug_end = text[slug_start..]
+            .find(|c: char| !(c.is_ascii_alphanumeric() || c == '-'))
+            .map_or(text.len(), |o| slug_start + o);
+        let slug = &text[slug_start..slug_end];
+        if !slug.is_empty() {
+            refs.push(slug.to_string());
+        }
+        from = slug_end.max(slug_start);
+    }
+    refs.sort();
+    refs.dedup();
+    refs
+}
+
+fn walk(dir: &Path, visit: &mut impl FnMut(&Path)) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.file_name().is_some_and(|n| n == "target") {
+            continue;
+        }
+        if path.is_dir() {
+            walk(&path, visit);
+        } else {
+            visit(&path);
+        }
+    }
+}
+
+fn check_file(root: &Path, path: &Path, problems: &mut Vec<String>) {
+    // This lint's own source is full of example citations, not real ones.
+    if path.file_name().is_some_and(|n| n == "docs_refs.rs") {
+        return;
+    }
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return;
+    };
+    for slug in plan_refs(&text) {
+        let plan = root.join("docs/plans").join(format!("{slug}.md"));
+        if !plan.exists() {
+            problems.push(format!(
+                "{}: cites plan '{slug}' but {} does not exist",
+                path.display(),
+                plan.display()
+            ));
+        }
+    }
+}
+
+/// Every `docs/plans/<slug>` or `plans/<slug>` citation under `crates/`,
+/// `tools/`, `.githooks/` and the root `Cargo.toml`, naming a plan that is
+/// not there.
+fn stale_plan_refs(root: &Path) -> Vec<String> {
+    let mut problems = Vec::new();
+    for dir in ["crates", "tools", ".githooks"] {
+        walk(&root.join(dir), &mut |path| {
+            check_file(root, path, &mut problems)
+        });
+    }
+    check_file(root, &root.join("Cargo.toml"), &mut problems);
+    problems.sort();
+    problems
+}
+
+fn repo_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .unwrap()
+}
+
+#[test]
+fn the_repo_cites_only_plans_that_still_exist() {
+    let problems = stale_plan_refs(&repo_root());
+    assert!(
+        problems.is_empty(),
+        "stale plan citations:\n{}",
+        problems.join("\n")
+    );
+}
+
+/// A scratch tree with a citation of a plan that was never written, next to
+/// one that names a plan that is: the lint names the dangling one and only
+/// that one.
+#[test]
+fn a_citation_of_a_retired_plan_is_caught() {
+    let dir = std::env::temp_dir().join(format!("arris-docs-refs-lint-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("docs/plans")).unwrap();
+    std::fs::write(dir.join("docs/plans/still-open.md"), "# Plan: still-open\n").unwrap();
+    std::fs::create_dir_all(dir.join("crates/fake/src")).unwrap();
+    std::fs::write(
+        dir.join("crates/fake/src/lib.rs"),
+        "//! see docs/plans/still-open.md for the design\n\
+         //! and (plans/retired-plan step 3) for why this exists\n",
+    )
+    .unwrap();
+
+    let problems = stale_plan_refs(&dir);
+    assert_eq!(problems.len(), 1, "{problems:?}");
+    assert!(problems[0].contains("retired-plan"), "{problems:?}");
+    assert!(!problems[0].contains("still-open"), "{problems:?}");
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}

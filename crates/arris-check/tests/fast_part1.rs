@@ -1,4 +1,4 @@
-//! Checker `Fast`, part 1 (`docs/plans/m2-topology.md` step 5): the sample
+//! Checker `Fast`, part 1 (`docs/DATA-MODEL.md` §Invariants): the sample
 //! bodies are clean; for each of the rows M1–M3, V1–V3 and E1–E7 a sample
 //! body broken through the raw insert API reports that row on that entity,
 //! together with exactly the rows its definition implies and nothing else;

@@ -1,7 +1,6 @@
 //! NURBS curves and surfaces evaluate, wrap, refine and project as *The
-//! NURBS Book* says they do, and the analytic dispatches treat the
-//! `Nurbs` variants as the plan's table says
-//! (`docs/plans/m1-geometry.md` step 8).
+//! NURBS Book* says they do (`docs/DATA-MODEL.md` §NURBS), and the
+//! analytic dispatches treat the `Nurbs` variants exhaustively.
 
 use core::f64::consts::FRAC_1_SQRT_2;
 

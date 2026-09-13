@@ -3,7 +3,7 @@
 //! lies on both surfaces, the ellipse's axes are the closed form, the
 //! tangent line is the ruling at the nearest point, the result is
 //! symmetric under swapping and bit-identical across runs, and every other
-//! surface pair is `Unsupported` (`docs/plans/m1-geometry.md` step 4).
+//! surface pair is `Unsupported`.
 
 use core::f64::consts::{FRAC_PI_2, TAU};
 

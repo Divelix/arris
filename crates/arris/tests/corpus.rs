@@ -1,8 +1,8 @@
 //! The fixture corpus, one test per fixture and every variant of it
-//! (`docs/ROADMAP.md` §Fixtures, `docs/plans/m2-topology.md` step 13):
-//! the recipe built in Arris, the checker at `Full`, counts and genus
-//! against the oracle, STEP read back by the oracle, provenance
-//! accounting, the dump diffed against `dump.txt`. Every fixture is live.
+//! (`docs/ROADMAP.md` §Fixtures): the recipe built in Arris, the checker
+//! at `Full`, counts and genus against the oracle, STEP read back by the
+//! oracle, provenance accounting, the dump diffed against `dump.txt`.
+//! Every fixture is live.
 
 use arris_debug::corpus::{self, CorpusError};
 use arris_debug::fixtures;

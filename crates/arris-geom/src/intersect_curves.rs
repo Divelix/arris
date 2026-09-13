@@ -1,4 +1,4 @@
-//! Curve–curve intersection: the closed-form table of cycle 1.
+//! Curve–curve intersection: the closed-form table.
 //!
 //! Two curves meet in points, and every pair a boolean needs is decided
 //! through a plane one of them already lies in: a conic's own plane
@@ -42,7 +42,7 @@ pub enum CurveIntersection {
     Coincident,
 }
 
-/// The intersection of two curves, by the case table of cycle 1: every
+/// The intersection of two curves, by the case table: every
 /// pair with a closed form is computed exactly, every other pair is an
 /// explicit [`GeomError::Unsupported`] arm — no wildcard, no marcher.
 ///

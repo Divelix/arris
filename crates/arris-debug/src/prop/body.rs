@@ -1,9 +1,9 @@
-//! Bodies in random poses: the operands of the boolean property tests
-//! (`docs/plans/m4-booleans.md`). Each strategy yields a *description*
-//! of a body — its numbers and a rigid motion — that [`Boxed::build`],
-//! [`Cylindrical::build`] and [`OverlappingPair::build`] turn into bodies
-//! of a model through the primitives and `ops::transform`, so a failing
-//! case prints as numbers a fixture can be written from.
+//! Bodies in random poses: the operands of the boolean property tests.
+//! Each strategy yields a *description* of a body — its numbers and a
+//! rigid motion — that [`Boxed::build`], [`Cylindrical::build`] and
+//! [`OverlappingPair::build`] turn into bodies of a model through the
+//! primitives and `ops::transform`, so a failing case prints as numbers a
+//! fixture can be written from.
 
 use arris_math::{Axis, Isometry, Point3, UnitVec3, Vec3};
 use arris_ops::{OpError, primitive_box, primitive_cylinder, transform};

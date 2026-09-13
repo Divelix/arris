@@ -1,11 +1,10 @@
 //! Every analytic curve on a plane and on a cylinder has a pcurve whose
 //! image under the surface is the curve at the same parameter — exactly
 //! on the exact arms, within the tolerance on the fitted one — and a
-//! curve projected onto a plane is the expected conic
-//! (`docs/plans/m1-geometry.md` step 10); and the six exact arms a
-//! revolve makes on a cone, a sphere and a torus are lines in (u, v) with
-//! the same property, while every other pair on those three is
-//! `Unsupported` naming it (`docs/plans/m5-sweeps.md` step 2).
+//! curve projected onto a plane is the expected conic; and the six
+//! exact arms a revolve makes on a cone, a sphere and a torus are lines
+//! in (u, v) with the same property, while every other pair on those
+//! three is `Unsupported` naming it.
 
 use core::f64::consts::{PI, TAU};
 

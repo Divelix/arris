@@ -474,7 +474,7 @@ bound has to be established here.
     naming a local `fail`; moved onto `arris_debug::testing::fail` too,
     the "mesh tests import them" the step names, since there was nothing
     else there to share.
-- [ ] Step 13 **[1]** — **No plan references in code, and the lint.**
+- [x] Step 13 **[1]** — **No plan references in code, and the lint.**
   - Every `docs/plans/…` and `plans/…` citation in `crates/`, `tools/`,
     `Cargo.toml` and test headers is replaced by the ADR or design-doc
     section it stands for.
@@ -486,6 +486,25 @@ bound has to be established here.
   - Add `crates/arris/tests/docs_refs.rs`, which fails on a reference to
     a plan file that does not exist. It is proven by a scratch file with
     a bad reference, as `corpus_lint.rs` proves its own rules.
+  - Finding (step 13): the ~45 stale citations were already replaced by
+    the time this step ran — steps 9-12's commits fixed each file they
+    touched as they went, and a bulk pass fixed the remainder (docs/geom
+    test headers, `tools/test-timings.sh`, the `Cargo.toml` dev-profile
+    comment). Grepping `crates/`, `tools/`, `.githooks/` and `Cargo.toml`
+    for `docs/plans/`/`plans/<slug>` before writing the lint found zero
+    remaining hits; `docs_refs.rs`'s own real-tree test is the proof this
+    holds, not a hand count.
+  - Finding (step 13): of the four remaining `let _ = …` candidates, all
+    four were genuinely dead (not must-use suppressions): `sweep.rs`'s
+    `ref frame` binding in the `Curve::Circle` arm (only `radius` is used
+    there; the sibling arm at the surface-classification match still
+    binds `frame` because it needs it) — pattern changed to `{ radius,
+    .. }`; `render.rs`'s loop variable `tri` (only the index `ti` is
+    used); `classify.rs`'s test import of `finite_f64`, unused anywhere
+    else in that file once the dead call was removed — the import went
+    with it; `sample.rs`'s `dx`/`dy`/`dz` in `frame()`, whose only job was
+    `positive()`'s validation, exactly like the window-extent checks two
+    lines above that never bind their result either.
 
 ## Acceptance
 

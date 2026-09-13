@@ -5,7 +5,7 @@
 //! built with the conventions the primitives of `arris-ops` follow, so
 //! the two dump alike; the [`frame`] goes through the Euler operators and
 //! is `boolean/frame-cut`'s twin, the cross-check for the boolean that
-//! builds it by recipe in M4. [`sphere`] is the body with a seam and two
+//! builds it by recipe. [`sphere`] is the body with a seam and two
 //! degenerate pole edges, [`torus`] the genus-1 one with two seams and
 //! no pole, and [`patch`] a rectangular sheet of any surface kind over
 //! its own exact iso-curves — what tessellation's property tests mesh,
@@ -487,9 +487,9 @@ pub fn frame(
     window_min: Point2,
     window_max: Point2,
 ) -> Result<Body, SampleError> {
-    let dx = positive("x extent", max.x - min.x)?;
-    let dy = positive("y extent", max.y - min.y)?;
-    let dz = positive("z extent", max.z - min.z)?;
+    positive("x extent", max.x - min.x)?;
+    positive("y extent", max.y - min.y)?;
+    positive("z extent", max.z - min.z)?;
     positive("window x extent", window_max.x - window_min.x)?;
     positive("window y extent", window_max.y - window_min.y)?;
     for (name, value) in [
@@ -506,7 +506,6 @@ pub fn frame(
             value: f64::NAN,
         });
     }
-    let _ = (dx, dy, dz);
     let tol = m.precision().default_tolerance;
     // Outer corners counter-clockwise from above, bottom then top; the
     // window's the same way, top (rim) then bottom (floor).

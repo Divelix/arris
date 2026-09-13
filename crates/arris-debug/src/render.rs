@@ -195,7 +195,7 @@ pub fn render(
         }
     }
     let light = cam.light();
-    for (ti, tri) in mesh.triangles().iter().enumerate() {
+    for (ti, _) in mesh.triangles().iter().enumerate() {
         let Some([a, b, c]) = mesh.triangle_positions(ti) else {
             continue;
         };
@@ -212,7 +212,6 @@ pub fn render(
         };
         let color = base.map(|ch| (f64::from(ch) * shade).round().clamp(0.0, 255.0) as u8);
         fb.triangle([cam.project(a), cam.project(b), cam.project(c)], color);
-        let _ = tri;
     }
 
     // Edges and polylines, with a depth bias toward the viewer so lines on a

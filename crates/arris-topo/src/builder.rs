@@ -635,7 +635,7 @@ pub enum BuildError {
         end: VertexRef,
     },
     /// `finish` makes solids: Euler operators build closed surfaces, and
-    /// no operation of cycle 1 returns another kind.
+    /// no operation returns another kind.
     #[error("the builder makes a solid, not a {0} body")]
     Kind(BodyKind),
     /// A loop without coedges cannot be stored.
@@ -2122,7 +2122,7 @@ impl Builder {
     ///
     /// Errors, each leaving the model untouched: [`BuildError::Kind`] for
     /// any kind but `Solid` (the operators build closed surfaces, and no
-    /// operation of cycle 1 returns a sheet, wire or general body);
+    /// operation returns a sheet, wire or general body);
     /// [`BuildError::Empty`]; an [`BuildError::EmptyLoop`]; a
     /// [`BuildError::MissingPcurve`]; an edge not used exactly twice, or
     /// a degenerate one not exactly once ([`BuildError::EdgeUses`]), or used twice the same way

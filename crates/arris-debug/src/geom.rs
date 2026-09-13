@@ -1,5 +1,5 @@
 //! Curves and surfaces as polylines, so geometry without a body renders
-//! through the M0 rasteriser (`.agents/skills/inspect/SKILL.md`, the PNG
+//! through the rasteriser (`.agents/skills/inspect/SKILL.md`, the PNG
 //! row).
 
 use arris_geom::{Curve, Surface};

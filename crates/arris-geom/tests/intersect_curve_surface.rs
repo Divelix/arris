@@ -4,9 +4,9 @@
 //! constructed case's, every hit lies on both operands, a hit is tangent
 //! when the case was built tangent, coincident when the curve was built
 //! on the surface, hits are sorted with `t` in the domain, two runs agree
-//! bit for bit, and every other pair is `Unsupported`
-//! (`docs/plans/m1-geometry.md` step 6; the ellipse arms, which an
-//! oblique section edge needs, `docs/plans/m4-booleans.md` step 2).
+//! bit for bit, and every other pair is `Unsupported` — the ellipse
+//! arms among them, which an oblique boolean section edge needs
+//! (ADR-0004).
 
 use core::f64::consts::{PI, TAU};
 

@@ -2,9 +2,8 @@
 //! intersections against Open CASCADE's for every `tests/fixtures/geom/`
 //! fixture — evaluations and projected parameters to 1e-9 relative, the
 //! intersection types exactly, and the oracle's sampled points on Arris's
-//! curves to 1e-9 (`docs/plans/m1-geometry.md` step 7). The oracle is
-//! the parametrisation's ground truth (`docs/DATA-MODEL.md`
-//! §Conventions); a mismatch here is fixed in Arris.
+//! curves to 1e-9. The oracle is the parametrisation's ground truth
+//! (`docs/DATA-MODEL.md` §Conventions); a mismatch here is fixed in Arris.
 
 use std::collections::BTreeMap;
 

@@ -1,4 +1,4 @@
-//! `ops::transform` (`docs/plans/m4-booleans.md` step 5): clean at `Full`,
+//! `ops::transform` (`docs/ARCHITECTURE.md` §Operations): clean at `Full`,
 //! one `Modified` per entity and nothing else, the identity motion gives
 //! new ids over the same shape, a motion then its inverse returns every
 //! vertex, mass properties are covariant, and two runs are identical.

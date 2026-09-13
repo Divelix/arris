@@ -1,7 +1,7 @@
 //! The root finder recovers real roots to the accuracy their coefficients
 //! determine, reports no real root for complex pairs, finds a double root
 //! once with multiplicity two, and the bracketed Newton never leaves its
-//! bracket (`docs/plans/m1-geometry.md` step 5).
+//! bracket.
 
 use arris_debug::prop::{DEFAULT_SCALE, check, finite_f64};
 use arris_math::Interval;

@@ -4,7 +4,7 @@
 //! the 2D closed form says, two coplanar circles meet on the radical
 //! line, a curve against itself is `Coincident`, and every pair without a
 //! closed form is `Unsupported` naming both operands
-//! (`docs/plans/m4-booleans.md` step 2, ADR-0004).
+//! (ADR-0004).
 
 use core::f64::consts::TAU;
 

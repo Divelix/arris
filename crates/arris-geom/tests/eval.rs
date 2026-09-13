@@ -1,7 +1,7 @@
 //! Every analytic surface and curve evaluates as its closed form in any
 //! pose, its derivatives are the derivatives, its normal is the normal,
 //! its periods are periods and its singular loci are reported
-//! (`docs/plans/m1-geometry.md` step 2).
+//! (`docs/DATA-MODEL.md` §Geometry).
 
 use core::f64::consts::{FRAC_PI_2, TAU};
 

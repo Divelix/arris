@@ -1,6 +1,5 @@
 //! The exact predicates agree with an exact integer determinant on every
-//! integer-grid case, degenerate ones included
-//! (`docs/plans/m1-geometry.md` step 1).
+//! integer-grid case, degenerate ones included.
 
 use arris_debug::prop::check;
 use arris_math::Point2;
