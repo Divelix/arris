@@ -86,6 +86,9 @@ says `fixtures:` and why.
   - It lives in `check` because the classifier and B1, which ADR-0004
     holds to one code path with the boolean, are already there, and ops
     and mesh already depend on `check`. No layer edge changes.
+  - It is public and documented, not `#[doc(hidden)]`: ops and mesh
+    cross the crate boundary to reach it, and a consumer classifying
+    (u, v) points on a face has the same need.
 - **`arris_check::classify::Classifier` becomes public.**
   - `Classifier::of_body(model, body)` is built once and answers many
     points.
@@ -106,7 +109,13 @@ says `fixtures:` and why.
     `check::topology::euler_line`, `arris_debug::dump::euler_line` and
     `fixtures::lint`.
   - `Counts` keeps its fields and delegates the arithmetic.
-  - DATA-MODEL §Invariants (Euler–Poincaré) states the rule.
+  - The rule is the checker's, as DATA-MODEL §Invariants already states
+    and the oracle counts: every degenerate edge is left out.
+  - `finish` and `assemble` refuse a degenerate edge not used exactly
+    once, as `BuildError::EdgeUses` with its message naming the
+    degenerate case. No surface closes on one singular point twice, and
+    the builder accepts a degenerate edge used twice today only because
+    it passes the two-uses test.
 - **`Builder::assemble` returns its slots (signature change).**
   - It becomes `Builder::assemble(model, tolerance, assembly) ->
     Result<(Builder, AssemblySlots), BuildError>`, with `AssemblySlots {
@@ -203,8 +212,10 @@ bound has to be established here.
     that should fire, or should not fire.
   - Fix in place: period shifts in `Checker::face_side`, and period
     shifts in place of the clamp in `on_shared_boundary`.
-  - If no body reproduces either case through the raw insert, record
-    why in the commit and keep the tests as guards.
+  - The C1 builders may always write a periodic face's loops in the
+    first translate, so the blind spot may be latent. The fix lands
+    either way, guarded by the raw-insert tests, and the commit says
+    which it was.
   - The corpus runs green with dumps unchanged. A dump that changes is a
     `fixtures:` commit naming the fixture the checker had passed wrongly.
 - [ ] Step 2 **[2]** — **One `FaceDomain`.**
@@ -243,14 +254,19 @@ bound has to be established here.
 - [ ] Step 5 **[2]** — **One Euler line.**
   - `arris_topo::euler::EulerLine` per the delta, used by the five
     callers.
-  - The degenerate-edge rule (see Open questions) is decided and
-    written in DATA-MODEL §Invariants in this commit.
-  - Test: a builder body with a degenerate edge used twice (`mef` over
-    `Degenerate` geometry with `from == to`). `Builder::counts`, the
-    checker's line and the dump now agree, or `finish` refuses it, per
-    the decision.
-  - Corpus dumps unchanged: no C1 or C2 fixture has a degenerate edge
-    used twice.
+  - Every degenerate edge is left out of the count, and `finish` and
+    `assemble` refuse one not used exactly once (the delta). DATA-MODEL
+    §Invariants and §Euler operators say so in this commit.
+  - Tests:
+    - a builder with a degenerate edge used twice (`mef` over
+      `Degenerate` geometry with `from == to`) is refused by `finish` as
+      `EdgeUses`;
+    - on the revolve sphere, cone and notch-to-axis bodies,
+      `Builder::counts`, the checker's line and the dump print the same
+      line.
+  - Corpus dumps unchanged, since no C1 or C2 fixture has a degenerate
+    edge used twice. If one does, stop: the rule is wrong for that body,
+    and the step returns to the human.
 - [ ] Step 6 **[1]** — **`assemble` hands back its slots.**
   - `AssemblySlots` per the delta.
   - `sweep::record`, `transform` and the boolean's output-id tables
@@ -281,11 +297,13 @@ bound has to be established here.
   - `Kept`, `Policy`, `Plan`, `assembly()` and the provenance writer
     move from `boolean/result.rs` to `src/rebuild.rs`, taking pieces and
     a per-operand policy. `boolean()` calls it.
-  - `lump_order` stops assembling into a cloned model: shells are
-    assembled once, ordered with `lumps` on that result, and the body's
-    shell list is re-ordered in the same transaction. If that cannot be
-    done without a second assembly, keep the clone and say why in the
-    commit.
+  - `lump_order` keeps its scratch assembly into a cloned model.
+    - This step moves code and does not change behaviour.
+    - The clone shares the arena's chunks, so it costs one extra
+      assemble and finish, and only for multi-shell results.
+    - Re-ordering a finished body's shells would need a mutation the
+      immutable entities do not offer.
+    - Assembling once is a backlog line.
   - The `unwrap_or(0.0)` edge-tolerance fallback becomes a `Fault`.
   - Test: every `boolean/` and `provenance/` fixture dump and provenance
     record byte-identical; the boolean property tests green.
@@ -400,27 +418,14 @@ bound has to be established here.
 
 ## Open questions
 
-- `⚠ OPEN:` Euler line and degenerate edges (step 5). The builder today
-  drops a degenerate edge only when it is used once; the checker drops
-  every one.
-  - The proposal is the checker's rule: every degenerate edge is left
-    out, as DATA-MODEL §Invariants already says and the oracle counts.
-    `finish` then refuses a degenerate edge not used exactly once, as
-    no surface closes on one twice.
-  - Agent, by step 5. If Open CASCADE's counts on a revolve fixture
-    disagree, the human decides.
-- `⚠ OPEN:` whether `FaceDomain` is public API or `#[doc(hidden)]`
-  (step 2). ops and mesh need it across the crate boundary.
-  - The proposal is public and documented, since a consumer
-    classifying (u, v) points on a face has the same need.
-  - Agent, by step 2.
-- `⚠ OPEN:` whether `lump_order` can drop the model clone (step 9)
-  without the result's shells being re-ordered after `finish`, which
-  would break the "stored order is lump order" guarantee mid-transaction.
-  Agent, by step 9. Keeping the clone is acceptable and is said in the
-  commit.
-- `⚠ OPEN:` step 1 may not reproduce: the C1 builders may always write
-  a periodic face's loops in the first translate.
-  - Then the fix still lands, guarded by raw-insert tests, and the
-    commit says the blind spot was latent.
-  - Agent, by step 1.
+None. The four raised at planning were decided on 2026-09-13 by the
+agent, at the human's request ("Decide yourself on open questions"),
+and folded into the deltas and steps:
+
+- **Euler line and degenerate edges:** every degenerate edge is left
+  out, and `finish` refuses one not used exactly once (step 5).
+- **`FaceDomain`:** public and documented (step 2).
+- **`lump_order`:** keeps its scratch clone; assembling once is backlog
+  (step 9).
+- **Step 1 not reproducing:** the fix lands regardless, guarded by
+  raw-insert tests.

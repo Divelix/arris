@@ -40,6 +40,7 @@ re-brainstormed.
 - Check tests by topic, not by the plan step that wrote them: `fast_part1`/`fast_part2` into row-family files over a shared `tests/common`; `ops/tests/boolean.rs` (two files joined) and `revolve.rs` split; a `corpus_tests!` macro checked against `fixtures::corpus()` instead of two hand lists (kernel-seams review)
 - `oracle::scratch_fixture` re-runs OCCT on every test run although `recipe_hash` could skip an unchanged recipe; the workspace paths derived five ways into one `paths` module honouring `CARGO_TARGET_DIR` (kernel-seams review)
 - S5 and B1 compare every face pair behind a box test: sort-and-sweep the boxes before the intersector (kernel-seams review)
+- A multi-shell boolean assembles its result twice: `lump_order` finishes a scratch copy of the model to read `arris_check::lumps`, then the result is assembled again in lump order; `lumps` over the assembly's shells before `finish` would build it once (kernel-seams review)
 - `Builder` kill operators and `Slots::len` are linear in the whole builder: a live slot count and an incremental edge-use index, once a blend runs local operators on large bodies (kernel-seams review)
 
 ## Rejected
