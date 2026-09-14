@@ -10,7 +10,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use arris_check::arris_topo::arris_geom::{GeomKind, Surface, SurfaceIntersection};
-use arris_check::arris_topo::arris_math::{Interval, Point2, Point3, Precision, Vec3};
+use arris_check::arris_topo::arris_math::{Interval, Point2, Point3, Precision, Tolerance, Vec3};
 use arris_check::arris_topo::builder::Builder;
 use arris_check::arris_topo::entity::BodyKind;
 use arris_check::arris_topo::{
@@ -72,8 +72,9 @@ impl Op {
 
 /// A piece classified `On` something of the other operand its own face
 /// is neither coincident nor tangent with — an edge, a vertex, a face of
-/// a `Transversal` pair — or a tangent pair that is not a plane and a
-/// cylinder: the pair the kernel has no recipe for, named.
+/// a `Transversal` pair — or a tangent pair the curvature rule cannot
+/// decide, its two curvatures equal: the pair the kernel has no recipe
+/// for, named.
 fn unsupported(m: &Model, face: FaceId, on: Shape) -> OpError {
     let kind = |s: Shape| -> GeomKind {
         match s.id {
@@ -454,52 +455,75 @@ impl<'m> Build<'m> {
     }
 
     /// Whether face `f`, tangent to face `g` of the other operand along a
-    /// ruling through `point`, lies inside the other operand beside the
-    /// ruling: the curvature rule (`docs/ARCHITECTURE.md` §Operations).
-    /// The pair is a plane and a cylinder sharing a tangent plane along
-    /// the ruling; the cylinder lies on its axis's side of that plane and
-    /// the plane lies outside the cylinder's surface. So the plane's
-    /// piece is inside the cylinder's body exactly when that body is the
-    /// outside of its wall — a bore, its outward normal pointing at the
-    /// axis — and the cylinder's piece is inside the plane's body exactly
-    /// when the axis is on the material side of the plane — its outward
-    /// normal pointing away from the axis. `None` when the two surfaces
-    /// are not a plane and a cylinder, which no `Tangent` pair of this
-    /// cycle is.
+    /// contact curve through `point` whose tangent there is `along`, lies
+    /// inside the other operand beside the curve: the curvature rule
+    /// (`docs/ARCHITECTURE.md` §Operations). With `n` the effective
+    /// outward normal of `g` at the point, each surface leaves the shared
+    /// tangent plane across the curve as `κ s² / 2` along `n`, `κ` its
+    /// normal curvature across the curve signed against `n`; `g`'s body
+    /// lies on the side of its surface away from `n`, so `f`'s piece is
+    /// inside it exactly when `κ_f < κ_g`. The two surfaces agree along
+    /// the curve to second order, so every direction across it decides
+    /// the same: each surface is read along its own normal crossed with
+    /// `along`, which lies in its tangent plane exactly. For a plane and a
+    /// cylinder this is the plane outside the cylinder's surface and the
+    /// cylinder on its axis's side of the plane. `None` where the two
+    /// curvatures are equal — a touch of higher order the second forms
+    /// cannot decide, compared exactly — or either is undefined.
     fn tangent_side(
         &self,
         f: FaceHandle,
         point: Point3,
         g: FaceHandle,
+        along: Vec3,
     ) -> Result<Option<bool>, OpError> {
-        let (f_is_plane, frame) = match (self.surface_of(f)?, self.surface_of(g)?) {
-            (Surface::Plane { .. }, Surface::Cylinder { frame, .. }) => (true, frame),
-            (Surface::Cylinder { frame, .. }, Surface::Plane { .. }) => (false, frame),
-            (
-                Surface::Plane { .. }
-                | Surface::Cylinder { .. }
-                | Surface::Cone { .. }
-                | Surface::Sphere { .. }
-                | Surface::Torus { .. }
-                | Surface::Nurbs(_),
-                Surface::Plane { .. }
-                | Surface::Cylinder { .. }
-                | Surface::Cone { .. }
-                | Surface::Sphere { .. }
-                | Surface::Torus { .. }
-                | Surface::Nurbs(_),
-            ) => return Ok(None),
+        let n = self.outward_normal(g, None, point)?;
+        let tol = Tolerance::new(
+            self.precision.default_tolerance,
+            self.precision.angular_tolerance,
+        );
+        let signed = |h: FaceHandle| -> Result<Option<f64>, OpError> {
+            let surface = self.surface_of(h)?;
+            let uv = surface
+                .project(point)
+                .map_err(|e| OpError::Internal(Fault::Geometry(e)))?
+                .uv;
+            let Some(own) = surface.normal(uv.x, uv.y) else {
+                return Ok(None);
+            };
+            let own = own.into_inner();
+            let across = own.cross(&along);
+            Ok(surface
+                .normal_curvature(uv.x, uv.y, across, tol)
+                .map(|k| if own.dot(&n) < 0.0 { -k } else { k }))
         };
-        // From the contact point into the cylinder's axis.
-        let z = frame.z().into_inner();
-        let d = point - frame.origin();
-        let into_axis = (frame.origin() + z * d.dot(&z)) - point;
-        let toward = self.outward_normal(g, None, point)?.dot(&into_axis);
-        Ok(Some(if f_is_plane {
-            toward > 0.0
-        } else {
-            toward < 0.0
-        }))
+        let (Some(kf), Some(kg)) = (signed(f)?, signed(g)?) else {
+            return Ok(None);
+        };
+        Ok((kf != kg).then_some(kf < kg))
+    }
+
+    /// The tangent at `point` of the curve face `f` of operand `side`
+    /// touches face `g` along: the nearest curve of their `Tangent` pair.
+    fn contact_tangent(&self, side: usize, f: FaceId, g: FaceId, point: Point3) -> Option<Vec3> {
+        let pair = self.i.pairs.iter().find(|p| {
+            if side == 0 {
+                p.a == f && p.b == g
+            } else {
+                p.a == g && p.b == f
+            }
+        })?;
+        let SurfaceIntersection::Tangent(curves) = &pair.intersection else {
+            return None;
+        };
+        curves
+            .iter()
+            .filter_map(|c| {
+                let on = c.project(point).ok()?;
+                Some((on.distance, c.eval(on.t).d1))
+            })
+            .min_by(|x, y| x.0.total_cmp(&y.0))
+            .map(|(_, d)| d)
     }
 
     /// Every contact decided at its midpoint: the piece of each face
@@ -526,9 +550,21 @@ impl<'m> Build<'m> {
                     }))
             };
             let (fa, fb) = (find(0, pair.a)?, find(1, pair.b)?);
+            let SurfaceIntersection::Tangent(curves) = &pair.intersection else {
+                return Err(OpError::Internal(Fault::Invariant {
+                    what: "a contact's pair is tangent",
+                }));
+            };
+            let along = curves
+                .get(c.curve)
+                .ok_or(OpError::Internal(Fault::Invariant {
+                    what: "a contact's ruling",
+                }))?
+                .eval(c.range.midpoint())
+                .d1;
             let (Some(inside_a), Some(inside_b)) = (
-                self.tangent_side(fa, c.point, fb)?,
-                self.tangent_side(fb, c.point, fa)?,
+                self.tangent_side(fa, c.point, fb, along)?,
+                self.tangent_side(fb, c.point, fa, along)?,
             ) else {
                 return Err(unsupported(
                     self.m,
@@ -593,7 +629,14 @@ impl<'m> Build<'m> {
                             // The interior point lies on the ruling the
                             // two faces touch along; the piece lies to one
                             // side of the other operand everywhere else.
-                            let Some(inside) = self.tangent_side(f, piece.interior, g)? else {
+                            let inside =
+                                match self.contact_tangent(side, f.id, g.id, piece.interior) {
+                                    Some(along) => {
+                                        self.tangent_side(f, piece.interior, g, along)?
+                                    }
+                                    None => None,
+                                };
+                            let Some(inside) = inside else {
                                 return Err(unsupported(self.m, f.id, shape));
                             };
                             let Some(flip) = self.op.select(side, inside) else {

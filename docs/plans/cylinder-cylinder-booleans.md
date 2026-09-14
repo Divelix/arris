@@ -77,7 +77,9 @@ row.
     `d > R₁ + R₂ + tol.linear` (triangle inequality), `Unsupported`
     otherwise.
 - **`arris-geom` public API (addition):**
-  `Surface::normal_curvature(&self, u: f64, v: f64, direction: Vec3) -> Option<f64>`.
+  `Surface::normal_curvature(&self, u: f64, v: f64, direction: Vec3, tol: Tolerance) -> Option<f64>`
+  (the `tol` added at step 5: the tangency test below needs the model's
+  angle, never a literal).
   - It is the second fundamental form over the first, taken along the
     tangent `direction`, from `Surface::eval`'s second derivatives.
   - The sign is with respect to `Surface::normal`: positive where the
@@ -245,7 +247,7 @@ bound has to be established here.
       is now paved by every section vertex on it and its pieces inside
       that face are images, whether or not a face of its own is
       coincident with it. No other corpus dump moved.
-- [ ] Step 5 **[2]** — **The curvature rule, generalised.**
+- [x] Step 5 **[2]** — **The curvature rule, generalised.**
   - `Surface::normal_curvature` with rustdoc and an example. Tests
     against the closed forms on every analytic kind (plane 0, cylinder
     `±1/R` across its rulings and 0 along them, sphere `1/R`, torus and
@@ -254,6 +256,17 @@ bound has to be established here.
     `tangent-outside-cut` and `boolean_prop.rs`'s tangent pair stay
     green unchanged: the reduction holds. ARCHITECTURE §Operations: the
     curvature rule's paragraph.
+  - *Found at the step:* `normal_curvature` takes a `Tolerance` for its
+    tangency test (§Design deltas amended). The boolean reads each
+    surface along its own normal crossed with the contact curve's tangent,
+    which lies in that surface's tangent plane exactly, so the model's
+    angular tolerance never has to absorb the two faces' normals differing
+    by the contact's linear tolerance; any direction across the curve
+    decides the same, since the two second forms differ only across it.
+    The tangent fixtures, `boolean_prop.rs`'s tangent pairs and every
+    boolean dump pass unchanged. The open question's tie is
+    `a_tangent_cylinder_pair_never_ties_its_curvatures`
+    (`arris-geom/tests/curvature.rs`).
 - [ ] Step 6 **[2]** — **Tangent cylinders.**
   - External, two `R = 1` cylinders with axes 2 apart:
     `boolean/tangent-cylinders-fuse` is `expect_error:

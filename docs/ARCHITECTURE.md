@@ -309,12 +309,22 @@ fitted to A's curve in that use's translate of the domain (a seam's two
 uses get two), B's piece `Modified` into A's. A piece classified `On` a
 face its own face is tangent to has its interior point on the ruling
 and lies to one side of the other operand everywhere else; which side is
-the *curvature rule*: the cylinder lies on its axis's side of the shared
-tangent plane and the plane lies outside the cylinder's surface, so the
-plane's piece is inside the cylinder's body exactly when that body is
-the outside of its wall (a bore, the wall's outward normal pointing at
-the axis) and the cylinder's piece is inside the plane's body exactly
-when the axis is on the material side of the plane. Before any face is
+the *curvature rule*. With `n` the other face's effective outward normal
+at the contact, each surface leaves the shared tangent plane across the
+contact curve as `κ s² / 2` along `n`, `κ` its normal curvature across
+the curve (`Surface::normal_curvature`, the second fundamental form over
+the first) signed against `n`; the other body lies on the side of its
+surface away from `n`, so a piece is inside it exactly when its own `κ`
+is below the other's. The two surfaces agree along the curve to second
+order, so any direction across it decides the same, and each surface is
+read along its own normal crossed with the curve's tangent. For a plane
+and a cylinder it is the plane outside the cylinder's surface and the
+cylinder on its axis's side of the plane; two parallel cylinders touching
+are `−1/R₁` against `+1/R₂` outside and two distinct radii inside, never
+equal, since equal radii touching inside share their axis and are
+`Coincident`. Equal curvatures, compared exactly, are a touch of higher
+order the rule cannot decide, `OpError::Unsupported` naming the pair.
+Before any face is
 split, every contact is decided at its midpoint by the same rule and the
 table: a contact whose two pieces would both survive is two result faces
 touching along a curve interior to both, and the operation is

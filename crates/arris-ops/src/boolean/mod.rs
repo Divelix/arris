@@ -478,12 +478,13 @@ pub fn interferences(m: &Model, a: Body, b: Body) -> Result<Interferences, OpErr
 /// a piece of the target's is one edge of the result, the target's
 /// (`docs/ARCHITECTURE.md` §Operations, the selection table). A face
 /// of the target tangent to a face of the tool along a ruling — a plane
-/// and a cylinder touching — is the other named case: the ruling is no
-/// section edge and splits nothing, a piece whose interior point lies
-/// on it is classified by the curvature rule (the cylinder lies on its
-/// axis's side of the tangent plane, the plane outside the cylinder's
-/// surface), and a tool touching from outside leaves the target as it
-/// was, every id kept.
+/// and a cylinder, or two parallel cylinders, touching — is the other
+/// named case: the ruling is no section edge and splits nothing, a piece
+/// whose interior point lies on it is classified by the curvature rule
+/// (it lies inside the other operand exactly when its surface's normal
+/// curvature across the ruling, signed against the other face's outward
+/// normal, is below the other surface's), and a tool touching from
+/// outside leaves the target as it was, every id kept.
 ///
 /// Errors, the model untouched on each: [`OpError::InvalidInput`] and
 /// [`OpError::NotFound`] as every operation; [`OpError::Unsupported`]

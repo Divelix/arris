@@ -3,7 +3,9 @@
 use core::f64::consts::{FRAC_PI_2, TAU};
 use core::fmt;
 
-use arris_math::{Aabb, Frame, Interval, Isometry, Point3, UnitVec3, Vec3, is_negligible};
+use arris_math::{
+    Aabb, Frame, Interval, Isometry, Point3, Tolerance, UnitVec3, Vec3, is_negligible,
+};
 
 use crate::NurbsSurface;
 use crate::curve::{active_points, coords, linear_range, product_range, sinusoid_range};
@@ -382,6 +384,59 @@ impl Surface {
         }
         let e = self.eval(u, v);
         UnitVec3::try_new(e.du.cross(&e.dv), 0.0)
+    }
+
+    /// The normal curvature at `(u, v)` along the tangent `direction`: the
+    /// second fundamental form over the first, `II(w) / I(w)`, from
+    /// [`Surface::eval`]'s derivatives with `direction` resolved onto
+    /// `∂P/∂u` and `∂P/∂v`. The sign is taken against [`Surface::normal`]:
+    /// positive where the surface bends toward it, so a cylinder, a sphere
+    /// or a torus, whose normal points outward, is negative across its
+    /// curvature — `−1/R` across a cylinder's rulings and `0` along them.
+    /// The value is independent of `direction`'s length and sense. `None`
+    /// where `normal` is `None`, and where `direction` is zero, not finite
+    /// or leaves the tangent plane by more than `tol.angular`.
+    ///
+    /// ```
+    /// use arris_geom::Surface;
+    /// use arris_math::{Frame, Precision, Vec3};
+    /// use core::f64::consts::FRAC_PI_2;
+    ///
+    /// let wall = Surface::Cylinder { frame: Frame::world(), radius: 2.0 };
+    /// let tol = Precision::DEFAULT.tolerance();
+    /// // At u = π/2 the wall's normal is +y: across the ruling the wall
+    /// // bends away from it, along the ruling not at all.
+    /// let across = wall.normal_curvature(FRAC_PI_2, 0.0, Vec3::x(), tol).unwrap();
+    /// assert!((across + 0.5).abs() < 1e-15);
+    /// assert_eq!(wall.normal_curvature(FRAC_PI_2, 0.0, Vec3::z(), tol), Some(0.0));
+    /// // The normal is no tangent.
+    /// assert_eq!(wall.normal_curvature(FRAC_PI_2, 0.0, Vec3::y(), tol), None);
+    /// ```
+    pub fn normal_curvature(&self, u: f64, v: f64, direction: Vec3, tol: Tolerance) -> Option<f64> {
+        let n = self.normal(u, v)?.into_inner();
+        let length = direction.norm();
+        if length <= 0.0 || !length.is_finite() {
+            return None;
+        }
+        if direction.dot(&n).abs() > tol.angular.sin() * length {
+            return None;
+        }
+        let e = self.eval(u, v);
+        let (ee, ff, gg) = (e.du.dot(&e.du), e.du.dot(&e.dv), e.dv.dot(&e.dv));
+        let det = ee * gg - ff * ff;
+        if det <= 0.0 || !det.is_finite() {
+            return None;
+        }
+        // `direction = a ∂P/∂u + b ∂P/∂v` in the tangent plane.
+        let (wu, wv) = (direction.dot(&e.du), direction.dot(&e.dv));
+        let a = (gg * wu - ff * wv) / det;
+        let b = (ee * wv - ff * wu) / det;
+        let first = a * a * ee + 2.0 * a * b * ff + b * b * gg;
+        if first <= 0.0 || !first.is_finite() {
+            return None;
+        }
+        let second = a * a * e.duu.dot(&n) + 2.0 * a * b * e.duv.dot(&n) + b * b * e.dvv.dot(&n);
+        Some(second / first)
     }
 
     /// The parametric domain `[u, v]`: the closed fundamental interval
