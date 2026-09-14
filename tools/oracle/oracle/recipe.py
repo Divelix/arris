@@ -36,6 +36,9 @@ Operations, by `op`:
     fillet     of <name>, edges [[x,y,z], ...], radius
                (each point names the edge nearest to it, which must be the
                only edge within the fixture's `probe` tolerance)
+    chamfer    of <name>, edges [[x,y,z], ...], distance
+               (edges named as a fillet's; one distance, measured on both
+               faces from the edge)
 
 Conventions are Open CASCADE's: a full revolve (360°) has seam edges, a
 fuse of flush boxes does not merge coplanar faces, a common with no volume
@@ -58,7 +61,7 @@ from OCP.BRepBuilderAPI import (
     BRepBuilderAPI_Transform,
 )
 from OCP.BRepExtrema import BRepExtrema_DistShapeShape
-from OCP.BRepFilletAPI import BRepFilletAPI_MakeFillet
+from OCP.BRepFilletAPI import BRepFilletAPI_MakeChamfer, BRepFilletAPI_MakeFillet
 from OCP.BRepPrimAPI import (
     BRepPrimAPI_MakeBox,
     BRepPrimAPI_MakeCylinder,
@@ -425,4 +428,16 @@ def _build_step(step: dict, op: str, params: dict[str, float], ref, probe: float
         for p in points:
             mf.Add(radius, _edge_at(shape, vector(p, params), probe))
         return _checked(mf, "fillet")
+    if op == "chamfer":
+        shape = ref(step["of"])
+        distance = number(step["distance"], params)
+        if distance <= 0.0:
+            raise OracleError("chamfer distance must be positive")
+        points = step["edges"]
+        if not isinstance(points, list) or not points:
+            raise OracleError("chamfer needs a list of edge points")
+        mc = BRepFilletAPI_MakeChamfer(shape)
+        for p in points:
+            mc.Add(distance, _edge_at(shape, vector(p, params), probe))
+        return _checked(mc, "chamfer")
     raise OracleError(f"unknown op {op!r}")

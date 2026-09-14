@@ -1,0 +1,25 @@
+{
+  "description": "the consumer's 2-cube with a vertical and a cap edge meeting at the corner (2, 2, 2) chamfered in one call at d 0.2: the miter's chamfer twin, two chamfer planes x + y = 4 - d and y + z = 4 - d meeting in the line from (2 - d, 2, 2 - d), where the two contacts on the shared face y = 2 cross, to (2, 2 - d, 2) on the sharp third edge, which is shortened there; no face takes a segment at that corner",
+  "params": {"d": 0.2},
+  "steps": [
+    {"name": "cube", "op": "box", "min": [0, 0, 0], "max": [2, 2, 2]},
+    {"name": "result", "op": "chamfer", "of": "cube", "edges": [[2, 2, 1], [1, 2, 2]], "distance": "d"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [1, 1, 1], "expect": "in"},
+    {"label": "corner_gone", "point": [1.95, 1.95, 1.95], "expect": "out"},
+    {"label": "cut_by_both", "point": [1.99, 1.95, 1.95], "expect": "out"},
+    {"label": "on_vertical_chamfer", "point": ["2 - d / 2", "2 - d / 2", 1], "expect": "on"},
+    {"label": "on_cap_chamfer", "point": [1, "2 - d / 2", "2 - d / 2"], "expect": "on"},
+    {"label": "on_miter", "point": ["2 - d / 2", "2 - d / 2", "2 - d / 2"], "expect": "on"},
+    {"label": "on_third_edge", "point": [2, 1, 2], "expect": "on"},
+    {"label": "far_vertex", "point": [0, 0, 0], "expect": "on"}
+  ],
+  "analytic": {
+    "volume": "8 - 2 * d^2 + d^3 / 3",
+    "area": "24 - 8 * d + 4 * sqrt(2) * d - sqrt(2) * d^2",
+    "counts": {"vertices": 11, "edges": 17, "faces": 8, "loops": 8, "shells": 1},
+    "genus": 0
+  }
+}

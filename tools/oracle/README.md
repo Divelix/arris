@@ -33,8 +33,9 @@ commit that says so (`.agents/rules/git.md`).
 
 - `oracle/recipe.py` — the recipe interpreter: `box`, `cylinder`, `profile`
   (lines, three-point arcs, circles, holes), `extrude`, `revolve`,
-  `transform`, `fuse`, `common`, `cut`, `fillet` (`BRepFilletAPI_MakeFillet`,
-  each edge the nearest to a recipe point by `BRepExtrema`, which must be
+  `transform`, `fuse`, `common`, `cut`, `fillet` and `chamfer`
+  (`BRepFilletAPI_MakeFillet`, `MakeChamfer` with one distance, each edge
+  the nearest to a recipe point by `BRepExtrema`, which must be
   the only edge within the fixture's `probe`), chained by step name; `params`
   with string expressions and `variants` overriding them. The grammar is
   the module docstring and `tests/fixtures/README.md`.

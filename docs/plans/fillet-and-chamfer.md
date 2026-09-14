@@ -265,7 +265,25 @@ bound has to be established here.
     cube, volume `8 − 4·(1 − π/4)·r²·2 = 7.93132741`; the same set in
     reversed order dumps identically.
   - Fixtures `blend/l-inner-edge`, `blend/box-four-verticals`.
-- [ ] Step 4 **[2]** — **Chamfer.**
+- [x] Step 4 **[2]** — **Chamfer.** Landed 2026-09-14. All three
+  fixtures pass every corpus stage against `BRepFilletAPI_MakeChamfer`
+  and match the closed forms: 7.96, 7.84, and at the corner
+  `8 − 2d² + d³/3 = 7.92266667`. The corner is checked at `Full` with
+  nothing unchecked. Three findings. First, a chamfer corner has a
+  different condition from a fillet miter. The far contacts meet the
+  third edge at `d / sin α` from the vertex, `α` being each edge's angle
+  to it, so two chamfers meet in one line exactly when those angles are
+  equal. A fillet miter needs equal dihedrals instead. Unequal angles
+  are refused as `VertexBlend` (the extruded parallelogram's corner). A
+  box corner satisfies both conditions, so step 6's operands are
+  unaffected. Second, every chamfer curve comes from the construction,
+  never the intersector: each end segment and the corner line is the
+  chord between two known points. Third, `blend.rs` now carries a `Kind`
+  (fillet or chamfer) and a `Section` (a round cylinder or a flat
+  plane). `u1`, the far contact's `u`, is `β` on the cylinder and the
+  width on the plane. Only the end curve and the miter curve branch on
+  it; the rest of the build is shared. A concave chamfer on the L builds
+  and checks (`arris-ops` test, no fixture).
   - `ops::chamfer` over the same arms: the blend a plane through the two
     contact lines at distance `d` from the edge, ends trimmed as a
     fillet's, now line against plane.

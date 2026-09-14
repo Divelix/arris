@@ -364,8 +364,14 @@ frame's `X` at one contact ruling and `Z` along the edge, so the contacts
 sit at `u = 0` and `u = π − φ` for normals `φ` apart and `v` is the
 edge's own parameter — with the contact on each plane the line at
 `r tan(φ/2)` from the edge, a `Line` pcurve there and a ruling on the
-cylinder; a plane against a cylinder along a ruling or a circle, and the
-chamfer, follow in this cycle. Convex or concave is read from the
+cylinder; a plane against a cylinder along a ruling or a circle follows
+in this cycle. `ops::chamfer(m, body, edges, distance)` is the same
+operation cut flat: two planes chamfer to the plane through the lines at
+`distance` from the edge along each face — its frame's origin on one
+contact, `X` across to the other and `Y` along the edge — and every end
+segment and corner line is the chord between two points of the
+construction, exact on every plane it lies on, never the intersector's.
+Convex or concave is read from the
 dihedral, and the contact curves come from the construction, never from
 the intersector. Each end is trimmed by the face across the corner — at a
 vertex of three edges, the plane the corner's other two edges share:
@@ -386,7 +392,10 @@ edge is shortened to that point, no arc enters any face, and the miter
 edge belongs to both blend faces. The two far contacts meet the third
 edge at one point exactly when the two edges' dihedrals are equal (a box
 corner, any right-angled prism), which the operation requires; a corner
-of unequal dihedrals is two arcs and C6's. The edges are blended in the
+of unequal dihedrals is two arcs and C6's. Two chamfers at such a corner
+meet in the line between the same two points; their far contacts meet
+the third edge at one point exactly when the two edges make equal angles
+with it, which a chamfer corner requires instead. The edges are blended in the
 body's iteration order, whatever order they are listed in, so the result
 and its ids are the same for any order of one set; disjoint blends share
 nothing but the faces across their ends, where a corner edge between two
@@ -399,8 +408,9 @@ blend removes the corner and outside it when a concave blend adds the
 corner to that face — is
 `Reason::BlendTooLarge` naming the edge and the face or edge the blend
 runs out of; a tangent dihedral is `Reason::TangentChain`; a vertex of
-other than three edges, a miter whose two blends have unequal dihedrals
-or are not both convex or both concave, or three blended edges at one
+other than three edges, a miter of two fillets with unequal dihedrals,
+of two chamfers whose edges make unequal angles with its third edge, or
+of blends not both convex or both concave, or three blended edges at one
 vertex until the sphere corner lands, is `Reason::VertexBlend` naming
 the vertex; a surface pair
 outside the table, or a face across an end that is not a plane, is
@@ -916,7 +926,7 @@ facade needs Arris types above it.
 | Extrude / revolve of a sketched profile with holes | `ops::extrude`, `ops::revolve` over `Profile` (lines and arcs) |
 | Boolean union / intersect / cut | `ops::fuse`, `ops::common`, `ops::cut` |
 | Transform (geometry only, topology and index order preserved) | `ops::transform` — new ids, provenance `Modified` one-to-one in iteration order |
-| Fillet / chamfer of named edges, one call for all edges | `ops::fillet` (ADR-0007); `ops::chamfer` follows in this cycle |
+| Fillet / chamfer of named edges, one call for all edges | `ops::fillet`, `ops::chamfer` (ADR-0007) |
 | Tessellation into a render mesh with per-face and per-edge ranges | `arris_mesh::tessellate` → `TriMesh` with `FaceRange`/`EdgeRange` keyed by `FaceId`/`EdgeId` |
 | A planar face's frame | `model.surface(model.face(id)?.surface())` is `Surface::Plane { frame }`; the frame *is* the answer, and it is stable across re-evaluation because a primitive's frame, or a sweep's profile plane, is |
 | Mass properties (volume, area, centroid, inertia) | `ops::measure::mass_properties` → `MassProperties` (exact over the B-Rep, the tensor about the centroid); or the consumer's own integrator over `TriMesh` |

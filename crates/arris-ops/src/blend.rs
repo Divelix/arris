@@ -1,7 +1,9 @@
 //! Blends: `fillet` rolls a ball of constant radius along named edges of
-//! a solid (ADR-0007). Each blend is built directly from its edge's two
-//! faces in closed form — two planes blend to a cylinder on the line
-//! where their offset planes meet — with its contact curves read off the
+//! a solid, `chamfer` cuts them flat at a distance (ADR-0007). Each blend
+//! is built directly from its edge's two faces in closed form — two
+//! planes blend to a cylinder on the line where their offset planes meet,
+//! and chamfer to the plane through the lines at the distance from the
+//! edge on each — with its contact curves read off the
 //! construction, each end trimmed by the face across the corner, and the
 //! result assembled through `rebuild::rewrite` with every untouched
 //! entity kept by id (`docs/ARCHITECTURE.md` §Operations,
@@ -160,21 +162,41 @@ struct Contact {
     tolerance: f64,
 }
 
+/// What a blend is: a rolling ball's fillet or an equal-distance chamfer.
+#[derive(Debug, Clone, Copy)]
+enum Kind {
+    Fillet { radius: f64 },
+    Chamfer { distance: f64 },
+}
+
+/// A stripe's cross-section, which its end curves are decided from.
+#[derive(Debug, Clone, Copy)]
+enum Section {
+    /// A fillet's cylinder of `radius` about the axis through
+    /// `axis_origin`, a point level with the edge's line origin.
+    Round { axis_origin: Point3, radius: f64 },
+    /// A chamfer's plane, its frame's origin on the contact at `u = 0`
+    /// and its `X` across to the other.
+    Flat,
+}
+
 /// One edge's stripe: the blend surface with its two contact lines and
 /// the faces they lie on, nothing about its ends decided yet.
 struct Stripe {
     edge: EdgeId,
     start: VertexId,
     end: VertexId,
-    /// The edge's direction, the blend's `Z`.
+    /// The edge's direction: the cylinder's `Z`, the plane's `Y`.
     d: Vec3,
-    /// A point on the blend's axis, level with the edge's line origin.
-    axis_origin: Point3,
+    section: Section,
     frame: Frame,
     surface: Surface,
-    radius: f64,
-    /// The angle the blend turns through, `π − φ` for normals `φ` apart.
+    /// The angle the dihedral turns a ball through, `π − φ` for normals
+    /// `φ` apart.
     beta: f64,
+    /// The `u` of the contact at the blend's far side: `β` on a fillet's
+    /// cylinder, the chamfer's width on its plane.
+    u1: f64,
     convex: bool,
     /// The contact lines, at `u = 0` then at `u = β`.
     lines: [Curve; 2],
@@ -215,10 +237,11 @@ impl EndKind {
 }
 
 /// Two blends meeting at a vertex whose third edge stays sharp
-/// (ADR-0007): the ellipse where the two equal-radius cylinders cross,
-/// in the plane bisecting their axes through the ball's one centre, from
-/// the point where the two contacts on the shared face cross to the
-/// point on the third edge where the other two contacts meet it.
+/// (ADR-0007): the curve they meet in — the ellipse where two
+/// equal-radius cylinders cross, in the plane bisecting their axes
+/// through the ball's one centre, or the line where two chamfer planes
+/// cross — from the point where the two contacts on the shared face cross
+/// to the point on the third edge where the other two contacts meet it.
 struct Miter {
     /// The two blended edges, in the blends' order.
     edges: [EdgeId; 2],
@@ -305,6 +328,35 @@ fn placed(pcurve: Curve2, t: f64, target: f64) -> Curve2 {
     }
 }
 
+impl Stripe {
+    /// `pcurve` on the blend placed so that its point at `t` has `u`
+    /// nearest `target`: moved by whole turns on a fillet's cylinder, as
+    /// it is on a chamfer's plane.
+    fn place(&self, pcurve: Curve2, t: f64, target: f64) -> Curve2 {
+        match self.section {
+            Section::Round { .. } => placed(pcurve, t, target),
+            Section::Flat => pcurve,
+        }
+    }
+}
+
+/// The segment from `a` to `b`: a line starting at `a` over
+/// `[0, |b − a|]`.
+fn chord(a: Point3, b: Point3, tol: Tolerance) -> Result<(Curve, Interval), OpError> {
+    let v = b - a;
+    let direction =
+        UnitVec3::try_new(v, tol.linear).ok_or(invariant("a segment of positive length"))?;
+    let range =
+        Interval::new(0.0, v.norm()).map_err(|_| invariant("a segment of positive length"))?;
+    Ok((
+        Curve::Line {
+            origin: a,
+            direction,
+        },
+        range,
+    ))
+}
+
 /// `true` when `pcurve` over `range` lies strictly on `side` of `face` at
 /// `samples` interior parameters, by the face's own domain at its own
 /// tolerance: the test a contact line and an end arc pass before a blend
@@ -348,14 +400,14 @@ fn arc_between(t_a: f64, t_b: f64, t_mid: f64) -> Result<(Interval, bool), OpErr
         .map(|r| (r, a_first))
         .map_err(|_| invariant("an end arc of positive length"))
 }
-/// The stripe of one edge under the plane–plane arm: the blend cylinder
-/// and its two contact lines decided from the edge's two faces, its ends
-/// not yet.
+/// The stripe of one edge under the plane–plane arm: the blend surface —
+/// a fillet's cylinder or a chamfer's plane — and its two contact lines
+/// decided from the edge's two faces, its ends not yet.
 fn stripe(
     m: &Model,
     view: &View,
     edge: EdgeId,
-    radius: f64,
+    kind: Kind,
     tol: Tolerance,
 ) -> Result<Stripe, OpError> {
     let e = forward(edge);
@@ -428,12 +480,13 @@ fn stripe(
     let convex = n1.cross(&t1).dot(&n2) < 0.0;
     let s = if convex { -1.0 } else { 1.0 };
     let c = n1.dot(&n2);
-    // The ball's centre against the edge, on both offset planes.
-    let offset: Vec3 = (n1 + n2) * (s * radius / (1.0 + c));
-    let contact_offset = [offset - n1 * (s * radius), offset - n2 * (s * radius)];
-    // The axis's `X` points at one contact, so `u` runs from `0` there to
-    // `β = π − φ` at the other; `Z` is the edge's direction so `v` is its
-    // parameter.
+    // A unit ball's centre against the edge, on both offset planes, and
+    // each of its contacts against the edge.
+    let unit_offset: Vec3 = (n1 + n2) * (s / (1.0 + c));
+    let unit_contact = [unit_offset - n1 * s, unit_offset - n2 * s];
+    // `X` toward one contact, so `u` runs from `0` there to its value at
+    // the other, which a ball reaches turning by `β = π − φ` about the
+    // edge's direction.
     let x = [-s * n1, -s * n2];
     let turn = |from: Vec3, to: Vec3| to.dot(&d.cross(&from)).atan2(to.dot(&from));
     let (lo, beta) = if turn(x[0], x[1]) > 0.0 {
@@ -442,9 +495,47 @@ fn stripe(
         (1, turn(x[1], x[0]))
     };
     let hi = 1 - lo;
-    let axis_origin = origin + offset;
-    let frame = Frame::new(axis_origin, d, x[lo])?;
-    let surface = Surface::Cylinder { frame, radius };
+    let (contact_offset, section, frame, surface, u1) = match kind {
+        Kind::Fillet { radius } => {
+            // The cylinder's `Z` is the edge's direction, so `v` is its
+            // parameter.
+            let axis_origin = origin + unit_offset * radius;
+            let frame = Frame::new(axis_origin, d, x[lo])?;
+            (
+                unit_contact.map(|w| w * radius),
+                Section::Round {
+                    axis_origin,
+                    radius,
+                },
+                frame,
+                Surface::Cylinder { frame, radius },
+                beta,
+            )
+        }
+        Kind::Chamfer { distance } => {
+            // Each contact at `distance` from the edge along its face, the
+            // way the unit ball's contact lies from it.
+            let mut contact_offset = [Vec3::zeros(); 2];
+            for (offset, w) in contact_offset.iter_mut().zip(unit_contact) {
+                let into = UnitVec3::try_new(w, tol.angular)
+                    .ok_or(invariant("a contact off the blended edge"))?;
+                *offset = into.into_inner() * distance;
+            }
+            let chord = contact_offset[hi] - contact_offset[lo];
+            let width = chord.norm();
+            let across = chord / width;
+            // `X` across to the far contact and `Y` the edge's direction,
+            // so `v` is its parameter.
+            let frame = Frame::new(origin + contact_offset[lo], across.cross(&d), across)?;
+            (
+                contact_offset,
+                Section::Flat,
+                frame,
+                Surface::Plane { frame },
+                width,
+            )
+        }
+    };
     let tolerance = m
         .precision()
         .default_tolerance
@@ -456,11 +547,11 @@ fn stripe(
         start: entity.start(),
         end: entity.end(),
         d,
-        axis_origin,
+        section,
         frame,
         surface,
-        radius,
         beta,
+        u1,
         convex,
         lines: by_u.map(|i| Curve::Line {
             origin: origin + contact_offset[i],
@@ -484,7 +575,7 @@ fn face_end(
     tol: Tolerance,
     samples: usize,
 ) -> Result<End, OpError> {
-    let (edge, d, radius, beta) = (s.edge, s.d, s.radius, s.beta);
+    let (edge, d) = (s.edge, s.d);
     let e = forward(edge);
     let vertex = if at_lo { s.start } else { s.end };
     let v = forward(vertex);
@@ -592,42 +683,55 @@ fn face_end(
         vertex_tolerance[k] = s.tolerance.max(ce.tolerance()).max(face3_tolerance);
     }
     // The arc: the blend cut by the plane across, between the two trim
-    // points, on the blend's side of its axis.
-    let section = intersect_surfaces(&s.surface, surface3, tol)
-        .map_err(|g| OpError::Internal(Fault::Geometry(g)))?;
-    let arc_curve = match section {
-        SurfaceIntersection::Transversal(curves) if curves.len() == 1 => curves[0].clone(),
-        SurfaceIntersection::Transversal(_)
-        | SurfaceIntersection::Tangent(_)
-        | SurfaceIntersection::Empty
-        | SurfaceIntersection::Coincident => {
-            return Err(invariant("a transversal section of the blend at its end"));
+    // points — a chamfer's segment joining them, or a fillet's conic on
+    // the blend's side of its axis.
+    let (arc_curve, arc_range, lo_first) = match s.section {
+        Section::Flat => {
+            let (curve, range) = chord(points[0], points[1], tol)?;
+            (curve, range, true)
         }
-    };
-    let (arc_range, lo_first) = match &arc_curve {
-        Curve::Circle { .. } => (
-            Interval::new(0.0, beta)
-                .map_err(|_| invariant("a blend turning by a positive angle"))?,
-            true,
-        ),
-        Curve::Ellipse { .. } => {
-            // The point of the arc half way round the blend.
-            let half = beta / 2.0;
-            let ruling = s.axis_origin
-                + radius
-                    * (half.cos() * s.frame.x().into_inner()
-                        + half.sin() * s.frame.y().into_inner());
-            let mid = ruling + ((plane3.origin() - ruling).dot(&n3) / dn) * d;
-            let param = |p: Point3| -> Result<f64, OpError> {
-                arc_curve
-                    .project(p)
-                    .map(|q| q.t)
-                    .map_err(|g| OpError::Internal(Fault::Geometry(g)))
+        Section::Round {
+            axis_origin,
+            radius,
+        } => {
+            let cut = intersect_surfaces(&s.surface, surface3, tol)
+                .map_err(|g| OpError::Internal(Fault::Geometry(g)))?;
+            let arc_curve = match cut {
+                SurfaceIntersection::Transversal(curves) if curves.len() == 1 => curves[0].clone(),
+                SurfaceIntersection::Transversal(_)
+                | SurfaceIntersection::Tangent(_)
+                | SurfaceIntersection::Empty
+                | SurfaceIntersection::Coincident => {
+                    return Err(invariant("a transversal section of the blend at its end"));
+                }
             };
-            arc_between(param(points[0])?, param(points[1])?, param(mid)?)?
-        }
-        Curve::Line { .. } | Curve::Nurbs(_) => {
-            return Err(invariant("a conic section of the blend at its end"));
+            let (arc_range, lo_first) = match &arc_curve {
+                Curve::Circle { .. } => (
+                    Interval::new(0.0, s.u1)
+                        .map_err(|_| invariant("a blend turning by a positive angle"))?,
+                    true,
+                ),
+                Curve::Ellipse { .. } => {
+                    // The point of the arc half way round the blend.
+                    let half = s.u1 / 2.0;
+                    let ruling = axis_origin
+                        + radius
+                            * (half.cos() * s.frame.x().into_inner()
+                                + half.sin() * s.frame.y().into_inner());
+                    let mid = ruling + ((plane3.origin() - ruling).dot(&n3) / dn) * d;
+                    let param = |p: Point3| -> Result<f64, OpError> {
+                        arc_curve
+                            .project(p)
+                            .map(|q| q.t)
+                            .map_err(|g| OpError::Internal(Fault::Geometry(g)))
+                    };
+                    arc_between(param(points[0])?, param(points[1])?, param(mid)?)?
+                }
+                Curve::Line { .. } | Curve::Nurbs(_) => {
+                    return Err(invariant("a conic section of the blend at its end"));
+                }
+            };
+            (arc_curve, arc_range, lo_first)
         }
     };
     let arc_tolerance = s.tolerance.max(face3_tolerance);
@@ -644,7 +748,7 @@ fn face_end(
     }
     let on_blend = pcurve_on(&arc_curve, arc_range, &s.surface, arc_tol)
         .map_err(|g| OpError::Internal(Fault::Geometry(g)))?;
-    let on_blend = placed(on_blend, arc_range.lo(), if lo_first { 0.0 } else { beta });
+    let on_blend = s.place(on_blend, arc_range.lo(), if lo_first { 0.0 } else { s.u1 });
     Ok(End {
         vertex,
         face: face3,
@@ -688,10 +792,10 @@ fn contacts(
         if !on_side_of_face(m, face, &on_face, range, Side::Inside, samples)? {
             return Err(too_large());
         }
-        let u = if k == 0 { 0.0 } else { s.beta };
+        let u = if k == 0 { 0.0 } else { s.u1 };
         let on_blend = pcurve_on(line, range, &s.surface, line_tol)
             .map_err(|g| OpError::Internal(Fault::Geometry(g)))?;
-        let on_blend = placed(on_blend, range.lo(), u);
+        let on_blend = s.place(on_blend, range.lo(), u);
         contacts.push(Contact {
             face,
             line: line.clone(),
@@ -707,14 +811,16 @@ fn contacts(
 }
 
 /// The miter of stripes `a` and `b` at `vertex`, a corner of three edges
-/// whose third stays sharp (ADR-0007). The two stripes share one face
-/// and have equal dihedrals, so their axes cross at the ball's one
-/// centre and their contacts on the faces the third edge separates meet
-/// it at one point; the miter is the ellipse of the two cylinders in
-/// the plane bisecting their axes, from where the two contacts on the
-/// shared face cross to that point, its pcurve on each cylinder fitted
-/// by the oblique-section rule. The third edge is shortened to the
-/// point. A corner whose dihedrals differ, whose blends are not both
+/// whose third stays sharp (ADR-0007). The two stripes share one face,
+/// and their contacts on the faces the third edge separates meet it at
+/// one point, where the third edge is shortened. Two fillets have equal
+/// dihedrals, so their axes cross at the ball's one centre and the miter
+/// is the ellipse of the two cylinders in the plane bisecting their axes,
+/// from where the two contacts on the shared face cross to that point,
+/// its pcurve on each cylinder fitted by the oblique-section rule; two
+/// chamfers meet in the line between the same two points. A corner of
+/// two fillets whose dihedrals differ or of two chamfers whose far
+/// contacts miss each other on the third edge, whose blends are not both
 /// convex or both concave, or whose edges do not share exactly one face
 /// is `Reason::VertexBlend`.
 fn miter(
@@ -765,14 +871,21 @@ fn miter(
     if faces3 != BTreeSet::from([face_a, face_b]) {
         return Err(vertex_blend());
     }
-    // Equal dihedrals, both convex or both concave: what puts the two
-    // axes through one centre and the two far contacts through one point
-    // of the third edge; anything else is a corner of two arcs, C6's.
-    if (a.beta - b.beta).abs() > tol.angular || a.convex != b.convex {
+    // Both convex or both concave, and two fillets of equal dihedrals:
+    // what puts their axes through one centre and their far contacts
+    // through one point of the third edge; anything else is a corner of
+    // two arcs, C6's.
+    let unequal = match (a.section, b.section) {
+        (Section::Round { .. }, Section::Round { .. }) => (a.beta - b.beta).abs() > tol.angular,
+        (Section::Flat, Section::Flat) => false,
+        (Section::Round { .. }, Section::Flat) | (Section::Flat, Section::Round { .. }) => {
+            return Err(invariant("one kind of blend in one call"));
+        }
+    };
+    if unequal || a.convex != b.convex {
         return Err(vertex_blend());
     }
     let tolerance = a.tolerance.max(b.tolerance);
-    let radius = a.radius;
     let crossing = |o1: Point3, d1: Vec3, o2: Point3, d2: Vec3, what: &'static str| {
         let (t1, t2) = lines_cross(o1, d1, o2, d2, tol).ok_or_else(vertex_blend)?;
         let (p1, p2) = (o1 + t1 * d1, o2 + t2 * d2);
@@ -781,14 +894,6 @@ fn miter(
         }
         Ok((p1 + (p2 - p1) * 0.5, t1, t2))
     };
-    // The ball's centre, where the two axes cross.
-    let (centre, _, _) = crossing(
-        a.axis_origin,
-        a.d,
-        b.axis_origin,
-        b.d,
-        "the two axes through the ball's centre",
-    )?;
     // Where the two contacts on the shared face cross.
     let (q, tqa, tqb) = crossing(
         line_origin(&a.lines[ka])?,
@@ -829,9 +934,16 @@ fn miter(
         "the second blend's contact through the third edge",
     )?;
     if (p3 - p3b).norm() > tolerance {
-        return Err(invariant(
-            "the two contacts through one point of the third edge",
-        ));
+        return Err(match a.section {
+            // Equal dihedrals put two fillets' far contacts through one
+            // point.
+            Section::Round { .. } => {
+                invariant("the two contacts through one point of the third edge")
+            }
+            // Two chamfers' meet there only when their edges make equal
+            // angles with the third edge.
+            Section::Flat => vertex_blend(),
+        });
     }
     // The third edge shortened to that point.
     let too_large = || degenerate(vec![ea, eb, forward(e3)], Reason::BlendTooLarge);
@@ -858,68 +970,97 @@ fn miter(
         t: tc,
         cuts_lo,
     };
-    // The ellipse: in the plane through the centre bisecting the two
-    // axes — its normal the difference of the edges' directions toward
-    // the vertex — with its minor axis `r` toward the shared face and its
-    // major axis `r / |n · Z|` toward the third edge.
-    let toward = |s: &Stripe| if s.end == vertex { s.d } else { -s.d };
-    let Some(n) = UnitVec3::try_new(toward(a) - toward(b), tol.linear) else {
-        return Err(vertex_blend());
-    };
-    let n: Vec3 = n.into_inner();
-    let cos = n.dot(&a.d).abs();
-    if cos <= tol.angular || (cos - n.dot(&b.d).abs()).abs() > tol.angular {
-        return Err(invariant("the miter plane at one angle to both axes"));
-    }
-    let y = q - centre;
-    if (y.norm() - radius).abs() > tolerance {
-        return Err(invariant(
-            "the ball touching the shared face where the contacts cross",
-        ));
-    }
-    let y = y / y.norm();
-    let Some(x) = UnitVec3::try_new(n.cross(&y), tol.linear) else {
-        return Err(invariant("the miter's major axis"));
-    };
-    let mut x: Vec3 = x.into_inner();
-    if x.dot(&(p3 - centre)) < 0.0 {
-        x = -x;
-    }
-    let frame = Frame::new(centre, x.cross(&y), x)?;
-    let curve = Curve::Ellipse {
-        frame,
-        major_radius: radius / cos,
-        minor_radius: radius,
-    };
-    let param = |p: Point3| -> Result<f64, OpError> {
-        let projection = curve
-            .project(p)
-            .map_err(|g| OpError::Internal(Fault::Geometry(g)))?;
-        if projection.distance > tolerance {
-            return Err(invariant("the miter's ends on its ellipse"));
+    let (curve, range, q_first) = match (a.section, b.section) {
+        (Section::Flat, Section::Flat) => {
+            let (curve, range) = chord(q, p3, tol)?;
+            (curve, range, true)
         }
-        Ok(projection.t)
+        (Section::Round { .. }, Section::Flat) | (Section::Flat, Section::Round { .. }) => {
+            return Err(invariant("one kind of blend in one call"));
+        }
+        (
+            Section::Round {
+                axis_origin: origin_a,
+                radius,
+            },
+            Section::Round {
+                axis_origin: origin_b,
+                ..
+            },
+        ) => {
+            // The ball's centre, where the two axes cross.
+            let (centre, _, _) = crossing(
+                origin_a,
+                a.d,
+                origin_b,
+                b.d,
+                "the two axes through the ball's centre",
+            )?;
+            // The ellipse: in the plane through the centre bisecting the two
+            // axes — its normal the difference of the edges' directions toward
+            // the vertex — with its minor axis `r` toward the shared face and its
+            // major axis `r / |n · Z|` toward the third edge.
+            let toward = |s: &Stripe| if s.end == vertex { s.d } else { -s.d };
+            let Some(n) = UnitVec3::try_new(toward(a) - toward(b), tol.linear) else {
+                return Err(vertex_blend());
+            };
+            let n: Vec3 = n.into_inner();
+            let cos = n.dot(&a.d).abs();
+            if cos <= tol.angular || (cos - n.dot(&b.d).abs()).abs() > tol.angular {
+                return Err(invariant("the miter plane at one angle to both axes"));
+            }
+            let y = q - centre;
+            if (y.norm() - radius).abs() > tolerance {
+                return Err(invariant(
+                    "the ball touching the shared face where the contacts cross",
+                ));
+            }
+            let y = y / y.norm();
+            let Some(x) = UnitVec3::try_new(n.cross(&y), tol.linear) else {
+                return Err(invariant("the miter's major axis"));
+            };
+            let mut x: Vec3 = x.into_inner();
+            if x.dot(&(p3 - centre)) < 0.0 {
+                x = -x;
+            }
+            let frame = Frame::new(centre, x.cross(&y), x)?;
+            let curve = Curve::Ellipse {
+                frame,
+                major_radius: radius / cos,
+                minor_radius: radius,
+            };
+            let param = |p: Point3| -> Result<f64, OpError> {
+                let projection = curve
+                    .project(p)
+                    .map_err(|g| OpError::Internal(Fault::Geometry(g)))?;
+                if projection.distance > tolerance {
+                    return Err(invariant("the miter's ends on its ellipse"));
+                }
+                Ok(projection.t)
+            };
+            let (tq, tp) = (param(q)?, param(p3)?);
+            // The arc between them: the way round that lies inside both blends,
+            // between their contacts in `u`.
+            let inside = |t: f64| {
+                [a, b].iter().all(|s| {
+                    let l = s.frame.to_local(curve.point(t));
+                    let u = wrap_angle(l.y.atan2(l.x));
+                    u > 0.0 && u < s.beta
+                })
+            };
+            let up = |t: f64, from: f64| if t >= from { t } else { t + TAU };
+            let direct = (tq + up(tp, tq)) / 2.0;
+            let mid = if inside(direct) {
+                direct
+            } else if inside(direct + PI) {
+                direct + PI
+            } else {
+                return Err(invariant("a miter arc inside both blends"));
+            };
+            let (range, q_first) = arc_between(tq, tp, mid)?;
+            (curve, range, q_first)
+        }
     };
-    let (tq, tp) = (param(q)?, param(p3)?);
-    // The arc between them: the way round that lies inside both blends,
-    // between their contacts in `u`.
-    let inside = |t: f64| {
-        [a, b].iter().all(|s| {
-            let l = s.frame.to_local(curve.point(t));
-            let u = wrap_angle(l.y.atan2(l.x));
-            u > 0.0 && u < s.beta
-        })
-    };
-    let up = |t: f64, from: f64| if t >= from { t } else { t + TAU };
-    let direct = (tq + up(tp, tq)) / 2.0;
-    let mid = if inside(direct) {
-        direct
-    } else if inside(direct + PI) {
-        direct + PI
-    } else {
-        return Err(invariant("a miter arc inside both blends"));
-    };
-    let (range, q_first) = arc_between(tq, tp, mid)?;
     let arc_tol = Tolerance::new(tolerance, tol.angular);
     let shared = [ka, kb];
     let lo_first = shared.map(|k| q_first == (k == 0));
@@ -927,11 +1068,7 @@ fn miter(
     for (i, s) in [a, b].into_iter().enumerate() {
         let pcurve = pcurve_on(&curve, range, &s.surface, arc_tol)
             .map_err(|g| OpError::Internal(Fault::Geometry(g)))?;
-        on_blend.push(placed(
-            pcurve,
-            range.lo(),
-            if lo_first[i] { 0.0 } else { s.beta },
-        ));
+        on_blend.push(s.place(pcurve, range.lo(), if lo_first[i] { 0.0 } else { s.u1 }));
     }
     let on_blend: [Curve2; 2] = on_blend
         .try_into()
@@ -1036,7 +1173,7 @@ fn build(
     m: &mut Model,
     body: Body,
     edges: &[EdgeId],
-    radius: f64,
+    kind: Kind,
 ) -> Result<(Body, Provenance), OpError> {
     let precision = m.precision();
     let tol = precision.tolerance();
@@ -1059,7 +1196,7 @@ fn build(
     }
     let mut stripes: Vec<Stripe> = Vec::with_capacity(edges.len());
     for &e in edges {
-        stripes.push(stripe(m, &view, e, radius, tol)?);
+        stripes.push(stripe(m, &view, e, kind, tol)?);
     }
     let index_of: BTreeMap<EdgeId, usize> =
         edges.iter().enumerate().map(|(i, &e)| (e, i)).collect();
@@ -1467,18 +1604,93 @@ pub fn fillet(
     edges: &[Edge],
     radius: f64,
 ) -> Result<(Body, Provenance), OpError> {
+    blend(m, body, edges, Kind::Fillet { radius })
+}
+
+/// Cuts `edges` of `body` flat at `distance`: each edge's two faces are
+/// replaced by the same faces cut back to the lines at `distance` from
+/// the edge along each, the edge by the plane through those two lines,
+/// and each end of the chamfer is trimmed by the face across the corner
+/// as a [`fillet`]'s is — its vertex goes and its two other edges are
+/// shortened to the segment across it (ADR-0007). The plane's frame has
+/// its origin on one contact line, `X` across to the other and `Y` along
+/// the edge, so the contacts sit at `u = 0` and at the chamfer's width
+/// and `v` is the edge's own parameter; every curve is a line, exact on
+/// every plane it lies on. Two chamfers meeting at a vertex whose third
+/// edge stays sharp meet in the line from where their two contacts on
+/// the shared face cross to where the other two meet the third edge,
+/// which is shortened to that point; those two meet it at one point
+/// exactly when the two edges make equal angles with it (a box corner,
+/// any right prism). Convex or concave is read from the dihedral: a
+/// concave chamfer adds a prism. The result's ids are the same for any
+/// order of the same edges.
+///
+/// Provenance, every record against the chamfered edge, as a
+/// [`fillet`]'s: the chamfer face, its two contact edges, its two end
+/// segments and the four trim vertices `Generated`; the edge's faces,
+/// the faces across its ends and the corner edges the trim shortens
+/// `Modified`; the edge and its corner vertices `Deleted`. The line where
+/// two chamfers meet and its two vertices are `Generated` from both
+/// edges. `arris_topo::provenance::audit` holds on every result.
+///
+/// Errors, the model untouched: a [`fillet`]'s, with
+/// [`Reason::NonFinite`] or [`Reason::NotPositive`] naming the distance,
+/// and [`Reason::VertexBlend`] for two chamfers at a corner whose edges
+/// make unequal angles with its third edge.
+///
+/// ```
+/// use arris_ops::measure::mass_properties;
+/// use arris_ops::{chamfer, primitive_box};
+/// use arris_ops::arris_check::arris_topo::Model;
+/// use arris_ops::arris_check::arris_topo::arris_math::Point3;
+///
+/// let mut m = Model::default();
+/// let (cube, _) = primitive_box(&mut m, Point3::origin(), Point3::new(2.0, 2.0, 2.0)).unwrap();
+/// // The vertical edge at x = 2, y = 2.
+/// let edge = m.edges(cube).unwrap().into_iter().find(|e| {
+///     let entity = m.edge(e.id).unwrap();
+///     let (curve, range) = entity.curve().unwrap();
+///     let mid = m.curve(curve).unwrap().point(range.midpoint());
+///     (mid - Point3::new(2.0, 2.0, 1.0)).norm() < 1e-9
+/// }).unwrap();
+/// let (chamfered, provenance) = chamfer(&mut m, cube, &[edge], 0.2).unwrap();
+/// assert_eq!(m.faces(chamfered).unwrap().len(), 7, "six faces and the chamfer");
+/// // A right prism cut away, its triangle's legs 0.2, two long.
+/// let volume = mass_properties(&m, chamfered).unwrap().volume;
+/// assert!((volume - 7.96).abs() < 1e-9);
+/// assert_eq!(provenance.generated_from(edge.shape()).len(), 9);
+/// ```
+pub fn chamfer(
+    m: &mut Model,
+    body: Body,
+    edges: &[Edge],
+    distance: f64,
+) -> Result<(Body, Provenance), OpError> {
+    blend(m, body, edges, Kind::Chamfer { distance })
+}
+
+/// What [`fillet`] and [`chamfer`] share: the input, the size and the
+/// edge list checked before anything is built, then the build over the
+/// edges in the body's order inside a transaction.
+fn blend(
+    m: &mut Model,
+    body: Body,
+    edges: &[Edge],
+    kind: Kind,
+) -> Result<(Body, Provenance), OpError> {
     crate::verify_input(m, body)?;
     let b = body.shape();
-    if !radius.is_finite() {
-        return Err(degenerate(vec![b], Reason::NonFinite { what: "radius" }));
+    let (what, size) = match kind {
+        Kind::Fillet { radius } => ("radius", radius),
+        Kind::Chamfer { distance } => ("distance", distance),
+    };
+    if !size.is_finite() {
+        return Err(degenerate(vec![b], Reason::NonFinite { what }));
     }
-    if radius <= 0.0 {
+    if size <= 0.0 {
         return Err(degenerate(
             vec![b],
-            Reason::NotPositive {
-                what: "radius",
-                value: radius,
-            },
+            Reason::NotPositive { what, value: size },
         ));
     }
     if edges.is_empty() {
@@ -1501,5 +1713,5 @@ pub fn fillet(
         .map(|e| e.id)
         .filter(|id| selected.contains(id))
         .collect();
-    m.transaction(|m| build(m, body, &ordered, radius))
+    m.transaction(|m| build(m, body, &ordered, kind))
 }

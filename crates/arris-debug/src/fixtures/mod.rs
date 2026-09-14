@@ -307,6 +307,18 @@ pub enum Step {
         /// The ball's radius.
         radius: Num,
     },
+    /// An equal-distance chamfer of edges of a step's body, each named by
+    /// a point on it as a `Fillet`'s is.
+    Chamfer {
+        /// Step name.
+        name: String,
+        /// The body chamfered.
+        of: String,
+        /// One point on each edge to chamfer.
+        edges: Vec<[Num; 3]>,
+        /// The distance from the edge, measured on each of its faces.
+        distance: Num,
+    },
 }
 
 impl Step {
@@ -322,7 +334,8 @@ impl Step {
             | Step::Fuse { name, .. }
             | Step::Common { name, .. }
             | Step::Cut { name, .. }
-            | Step::Fillet { name, .. } => name,
+            | Step::Fillet { name, .. }
+            | Step::Chamfer { name, .. } => name,
         }
     }
 }

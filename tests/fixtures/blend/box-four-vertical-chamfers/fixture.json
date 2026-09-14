@@ -1,0 +1,27 @@
+{
+  "description": "the consumer's 2-cube with its four vertical edges chamfered in one call at d 0.2: four disjoint plane–plane chamfers, each cap face taking four segments and each of its edges cut at both ends by two different chamfers",
+  "params": {"d": 0.2},
+  "steps": [
+    {"name": "cube", "op": "box", "min": [0, 0, 0], "max": [2, 2, 2]},
+    {"name": "result", "op": "chamfer", "of": "cube", "edges": [[0, 0, 1], [2, 0, 1], [2, 2, 1], [0, 2, 1]], "distance": "d"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [1, 1, 1], "expect": "in"},
+    {"label": "corner_gone_00", "point": ["d / 4", "d / 4", 1], "expect": "out"},
+    {"label": "corner_gone_20", "point": ["2 - d / 4", "d / 4", 1], "expect": "out"},
+    {"label": "corner_gone_22", "point": ["2 - d / 4", "2 - d / 4", 1], "expect": "out"},
+    {"label": "corner_gone_02", "point": ["d / 4", "2 - d / 4", 1], "expect": "out"},
+    {"label": "on_chamfer", "point": ["d / 2", "2 - d / 2", 1], "expect": "on"},
+    {"label": "on_contact", "point": ["2 - d", 0, 1], "expect": "on"},
+    {"label": "on_end", "point": ["d / 2", "d / 2", 2], "expect": "on"},
+    {"label": "on_top_edge", "point": [1, 0, 2], "expect": "on"},
+    {"label": "on_bottom", "point": [1, 1, 0], "expect": "on"}
+  ],
+  "analytic": {
+    "volume": "8 - 4 * d^2 / 2 * 2",
+    "area": "24 - 16 * d - 4 * d^2 + 8 * sqrt(2) * d",
+    "counts": {"vertices": 16, "edges": 24, "faces": 10, "loops": 10, "shells": 1},
+    "genus": 0
+  }
+}

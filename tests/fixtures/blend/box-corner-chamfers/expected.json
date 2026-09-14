@@ -1,0 +1,117 @@
+{
+  "occt": "8.0.1.0.0",
+  "recipe_sha256": "4522dc9799fa694045ed300fd2f34a930a6ddd1dbb0e12cf4f400562a30844af",
+  "results": {
+    "default": {
+      "area": 23.474802307403554,
+      "centroid": [
+        0.9955991248737798,
+        0.9908953214405921,
+        0.9955991248737798
+      ],
+      "counts": {
+        "edges": 17,
+        "faces": 8,
+        "loops": 8,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 11
+      },
+      "degenerate": false,
+      "euler_characteristic": 2,
+      "genus": 0,
+      "inertia": [
+        [
+          5.219088472007186,
+          0.03277611645910472,
+          -0.0021292228205984642
+        ],
+        [
+          0.03277611645910472,
+          5.241069112307866,
+          0.032776116459102056
+        ],
+        [
+          -0.0021292228205984642,
+          0.032776116459102056,
+          5.219088472007183
+        ]
+      ],
+      "probes": [
+        {
+          "class": "in",
+          "label": "inside",
+          "point": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "corner_gone",
+          "point": [
+            1.95,
+            1.95,
+            1.95
+          ]
+        },
+        {
+          "class": "out",
+          "label": "cut_by_both",
+          "point": [
+            1.99,
+            1.95,
+            1.95
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_vertical_chamfer",
+          "point": [
+            1.9,
+            1.9,
+            1.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_cap_chamfer",
+          "point": [
+            1.0,
+            1.9,
+            1.9
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_miter",
+          "point": [
+            1.9,
+            1.9,
+            1.9
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_third_edge",
+          "point": [
+            2.0,
+            1.0,
+            2.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "far_vertex",
+          "point": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      ],
+      "volume": 7.922666666666666
+    }
+  }
+}

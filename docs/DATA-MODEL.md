@@ -1041,7 +1041,9 @@ other entity of the body is kept by id. Two blends that share a face
 modify it once, into the face rewritten by both. At a miter the two
 blends' ends are one edge and two vertices, `Generated` from both edges
 they join, so `generated_pair` finds them; the corner's third edge,
-shortened, is `Modified`; no face across takes an arc. A sphere corner
+shortened, is `Modified`; no face across takes an arc. A chamfer's record
+is a fillet's with its end segments in place of the arcs, and two
+chamfers at a corner meet in a line recorded as a miter's ellipse is. A sphere corner
 face is `Generated` from its three edges. `audit` holds on every
 result.
 

@@ -1,6 +1,6 @@
 //! Operations of the Arris kernel: primitives, planar profiles, extrude,
 //! revolve, transform, the booleans (and `boolean::interferences`, their
-//! decomposition as a value), the blends (`fillet`), and `measure` for
+//! decomposition as a value), the blends (`fillet`, `chamfer`), and `measure` for
 //! mass properties.
 //!
 //! Guarantees: every operation has the shape `op(&mut Model, inputs…) ->
@@ -28,7 +28,7 @@ mod transform;
 
 pub use arris_check;
 
-pub use blend::fillet;
+pub use blend::{chamfer, fillet};
 pub use boolean::{common, cut, fuse};
 pub use error::{Fault, OpError, Reason, SplitFault};
 pub use primitive::{primitive_box, primitive_cylinder};

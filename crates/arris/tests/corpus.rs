@@ -340,6 +340,27 @@ fn blend_box_four_verticals() {
     run("blend/box-four-verticals");
 }
 
+/// The consumer's 2-cube with one vertical edge chamfered: a plane–plane
+/// chamfer, a plane between two segments on the caps, at `d = 0.2` and
+/// at `d = 0.5`.
+#[test]
+fn blend_box_edge_chamfer() {
+    run("blend/box-edge-chamfer");
+}
+
+/// The cube's four vertical edges chamfered in one call.
+#[test]
+fn blend_box_four_vertical_chamfers() {
+    run("blend/box-four-vertical-chamfers");
+}
+
+/// The miter's chamfer twin: a vertical and a cap edge at one corner, two
+/// chamfer planes meeting in a line, every face pair checked at `Full`.
+#[test]
+fn blend_box_corner_chamfers() {
+    run("blend/box-corner-chamfers");
+}
+
 /// The miter: the vertical and the cap edge at one corner blended in one
 /// call, two cylinders meeting in the ellipse of their bisecting plane
 /// (ADR-0007). Waits under `regression/` because S5 has no closed form

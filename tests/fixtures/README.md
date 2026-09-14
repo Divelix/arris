@@ -117,8 +117,9 @@ of the step that made the fixture pass, and a later change to it is a
 | `fuse`, `common` | `a`, `b` |
 | `cut` | `target`, `tool` |
 | `fillet` | `of`, `edges` (a list of points, one on each edge to blend), `radius` |
+| `chamfer` | `of`, `edges` (as a `fillet`'s), `distance` (one, measured on both faces from the edge) |
 
-- **A `fillet`'s edges are named by a point each**, so a selection
+- **A `fillet`'s or a `chamfer`'s edges are named by a point each**, so a selection
   survives a transform and a second blend, which a role does not: Arris
   takes the edge `classify_point` answers `On(Edge)` for, the oracle the
   nearest edge by `BRepExtrema`, and both refuse a point that is within

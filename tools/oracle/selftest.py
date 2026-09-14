@@ -159,6 +159,24 @@ SMOKES = [
         "analytic": {"default": {"volume": 8 - (1 - PI / 4) * 0.04 * 2, "area": 24 - 0.8 - 2 * (1 - PI / 4) * 0.04 + PI * 0.2, "counts": (10, 15, 7, 7), "genus": 0}},
         "probes": {"inside": "in", "corner_gone": "out", "on_blend": "on"},
     },
+    {
+        "name": "one edge of a cube chamfered, named by a point on it",
+        "recipe": {
+            "params": {"d": 0.2},
+            "steps": [
+                {"name": "cube", "op": "box", "min": [0, 0, 0], "max": [2, 2, 2]},
+                {"name": "result", "op": "chamfer", "of": "cube", "edges": [[2, 2, 1]], "distance": "d"},
+            ],
+            "result": "result",
+            "probes": [
+                {"label": "inside", "point": [1, 1, 1]},
+                {"label": "corner_gone", "point": [1.95, 1.95, 1]},
+                {"label": "on_chamfer", "point": ["2 - d / 2", "2 - d / 2", 1]},
+            ],
+        },
+        "analytic": {"default": {"volume": 8 - 0.04, "area": 24 - 0.8 - 0.04 + 2 * math.sqrt(2) * 0.2, "counts": (10, 15, 7, 7), "genus": 0}},
+        "probes": {"inside": "in", "corner_gone": "out", "on_chamfer": "on"},
+    },
 ]
 
 

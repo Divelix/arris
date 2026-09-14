@@ -1,0 +1,228 @@
+{
+  "occt": "8.0.1.0.0",
+  "recipe_sha256": "e4b2f338ef33782f55e3d2002ff74b37aac3654da6f489f25fe197273468709d",
+  "results": {
+    "default": {
+      "area": 23.72568542494924,
+      "centroid": [
+        0.9953098827470687,
+        0.9953098827470688,
+        0.9999999999999999
+      ],
+      "counts": {
+        "edges": 15,
+        "faces": 7,
+        "loops": 7,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 10
+      },
+      "degenerate": false,
+      "euler_characteristic": 2,
+      "genus": 0,
+      "inertia": [
+        [
+          5.28489156895589,
+          0.03497509771077656,
+          0.0
+        ],
+        [
+          0.03497509771077656,
+          5.284891568955894,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          5.263116471245116
+        ]
+      ],
+      "probes": [
+        {
+          "class": "in",
+          "label": "inside",
+          "point": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "corner_gone",
+          "point": [
+            1.95,
+            1.95,
+            1.0
+          ]
+        },
+        {
+          "class": "in",
+          "label": "under_chamfer",
+          "point": [
+            1.85,
+            1.85,
+            1.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_chamfer",
+          "point": [
+            1.9,
+            1.9,
+            1.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_contact",
+          "point": [
+            1.8,
+            2.0,
+            1.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_end",
+          "point": [
+            1.9,
+            1.9,
+            2.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_top",
+          "point": [
+            1.0,
+            1.0,
+            2.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "far_vertex",
+          "point": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      ],
+      "volume": 7.959999999999999
+    },
+    "larger": {
+      "area": 23.164213562373096,
+      "centroid": [
+        0.9731182795698926,
+        0.9731182795698925,
+        1.0
+      ],
+      "counts": {
+        "edges": 15,
+        "faces": 7,
+        "loops": 7,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 10
+      },
+      "degenerate": false,
+      "euler_characteristic": 2,
+      "genus": 0,
+      "inertia": [
+        [
+          5.067316308243726,
+          0.1774753584229396,
+          8.881784197001252e-16
+        ],
+        [
+          0.1774753584229396,
+          5.067316308243727,
+          0.0
+        ],
+        [
+          8.881784197001252e-16,
+          0.0,
+          4.967965949820789
+        ]
+      ],
+      "probes": [
+        {
+          "class": "in",
+          "label": "inside",
+          "point": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "corner_gone",
+          "point": [
+            1.875,
+            1.875,
+            1.0
+          ]
+        },
+        {
+          "class": "in",
+          "label": "under_chamfer",
+          "point": [
+            1.625,
+            1.625,
+            1.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_chamfer",
+          "point": [
+            1.75,
+            1.75,
+            1.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_contact",
+          "point": [
+            1.5,
+            2.0,
+            1.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_end",
+          "point": [
+            1.75,
+            1.75,
+            2.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_top",
+          "point": [
+            1.0,
+            1.0,
+            2.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "far_vertex",
+          "point": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      ],
+      "volume": 7.749999999999999
+    }
+  }
+}

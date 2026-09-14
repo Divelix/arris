@@ -35,8 +35,8 @@ use arris_io::step::{self, StepError};
 use arris_mesh::tessellate;
 use arris_ops::measure::mass_properties;
 use arris_ops::{
-    OpError, Reason, common, cut, extrude, fillet, fuse, primitive_box, primitive_cylinder,
-    revolve, transform,
+    OpError, Reason, chamfer, common, cut, extrude, fillet, fuse, primitive_box,
+    primitive_cylinder, revolve, transform,
 };
 
 use crate::dump::dump_text;
@@ -728,7 +728,8 @@ impl Inputs {
             | Step::Extrude { .. }
             | Step::Revolve { .. }
             | Step::Transform { .. }
-            | Step::Fillet { .. } => return None,
+            | Step::Fillet { .. }
+            | Step::Chamfer { .. } => return None,
         };
         Some((*self.bodies.get(x)?, *self.bodies.get(y)?))
     }
@@ -994,7 +995,16 @@ fn build_step(
             body(cut(m, target, tool).map_err(op)?, vec![target, tool])
         }
         Step::Fillet {
-            of, edges, radius, ..
+            of,
+            edges,
+            radius: size,
+            ..
+        }
+        | Step::Chamfer {
+            of,
+            edges,
+            distance: size,
+            ..
         } => {
             let of_body = reference(fixture, step, of, made)?.body;
             let probe = fixture.recipe.tolerances.probe;
@@ -1010,11 +1020,13 @@ fn build_step(
                     })?;
                 selected.push(edge);
             }
-            let radius = number(fixture, step, radius, params)?;
-            body(
-                fillet(m, of_body, &selected, radius).map_err(op)?,
-                vec![of_body],
-            )
+            let size = number(fixture, step, size, params)?;
+            let blended = if matches!(step, Step::Chamfer { .. }) {
+                chamfer(m, of_body, &selected, size)
+            } else {
+                fillet(m, of_body, &selected, size)
+            };
+            body(blended.map_err(op)?, vec![of_body])
         }
     }
 }
