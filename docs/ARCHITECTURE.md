@@ -219,7 +219,13 @@ merged into section vertices — a hit joins the first vertex whose point
 is within the larger of the two tolerances or that shares an operand
 vertex with it, and the vertex's tolerance is the largest of the
 entities merged plus the spread of the points (data-model
-§Tolerances); the paves each vertex puts on the edge that hit it and on
+§Tolerances); the *section crossings* — two section curves of one
+`Transversal` pair intersected with each other (`intersect_curves`), a
+crossing on both faces being a section vertex by the same merge, since
+two curves of one pair meet where the surfaces are tangent to each
+other, the two ellipses of equal cylinders with crossing axes at `±R`
+along the axes' common perpendicular, and no edge of either operand is
+there to make a hit; the paves each vertex puts on the edge that hit it and on
 every section curve it projects onto within its tolerance; and the
 section edges — the blocks between consecutive paves whose midpoint is
 inside both faces, a closed curve with no pave seeded at its parameter

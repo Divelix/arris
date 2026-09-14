@@ -1,0 +1,18 @@
+{
+  "description": "the target cylinder of cross-cylinders-common minus the tool: πR²L − 16R³/3 of material in two lumps, above and below the tool, which is as wide as the target. The two lumps' closures meet at the crossing vertices (0, ±R, 0), where the walls touch: two shells sharing a vertex, which a manifold solid does not hold — Arris refuses with OpError::Degenerate and Reason::NonManifold naming them, Open CASCADE builds a compound of two solids (ADR-0006; plans/cylinder-cylinder-booleans step 2)",
+  "params": {"R": 1, "L": 6, "turn": 30},
+  "steps": [
+    {"name": "a", "op": "cylinder", "base": [0, 0, "-L / 2"], "axis": [0, 0, 1], "radius": "R", "height": "L"},
+    {"name": "b0", "op": "cylinder", "base": ["-L / 2", 0, 0], "axis": [1, 0, 0], "radius": "R", "height": "L"},
+    {"name": "b", "op": "transform", "of": "b0", "rotate": {"axis": [1, 0, 0], "angle_deg": "turn"}},
+    {"name": "result", "op": "cut", "target": "a", "tool": "b"}
+  ],
+  "result": "result",
+  "probes": [],
+  "analytic": {
+    "expect_error": "non-manifold",
+    "volume": "pi * R^2 * L - 16 * R^3 / 3",
+    "area": "2 * pi * R * L + 2 * pi * R^2",
+    "centroid": [0, 0, 0]
+  }
+}

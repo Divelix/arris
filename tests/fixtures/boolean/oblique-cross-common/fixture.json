@@ -1,0 +1,30 @@
+{
+  "description": "cross-cylinders-common at ψ = 60°: the tool's axis in the xz plane through the origin, turned about itself so its seam is generic. The common is 16R³/(3 sin ψ) with area 16R²/sin ψ; the two section ellipses have major radii R/sin(ψ/2) and R/cos(ψ/2) and still cross at (0, ±R, 0), the section vertex no edge made (plans/cylinder-cylinder-booleans step 2)",
+  "params": {"R": 1, "L": 6, "psi": 60, "turn": 30},
+  "steps": [
+    {"name": "a", "op": "cylinder", "base": [0, 0, "-L / 2"], "axis": [0, 0, 1], "radius": "R", "height": "L"},
+    {"name": "b0", "op": "cylinder",
+     "base": ["-L / 2 * sin(radians(psi))", 0, "-L / 2 * cos(radians(psi))"],
+     "axis": ["sin(radians(psi))", 0, "cos(radians(psi))"], "radius": "R", "height": "L"},
+    {"name": "b", "op": "transform", "of": "b0",
+     "rotate": {"axis": ["sin(radians(psi))", 0, "cos(radians(psi))"], "angle_deg": "turn"}},
+    {"name": "result", "op": "common", "a": "a", "b": "b"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [0, 0, 0], "expect": "in"},
+    {"label": "in_a_only", "point": [0, 0, 2.5], "expect": "out"},
+    {"label": "in_b_only", "point": ["2 * sin(radians(psi))", 0, "2 * cos(radians(psi))"], "expect": "out"},
+    {"label": "on_a_wall", "point": ["R * cos(radians(20))", "R * sin(radians(20))", 0], "expect": "on"},
+    {"label": "on_section", "point": ["R * cos(radians(45))", "R * sin(radians(45))", "R * cos(radians(45)) / tan(radians(psi / 2))"], "expect": "on"},
+    {"label": "on_crossing", "point": [0, "R", 0], "expect": "on"}
+  ],
+  "analytic": {
+    "volume": "16 * R^3 / (3 * sin(radians(psi)))",
+    "area": "16 * R^2 / sin(radians(psi))",
+    "centroid": [0, 0, 0],
+    "counts": {"vertices": 6, "edges": 10, "faces": 6, "loops": 6, "shells": 1},
+    "counts_differ": "Open CASCADE also cuts the section arc that runs through the second ellipse's parameter origin there, one more vertex and edge; Arris's edge range crosses the period once (E1) and the arc is one edge between the paves the seams and the crossing vertices make",
+    "genus": 0
+  }
+}

@@ -1,6 +1,7 @@
 //! Building the pave model (ADR-0004): face pairs, edge-on-face hits,
-//! the hits merged into section vertices, paves, section curves cut into
-//! blocks and the blocks kept as section edges with their pcurves; and,
+//! the crossings of a pair's section curves with one another, the hits
+//! and crossings merged into section vertices, paves, section curves cut
+//! into blocks and the blocks kept as section edges with their pcurves; and,
 //! for the coincident pairs, the edge–edge crossings, the paves every
 //! section vertex puts on the pairs' edges, and each edge piece placed
 //! on the other face as an image or matched to a piece of its boundary
@@ -26,7 +27,7 @@ use arris_check::domain::band;
 use super::faces::{EdgeInfo, FaceInfo};
 use super::{
     CommonBlock, Contact, EdgeEdgeHit, EdgeFaceHit, EdgeImage, FacePair, Interferences, Landing,
-    Pave, SectionCurve, SectionEdge, SectionVertex, VertexSource,
+    Pave, SectionCrossing, SectionCurve, SectionEdge, SectionVertex, VertexSource,
 };
 use crate::error::{Fault, OpError};
 
@@ -41,6 +42,7 @@ struct VertexBuild {
     floor: f64,
     hits: Vec<usize>,
     crossings: Vec<usize>,
+    section_crossings: Vec<usize>,
     existing: Vec<VertexId>,
     source: VertexSource,
 }
@@ -73,6 +75,7 @@ impl VertexBuild {
             tolerance: self.tolerance(m),
             hits: self.hits.clone(),
             crossings: self.crossings.clone(),
+            section_crossings: self.section_crossings.clone(),
             existing: self.existing.clone(),
             source: self.source,
         }
@@ -112,6 +115,9 @@ struct Build<'m> {
     hit_tolerance: Vec<f64>,
     crossings: Vec<EdgeEdgeHit>,
     crossing_tolerance: Vec<f64>,
+    section_crossings: Vec<SectionCrossing>,
+    /// Per section crossing, the tolerance of the pair that made it.
+    section_crossing_tolerance: Vec<f64>,
     /// Edge pairs of the coincident face pairs whose curves are the same
     /// curve, `a`'s edge first.
     same_curve: BTreeSet<(EdgeId, EdgeId)>,
@@ -141,6 +147,8 @@ pub(super) fn build(m: &Model, a: Body, b: Body) -> Result<Interferences, OpErro
         hit_tolerance: Vec::new(),
         crossings: Vec::new(),
         crossing_tolerance: Vec::new(),
+        section_crossings: Vec::new(),
+        section_crossing_tolerance: Vec::new(),
         same_curve: BTreeSet::new(),
         vertices: Vec::new(),
         paves: BTreeMap::new(),
@@ -154,6 +162,7 @@ pub(super) fn build(m: &Model, a: Body, b: Body) -> Result<Interferences, OpErro
     build.face_pairs()?;
     build.hits()?;
     build.crossings()?;
+    build.section_crossings()?;
     build.merge()?;
     build.pave_edges();
     build.pave_coincident_edges();
@@ -414,14 +423,107 @@ impl<'m> Build<'m> {
         Ok(())
     }
 
+    /// `point` on face `f`: its (u, v) in the translate the face's loops
+    /// use when the point lies inside the face or on its boundary — on an
+    /// edge or a vertex of it, or within a loop's band and wound around —
+    /// and `None` when it lies outside, as [`Self::hit_edge_face`]
+    /// decides a hit's landing.
+    fn on_face(&self, f: &FaceInfo<'m>, point: Point3) -> Result<Option<Point2>, OpError> {
+        let Ok(projection) = f.surface.project(point) else {
+            return Ok(None);
+        };
+        let (side, shift) = f.domain.side(projection.uv);
+        let on = match side {
+            Side::Outside => false,
+            Side::Inside => true,
+            Side::Boundary => {
+                f.domain.boundary_entity(self.m, point)?.is_some()
+                    || f.domain.winds_around(projection.uv)
+            }
+        };
+        Ok(on.then_some(projection.uv + shift))
+    }
+
+    /// The curves of every `Transversal` pair against one another: a
+    /// crossing on both faces is recorded, sorted by `(pair, curves, t on
+    /// the first)`. Two curves of one pair meet where the surfaces are
+    /// tangent to each other — the two ellipses of equal cylinders with
+    /// crossing axes — and no edge of either operand is there to make a
+    /// hit, so the crossing makes the section vertex both curves need.
+    fn section_crossings(&mut self) -> Result<(), OpError> {
+        let mut found: Vec<(SectionCrossing, f64)> = Vec::new();
+        for (pi, pair) in self.pairs.iter().enumerate() {
+            let SurfaceIntersection::Transversal(curves) = &pair.intersection else {
+                continue;
+            };
+            let (ia, ib) = self.pair_faces[pi];
+            let (fa, fb) = (&self.faces[0][ia], &self.faces[1][ib]);
+            let tol = tolerance_of(&self.precision, fa.tolerance, fb.tolerance);
+            for (ci, ca) in curves.iter().enumerate() {
+                for (cj, cb) in curves.iter().enumerate().skip(ci + 1) {
+                    let hits = match intersect_curves(ca, cb, tol)
+                        .map_err(|e| geometry(e, fa.shape(), fb.shape()))?
+                    {
+                        // Two distinct curves of one intersection are
+                        // never the same curve.
+                        CurveIntersection::Coincident => {
+                            return Err(OpError::Internal(Fault::Invariant {
+                                what: "two section curves of one pair coinciding",
+                            }));
+                        }
+                        CurveIntersection::Points(hits) => hits,
+                    };
+                    for h in hits {
+                        if self.on_face(fa, h.point)?.is_none()
+                            || self.on_face(fb, h.point)?.is_none()
+                        {
+                            continue;
+                        }
+                        let wrap = |c: &Curve, t: f64| {
+                            if c.period().is_some() {
+                                wrap_angle(t)
+                            } else {
+                                t
+                            }
+                        };
+                        found.push((
+                            SectionCrossing {
+                                pair: pi,
+                                curves: [ci, cj],
+                                t: [wrap(ca, h.ta), wrap(cb, h.tb)],
+                                point: h.point,
+                                tangent: h.tangent,
+                                vertex: None,
+                            },
+                            tol.linear,
+                        ));
+                    }
+                }
+            }
+        }
+        found.sort_by(|x, y| {
+            x.0.pair
+                .cmp(&y.0.pair)
+                .then_with(|| x.0.curves.cmp(&y.0.curves))
+                .then_with(|| x.0.t[0].total_cmp(&y.0.t[0]))
+        });
+        for (crossing, tolerance) in found {
+            self.section_crossings.push(crossing);
+            self.section_crossing_tolerance.push(tolerance);
+        }
+        Ok(())
+    }
+
     /// `point` merged into the first vertex (in creation order) that
     /// shares an operand vertex with `existing` or whose point is within
-    /// the larger of the two tolerances; otherwise a new one. The index.
+    /// the larger of the two tolerances; otherwise a new one of `source`.
+    /// The index.
     fn merge_point(
         &mut self,
         point: Point3,
         tolerance: f64,
         existing: Vec<VertexId>,
+        source: VertexSource,
     ) -> Result<usize, OpError> {
         let m = self.m;
         let mut base = tolerance;
@@ -452,16 +554,17 @@ impl<'m> Build<'m> {
                     floor: 0.0,
                     hits: Vec::new(),
                     crossings: Vec::new(),
+                    section_crossings: Vec::new(),
                     existing,
-                    source: VertexSource::Hits,
+                    source,
                 });
                 self.vertices.len() - 1
             }
         })
     }
 
-    /// Hits, then crossings, merged into section vertices; a touch joins
-    /// nothing.
+    /// Hits, then crossings, then section crossings, merged into section
+    /// vertices; a touch joins nothing.
     fn merge(&mut self) -> Result<(), OpError> {
         for i in 0..self.hits.len() {
             if self.hits[i].tangent {
@@ -480,7 +583,7 @@ impl<'m> Build<'m> {
                     }
                 }
             }
-            let k = self.merge_point(point, hit_tol, existing)?;
+            let k = self.merge_point(point, hit_tol, existing, VertexSource::Hits)?;
             self.vertices[k].hits.push(i);
             self.hits[i].vertex = Some(k);
         }
@@ -498,9 +601,19 @@ impl<'m> Build<'m> {
                     }
                 }
             }
-            let k = self.merge_point(point, tol, existing)?;
+            let k = self.merge_point(point, tol, existing, VertexSource::Hits)?;
             self.vertices[k].crossings.push(i);
             self.crossings[i].vertex = Some(k);
+        }
+        for i in 0..self.section_crossings.len() {
+            if self.section_crossings[i].tangent {
+                continue;
+            }
+            let tol = self.section_crossing_tolerance[i];
+            let point = self.section_crossings[i].point;
+            let k = self.merge_point(point, tol, Vec::new(), VertexSource::SectionCrossing)?;
+            self.vertices[k].section_crossings.push(i);
+            self.section_crossings[i].vertex = Some(k);
         }
         let m = self.m;
         for v in &self.vertices {
@@ -514,6 +627,14 @@ impl<'m> Build<'m> {
                         v.crossings
                             .first()
                             .map(|&x| Shape::new(self.crossings[x].a, self.a.orientation))
+                    })
+                    .or_else(|| {
+                        v.section_crossings.first().map(|&x| {
+                            Shape::new(
+                                self.pairs[self.section_crossings[x].pair].a,
+                                self.a.orientation,
+                            )
+                        })
                     })
                     .unwrap_or_else(|| shape_of(self.a));
                 return Err(OpError::Tolerance { entity, wanted });
@@ -741,6 +862,7 @@ impl<'m> Build<'m> {
                     floor: 0.0,
                     hits: Vec::new(),
                     crossings: Vec::new(),
+                    section_crossings: Vec::new(),
                     existing: Vec::new(),
                     source: VertexSource::CurveStart {
                         pair: pi,
@@ -1242,6 +1364,7 @@ impl<'m> Build<'m> {
             b: self.b,
             pairs: self.pairs,
             hits: self.hits,
+            section_crossings: self.section_crossings,
             vertices,
             paves: self.paves,
             curves: self.curves,

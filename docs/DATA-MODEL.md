@@ -1038,7 +1038,8 @@ face of B and kept by the normals is `Modified` from A's face and
 `Generated` from B's, B's face `Deleted`. A section vertex that is no
 operand's vertex is `Generated` from the edge and the face of every hit
 it merges, and from both edges of every crossing (from both faces of
-the pair for a closed section curve no hit paves); a section edge is
+the pair for a section crossing — two section curves of one pair
+crossing each other — and for a closed section curve no hit paves); a section edge is
 `Generated` from both faces of its pair, so `generated_pair(wall, cap)`
 is the hole's rim. The tool of a `cut` keeps nothing: every entity of it
 is `Deleted`, and a piece of it that survives — the hole's wall from the

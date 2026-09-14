@@ -787,7 +787,8 @@ impl<'m> Build<'m> {
     }
 
     /// What an error names for a vertex: the operand vertex it is, or the
-    /// edges and faces whose hits and crossings made a section vertex.
+    /// edges and faces whose hits and crossings made a section vertex —
+    /// both faces of the pair for a section crossing.
     fn vertex_entities(&self, v: VRef) -> Vec<Shape> {
         match v {
             VRef::Existing(id) => vec![forward(id)],
@@ -805,7 +806,13 @@ impl<'m> Build<'m> {
                     .iter()
                     .filter_map(|&x| self.i.crossings.get(x))
                     .flat_map(|x| [forward(x.a), forward(x.b)]);
-                hits.chain(crossings).collect()
+                let section_crossings = sv
+                    .section_crossings
+                    .iter()
+                    .filter_map(|&x| self.i.section_crossings.get(x))
+                    .filter_map(|x| self.i.pairs.get(x.pair))
+                    .flat_map(|p| [forward(p.a), forward(p.b)]);
+                hits.chain(crossings).chain(section_crossings).collect()
             }
         }
     }
@@ -983,7 +990,7 @@ pub(super) fn boolean(
                 continue;
             };
             match v.source {
-                VertexSource::Hits => {
+                VertexSource::Hits | VertexSource::SectionCrossing => {
                     for &h in &v.hits {
                         p.add_generated(forward(i.hits[h].edge), forward(*id));
                         p.add_generated(forward(i.hits[h].face), forward(*id));
@@ -991,6 +998,11 @@ pub(super) fn boolean(
                     for &x in &v.crossings {
                         p.add_generated(forward(i.crossings[x].a), forward(*id));
                         p.add_generated(forward(i.crossings[x].b), forward(*id));
+                    }
+                    for &x in &v.section_crossings {
+                        let pair = &i.pairs[i.section_crossings[x].pair];
+                        p.add_generated(forward(pair.a), forward(*id));
+                        p.add_generated(forward(pair.b), forward(*id));
                     }
                 }
                 VertexSource::CurveStart { pair, .. } => {

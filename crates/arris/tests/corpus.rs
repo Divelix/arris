@@ -229,6 +229,38 @@ fn boolean_sliver_common() {
     run("boolean/sliver-common");
 }
 
+/// Two equal cylinders crossing at 90°: the Steinmetz solid. The two
+/// section ellipses cross each other at (0, ±R, 0), a section vertex no
+/// operand edge made, and each wall's lens through the seam is two
+/// faces. Open CASCADE also cuts an arc at the ellipse's parameter
+/// origin; the fixture states that convention in `analytic.counts_differ`.
+#[test]
+fn boolean_cross_cylinders_common() {
+    run("boolean/cross-cylinders-common");
+}
+
+/// The same cylinders fused: each wall keeps its two pieces outside the
+/// other, meeting at the crossing vertices.
+#[test]
+fn boolean_cross_cylinders_fuse() {
+    run("boolean/cross-cylinders-fuse");
+}
+
+/// The target minus the tool that is as wide as it: two lumps whose
+/// closures touch at the crossing vertices, `Reason::NonManifold`
+/// through the runner's expected-error path (ADR-0006).
+#[test]
+fn boolean_cross_cylinders_cut() {
+    run("boolean/cross-cylinders-cut");
+}
+
+/// The common at ψ = 60°: ellipses of two different major radii still
+/// crossing at (0, ±R, 0), `16R³/(3 sin ψ)`.
+#[test]
+fn boolean_oblique_cross_common() {
+    run("boolean/oblique-cross-common");
+}
+
 /// A rectangle with a circular hole extruded: `boolean/through-hole`'s
 /// solid and numbers by the other path.
 #[test]

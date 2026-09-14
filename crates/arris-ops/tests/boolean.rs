@@ -10,7 +10,7 @@ use arris_ops::arris_check::arris_topo::arris_geom::{
 };
 use arris_ops::arris_check::arris_topo::arris_math::{Interval, Point3};
 use arris_ops::arris_check::arris_topo::{Body, EdgeId, Model};
-use arris_ops::boolean::{Interferences, Landing, interferences};
+use arris_ops::boolean::{Interferences, Landing, VertexSource, interferences};
 use arris_ops::primitive_box;
 use proptest::prelude::*;
 
@@ -282,6 +282,49 @@ fn an_oblique_hole_has_two_ellipses_with_nurbs_pcurves_on_the_wall() {
             );
         }
     }
+    assert_sections_consistent(&m, &i).unwrap();
+}
+
+/// Two equal cylinders crossing at 90°: one wall pair, two ellipses,
+/// each seam piercing the other wall twice, and the two ellipses crossing
+/// each other at (0, ±R, 0) where no edge is — two section crossings,
+/// each a vertex of its own that paves both ellipses, so every ellipse
+/// has four paves and four section edges.
+#[test]
+fn crossing_cylinders_have_two_section_crossings_paving_both_ellipses() {
+    let (m, _, _, i) = interferences_of("boolean/cross-cylinders-common");
+    let transversal: Vec<usize> = (0..i.pairs.len())
+        .filter(|&p| matches!(i.pairs[p].intersection, SurfaceIntersection::Transversal(_)))
+        .collect();
+    assert_eq!(transversal.len(), 1, "{i}");
+    assert_eq!(i.hits.len(), 4, "{i}");
+    assert_eq!(i.section_crossings.len(), 2, "{i}");
+    let mut crossing_vertices = Vec::new();
+    for (k, x) in i.section_crossings.iter().enumerate() {
+        assert_eq!(x.pair, transversal[0]);
+        assert_eq!(x.curves, [0, 1]);
+        assert!(!x.tangent, "{i}");
+        assert!(x.point.x.abs() < 1e-9 && x.point.z.abs() < 1e-9, "{i}");
+        assert!((x.point.y.abs() - 1.0).abs() < 1e-9, "{i}");
+        let v = x
+            .vertex
+            .expect("a crossing that is not a touch has a vertex");
+        assert_eq!(i.vertices[v].source, VertexSource::SectionCrossing, "{i}");
+        assert_eq!(i.vertices[v].section_crossings, vec![k], "{i}");
+        assert!(i.vertices[v].hits.is_empty(), "{i}");
+        crossing_vertices.push(v);
+    }
+    assert_eq!(i.vertices.len(), 6, "{i}");
+    assert_eq!(i.curves.len(), 2, "{i}");
+    for c in &i.curves {
+        assert!(matches!(c.curve, Curve::Ellipse { .. }), "{i}");
+        assert_eq!(c.paves.len(), 4, "{i}");
+        assert_eq!(c.edges.len(), 4, "{i}");
+        for &v in &crossing_vertices {
+            assert!(c.paves.iter().any(|p| p.vertex == v), "{i}");
+        }
+    }
+    assert_eq!(i.sections.len(), 8, "{i}");
     assert_sections_consistent(&m, &i).unwrap();
 }
 

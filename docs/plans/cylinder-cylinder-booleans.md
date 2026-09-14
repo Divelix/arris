@@ -152,7 +152,7 @@ bound has to be established here.
     Step 8 keeps the rest. Open CASCADE reports the inside touch of
     `c2-cylinder-pairs` as two rulings 1e-7 apart; `oracle.rs` holds a
     touch's rulings to 1e-6, as for a curve's touch.
-- [ ] Step 2 **[3]** — **Two crossing cylinders: section curves that meet
+- [x] Step 2 **[3]** — **Two crossing cylinders: section curves that meet
   each other.**
   - The pave model's section crossings (§Design deltas). The (u, v)
     arrangement at the kink where two half-ellipses meet is ordered by
@@ -166,19 +166,46 @@ bound has to be established here.
     - `cross-cylinders-cut`, `πR²L − 16R³/3`: two lumps, since the tool
       is as wide as the target;
     - `oblique-cross-common` at `ψ = 60°`, `16R³/(3 sin ψ)`.
-    A variant of the common turns the tool about its axis so its seam
-    passes through a crossing vertex, where a hit and a crossing merge.
   - **Gate:** if two crossing ellipses need anything beyond one merged
     vertex paving both, such as a pcurve fit that misses the corpus at
     the kink or an arrangement tie, stop and return to the human before
     step 3.
-- [ ] Step 3 **[2]** — **The tee.** A branch of equal radius ending on
-  the main cylinder's axis. Its rim circle touches the main wall exactly
-  at the two crossing vertices, so a touch paves an edge where it lands
-  on a section vertex. Fixture `boolean/tee-fuse`,
-  `πR²L + πR²H − 8R³/3`. If more than that paving is needed, the fixture
-  waits under `regression/tee-fuse` with the cause named, and a backlog
-  line records it for C3's tangent corpus.
+  - *Found at the step:* the gate holds — one vertex per crossing, made
+    by `intersect_curves` on the pair's two ellipses and merged by
+    `merge_point`, paves both, and the four half-edges at the kink are
+    a quarter turn apart. Three findings changed the fixtures:
+    - The cut is `Reason::NonManifold` in every pose, not two lumps: the
+      walls are tangent to each other at the crossing vertices, so the
+      closures of the two lumps touch there, which ADR-0006 refuses.
+      `cross-cylinders-cut` is `expect_error: "non-manifold"` with the
+      oracle's compound recorded, as `edge-touching-fuse`.
+    - Open CASCADE cuts the section arc that runs through an ellipse's
+      parameter origin at that origin, one more vertex and edge than the
+      paves make; Arris's edge crosses the period once (E1). The three
+      built fixtures state it in `counts_differ`.
+    - A cylinder's default seam (`Frame::from_z`) lands on the other
+      seam's hit or on a crossing vertex, so every fixture turns the tool
+      about its own axis (`turn`) for a generic seam. The variant with the
+      seam through a crossing vertex is not a merge of a hit and a
+      crossing: a ruling through a crossing vertex is tangent to the
+      other wall there (the vertex's normal is the axes' common
+      perpendicular, which both axes are perpendicular to), so the seam's
+      hit is a *touch*, and a touch paves nothing today. That is exactly
+      step 3's rule, so the variant moves to step 3.
+- [ ] Step 3 **[2]** — **The tee, and a touch on a section vertex.** A
+  touch of an operand edge on the other face that lands on a section
+  vertex paves that edge there (§Design deltas). Two fixtures:
+  - `cross-cylinders-common`'s variant `seam-through-crossing`, the tool
+    turned so its seam runs through `(0, R, 0)`: the seam's touch on the
+    target's wall lands on the crossing vertex and cuts the seam there,
+    and the lens on the tool's wall is bounded by the seam pieces at the
+    vertex (step 2's finding).
+  - The tee: a branch of equal radius ending on the main cylinder's
+    axis. Its rim circle touches the main wall exactly at the two
+    crossing vertices, the same rule. Fixture `boolean/tee-fuse`,
+    `πR²L + πR²H − 8R³/3`. If more than that paving is needed, the fixture
+    waits under `regression/tee-fuse` with the cause named, and a backlog
+    line records it for C3's tangent corpus.
 - [ ] Step 4 **[2]** — **Parallel cylinders, and the consumer's probe.**
   - Fixtures:
     - `boolean/parallel-cylinders-cut`: the probe in its own units,

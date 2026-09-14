@@ -88,8 +88,13 @@ pub struct EdgeFaceHit {
 /// Where a section vertex came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VertexSource {
-    /// Hits merged: at least one.
+    /// Hits or edge–edge crossings merged: at least one of either. A
+    /// section crossing may have joined it too.
     Hits,
+    /// Two section curves of one `Transversal` pair crossing each other
+    /// where no edge of either operand is: at least one section
+    /// crossing, and no hit.
+    SectionCrossing,
     /// A closed section curve of the pair no hit paves, interior to both
     /// faces: its own point at the curve's parameter zero.
     CurveStart {
@@ -118,6 +123,9 @@ pub struct SectionVertex {
     /// The edge–edge crossings merged into it, ascending indices into
     /// [`Interferences::crossings`].
     pub crossings: Vec<usize>,
+    /// The section crossings merged into it, ascending indices into
+    /// [`Interferences::section_crossings`].
+    pub section_crossings: Vec<usize>,
     /// The operand vertices it coincides with — a hit at an edge's end,
     /// or one landing on a vertex of the face — ascending. Usually none.
     pub existing: Vec<VertexId>,
@@ -149,6 +157,33 @@ pub struct SectionCurve {
     pub paves: Vec<Pave>,
     /// The section edges on it, indices into [`Interferences::sections`].
     pub edges: Vec<usize>,
+}
+
+/// One point where two section curves of one `Transversal` pair cross
+/// each other on both faces: the two curves intersected, kept when the
+/// point is inside each face or on its boundary. Two surfaces meet in
+/// two curves that cross where they are tangent to each other — the two
+/// ellipses of equal cylinders with crossing axes, at `±R` along the
+/// axes' common perpendicular — and no edge of either operand marks the
+/// point, so the crossing is a section vertex of its own: it paves both
+/// curves, and the pieces of both faces meet at it (ADR-0004).
+#[derive(Debug, Clone, PartialEq)]
+pub struct SectionCrossing {
+    /// The pair, an index into [`Interferences::pairs`].
+    pub pair: usize,
+    /// Which two of the pair's `Transversal` curves, the lower index
+    /// first.
+    pub curves: [usize; 2],
+    /// The parameter on each of the two curves; a periodic one in
+    /// `[0, 2π)`.
+    pub t: [f64; 2],
+    /// The point, on the first curve.
+    pub point: Point3,
+    /// `true` when the curves touch here without crossing. A touch makes
+    /// no vertex and no pave.
+    pub tangent: bool,
+    /// The section vertex it was merged into; `None` for a touch.
+    pub vertex: Option<usize>,
 }
 
 /// A block of a section curve interior to both faces: what becomes an
@@ -294,6 +329,9 @@ pub struct Interferences {
     /// Every edge-on-face hit: `a`'s edges against `b`'s faces and `b`'s
     /// against `a`'s, ascending by `(edge id, t)`.
     pub hits: Vec<EdgeFaceHit>,
+    /// Every crossing of two section curves of one `Transversal` pair on
+    /// both faces, ascending by `(pair, curves, t on the first)`.
+    pub section_crossings: Vec<SectionCrossing>,
     /// The section vertices.
     pub vertices: Vec<SectionVertex>,
     /// The paves on every operand edge that has one, ascending by `t`,
@@ -330,7 +368,10 @@ pub struct Interferences {
 /// every face of the other whose box it reaches, and a hit is kept
 /// exactly when its parameter is in the edge's range and its (u, v) is
 /// on the face; hits within tolerance of one another are one section
-/// vertex, made once, whose tolerance follows the growth rule; a section
+/// vertex, made once, whose tolerance follows the growth rule; two
+/// section curves of one `Transversal` pair that cross each other at a
+/// point on both faces make a section vertex there too, merged with any
+/// hit at the point by the same rule; a section
 /// vertex paves every edge that hit it and every section curve it lies
 /// on; a section curve's blocks between consecutive paves are kept when
 /// their midpoint is inside both faces, and each kept block carries a
@@ -722,12 +763,38 @@ impl fmt::Display for Interferences {
                 }
             )?;
         }
+        writeln!(f, "section crossings {}", self.section_crossings.len())?;
+        for (i, x) in self.section_crossings.iter().enumerate() {
+            let vertex = match x.vertex {
+                Some(v) => format!("v{v}"),
+                None => "-".to_string(),
+            };
+            writeln!(
+                f,
+                "  k{i} p{} curve {} t {} x curve {} t {} at {}{} -> {vertex}",
+                x.pair,
+                x.curves[0],
+                num(x.t[0]),
+                x.curves[1],
+                num(x.t[1]),
+                point3(x.point),
+                if x.tangent { " tangent" } else { "" }
+            )?;
+        }
         writeln!(f, "vertices {}", self.vertices.len())?;
         for (i, v) in self.vertices.iter().enumerate() {
             let hits: Vec<String> = v.hits.iter().map(|h| format!("h{h}")).collect();
             let existing: Vec<String> = v.existing.iter().map(|e| e.to_string()).collect();
             let source = match v.source {
                 VertexSource::Hits => String::new(),
+                VertexSource::SectionCrossing => {
+                    let list: Vec<String> = v
+                        .section_crossings
+                        .iter()
+                        .map(|k| format!("k{k}"))
+                        .collect();
+                    format!(" section crossing [{}]", list.join(" "))
+                }
                 VertexSource::CurveStart { pair, curve } => {
                     format!(" start of curve {curve} of p{pair}")
                 }
