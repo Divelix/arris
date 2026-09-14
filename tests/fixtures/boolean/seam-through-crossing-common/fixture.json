@@ -1,0 +1,29 @@
+{
+  "description": "cross-cylinders-common with the tool turned about its own axis so its seam runs through the crossing vertex (0, R, 0): the seam's ruling is tangent to the target's wall there — the vertex's normal is the axes' common perpendicular — so the seam touches the wall at the section vertex two ellipses made instead of piercing it. The touch lands on that vertex and cuts the seam there; the two lenses on the tool's wall reach the seam only at their corners (plans/cylinder-cylinder-booleans step 3). The Steinmetz solid, 16R³/3, area 16R²",
+  "params": {"R": 1, "L": 6, "turn": -90},
+  "steps": [
+    {"name": "a", "op": "cylinder", "base": [0, 0, "-L / 2"], "axis": [0, 0, 1], "radius": "R", "height": "L"},
+    {"name": "b0", "op": "cylinder", "base": ["-L / 2", 0, 0], "axis": [1, 0, 0], "radius": "R", "height": "L"},
+    {"name": "b", "op": "transform", "of": "b0", "rotate": {"axis": [1, 0, 0], "angle_deg": "turn"}},
+    {"name": "result", "op": "common", "a": "a", "b": "b"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [0, 0, 0], "expect": "in"},
+    {"label": "in_a_only", "point": [0, 0, 2], "expect": "out"},
+    {"label": "in_b_only", "point": [2, 0, 0], "expect": "out"},
+    {"label": "on_a_wall", "point": ["R * cos(radians(20))", "R * sin(radians(20))", 0], "expect": "on"},
+    {"label": "on_b_wall", "point": [0, 0, "R"], "expect": "on"},
+    {"label": "on_section", "point": ["R * cos(radians(45))", "R * sin(radians(45))", "R * cos(radians(45))"], "expect": "on"},
+    {"label": "on_crossing", "point": [0, "R", 0], "expect": "on"},
+    {"label": "beside_the_seam", "point": [0.5, "R", 0], "expect": "out"}
+  ],
+  "analytic": {
+    "volume": "16 * R^3 / 3",
+    "area": "16 * R^2",
+    "centroid": [0, 0, 0],
+    "counts": {"vertices": 4, "edges": 7, "faces": 5, "loops": 5, "shells": 1},
+    "counts_differ": "Open CASCADE also cuts the section arc that runs through an ellipse's parameter origin there, one more vertex and edge, as in cross-cylinders-common; Arris's edge range crosses the period once (E1). The tool's seam reaches the common only at the crossing vertex, so neither side has a seam edge of the tool",
+    "genus": 0
+  }
+}

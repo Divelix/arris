@@ -261,6 +261,23 @@ fn boolean_oblique_cross_common() {
     run("boolean/oblique-cross-common");
 }
 
+/// The Steinmetz solid with the tool's seam through a crossing vertex:
+/// the seam touches the target's wall there, and the touch landing on
+/// the section vertex cuts the seam. Open CASCADE's extra arc vertex is
+/// stated in `analytic.counts_differ`.
+#[test]
+fn boolean_seam_through_crossing_common() {
+    run("boolean/seam-through-crossing-common");
+}
+
+/// A tee of equal radii: the branch's rim circle touches the main wall
+/// exactly at the two crossing vertices, and each touch cuts the rim
+/// there.
+#[test]
+fn boolean_tee_fuse() {
+    run("boolean/tee-fuse");
+}
+
 /// A rectangle with a circular hole extruded: `boolean/through-hole`'s
 /// solid and numbers by the other path.
 #[test]

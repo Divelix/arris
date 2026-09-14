@@ -1,0 +1,28 @@
+{
+  "description": "a tee: a main cylinder R 1, length L on z, fused with a branch of the same radius on x whose base cap lies in the plane of the main axis, length H, turned about its own axis so its seam is generic. The two walls meet in the halves x ≥ 0 of the two bisecting ellipses, which cross at (0, ±R, 0) — on the branch's rim circle, which touches the main wall exactly there: the rim's touch lands on the section vertex and cuts the rim (plans/cylinder-cylinder-booleans step 3). πR²L + πR²H − 8R³/3, area 2πRL + 2πRH + 3πR² − 8R²",
+  "params": {"R": 1, "L": 6, "H": 3, "turn": 30},
+  "steps": [
+    {"name": "main", "op": "cylinder", "base": [0, 0, "-L / 2"], "axis": [0, 0, 1], "radius": "R", "height": "L"},
+    {"name": "b0", "op": "cylinder", "base": [0, 0, 0], "axis": [1, 0, 0], "radius": "R", "height": "H"},
+    {"name": "branch", "op": "transform", "of": "b0", "rotate": {"axis": [1, 0, 0], "angle_deg": "turn"}},
+    {"name": "result", "op": "fuse", "a": "main", "b": "branch"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [0, 0, 0], "expect": "in"},
+    {"label": "in_branch", "point": ["H / 2 + R / 2", 0, 0], "expect": "in"},
+    {"label": "behind", "point": ["-R / 2", 0, "R / 2"], "expect": "in"},
+    {"label": "outside", "point": ["-2 * R", 0, 0], "expect": "out"},
+    {"label": "beside_the_branch", "point": ["R + H / 2", 0, "1.5 * R"], "expect": "out"},
+    {"label": "on_main_wall", "point": ["-R", 0, 0], "expect": "on"},
+    {"label": "on_branch_wall", "point": ["R + H / 4", 0, "R"], "expect": "on"},
+    {"label": "on_branch_cap", "point": ["H", 0, "R / 2"], "expect": "on"},
+    {"label": "on_section", "point": ["R * cos(radians(45))", "R * sin(radians(45))", "R * cos(radians(45))"], "expect": "on"},
+    {"label": "on_crossing", "point": [0, "R", 0], "expect": "on"}
+  ],
+  "analytic": {
+    "volume": "pi * R^2 * L + pi * R^2 * H - 8 * R^3 / 3",
+    "area": "2 * pi * R * L + 2 * pi * R * H + 3 * pi * R^2 - 8 * R^2",
+    "genus": 0
+  }
+}

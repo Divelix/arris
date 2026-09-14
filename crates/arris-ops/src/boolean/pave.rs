@@ -514,10 +514,19 @@ impl<'m> Build<'m> {
         Ok(())
     }
 
-    /// `point` merged into the first vertex (in creation order) that
-    /// shares an operand vertex with `existing` or whose point is within
-    /// the larger of the two tolerances; otherwise a new one of `source`.
-    /// The index.
+    /// The first vertex (in creation order) that shares an operand vertex
+    /// with `existing` or whose point is within the larger of its
+    /// tolerance and `tolerance` of `point`.
+    fn vertex_near(&self, point: Point3, tolerance: f64, existing: &[VertexId]) -> Option<usize> {
+        let m = self.m;
+        self.vertices.iter().position(|v| {
+            v.existing.iter().any(|x| existing.contains(x))
+                || (v.point(m) - point).norm() <= v.tolerance(m).max(tolerance)
+        })
+    }
+
+    /// `point` merged into [`Self::vertex_near`] it; otherwise a new
+    /// vertex of `source`. The index.
     fn merge_point(
         &mut self,
         point: Point3,
@@ -530,10 +539,7 @@ impl<'m> Build<'m> {
         for &v in &existing {
             base = base.max(m.vertex(v)?.tolerance());
         }
-        let found = self.vertices.iter().position(|v| {
-            v.existing.iter().any(|x| existing.contains(x))
-                || (v.point(m) - point).norm() <= v.tolerance(m).max(tolerance)
-        });
+        let found = self.vertex_near(point, tolerance, &existing);
         Ok(match found {
             Some(k) => {
                 let v = &mut self.vertices[k];
@@ -564,7 +570,8 @@ impl<'m> Build<'m> {
     }
 
     /// Hits, then crossings, then section crossings, merged into section
-    /// vertices; a touch joins nothing.
+    /// vertices; then every touch that lands on one of those joins it,
+    /// and any other touch joins nothing.
     fn merge(&mut self) -> Result<(), OpError> {
         for i in 0..self.hits.len() {
             if self.hits[i].tangent {
@@ -614,6 +621,26 @@ impl<'m> Build<'m> {
             let k = self.merge_point(point, tol, Vec::new(), VertexSource::SectionCrossing)?;
             self.vertices[k].section_crossings.push(i);
             self.section_crossings[i].vertex = Some(k);
+        }
+        // A touch makes no vertex of its own, but one landing on a vertex
+        // made above passes through it: a ruling or a rim circle through
+        // the crossing of two ellipses, where the walls are tangent to
+        // each other. It joins that vertex, which then paves its edge.
+        for i in 0..self.hits.len() {
+            if !self.hits[i].tangent {
+                continue;
+            }
+            let hit_tol = self.hit_tolerance[i];
+            let point = self.hits[i].point;
+            let existing: Vec<VertexId> = self.hits[i].at_vertex.into_iter().collect();
+            if self.vertex_near(point, hit_tol, &existing).is_none() {
+                continue;
+            }
+            let k = self.merge_point(point, hit_tol, existing, VertexSource::Hits)?;
+            let v = &mut self.vertices[k];
+            v.hits.push(i);
+            v.hits.sort_unstable();
+            self.hits[i].vertex = Some(k);
         }
         let m = self.m;
         for v in &self.vertices {

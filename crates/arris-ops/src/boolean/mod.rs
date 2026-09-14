@@ -71,17 +71,21 @@ pub struct EdgeFaceHit {
     /// The edge's point at `t`.
     pub point: Point3,
     /// `true` when the edge touches the surface here without crossing
-    /// it. A touch pierces nothing: it makes no section vertex and no
-    /// pave on the edge; it paves the tangent ruling of a `Tangent` pair,
-    /// whose blocks between touches are the pair's
-    /// [`Interferences::contacts`].
+    /// it. A touch pierces nothing: it makes no section vertex of its
+    /// own; it paves the tangent ruling of a `Tangent` pair, whose blocks
+    /// between touches are the pair's [`Interferences::contacts`]. A
+    /// touch that lands on a section vertex the hits and crossings made —
+    /// a ruling or a rim circle through the crossing of two ellipses,
+    /// where the walls are tangent to each other — passes through that
+    /// vertex, so it joins it and paves the edge there.
     pub tangent: bool,
     /// Where on the face.
     pub landing: Landing,
     /// The end vertex of the edge the hit lies within the tolerance of,
     /// when it does: a vertex of this operand on a face of the other.
     pub at_vertex: Option<VertexId>,
-    /// The section vertex the hit was merged into; `None` for a touch.
+    /// The section vertex the hit was merged into; `None` for a touch
+    /// that landed on none.
     pub vertex: Option<usize>,
 }
 
@@ -92,8 +96,8 @@ pub enum VertexSource {
     /// section crossing may have joined it too.
     Hits,
     /// Two section curves of one `Transversal` pair crossing each other
-    /// where no edge of either operand is: at least one section
-    /// crossing, and no hit.
+    /// where no edge of either operand pierces: at least one section
+    /// crossing, and no hit but touches landing on it.
     SectionCrossing,
     /// A closed section curve of the pair no hit paves, interior to both
     /// faces: its own point at the curve's parameter zero.

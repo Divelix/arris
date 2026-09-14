@@ -225,7 +225,12 @@ crossing on both faces being a section vertex by the same merge, since
 two curves of one pair meet where the surfaces are tangent to each
 other, the two ellipses of equal cylinders with crossing axes at `±R`
 along the axes' common perpendicular, and no edge of either operand is
-there to make a hit; the paves each vertex puts on the edge that hit it and on
+there to make a hit; a *touch* — a hit where the edge meets the surface
+without crossing it — makes no vertex of its own, but one that lands on
+a vertex made by the hits and crossings joins it, since the edge passes
+through that vertex (a seam ruling or a rim circle through the crossing
+of two ellipses, tangent to the other wall there because the walls are);
+the paves each vertex puts on the edge that hit or touched it and on
 every section curve it projects onto within its tolerance; and the
 section edges — the blocks between consecutive paves whose midpoint is
 inside both faces, a closed curve with no pave seeded at its parameter

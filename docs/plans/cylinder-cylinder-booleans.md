@@ -192,7 +192,7 @@ bound has to be established here.
       perpendicular, which both axes are perpendicular to), so the seam's
       hit is a *touch*, and a touch paves nothing today. That is exactly
       step 3's rule, so the variant moves to step 3.
-- [ ] Step 3 **[2]** — **The tee, and a touch on a section vertex.** A
+- [x] Step 3 **[2]** — **The tee, and a touch on a section vertex.** A
   touch of an operand edge on the other face that lands on a section
   vertex paves that edge there (§Design deltas). Two fixtures:
   - `cross-cylinders-common`'s variant `seam-through-crossing`, the tool
@@ -206,6 +206,16 @@ bound has to be established here.
     `πR²L + πR²H − 8R³/3`. If more than that paving is needed, the fixture
     waits under `regression/tee-fuse` with the cause named, and a backlog
     line records it for C3's tangent corpus.
+  - *Found at the step:* the tee is the one rule, no fallback: after the
+    hits, crossings and section crossings are merged, every touch that
+    lands on one of their vertices joins it and paves its edge there, and
+    `boolean/tee-fuse` passes every stage with the oracle's own counts.
+    The seam variant is its own fixture,
+    `boolean/seam-through-crossing-common`, not a variant: a recipe holds
+    one `counts`, and turning the seam onto the crossing vertex changes
+    them (the tool's seam reaches the common only at that vertex, 4/7/5
+    against the default's 6/10/6), with Open CASCADE's ellipse-origin
+    vertex in `counts_differ` as in step 2.
 - [ ] Step 4 **[2]** — **Parallel cylinders, and the consumer's probe.**
   - Fixtures:
     - `boolean/parallel-cylinders-cut`: the probe in its own units,
@@ -265,7 +275,7 @@ bound has to be established here.
 
 - `cargo nextest run -p arris --test corpus --run-ignored all`: every new
   `boolean/` fixture (cross-cylinders ×3, `oblique-cross-common`,
-  `tee-fuse`, parallel-cylinders ×4, tangent-cylinders ×2, pin-in-bore
+  `seam-through-crossing-common`, `tee-fuse`, parallel-cylinders ×4, tangent-cylinders ×2, pin-in-bore
   ×2) and `blend/fillet-miter` passing every stage against Open CASCADE.
   `regression/` holds no fillet-miter.
 - `cargo nextest run -p arris-geom --test oracle`: `geom/c2-cylinder-pairs`

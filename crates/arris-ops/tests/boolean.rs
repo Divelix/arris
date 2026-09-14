@@ -328,6 +328,40 @@ fn crossing_cylinders_have_two_section_crossings_paving_both_ellipses() {
     assert_sections_consistent(&m, &i).unwrap();
 }
 
+/// The touches that land on a crossing vertex: the tool's seam through
+/// (0, R, 0) in `seam-through-crossing-common`, and the branch's rim
+/// circle through both crossing vertices in `tee-fuse`. Each touch joins
+/// the section vertex the two ellipses made and paves its edge there; a
+/// touch landing nowhere still joins nothing.
+#[test]
+fn a_touch_on_a_crossing_vertex_joins_it_and_paves_its_edge() {
+    for (name, touches) in [
+        ("boolean/seam-through-crossing-common", 1),
+        ("boolean/tee-fuse", 2),
+    ] {
+        let (m, _, _, i) = interferences_of(name);
+        assert_eq!(i.section_crossings.len(), 2, "{name}\n{i}");
+        let joined: Vec<usize> = (0..i.hits.len())
+            .filter(|&h| i.hits[h].tangent && i.hits[h].vertex.is_some())
+            .collect();
+        assert_eq!(joined.len(), touches, "{name}\n{i}");
+        for h in joined {
+            let hit = &i.hits[h];
+            let v = hit.vertex.unwrap();
+            assert_eq!(
+                i.vertices[v].source,
+                VertexSource::SectionCrossing,
+                "{name}\n{i}"
+            );
+            assert!(i.vertices[v].hits.contains(&h), "{name}\n{i}");
+            assert!((hit.point.y.abs() - 1.0).abs() < 1e-9, "{name}\n{i}");
+            let paves = i.paves.get(&hit.edge).expect("the touched edge is paved");
+            assert!(paves.iter().any(|p| p.vertex == v), "{name}\n{i}");
+        }
+        assert_sections_consistent(&m, &i).unwrap();
+    }
+}
+
 #[test]
 fn two_runs_are_identical() {
     let (m, a, b, i) = interferences_of("boolean/through-hole");
