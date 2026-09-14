@@ -721,6 +721,12 @@ impl<'m> Build<'m> {
             edges.extend(self.faces[0][ia].edges().iter().map(|&e| (0, e)));
             edges.extend(self.faces[1][ib].edges().iter().map(|&e| (1, e)));
         }
+        // An edge lying in a face of the other operand is paved the same
+        // way, whether or not a face of its own is coincident with it: its
+        // pieces inside that face are images there.
+        for &(e, _) in &self.coincident {
+            edges.insert((usize::from(self.edge_info(0, e).is_none()), e));
+        }
         let mut wanted: Vec<(EdgeId, f64, usize)> = Vec::new();
         for (side, id) in edges {
             let Some(e) = self.edge_info(side, id) else {
@@ -1216,6 +1222,56 @@ impl<'m> Build<'m> {
         Ok(None)
     }
 
+    /// `block` of `e`, an edge of face `f` of operand `side`, as an image
+    /// on `other` under pair `pi`: kept when the block lies inside that
+    /// face by its polygons — within the band of a loop without being on
+    /// any edge of it, the winding number decides — with its pcurve there
+    /// and the edge's tolerance raised to the pcurve's residual; `None`
+    /// when it lies outside.
+    fn image(
+        &self,
+        pi: usize,
+        side: usize,
+        e: &EdgeInfo<'m>,
+        f: &FaceInfo<'m>,
+        other: &FaceInfo<'m>,
+        block: &Block,
+    ) -> Result<Option<EdgeImage>, OpError> {
+        let mid = e.curve.point(block.range.midpoint());
+        let projection = other
+            .surface
+            .project(mid)
+            .map_err(|err| geometry(err, e.shape(), other.shape()))?;
+        let (s, shift) = other.domain.side(projection.uv);
+        let uv_mid = projection.uv + shift;
+        let inside = match s {
+            Side::Outside => false,
+            Side::Inside => true,
+            Side::Boundary => other.domain.winds_around(projection.uv),
+        };
+        if !inside {
+            return Ok(None);
+        }
+        let fit = e.tolerance + f.tolerance.max(other.tolerance);
+        let (pcurve, residual) = self.pcurve_of(other, f, e.curve, block.range, uv_mid, fit)?;
+        let tolerance = e.tolerance.max(residual);
+        if tolerance > self.precision.max_tolerance {
+            return Err(OpError::Tolerance {
+                entity: e.shape(),
+                wanted: tolerance,
+            });
+        }
+        Ok(Some(EdgeImage {
+            pair: pi,
+            side,
+            edge: e.id,
+            index: block.index,
+            range: block.range,
+            pcurve,
+            tolerance,
+        }))
+    }
+
     /// Every piece of every edge of both faces of each `Coincident` pair
     /// decided against the other face: inside it, an image with its
     /// pcurve there; along its boundary, a common block with the piece
@@ -1263,46 +1319,57 @@ impl<'m> Build<'m> {
                             }
                             continue;
                         }
-                        // Otherwise inside or outside the other face by its
-                        // polygons; within the band of a loop without being
-                        // on any edge of it, the winding number decides.
-                        let mid = e.curve.point(block.range.midpoint());
-                        let projection = other
-                            .surface
-                            .project(mid)
-                            .map_err(|err| geometry(err, e.shape(), other.shape()))?;
-                        let (s, shift) = other.domain.side(projection.uv);
-                        let uv_mid = projection.uv + shift;
-                        let inside = match s {
-                            Side::Outside => false,
-                            Side::Inside => true,
-                            Side::Boundary => other.domain.winds_around(projection.uv),
-                        };
-                        if !inside {
-                            continue;
+                        if let Some(image) = self.image(pi, side, e, f, other, &block)? {
+                            floors.push((block.start, image.tolerance));
+                            floors.push((block.end, image.tolerance));
+                            images.push(image);
                         }
-                        let fit = e.tolerance + f.tolerance.max(other.tolerance);
-                        let (pcurve, residual) =
-                            self.pcurve_of(other, f, e.curve, block.range, uv_mid, fit)?;
-                        let tolerance = e.tolerance.max(residual);
-                        if tolerance > self.precision.max_tolerance {
-                            return Err(OpError::Tolerance {
-                                entity: e.shape(),
-                                wanted: tolerance,
-                            });
-                        }
-                        floors.push((block.start, tolerance));
-                        floors.push((block.end, tolerance));
-                        images.push(EdgeImage {
-                            pair: pi,
-                            side,
-                            edge: e.id,
-                            index: block.index,
-                            range: block.range,
-                            pcurve,
-                            tolerance,
-                        });
                     }
+                }
+            }
+        }
+        // An edge lying in a face of the other operand that no face of its
+        // own is coincident with — a seam on a ruling two parallel walls
+        // cross along, whose block of the section curve is the edge and
+        // not a section edge — has no coincident neighbour to place it on
+        // that face, so its pieces inside it are placed here, under the
+        // pair of the first face that uses it.
+        for &(eid, gid) in &self.coincident {
+            let side = usize::from(self.edge_info(0, eid).is_none());
+            let (Some(e), Some(other)) = (
+                self.edge_info(side, eid),
+                self.faces[1 - side].iter().find(|g| g.id == gid),
+            ) else {
+                continue;
+            };
+            let pair_with = |f: FaceId| {
+                self.pairs.iter().position(|p| {
+                    if side == 0 {
+                        p.a == f && p.b == gid
+                    } else {
+                        p.a == gid && p.b == f
+                    }
+                })
+            };
+            let owners: Vec<(&FaceInfo<'m>, Option<usize>)> = self.faces[side]
+                .iter()
+                .filter(|f| f.edges().contains(&eid))
+                .map(|f| (f, pair_with(f.id)))
+                .collect();
+            let placed = owners.iter().any(|&(_, pi)| {
+                pi.is_some_and(|pi| self.pairs[pi].intersection == SurfaceIntersection::Coincident)
+            });
+            let Some((f, pi)) = owners.iter().find_map(|&(f, pi)| Some((f, pi?))) else {
+                continue;
+            };
+            if placed {
+                continue;
+            }
+            for block in self.blocks_of(e) {
+                if let Some(image) = self.image(pi, side, e, f, other, &block)? {
+                    floors.push((block.start, image.tolerance));
+                    floors.push((block.end, image.tolerance));
+                    images.push(image);
                 }
             }
         }

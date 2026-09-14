@@ -1,0 +1,25 @@
+{
+  "description": "the consumer's cylinder − cylinder transversal probe in its own units: a target r 0.03, 0.01 tall, less a tool of the same radius whose axis is parallel and 0.04 away, clearing both caps. The walls meet in two rulings (plans/cylinder-cylinder-booleans step 4); the result is the target less the lens, (πr² − lens)·h = 2.2079e-5. theta is acos(d / 2r), which the recipe grammar does not have, at full precision",
+  "params": {"r": 0.03, "d": 0.04, "h": 0.01, "theta": 0.8410686705679301},
+  "steps": [
+    {"name": "target", "op": "cylinder", "base": [0, 0, 0], "axis": [0, 0, 1], "radius": "r", "height": "h"},
+    {"name": "tool", "op": "cylinder", "base": ["d", 0, "-h / 2"], "axis": [0, 0, 1], "radius": "r", "height": "2 * h"},
+    {"name": "result", "op": "cut", "target": "target", "tool": "tool"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": ["-r / 2", 0, "h / 2"], "expect": "in"},
+    {"label": "in_the_lens", "point": ["d / 2", 0, "h / 2"], "expect": "out"},
+    {"label": "in_tool_only", "point": ["d + r / 2", 0, "h / 2"], "expect": "out"},
+    {"label": "on_wall", "point": ["-r", 0, "h / 2"], "expect": "on"},
+    {"label": "on_bore", "point": ["d - r", 0, "h / 2"], "expect": "on"},
+    {"label": "on_ruling", "point": ["d / 2", "sqrt(r^2 - d^2 / 4)", "h / 2"], "expect": "on"},
+    {"label": "on_top", "point": ["-r / 2", 0, "h"], "expect": "on"}
+  ],
+  "tolerances": {"mesh_chord": 1e-5},
+  "analytic": {
+    "volume": "(pi * r^2 - (2 * r^2 * theta - d / 2 * sqrt(4 * r^2 - d^2))) * h",
+    "area": "2 * (pi * r^2 - (2 * r^2 * theta - d / 2 * sqrt(4 * r^2 - d^2))) + 2 * pi * r * h",
+    "genus": 0
+  }
+}

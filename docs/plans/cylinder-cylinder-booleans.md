@@ -216,7 +216,7 @@ bound has to be established here.
     them (the tool's seam reaches the common only at that vertex, 4/7/5
     against the default's 6/10/6), with Open CASCADE's ellipse-origin
     vertex in `counts_differ` as in step 2.
-- [ ] Step 4 **[2]** — **Parallel cylinders, and the consumer's probe.**
+- [x] Step 4 **[2]** — **Parallel cylinders, and the consumer's probe.**
   - Fixtures:
     - `boolean/parallel-cylinders-cut`: the probe in its own units,
       `r = 0.03`, axes 0.04 apart, a target 0.01 tall and a tool
@@ -229,6 +229,22 @@ bound has to be established here.
       the block that is an operand edge.
   - Every section curve here is a ruling, and no step-2 machinery is
     needed. A finding otherwise is recorded in this plan.
+  - *Found at the step:* no step-2 machinery, but two findings.
+    - The oracle's expression evaluator parsed `^` with Python's XOR
+      precedence, below `* /`, so `d^2 / 4` was `d^(2/4)` and the seam
+      fixture's tool landed on the target's axis. Fixed on its own
+      (`fix(tools)`, with precedence cases in `expr-cases.json`); no
+      committed `expected.json` moved, since no committed step or probe
+      mixed `^` with another operator.
+    - The seam on a ruling split nothing on the tool's wall: the ruling's
+      block is the seam, not a section edge, and only a `Coincident` pair
+      placed an edge's pieces on the other face as images, so the wall's
+      two cap arcs ended at nodes nothing reached ("the face arrangement
+      is not a subdivision"). An edge
+      lying in a face of the other operand (`Interferences::coincident`)
+      is now paved by every section vertex on it and its pieces inside
+      that face are images, whether or not a face of its own is
+      coincident with it. No other corpus dump moved.
 - [ ] Step 5 **[2]** — **The curvature rule, generalised.**
   - `Surface::normal_curvature` with rustdoc and an example. Tests
     against the closed forms on every analytic kind (plane 0, cylinder

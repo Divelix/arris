@@ -278,6 +278,34 @@ fn boolean_tee_fuse() {
     run("boolean/tee-fuse");
 }
 
+/// The consumer's cylinder − cylinder transversal probe in its own units:
+/// two parallel walls meeting in two rulings, `(πr² − lens)·h =
+/// 2.2079e-5`.
+#[test]
+fn boolean_parallel_cylinders_cut() {
+    run("boolean/parallel-cylinders-cut");
+}
+
+/// The same operands' common: the lens prism.
+#[test]
+fn boolean_parallel_cylinders_common() {
+    run("boolean/parallel-cylinders-common");
+}
+
+/// The same operands fused, and flush: the rim circles crossing on the
+/// coincident caps at the rulings' ends.
+#[test]
+fn boolean_parallel_cylinders_fuse() {
+    run("boolean/parallel-cylinders-fuse");
+}
+
+/// A ruling on the target's seam: that block is the seam edge, not a
+/// section edge.
+#[test]
+fn boolean_parallel_cylinders_seam() {
+    run("boolean/parallel-cylinders-seam");
+}
+
 /// A rectangle with a circular hole extruded: `boolean/through-hole`'s
 /// solid and numbers by the other path.
 #[test]

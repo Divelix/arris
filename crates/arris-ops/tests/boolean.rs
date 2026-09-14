@@ -362,6 +362,39 @@ fn a_touch_on_a_crossing_vertex_joins_it_and_paves_its_edge() {
     }
 }
 
+/// Two parallel walls, one ruling of the pair on the target's seam: the
+/// seam lies in the tool's wall, the block of that ruling is the seam and
+/// no section edge, and the seam's one piece inside the tool's wall is
+/// its image there — no face of the target is coincident with the wall to
+/// place it through.
+#[test]
+fn a_seam_on_a_ruling_is_an_image_on_the_other_wall() {
+    let (m, a, _, i) = interferences_of("boolean/parallel-cylinders-seam");
+    let seam = line_edges(&m, a);
+    assert_eq!(seam.len(), 1);
+    assert_eq!(i.coincident.len(), 1, "{i}");
+    let (edge, wall) = i.coincident[0];
+    assert_eq!(edge, seam[0], "{i}");
+    let on_seam: Vec<_> = i
+        .curves
+        .iter()
+        .filter(|c| matches!(c.curve, Curve::Line { .. }))
+        .collect();
+    assert_eq!(on_seam.len(), 2, "{i}");
+    assert_eq!(
+        on_seam.iter().filter(|c| c.edges.is_empty()).count(),
+        1,
+        "the ruling on the seam is no section edge\n{i}"
+    );
+    assert_eq!(i.images.len(), 1, "{i}");
+    let image = &i.images[0];
+    assert_eq!((image.edge, image.side, image.index), (edge, 0, 0), "{i}");
+    assert_eq!(i.pairs[image.pair].b, wall, "{i}");
+    assert!(matches!(image.pcurve, Curve2::Line { .. }), "{i}");
+    assert_eq!(i.sections.len(), 3, "{i}");
+    assert_sections_consistent(&m, &i).unwrap();
+}
+
 #[test]
 fn two_runs_are_identical() {
     let (m, a, b, i) = interferences_of("boolean/through-hole");

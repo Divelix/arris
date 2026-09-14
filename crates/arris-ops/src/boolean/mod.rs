@@ -266,9 +266,13 @@ pub struct EdgeEdgeHit {
 
 /// A piece of an edge of one face of a `Coincident` pair lying strictly
 /// inside the other face: what splits that face where the two overlap,
-/// with its pcurve there (ADR-0004). The piece is the edge's own — the
-/// result uses one edge for both faces — and the pcurve is what the
-/// other face's loop uses it with.
+/// with its pcurve there (ADR-0004). The same for an edge lying in a face
+/// of the other operand that no face of its own is coincident with — a
+/// seam on the ruling two parallel walls cross along, which is that
+/// block of the section curve — under the pair of the first face that
+/// uses it. The piece is the edge's own — the result uses one edge for
+/// both faces — and the pcurve is what the other face's loop uses it
+/// with.
 #[derive(Debug, Clone, PartialEq)]
 pub struct EdgeImage {
     /// The pair, an index into [`Interferences::pairs`].
@@ -357,7 +361,9 @@ pub struct Interferences {
     /// `(a's edge, ta, b's edge, tb)`.
     pub crossings: Vec<EdgeEdgeHit>,
     /// The pieces of each `Coincident` pair's edges that lie inside the
-    /// other face, in pair order, `a`'s edges first.
+    /// other face, in pair order, `a`'s edges first; then the pieces of
+    /// every edge lying in a face of the other operand that no face of its
+    /// own is coincident with, in the order of `coincident`.
     pub images: Vec<EdgeImage>,
     /// The pieces of `b`'s edges that are pieces of `a`'s, in pair order.
     pub blocks: Vec<CommonBlock>,

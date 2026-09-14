@@ -252,7 +252,11 @@ dropped when it lies outside — the coincidence is the curves' verdict,
 never the polygon band's, which two fitted pcurves of one curve can
 straddle. For the same reason a block of a section curve that is a
 piece of an operand edge of either face is that edge and not a section
-edge. A `Tangent` pair — a plane and a cylinder touching along a ruling
+edge. An edge that lies in a face of the other operand
+(`Interferences::coincident`) is paved and placed the same way whether
+or not a face of its own is coincident with that face: a seam on the
+ruling two parallel walls cross along splits the other wall as an image,
+since no coincident neighbour is there to place it. A `Tangent` pair — a plane and a cylinder touching along a ruling
 — contributes no section edge and no pave on any operand edge: the
 ruling is paved by the *touches*, the hits of either face's edges on the
 other face that lie on it (every curve in a face tangent to the other
