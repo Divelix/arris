@@ -26,7 +26,8 @@ and both are normalised, `y = z × x`. A pair is two surfaces or a curve
 The result per sample: `Geom_*::D2` at every parameter and
 `GeomAPI_ProjectPointOnSurf` / `OnCurve` for every point (nearest point,
 its parameters, the distance). Per pair: `IntAna_QuadQuadGeo` for two
-surfaces — the type (`empty`, `coincident`, `line`, `circle`, `ellipse`)
+surfaces — the type (`empty`, `coincident`, `line`, `circle`, `ellipse`,
+or `unsolved` where it finds no conic, `IntAna_NoGeometricSolution`)
 and, for every curve it returns, its type and sampled points — or
 `IntAna_IntConicQuad` for a curve against a surface: `coincident`, or
 `points` with every hit's point and conic parameter, duplicates within
@@ -184,7 +185,11 @@ def intersect_surfaces(name_a: str, kind_a: str, a, name_b: str, kind_b: str, b)
     """`IntAna_QuadQuadGeo` on the two `gp` quadrics."""
     qa, qb = _QUADRIC_OF[kind_a](a), _QUADRIC_OF[kind_b](b)
     try:
-        r = IntAna_QuadQuadGeo(qa, qb, Precision.Angular_s(), Precision.Confusion_s())
+        if kind_a == "cylinder" and kind_b == "cylinder":
+            # The cylinder pair's overload takes only the distance tolerance.
+            r = IntAna_QuadQuadGeo(qa, qb, Precision.Confusion_s())
+        else:
+            r = IntAna_QuadQuadGeo(qa, qb, Precision.Angular_s(), Precision.Confusion_s())
     except TypeError as e:
         raise OracleError(f"{name_a} vs {name_b}: no IntAna_QuadQuadGeo for {kind_a}–{kind_b}: {e}") from e
     if not r.IsDone():
@@ -204,6 +209,8 @@ def intersect_surfaces(name_a: str, kind_a: str, a, name_b: str, kind_b: str, b)
     elif t == IntAna_ResultType.IntAna_Ellipse:
         out["type"] = "ellipse"
         out["curves"] = [_sample_closed("ellipse", r.Ellipse(i + 1)) for i in range(r.NbSolutions())]
+    elif t == IntAna_ResultType.IntAna_NoGeometricSolution:
+        out["type"] = "unsolved"
     else:
         raise OracleError(f"{name_a} vs {name_b}: unexpected IntAna result {t}")
     return out

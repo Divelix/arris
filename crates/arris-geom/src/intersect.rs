@@ -12,14 +12,17 @@ use crate::{Curve, GeomError, GeomKind, Surface};
 /// rounding, with a frame that is Arris's own deterministic choice
 /// (`docs/DATA-MODEL.md` §Curves): a circle on a cylinder takes the
 /// cylinder's `X`, an ellipse's `X` is its major axis in the direction of
-/// increasing `v`, a ruling on a cylinder runs along its `Z` from the
-/// point nearest the cylinder's origin, and the line of two planes starts
-/// at its point nearest the first plane's origin. Swapping the operands
-/// gives the same point sets, up to the orientation of a line.
+/// increasing `v` (on the first cylinder, for two), a ruling on a
+/// cylinder runs along its `Z` from the point nearest the cylinder's
+/// origin (the first cylinder's, for two), and the line of two planes
+/// starts at its point nearest the first plane's origin. Swapping the
+/// operands gives the same point sets, up to the orientation of a line and
+/// the order of two parallel cylinders' rulings.
 #[derive(Debug, Clone, PartialEq)]
 pub enum SurfaceIntersection {
     /// The surfaces do not meet: parallel planes apart by more than the
-    /// linear tolerance, a plane clear of a cylinder.
+    /// linear tolerance, a plane clear of a cylinder, two cylinders apart
+    /// or one nested in the other.
     Empty,
     /// The surfaces are the same surface within the tolerance; there is
     /// no curve to return.
@@ -27,7 +30,8 @@ pub enum SurfaceIntersection {
     /// The surfaces cross along these curves.
     Transversal(Vec<Curve>),
     /// The surfaces touch along these curves without crossing: a plane
-    /// tangent to a cylinder along a ruling.
+    /// tangent to a cylinder along a ruling, or two cylinders with
+    /// parallel axes touching outside or inside.
     Tangent(Vec<Curve>),
 }
 
@@ -46,10 +50,15 @@ pub enum SurfaceIntersection {
 /// axis, an ellipse when oblique (`b = R`, `a = R / |n · Z|`, centred at
 /// the axis's piercing point), and when perpendicular two `Transversal`
 /// rulings, one `Tangent` ruling or `Empty` by the axis-to-plane distance
-/// against `R`; cylinder–cylinder is `Coincident` or `Empty` for two
-/// coaxial cylinders and `Unsupported` for every other pose, the quartic
-/// space curve being cycle 2's. Read `IntAna_QuadQuadGeo` in the
-/// reference tree for the case analysis, reimplemented on our frames.
+/// against `R`. Cylinder–cylinder with parallel axes is `Coincident` or
+/// `Empty` when coaxial, one `Tangent` ruling when the axes are `ra + rb`
+/// or `|ra − rb|` apart, two `Transversal` rulings between those
+/// distances and `Empty` beyond them; with crossing axes and equal radii
+/// it is two `Transversal` ellipses in the planes bisecting the axes;
+/// with skew axes further apart than `ra + rb` it is `Empty`. Crossing
+/// axes of unequal radii and skew axes within `ra + rb` meet in a quartic
+/// space curve and are `Unsupported`, C3's. Read `IntAna_QuadQuadGeo` in
+/// the reference tree for the case analysis, reimplemented on our frames.
 ///
 /// ```
 /// use arris_geom::{Curve, Surface, SurfaceIntersection, intersect_surfaces};
@@ -109,14 +118,16 @@ pub fn intersect_surfaces(
     }
 }
 
-/// Two cylinders, as far as there is a closed form: `Coincident` when
-/// the axes are the same line and the radii agree, `Empty` when they are
-/// the same line and the radii do not (two coaxial tubes never meet), and
-/// [`GeomError::Unsupported`] otherwise — the curve of two crossing
-/// cylinders is a quartic space curve with no conic form, and it is
-/// cycle 2's (`docs/DATA-MODEL.md` §Curves, the open question). The
-/// unsupported case is written out, not a wildcard: a new surface kind
-/// still fails the match to compile.
+/// Two cylinders, as far as there is a closed form: parallel axes in
+/// [`parallel_cylinders`], crossing axes of equal radii in
+/// [`crossing_cylinders`], and skew axes further apart than the two radii
+/// `Empty` — every point of a cylinder is within its radius of its axis,
+/// so by the triangle inequality the two never meet. Crossing axes of
+/// unequal radii and skew axes within the radii meet in a quartic space
+/// curve with no conic form, which is C3's (`docs/DATA-MODEL.md` §Curves,
+/// the open question): [`GeomError::Unsupported`]. The unsupported poses
+/// are written out, not a wildcard: a new surface kind still fails the
+/// match to compile.
 fn cylinder_cylinder(
     a: &Surface,
     b: &Surface,
@@ -126,23 +137,151 @@ fn cylinder_cylinder(
     rb: f64,
     tol: Tolerance,
 ) -> Result<SurfaceIntersection, GeomError> {
-    let coaxial = line_angle(&ca.z(), &cb.z()) <= tol.angular && {
-        // The offset between the origins, across the axis: zero when the
-        // two axes are one line.
-        let offset = cb.origin() - ca.origin();
-        offset.cross(&ca.z()).norm() <= tol.linear
+    let unsupported = || GeomError::Unsupported {
+        a: GeomKind::Surface(a.kind()),
+        b: GeomKind::Surface(b.kind()),
     };
-    if !coaxial {
-        return Err(GeomError::Unsupported {
-            a: GeomKind::Surface(a.kind()),
-            b: GeomKind::Surface(b.kind()),
-        });
+    let offset = cb.origin() - ca.origin();
+    if line_angle(&ca.z(), &cb.z()) <= tol.angular {
+        return Ok(parallel_cylinders(ca, ra, rb, offset, tol));
     }
-    Ok(if (ra - rb).abs() <= tol.linear {
-        SurfaceIntersection::Coincident
+    // The axes are not parallel, so their cross product has a length of at
+    // least sin(tol.angular) and normalises; only a non-finite frame fails.
+    let Some(common) = UnitVec3::try_new(ca.z().cross(&cb.z()), 0.0) else {
+        return Err(frame_degenerate(GeomKind::Surface(
+            crate::SurfaceKind::Cylinder,
+        )));
+    };
+    // The length of the axes' common perpendicular: their nearest approach.
+    let gap = common.dot(&offset).abs();
+    if gap > tol.linear {
+        return if gap > ra + rb + tol.linear {
+            Ok(SurfaceIntersection::Empty)
+        } else {
+            Err(unsupported())
+        };
+    }
+    if (ra - rb).abs() > tol.linear {
+        return Err(unsupported());
+    }
+    crossing_cylinders(ca, cb, offset, 0.5 * (ra + rb))
+}
+
+/// Two cylinders whose axes are parallel, `d` the distance between the
+/// axes: coaxial (`d` within `tol.linear`) is `Coincident` when the radii
+/// agree and `Empty` when they do not; `d` within `tol.linear` of
+/// `ra + rb` (outside) or of `|ra − rb|` (inside) is one `Tangent` ruling;
+/// strictly between the two, the two `Transversal` rulings through the
+/// crossing points of the two circles in a plane across the axes;
+/// otherwise `Empty`. Every ruling runs along `ca`'s `Z` from its point in
+/// the plane across the axis through `ca`'s origin — the point nearest
+/// that origin — and the two are ordered by their offset along
+/// `Z × ŵ`, `ŵ` the unit vector from `ca`'s axis toward `cb`'s: negative
+/// first. The tangent ruling is on `ca` to rounding, `ra` along `±ŵ`.
+fn parallel_cylinders(
+    ca: &Frame,
+    ra: f64,
+    rb: f64,
+    offset: Vec3,
+    tol: Tolerance,
+) -> SurfaceIntersection {
+    let axis = ca.z();
+    let z: Vec3 = axis.into_inner();
+    let across = offset - offset.dot(&z) * z;
+    let d = across.norm();
+    if d <= tol.linear {
+        return if (ra - rb).abs() <= tol.linear {
+            SurfaceIntersection::Coincident
+        } else {
+            SurfaceIntersection::Empty
+        };
+    }
+    let towards = across / d;
+    // The crossing points' offset along `towards` from the first axis, by
+    // the radical line of the two circles.
+    let along = (d * d + ra * ra - rb * rb) / (2.0 * d);
+    let outside = (d - (ra + rb)).abs() <= tol.linear;
+    let inside = (d - (ra - rb).abs()).abs() <= tol.linear;
+    if outside || inside {
+        // `along` is `ra` at an outside touch and at an inside one around
+        // the smaller cylinder, `−ra` at an inside one within the larger:
+        // its sign says which side of the first axis the ruling is on.
+        return SurfaceIntersection::Tangent(vec![Curve::Line {
+            origin: ca.origin() + ra.copysign(along) * towards,
+            direction: axis,
+        }]);
+    }
+    if d > ra + rb || d < (ra - rb).abs() {
+        return SurfaceIntersection::Empty;
+    }
+    // Strictly between the tangent distances `|along| < ra`, clear of it by
+    // more than the tolerance; the clamp only absorbs rounding.
+    let half = (ra * ra - along * along).max(0.0).sqrt();
+    let side = z.cross(&towards);
+    let foot = ca.origin() + along * towards;
+    SurfaceIntersection::Transversal(vec![
+        Curve::Line {
+            origin: foot - half * side,
+            direction: axis,
+        },
+        Curve::Line {
+            origin: foot + half * side,
+            direction: axis,
+        },
+    ])
+}
+
+/// Two cylinders of one `radius` whose axes cross: two `Transversal`
+/// ellipses in the planes that bisect the axes, centred at the crossing.
+/// With `a` and `b` the axes, `b` flipped so that `a · b ≥ 0` and `ψ` the
+/// angle between them, the first ellipse has `Z` along `a − b`, `X` along
+/// `a + b` and major radius `R / sin(ψ/2)`; the second has `Z` along
+/// `a + b`, `X` along `a − b` and major radius `R / cos(ψ/2)`; both have
+/// minor radius `R` along `a × b`. A point equidistant from both axes in
+/// a plane through the crossing is on one cylinder exactly when it is on
+/// the other, and those planes are the bisectors; each ellipse is then
+/// `ca`'s oblique section. Both `X`s point toward increasing `v` on `ca`.
+/// The crossing is the midpoint of the axes' nearest points, so swapping
+/// the operands gives the same ellipses; the two ellipses cross each other
+/// at `±R` along `a × b`.
+fn crossing_cylinders(
+    ca: &Frame,
+    cb: &Frame,
+    offset: Vec3,
+    radius: f64,
+) -> Result<SurfaceIntersection, GeomError> {
+    let a: Vec3 = ca.z().into_inner();
+    let b: Vec3 = if ca.z().dot(&cb.z()) < 0.0 {
+        -cb.z().into_inner()
     } else {
-        SurfaceIntersection::Empty
-    })
+        cb.z().into_inner()
+    };
+    // The nearest points of the two axes: `s` along `a` from `ca`'s origin
+    // and `t` along `b` from `cb`'s, `1 − c²` being `sin²ψ`, not zero.
+    let c = a.dot(&b);
+    let denom = 1.0 - c * c;
+    let (on_a, on_b) = (offset.dot(&a), offset.dot(&b));
+    let s = (on_a - c * on_b) / denom;
+    let t = (c * on_a - on_b) / denom;
+    let near_a = ca.origin() + s * a;
+    let near_b = cb.origin() + t * b;
+    let centre = near_a + 0.5 * (near_b - near_a);
+    let (minus, plus) = (a - b, a + b);
+    // `|a − b| = 2 sin(ψ/2)` and `|a + b| = 2 cos(ψ/2)`, each measured
+    // directly so a small angle keeps its digits.
+    let ellipse = |z: Vec3, x: Vec3, half_chord: f64| {
+        Frame::new(centre, z, x)
+            .map(|frame| Curve::Ellipse {
+                frame,
+                major_radius: 2.0 * radius / half_chord,
+                minor_radius: radius,
+            })
+            .map_err(|_| frame_degenerate(GeomKind::Surface(crate::SurfaceKind::Cylinder)))
+    };
+    Ok(SurfaceIntersection::Transversal(vec![
+        ellipse(minus, plus, minus.norm())?,
+        ellipse(plus, minus, plus.norm())?,
+    ]))
 }
 
 /// The angle in `[0, π/2]` between the lines carried by two unit vectors:

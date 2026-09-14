@@ -183,22 +183,46 @@ bound with the same floors and ceiling.
 `intersect_surfaces(a, b, tol)` returns `SurfaceIntersection::{Empty,
 Coincident, Transversal(Vec<Curve>), Tangent(Vec<Curve>)}` for the pairs
 with a closed form and `GeomError::Unsupported` naming the pair for every
-other — in cycle 1, plane–plane (a line), plane–cylinder (a circle, an
-ellipse, two rulings, one tangent ruling, or nothing) and the *coaxial*
-half of cylinder–cylinder (`Coincident` when the radii agree within
-`tol.linear`, `Empty` when they do not, since two coaxial tubes never
-meet); every other cylinder pair, and every pair with a `Nurbs` operand,
-is an explicit `Unsupported` arm. `tol.angular`
-decides parallel and perpendicular, `tol.linear` decides coincident,
-tangent and empty. An intersection curve's frame is Arris's own
-deterministic choice, matching Open CASCADE only where the *surface's*
-parametrisation is concerned: a circle on a cylinder takes the cylinder's
-`X` so the seam is shared; an ellipse's `Z` is the plane's normal and its
-`X` the major axis in the direction of increasing `v`; a line's origin is
-its point nearest the cylinder's origin (plane–cylinder) or the first
-plane's origin (plane–plane), and a ruling's direction is the cylinder's
-`Z`. Swapping the operands gives the same point sets, up to a line's
-orientation.
+other — plane–plane (a line), plane–cylinder (a circle, an ellipse, two
+rulings, one tangent ruling, or nothing) and cylinder–cylinder wherever
+the curve is a line or a conic, by the table below; every other pair,
+and every pair with a `Nurbs` operand, is an explicit `Unsupported` arm.
+`tol.angular` decides parallel and perpendicular, `tol.linear` decides
+coincident, tangent and empty.
+
+| Two cylinders, radii `R₁`, `R₂` | Result |
+|---|---|
+| Parallel axes, `d` apart, `d ≤ tol.linear` (coaxial) | `Coincident` when the radii agree within `tol.linear`, `Empty` when they do not |
+| Parallel, `d` within `tol.linear` of `R₁ + R₂` or of `\|R₁ − R₂\|` | `Tangent`, one ruling |
+| Parallel, `\|R₁ − R₂\| < d < R₁ + R₂` | `Transversal`, two rulings |
+| Parallel, otherwise (apart, nested) | `Empty` |
+| Crossing axes (nearest approach within `tol.linear`), radii equal within `tol.linear` | `Transversal`, two ellipses |
+| Crossing axes, unequal radii | `Unsupported` (a quartic, C3) |
+| Skew axes, nearest approach over `R₁ + R₂ + tol.linear` | `Empty` (triangle inequality) |
+| Skew axes, nearest approach within that | `Unsupported` (a quartic, C3) |
+
+An intersection curve's frame is Arris's own deterministic choice,
+matching Open CASCADE only where the *surface's* parametrisation is
+concerned: a circle on a cylinder takes the cylinder's `X` so the seam is
+shared; a plane–cylinder ellipse's `Z` is the plane's normal and its `X`
+the major axis in the direction of increasing `v`; a line's origin is its
+point nearest the cylinder's origin (plane–cylinder), the first
+cylinder's origin (cylinder–cylinder) or the first plane's origin
+(plane–plane), and a ruling's direction is the (first) cylinder's `Z`.
+Two parallel cylinders' rulings are ordered by their offset along
+`Z × ŵ`, `ŵ` the unit vector from the first axis toward the second,
+negative first; a tangent ruling is the first cylinder's, `R₁` along `ŵ`
+(along `−ŵ` for an inside touch within the larger second). Two crossing
+cylinders of radius `R`, axes `a` and `b` with `b` flipped so that
+`a · b ≥ 0` and `ψ` the angle between them, meet in ellipses centred at
+the midpoint of the axes' nearest points: the first with `Z` along
+`a − b`, `X` along `a + b` and major radius `R / sin(ψ/2)`, the second
+with `Z` along `a + b`, `X` along `a − b` and major radius `R / cos(ψ/2)`,
+both with minor radius `R` along `a × b` — each `X` toward increasing `v`
+on the first cylinder — and the two ellipses cross each other at `±R`
+along `a × b`, off the plane of the axes. Swapping the operands gives the
+same point sets, up to a line's orientation and the order of two
+rulings.
 
 `intersect_curve_surface(c, s, tol)` returns `CurveSurfaceIntersection::{
 Points(Vec<CurveSurfaceHit>), Coincident}` for the pairs with a closed form
@@ -244,8 +268,8 @@ with an ellipse in it is `Coincident` when the two are the same conic
 a boolean made and the edge a second boolean meets it with) and
 `Unsupported` otherwise, as is any pair with a `Nurbs` operand.
 
-`⚠ OPEN:` the intersection curve of two cylinders (and of the other quadric
-pairs whose curves are not conics) has an exact parametrisation that is not
+`⚠ OPEN:` the intersection curve of two cylinders in a quartic pose (and of
+the other quadric pairs whose curves are not conics) has an exact parametrisation that is not
 a `Curve` variant. Either it becomes one (`Curve::QuadricSection`, exact,
 with STEP export fitting a B-spline at write time) or the intersector fits
 `Curve::Nurbs` to the edge's tolerance and the exact form is never stored.

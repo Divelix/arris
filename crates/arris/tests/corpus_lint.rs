@@ -181,7 +181,11 @@ fn a_geometry_fixture_is_linted_for_presence_hash_and_shape() {
         .filter(|d| kind_of(d).unwrap() == Kind::Geometry)
         .map(|d| arris_debug::fixtures::name_of(d))
         .collect();
-    for expected in ["geom/analytic-eval", "geom/c1-intersections"] {
+    for expected in [
+        "geom/analytic-eval",
+        "geom/c1-intersections",
+        "geom/c2-cylinder-pairs",
+    ] {
         assert!(geometry.iter().any(|n| n == expected), "missing {expected}");
     }
 

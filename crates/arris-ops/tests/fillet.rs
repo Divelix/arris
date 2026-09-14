@@ -8,14 +8,12 @@
 
 use arris_debug::fixtures::Class;
 use arris_debug::{corpus, dump_text, fixtures};
-use arris_ops::arris_check::arris_topo::arris_geom::{
-    Profile, ProfileLoop, ProfileSegment, SurfaceKind,
-};
+use arris_ops::arris_check::arris_topo::arris_geom::{Profile, ProfileLoop, ProfileSegment};
 use arris_ops::arris_check::arris_topo::arris_math::{Axis, Frame, Point2, Point3, Vec3};
 use arris_ops::arris_check::arris_topo::provenance::{Origin, Relation, Role, SweepPart, audit};
 use arris_ops::arris_check::arris_topo::{Body, Edge, EntityId, Model, Orientation, Shape};
 use arris_ops::arris_check::classify::{Classification, classify_point};
-use arris_ops::arris_check::{Level, Unchecked, check};
+use arris_ops::arris_check::{Level, check};
 use arris_ops::measure::mass_properties;
 use arris_ops::{OpError, Reason, extrude, fillet, primitive_box, revolve};
 
@@ -402,16 +400,16 @@ fn a_pair_outside_the_table_is_unsupported() {
 }
 
 /// The miter (ADR-0007): the vertical and the cap edge at one corner of
-/// the 2-cube blended in one call, the fixture `regression/fillet-miter`
-/// held to the oracle's numbers here while the corpus's checker stage
-/// waits for the cylinder–cylinder arm: `Full` is clean but for exactly
-/// one S5 row, the two blend cylinders with crossing axes; counts,
-/// volume, area, centroid and every probe are the oracle's; the miter
-/// edge and its two vertices are generated from both edges; the record
-/// audits; and the two edges in either order build the same result.
+/// the 2-cube blended in one call, the fixture `blend/fillet-miter`
+/// held to the oracle's numbers here as well: `Full` is clean with nothing
+/// unchecked, the two blend cylinders with crossing axes of equal radius
+/// decided by the cylinder–cylinder arm; counts, volume, area, centroid
+/// and every probe are the oracle's; the miter edge and its two vertices
+/// are generated from both edges; the record audits; and the two edges in
+/// either order build the same result.
 #[test]
 fn two_edges_at_a_vertex_meet_in_a_miter() {
-    let dir = fixtures::corpus_root().join("regression/fillet-miter");
+    let dir = fixtures::corpus_root().join("blend/fillet-miter");
     let fixture = fixtures::load(&dir).unwrap();
     let chain = corpus::chain(&dir, "default").unwrap();
     let (m, blended) = (&chain.model, chain.result().unwrap());
@@ -419,19 +417,7 @@ fn two_edges_at_a_vertex_meet_in_a_miter() {
 
     let report = check(m, blended, Level::Full);
     assert!(report.is_ok(), "{report}");
-    let [row] = report.unchecked() else {
-        panic!("one unchecked row, the miter's cylinders:\n{report}");
-    };
-    assert!(
-        matches!(
-            row,
-            Unchecked::FacePair {
-                kinds: (SurfaceKind::Cylinder, SurfaceKind::Cylinder),
-                ..
-            }
-        ),
-        "{row}"
-    );
+    assert!(report.unchecked().is_empty(), "{report}");
 
     let expected = &fixture.expected.results["default"];
     let line = report.euler().unwrap();
@@ -605,7 +591,7 @@ fn two_cap_edges_are_the_same_miter_rotated() {
     let (blended, provenance) = fillet(&mut m, body, &[along_x, along_y], 0.2).unwrap();
     let report = check(&m, blended, Level::Full);
     assert!(report.is_ok(), "{report}");
-    assert_eq!(report.unchecked().len(), 1, "{report}");
+    assert!(report.unchecked().is_empty(), "{report}");
     let line = report.euler().unwrap();
     assert_eq!(
         (line.vertices, line.edges, line.faces, line.loops),

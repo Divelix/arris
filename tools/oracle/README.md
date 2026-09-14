@@ -51,7 +51,8 @@ commit that says so (`.agents/rules/git.md`).
   `Geom_SphericalSurface`, `Geom_ToroidalSurface`, `Geom_Line`,
   `Geom_Circle` and `Geom_Ellipse` from named specs; `D2` at every
   parameter; `GeomAPI_ProjectPointOnSurf` / `OnCurve` for every point;
-  `IntAna_QuadQuadGeo` for surface pairs and `IntAna_IntConicQuad` for a
+  `IntAna_QuadQuadGeo` for surface pairs (`unsolved` where it reports
+  `NoGeometricSolution`) and `IntAna_IntConicQuad` for a
   curve against a surface, hits deduplicated within `Precision::Confusion`
   and dropped (counted) when off either operand.
 - `oracle/step.py` — STEP AP214 write and read, with OCCT's transfer

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""generate.py — write the two geometry fixtures' `fixture.json` under
-this directory: `analytic-eval` (every analytic variant in three poses,
-parameters on and off the seam, projections from both sides) and
+"""generate.py — write the geometry fixtures' `fixture.json` under this
+directory: `analytic-eval` (every analytic variant in three poses,
+parameters on and off the seam, projections from both sides),
 `c1-intersections` (every case of the cycle-1 intersection table in one
-committed general pose). Plain Python, no Open CASCADE: the coordinates
+committed general pose) and `c2-cylinder-pairs` (every pose of the
+cylinder–cylinder table in that pose). Plain Python, no Open CASCADE: the coordinates
 are the closed forms of `docs/DATA-MODEL.md` §Geometry written out in
 world space at full precision, so both sides read identical numbers.
 Rerun after editing, then `tools/oracle/expected.py` on each directory.
@@ -364,6 +365,68 @@ def c1_intersections():
     }
 
 
+# --- c2-cylinder-pairs --------------------------------------------------------------
+
+
+def c2_cylinder_pairs():
+    f = POSES["tilt"]
+    R = 2.0
+    z = f.z
+    surfaces = {"cyl": {"type": "cylinder", **f.spec(radius=R)}}
+    pairs = []
+
+    def cylinder(name, origin, axis, x_hint, radius):
+        surfaces[name] = {"type": "cylinder", **Frame(origin, axis, x_hint).spec(radius=radius)}
+
+    def pair(a, b):
+        pairs.append({"a": a, "b": b})
+
+    a, across = f.around(0.6)
+    on_axis = f.to_world([0.0, 0.0, 1.5])
+    # Parallel axes, `d` apart along `a`, each origin slid along the axis
+    # and one axis reversed: two rulings, a touch outside and inside
+    # (`d = R + r` and `R − r`), apart, nested.
+    r = 1.5
+    for name, d, radius, flip in [
+        ("two", 2.0, r, False),
+        ("outside", R + r, r, True),
+        ("inside", R - r, r, False),
+        ("apart", R + r + 1.0, r, False),
+        ("nested", 0.8, 0.5, True),
+    ]:
+        axis = mul(-1.0, z) if flip else z
+        cylinder(name, add(add(on_axis, mul(d, a)), mul(-0.7, z)), axis, across, radius)
+        pair("cyl", name)
+    # Crossing axes through a point of the first, equal radii at 90° and
+    # 50°: two ellipses each. Unequal radii: a quartic, unsolved.
+    psi = math.radians(50.0)
+    cylinder("cross_90", add(on_axis, mul(0.7, a)), a, z, R)
+    cylinder("cross_50", add(on_axis, mul(-1.1, add(mul(math.cos(psi), z), mul(math.sin(psi), a)))), add(mul(math.cos(psi), z), mul(math.sin(psi), a)), across, R)
+    cylinder("cross_unequal", add(on_axis, mul(0.4, across)), across, z, 1.2)
+    for name in ["cross_90", "cross_50", "cross_unequal"]:
+        pair("cyl", name)
+    # Skew axes along `a`, their common perpendicular along `across`:
+    # further apart than the radii (empty by the triangle inequality) and
+    # within them (a quartic). Unequal radii: Open CASCADE reports two
+    # ellipses for equal radii whatever the gap.
+    cylinder("skew_apart", add(on_axis, mul(R + 1.2 + 0.8, across)), a, z, 1.2)
+    cylinder("skew_close", add(on_axis, mul(1.5, across)), a, z, 1.2)
+    for name in ["skew_apart", "skew_close"]:
+        pair("cyl", name)
+    # Two pairs the other way round: the rulings from the second operand's
+    # origin, the ellipses with the axes swapped.
+    pair("two", "cyl")
+    pair("cross_50", "cyl")
+    return {
+        "kind": "geometry",
+        "description": "every case of the cylinder–cylinder table around one cylinder in the tilt pose: parallel axes giving two rulings, a tangent ruling outside and inside, apart and nested; crossing axes of equal radii at 90° and 50° giving two ellipses; crossing axes of unequal radii and skew axes within the radii, which Open CASCADE leaves unsolved; skew axes apart, which it leaves unsolved and Arris decides empty; two pairs swapped; written by generate.py",
+        "surfaces": surfaces,
+        "curves": {},
+        "samples": [],
+        "pairs": pairs,
+    }
+
+
 def write(name, recipe):
     directory = HERE / name
     directory.mkdir(exist_ok=True)
@@ -374,3 +437,4 @@ def write(name, recipe):
 if __name__ == "__main__":
     write("analytic-eval", analytic_eval())
     write("c1-intersections", c1_intersections())
+    write("c2-cylinder-pairs", c2_cylinder_pairs())

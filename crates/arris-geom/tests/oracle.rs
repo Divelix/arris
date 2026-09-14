@@ -13,8 +13,8 @@ use arris_debug::fixtures::geom::{
 use arris_debug::fixtures::{Kind, corpus, kind_of};
 use arris_debug::testing::{REL, close, close_param};
 use arris_geom::{
-    Curve, CurveSurfaceIntersection, Surface, SurfaceIntersection, intersect_curve_surface,
-    intersect_surfaces,
+    Curve, CurveSurfaceIntersection, GeomError, Surface, SurfaceIntersection,
+    intersect_curve_surface, intersect_surfaces,
 };
 use arris_math::{Point3, Precision, Tolerance, Vec3};
 
@@ -22,7 +22,8 @@ use arris_math::{Point3, Precision, Tolerance, Vec3};
 /// conditioned as the square root of the rounding — a touch perturbed
 /// by 1e-15 in distance moves its point by 1e-7·√R — so the oracle's
 /// points at a touch (it reports none, one or two, having no tolerance
-/// there) are held to this against Arris's tangent hit.
+/// there) are held to this against Arris's tangent hit, and so are its
+/// one or two rulings where two parallel cylinders touch.
 const TOUCH: f64 = 1e-6;
 
 fn tol() -> Tolerance {
@@ -188,6 +189,17 @@ fn surface_type(r: &SurfaceIntersection) -> (String, &[Curve]) {
 
 fn check_surface_pair(a: &Surface, b: &Surface, res: &PairResult, errors: &mut Vec<String>) {
     let label = format!("{} vs {}", res.a, res.b);
+    if res.kind == "unsolved" {
+        // The oracle found no conic: a quartic Arris refuses too, or a
+        // pair Arris decides empty by its closed form (skew axes further
+        // apart than the radii), which the oracle has no case for. Which
+        // one each pair is, is pinned by name below.
+        match intersect_surfaces(a, b, tol()) {
+            Err(GeomError::Unsupported { .. }) | Ok(SurfaceIntersection::Empty) => {}
+            other => errors.push(format!("{label}: {other:?} vs oracle unsolved")),
+        }
+        return;
+    }
     let r = match intersect_surfaces(a, b, tol()) {
         Ok(r) => r,
         Err(e) => {
@@ -196,7 +208,16 @@ fn check_surface_pair(a: &Surface, b: &Surface, res: &PairResult, errors: &mut V
         }
     };
     let (kind, curves) = surface_type(&r);
-    if kind != res.kind || curves.len() != res.curves.len() {
+    // At a touch the oracle, deciding it by rounding, may split one ruling
+    // into two a square root of the rounding apart: every oracle curve is
+    // then held to TOUCH against our one, whatever their count.
+    let touch = matches!(r, SurfaceIntersection::Tangent(_));
+    let counts_agree = if touch {
+        !res.curves.is_empty()
+    } else {
+        curves.len() == res.curves.len()
+    };
+    if kind != res.kind || !counts_agree {
         errors.push(format!(
             "{label}: {kind} with {} curves vs oracle {} with {}",
             curves.len(),
@@ -207,18 +228,27 @@ fn check_surface_pair(a: &Surface, b: &Surface, res: &PairResult, errors: &mut V
     }
     // Each oracle curve is one of ours: every sampled point lies on some
     // Arris curve of the same kind, and each Arris curve carries one
-    // oracle curve.
+    // oracle curve (all of them, at a touch).
     let mut taken = vec![false; curves.len()];
     for sample in &res.curves {
         let on = |c: &Curve| {
             c.kind().to_string() == sample.kind
                 && sample.points.iter().all(|p| {
+                    let bound = if touch {
+                        TOUCH
+                    } else {
+                        REL * p3(p).coords.norm().max(1.0)
+                    };
                     c.project(p3(p))
-                        .map(|proj| proj.distance <= REL * p3(p).coords.norm().max(1.0))
+                        .map(|proj| proj.distance <= bound)
                         .unwrap_or(false)
                 })
         };
-        match curves.iter().enumerate().find(|(i, c)| !taken[*i] && on(c)) {
+        match curves
+            .iter()
+            .enumerate()
+            .find(|(i, c)| (touch || !taken[*i]) && on(c))
+        {
             Some((i, _)) => taken[i] = true,
             None => errors.push(format!(
                 "{label}: the oracle's {} through {:?} is not one of {curves:?}",
@@ -294,8 +324,8 @@ fn turn_diff(a: f64, b: f64, c: &Curve) -> f64 {
 fn every_geometry_fixture_matches_the_oracle() {
     let fixtures = geometry_fixtures();
     assert!(
-        fixtures.len() >= 2,
-        "expected geom/analytic-eval and geom/c1-intersections"
+        fixtures.len() >= 3,
+        "expected geom/analytic-eval, geom/c1-intersections and geom/c2-cylinder-pairs"
     );
     let mut errors = Vec::new();
     for f in &fixtures {
@@ -422,5 +452,52 @@ fn the_c1_intersection_cases_classify_as_built() {
             )),
         };
         assert_eq!(got, *expected, "{a} vs {b}: {r:?}");
+    }
+}
+
+/// What Arris says about every pair of `geom/c2-cylinder-pairs`, by name.
+/// The oracle's `unsolved` admits both a refusal and a closed-form empty,
+/// and a tangent ruling reads as a line there, so the case is pinned here.
+#[test]
+fn the_c2_cylinder_pairs_classify_as_built() {
+    let f = geometry_fixtures()
+        .into_iter()
+        .find(|f| f.name == "geom/c2-cylinder-pairs")
+        .expect("geom/c2-cylinder-pairs");
+    let built = build(&f);
+    let cases: &[(&str, &str, &str, usize)] = &[
+        ("cyl", "two", "line", 2),
+        ("cyl", "outside", "tangent line", 1),
+        ("cyl", "inside", "tangent line", 1),
+        ("cyl", "apart", "empty", 0),
+        ("cyl", "nested", "empty", 0),
+        ("cyl", "cross_90", "ellipse", 2),
+        ("cyl", "cross_50", "ellipse", 2),
+        ("cyl", "cross_unequal", "unsupported", 0),
+        ("cyl", "skew_apart", "empty", 0),
+        ("cyl", "skew_close", "unsupported", 0),
+        ("two", "cyl", "line", 2),
+        ("cross_50", "cyl", "ellipse", 2),
+    ];
+    assert_eq!(
+        cases.len(),
+        f.recipe.pairs.len(),
+        "every pair of the fixture is pinned here"
+    );
+    for (a, b, kind, count) in cases {
+        let got = match intersect_surfaces(&built.surfaces[*a], &built.surfaces[*b], tol()) {
+            Err(GeomError::Unsupported { .. }) => ("unsupported".to_owned(), 0),
+            Err(e) => panic!("{a} vs {b}: {e}"),
+            Ok(r) => {
+                let (got, curves) = surface_type(&r);
+                let got = if matches!(r, SurfaceIntersection::Tangent(_)) {
+                    format!("tangent {got}")
+                } else {
+                    got
+                };
+                (got, curves.len())
+            }
+        };
+        assert_eq!((got.0.as_str(), got.1), (*kind, *count), "{a} vs {b}");
     }
 }

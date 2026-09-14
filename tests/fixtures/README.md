@@ -222,9 +222,15 @@ oracle's sampled points on Arris's curves to 1e-9.
 - A sample's `params` are `[u, v]` pairs for a surface and `t` values for
   a curve; `points` are projected. A pair is two surfaces, or a curve `a`
   against a surface `b`.
-- The two fixtures here are written by `geom/generate.py` (closed forms at
+- The fixtures here are written by `geom/generate.py` (closed forms at
   full precision in committed poses) — edit and rerun it, then
-  `expected.py`, rather than the numbers.
+  `expected.py`, rather than the numbers: `analytic-eval`,
+  `c1-intersections` (the plane and plane–cylinder table) and
+  `c2-cylinder-pairs` (every pose of the cylinder–cylinder table).
+- A surface pair Open CASCADE finds no conic for is `"type": "unsolved"`
+  (`IntAna_NoGeometricSolution`). The oracle test holds Arris to
+  `Unsupported` or to a closed-form `Empty` against it, and
+  `oracle.rs` pins which one each pair is by name.
 - The corpus lint checks presence, hash and shape for this kind (every
   name resolves, every spec builds, one result per sample and pair with
   the counts asked for); the values are the oracle test's to compare.
@@ -234,7 +240,17 @@ oracle's sampled points on Arris's curves to 1e-9.
   and Arris's single `tangent` hit is compared against whatever it
   reported to 1e-6 (a touch is conditioned as the square root of the
   rounding); a line parallel to the axis yields a hit at `t ≈ 1e16` that
-  the oracle drops as off both operands and counts under `dropped`.
+  the oracle drops as off both operands and counts under `dropped`. Two
+  parallel cylinders touching come back as one ruling or as two about
+  1e-7 apart, by the same rounding (`c2-cylinder-pairs`' inside touch is
+  two), and each is compared against Arris's single `Tangent` ruling to
+  1e-6. The
+  cylinder–cylinder intersector has no case for skew axes: it answers
+  `unsolved` for unequal radii whether or not the cylinders can meet,
+  and two ellipses for equal radii whatever the gap between the axes. So
+  `c2-cylinder-pairs` gives its skew pairs unequal radii, and Arris's
+  `Empty` for the pair further apart than the radii stands against
+  `unsolved`.
 
 ## `expected.json`
 

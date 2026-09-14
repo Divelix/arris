@@ -340,15 +340,15 @@ fn blend_faces(p: &Provenance, edges: &[Edge]) -> Vec<FaceId> {
 }
 
 /// `report` has no violation, and every unchecked row is S5 between two
-/// blend cylinders — the cylinder–cylinder pair the intersector has no
-/// closed form for yet — never one of a chamfer's; at the identity pose,
-/// where every face box of a blend away from a corner is clear of every
-/// other's, exactly one per miter.
+/// blend cylinders in a pose the intersector has no closed form for —
+/// never one of a chamfer's; at the identity pose, where every face box
+/// of a blend away from a corner is clear of every other's and a miter's
+/// two cylinders cross at equal radii, there is none.
 fn assert_checked(
     report: &Report,
     kind: Blend,
     blends: &[FaceId],
-    miters: Option<usize>,
+    at_rest: bool,
 ) -> Result<(), TestCaseError> {
     prop_assert!(report.is_ok(), "{}", report);
     let mut rows = 0;
@@ -371,8 +371,8 @@ fn assert_checked(
         );
         rows += 1;
     }
-    if let (Blend::Fillet, Some(miters)) = (kind, miters) {
-        prop_assert_eq!(rows, miters, "one S5 row per miter\n{}", report);
+    if at_rest {
+        prop_assert_eq!(rows, 0, "nothing unchecked at rest\n{}", report);
     }
     Ok(())
 }
@@ -400,7 +400,7 @@ fn blends_as_their_closed_forms(case: Case, kind: Blend) -> Result<(), TestCaseE
     // Moved, then blended.
     let (m, moved, blended, edges, p) = posed(&case, kind)?;
     let report = check(&m, blended, Level::Full);
-    assert_checked(&report, kind, &blend_faces(&p, &edges), None)?;
+    assert_checked(&report, kind, &blend_faces(&p, &edges), false)?;
     audit(&m, &[moved], blended, &p).map_err(|e| fail(format!("provenance: {e}")))?;
     let props = mass_properties(&m, blended).map_err(fail)?;
     // A fillet miter's ellipse has a fitted pcurve on each cylinder, which
@@ -429,12 +429,7 @@ fn blends_as_their_closed_forms(case: Case, kind: Blend) -> Result<(), TestCaseE
     let (rest, rest_p) = op(kind)(&mut here, prism, &at_rest, case.size)
         .map_err(|e| fail(format!("{kind:?} at rest: {e}")))?;
     let rest_report = check(&here, rest, Level::Full);
-    assert_checked(
-        &rest_report,
-        kind,
-        &blend_faces(&rest_p, &at_rest),
-        Some(case.prism.miters(&case.edges)),
-    )?;
+    assert_checked(&rest_report, kind, &blend_faces(&rest_p, &at_rest), true)?;
     audit(&here, &[prism], rest, &rest_p).map_err(|e| fail(format!("provenance at rest: {e}")))?;
     let (then_moved, _) = transform(&mut here, rest, &case.pose).map_err(fail)?;
     let other = mass_properties(&here, then_moved).map_err(fail)?;

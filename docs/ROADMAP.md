@@ -290,9 +290,9 @@ with their `#[ignore]`d twins — green.*
   `box-cap-edge-fillet`, `box-posed-edge-fillet`, `box-oblique-end`,
   `l-inner-edge`, `box-four-verticals`, `box-edge-chamfer`,
   `box-four-vertical-chamfers`); two chamfers at a corner meet in a line
-  and pass every stage (`box-corner-chamfers`), and the fillet miter builds and
-  matches the oracle (`regression/fillet-miter`, waiting on the
-  cylinder–cylinder line below for its one S5 row). A second fillet on a
+  and pass every stage (`box-corner-chamfers`), and so does the fillet
+  miter (`fillet-miter`), its two blend cylinders decided by the
+  cylinder–cylinder line's equal-radius crossing arm. A second fillet on a
   filleted body passes (`second-fillet`), its composed record naming
   every face by the extrude's parts; the C6 cases Open CASCADE builds are
   refusals by fixture — a tangent chain (`tangent-chain-cap-edge`), a
@@ -300,8 +300,9 @@ with their `#[ignore]`d twins — green.*
   (`box-corner-three-fillets`). At random, a pick of a box's or an L's
   edges in a random pose fillets and chamfers clean at `Full`, audited, at
   its closed-form volume miters included, the same moved before or after
-  and deterministic (`crates/arris-ops/tests/blend_prop.rs`); a fillet's
-  S5 rows between two blend cylinders wait on the cylinder–cylinder line.
+  and deterministic (`crates/arris-ops/tests/blend_prop.rs`), nothing
+  unchecked at rest; in a pose, a fillet's S5 rows between two blend
+  cylinders wait on the cylinder–cylinder line.
 - Cone, sphere and torus in the intersector in the positions a blend and
   M5's revolves put them, every one a conic: a plane against a quadric
   with the plane perpendicular to the axis, a cylinder against a quadric

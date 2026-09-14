@@ -355,8 +355,9 @@ pub struct Interferences {
 /// (debug builds, and release with `paranoid`); [`OpError::NotFound`]
 /// when one does not resolve; [`OpError::Unsupported`] naming the face
 /// pair, or the edge and the face, the kernel has no closed form for —
-/// a cone, a sphere, a torus or a NURBS operand, or two cylinders that
-/// are not coaxial; [`OpError::Tolerance`] when a section vertex would
+/// a cone, a sphere, a torus or a NURBS operand, or two cylinders whose
+/// axes cross at unequal radii or pass within the radii without
+/// crossing; [`OpError::Tolerance`] when a section vertex would
 /// need a tolerance above the model's maximum; [`OpError::Internal`]
 /// for a geometry query that failed on validated input or a section
 /// edge crossing a seam without a pave.

@@ -393,15 +393,11 @@ fn blend_box_corner_three_fillets() {
 
 /// The miter: the vertical and the cap edge at one corner blended in one
 /// call, two cylinders meeting in the ellipse of their bisecting plane
-/// (ADR-0007). Waits under `regression/` because S5 has no closed form
-/// for the two blend cylinders' crossing axes: the checker stage reports
-/// that one pair unchecked until the cylinder–cylinder plan lands the
-/// equal-radius crossing arm; `crates/arris-ops/tests/fillet.rs` holds
-/// the result to the oracle's numbers meanwhile.
+/// (ADR-0007). S5 decides the two blend cylinders by the equal-radius
+/// crossing arm, so the checker stage has nothing unchecked.
 #[test]
-#[ignore = "S5 has no closed form for the miter's two cylinders with crossing axes: waits on the cylinder–cylinder plan (plans/fillet-and-chamfer step 7)"]
-fn regression_fillet_miter() {
-    run("regression/fillet-miter");
+fn blend_fillet_miter() {
+    run("blend/fillet-miter");
 }
 
 /// The same recipe under three parameter sets, one test each so a

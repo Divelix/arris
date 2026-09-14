@@ -670,9 +670,13 @@ Tangent}` for a surface pair, `CurveSurfaceIntersection::{Points,
 Coincident}` for a curve against a surface and `CurveIntersection::{
 Points, Coincident}` for two curves, so a caller matches the case rather
 than counting curves or points. A pair may be supported in part: two
-cylinders are `Coincident` or `Empty` when they are coaxial and
-`Unsupported` in every other pose, since the crossing curve is a quartic
-and cycle 2's — which is still a named arm, not a wildcard. The NURBS variant is one arm like the
+cylinders meet by closed form when their axes are parallel (rulings, or
+`Coincident` or `Empty` when coaxial), when their axes cross at equal
+radii (two ellipses), and when skew axes are further apart than the two
+radii (`Empty`); crossing axes of unequal radii and skew axes within the
+radii are `Unsupported`, since the curve is a quartic and C3's — which is
+still a named arm in the pose analysis, not a wildcard
+(`docs/DATA-MODEL.md` §Curves has the table). The NURBS variant is one arm like the
 others; a NURBS–NURBS marcher, when it comes, is what that arm calls, and
 analytic pairs never route through it.
 

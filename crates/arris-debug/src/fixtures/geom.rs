@@ -522,7 +522,8 @@ pub struct PairResult {
     pub a: String,
     /// The second name.
     pub b: String,
-    /// `empty`, `coincident`, `line`, `circle`, `ellipse` or `points`.
+    /// `empty`, `coincident`, `line`, `circle`, `ellipse`, `unsolved` (no
+    /// conic: `IntAna_NoGeometricSolution`) or `points`.
     #[serde(rename = "type")]
     pub kind: String,
     /// The result curves of a surface pair.

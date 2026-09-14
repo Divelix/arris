@@ -364,7 +364,8 @@ bound has to be established here.
     chord edge of an extruded D, a cylinder blend tangent to the D's arc
     face along a ruling and ending on the caps, convex; the same edge on
     a C-shaped profile, concave.
-  - `regression/fillet-miter` into `blend/fillet-miter` with its dump.
+  - ~~`regression/fillet-miter` into `blend/fillet-miter` with its dump.~~
+    Done by `plans/cylinder-cylinder-booleans` step 1, whose arm fixed it.
   - Fixtures `blend/d-chord-edge`, `blend/c-chord-edge`.
 - [ ] Step 8 **[2]** — **Closed edges** (waits on the quadric checker
   arms).

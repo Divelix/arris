@@ -115,9 +115,10 @@ row.
   cylinders is the existing `Reason::TangentContact`; a common that
   selects nothing is `Reason::Empty`.
 - **`plans/fillet-and-chamfer` step 7:** its second bullet (moving
-  `regression/fillet-miter` into `blend/`) is done by step 8 here,
-  because the commit that fixes a fixture moves it (kernel rules).
-  Step 8 edits that plan's bullet in the same commit.
+  `regression/fillet-miter` into `blend/`) is done here, because the
+  commit that fixes a fixture moves it (kernel rules). Step 1's arm
+  turned out to be that fix — the miter's two cylinders cross at equal
+  radii — so step 1 moves it and strikes that plan's bullet, not step 8.
 
 ## Steps
 
@@ -127,7 +128,7 @@ mechanical; **[2]** careful — a geometric or numeric case to get right
 within a given design; **[3]** unproven — an algorithm whose robustness or
 bound has to be established here.
 
-- [ ] Step 1 **[2]** — **The intersector arms.**
+- [x] Step 1 **[2]** — **The intersector arms.**
   - `cylinder_cylinder` as §Design deltas: parallel, equal-radius
     crossing, skew and apart. `Unsupported` for the rest, written out.
   - Geometry fixture `geom/c2-cylinder-pairs`, written by
@@ -143,6 +144,14 @@ bound has to be established here.
     narrows to the quartic poses.
   - DATA-MODEL §Curves: the table and the ellipse frames. ARCHITECTURE
     §Geometry dispatch: the cylinder pair's partial support.
+  - *Found at the step:* S5 now decides the miter's two blend cylinders,
+    so the tests that pinned exactly one unchecked row per miter
+    (`fillet.rs`'s two miter tests, `blend_prop.rs` at rest) now pin none,
+    and `regression/fillet-miter`, failing only on S5, passes every stage:
+    it moves to `blend/fillet-miter` with its dump here (§Design deltas).
+    Step 8 keeps the rest. Open CASCADE reports the inside touch of
+    `c2-cylinder-pairs` as two rulings 1e-7 apart; `oracle.rs` holds a
+    touch's rulings to 1e-6, as for a curve's touch.
 - [ ] Step 2 **[3]** — **Two crossing cylinders: section curves that meet
   each other.**
   - The pave model's section crossings (§Design deltas). The (u, v)
@@ -214,19 +223,16 @@ bound has to be established here.
     `audit`, and two runs dumping identically. The crossing common is
     also held to `16R³/(3 sin ψ)`.
   - A failure is shrunk to a `regression/` fixture in this step.
-- [ ] Step 8 **[2]** — **The S5 rows gone, the miter into the corpus.**
-  - `regression/fillet-miter` → `blend/fillet-miter`, with its blessed
-    dump.
-  - The two miter tests in `fillet.rs` allow no unchecked row.
+- [ ] Step 8 **[2]** — **The S5 rows gone.** (The miter's move into
+  `blend/`, `fillet.rs`'s two miter tests and "nothing unchecked at rest"
+  landed with step 1.)
   - `extrude.rs` drops `non_coaxial_cylinders` and allows nothing
     unchecked.
-  - `blend_prop.rs`'s allowance narrows. Nothing is unchecked at rest.
-    In a pose, only S5 between two blend cylinders whose axes are skew
-    within `2r` (the closed form from the case), and never between
-    parallel or crossing ones.
-  - `plans/fillet-and-chamfer` step 7's second bullet is struck (§Design
-    deltas). DATA-MODEL §Curves' "Until then S5 reports…" sentence
-    narrows to the quartic poses.
+  - `blend_prop.rs`'s posed allowance narrows: only S5 between two blend
+    cylinders whose axes are skew within `2r` (the closed form from the
+    case), and never between parallel or crossing ones.
+  - DATA-MODEL §Curves' "Until then S5 reports…" sentence narrows to the
+    quartic poses.
 
 ## Acceptance
 
