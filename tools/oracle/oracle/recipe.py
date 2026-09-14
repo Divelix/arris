@@ -116,7 +116,7 @@ def _eval(node: ast.AST, params: dict[str, float]) -> float:
             return a * b
         if isinstance(node.op, ast.Div):
             return a / b
-        if isinstance(node.op, ast.BitXor):
+        if isinstance(node.op, ast.Pow):
             return a**b
     if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
         f = _FUNCS.get(node.func.id)
@@ -132,8 +132,14 @@ def number(value: Any, params: dict[str, float]) -> float:
     if isinstance(value, (int, float)):
         return float(value)
     if isinstance(value, str):
+        # `^` is power, binding tighter than `* /` and right-associative with
+        # a signed exponent, as `arris_debug::fixtures::expr` parses it:
+        # Python's `**`. Python's own `^` is XOR, below `+ -`, so it is
+        # rewritten before parsing; a `**` written in the recipe is refused.
+        if "**" in value:
+            raise OracleError(f"bad expression {value!r}: `**` is not power here, `^` is")
         try:
-            tree = ast.parse(value, mode="eval")
+            tree = ast.parse(value.replace("^", "**"), mode="eval")
         except SyntaxError as e:
             raise OracleError(f"bad expression {value!r}: {e}") from e
         return _eval(tree, params)

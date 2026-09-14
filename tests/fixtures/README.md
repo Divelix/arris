@@ -92,9 +92,10 @@ of the step that made the fixture pass, and a later change to it is a
 
 - **Numbers** anywhere in `steps`, `probes` and `analytic` may be a JSON
   number or a string expression over `params`: `+ - * / ^`, parentheses,
-  `pi`, and `sin cos tan sqrt radians degrees abs`. `^` is power
-  (`2 ^ 3 ^ 1` is `8`, right-associative); `**` is rejected, not read as
-  power, on both sides. Both sides evaluate the same grammar: proven by
+  `pi`, and `sin cos tan sqrt radians degrees abs`. `^` is power,
+  binding tighter than `* /` and a unary minus (`d^2 / 4` is `d²/4`,
+  `-2 ^ 2` is `−4`) and right-associative (`2 ^ 3 ^ 2` is `512`); `**` is
+  rejected, not read as power, on both sides. Both sides evaluate the same grammar: proven by
   `expr-cases.json` (in this directory), which
   `arris_debug::fixtures::expr`'s own test and the oracle's
   `selftest.py` both evaluate.
