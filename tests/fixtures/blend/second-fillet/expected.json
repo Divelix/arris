@@ -1,0 +1,117 @@
+{
+  "occt": "8.0.1.0.0",
+  "recipe_sha256": "1c09ff08eaa370a234bff2087edd24904226dfdf724da437bd0d858c9ffd42d0",
+  "results": {
+    "default": {
+      "area": 23.62230076757951,
+      "centroid": [
+        0.9958820294669027,
+        0.9999999999999998,
+        0.9999999999999998
+      ],
+      "counts": {
+        "edges": 18,
+        "faces": 8,
+        "loops": 8,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 12
+      },
+      "degenerate": false,
+      "euler_characteristic": 2,
+      "genus": 0,
+      "inertia": [
+        [
+          5.290502644374538,
+          -1.7763568394002505e-15,
+          -2.6645352591003757e-15
+        ],
+        [
+          -1.7763568394002505e-15,
+          5.290367565187978,
+          -1.7763568394002505e-15
+        ],
+        [
+          -2.6645352591003757e-15,
+          -1.7763568394002505e-15,
+          5.270427738800109
+        ]
+      ],
+      "probes": [
+        {
+          "class": "in",
+          "label": "inside",
+          "point": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "first_corner_gone",
+          "point": [
+            1.95,
+            0.05,
+            1.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "second_corner_gone",
+          "point": [
+            1.95,
+            1.95,
+            1.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_first_blend",
+          "point": [
+            1.9414213562373095,
+            0.05857864376269051,
+            1.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_second_blend",
+          "point": [
+            1.9414213562373095,
+            1.9414213562373095,
+            1.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_shared_face",
+          "point": [
+            2.0,
+            1.0,
+            1.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_second_arc",
+          "point": [
+            1.9414213562373095,
+            1.9414213562373095,
+            2.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "far_vertex",
+          "point": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      ],
+      "volume": 7.965663706143593
+    }
+  }
+}

@@ -83,8 +83,12 @@ pub enum Reason {
     BlendTooLarge,
     /// The blended edge's two faces meet at a tangent dihedral — the arc
     /// and the line of a slot's wall, a blend face and its neighbour — so
-    /// there is no corner to roll a ball into; a tangent chain is cycle
-    /// 6's. The error's entities are the edge and its two faces.
+    /// there is no corner to roll a ball into; or the edge ends at a
+    /// vertex where a corner edge's faces are tangent — a blend's contact
+    /// line, where a second blend reaches a first one's end — so the blend
+    /// would run on along a chain. A tangent chain is cycle 6's. The
+    /// error's entities are the edge and its two faces, or at an end the
+    /// edge, the tangent corner edge and the vertex.
     TangentChain,
     /// A corner the closed forms do not cover: a vertex of other than
     /// three edges, or a vertex two or more blended edges meet at — until

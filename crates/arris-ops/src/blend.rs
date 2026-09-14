@@ -604,6 +604,35 @@ fn face_end(
     if three.len() != 3 || *at_vertex != three {
         return Err(vertex_blend());
     }
+    // A corner edge whose two faces meet tangentially at the vertex — the
+    // contact line every blend face meets its neighbours along — carries
+    // the edge on into a chain: C6's, before the face across is read.
+    for &corner in &corner_edges {
+        let ce = *m.edge(corner)?;
+        let Some((_, crange)) = ce.curve() else {
+            return Err(vertex_blend());
+        };
+        let t = if ce.start() == vertex {
+            crange.lo()
+        } else {
+            crange.hi()
+        };
+        let uses = view
+            .uses
+            .get(&corner)
+            .filter(|u| u.len() == 2)
+            .ok_or(invariant("two uses of the corner edge"))?;
+        let mut normals = [Vec3::zeros(); 2];
+        for (n, u) in normals.iter_mut().zip(uses) {
+            *n = view.outward(m, u.face, m.curve2(u.pcurve)?.point(t))?;
+        }
+        if normals[0].cross(&normals[1]).norm() <= tol.angular {
+            return Err(degenerate(
+                vec![e, forward(corner), v],
+                Reason::TangentChain,
+            ));
+        }
+    }
     let other_face = |corner: EdgeId, own: FaceId| -> Result<FaceId, OpError> {
         let uses = view
             .uses
@@ -1567,7 +1596,9 @@ fn build(
 /// [`Reason::NoEdges`] for an empty list, [`Reason::RepeatedEdge`] for
 /// an edge listed twice, [`Reason::EdgeNotInBody`] for one that is not
 /// the body's, [`Reason::TangentChain`] where the edge's faces meet at a
-/// tangent dihedral, [`Reason::VertexBlend`] at a corner the closed
+/// tangent dihedral or an end's corner edge has tangent faces at the
+/// vertex — a blend's contact, where a second blend meets a first —
+/// [`Reason::VertexBlend`] at a corner the closed
 /// forms do not cover — a vertex of other than three edges, a miter
 /// whose two blends have unequal dihedrals or are not both convex or
 /// both concave, or three blended edges at one vertex until the sphere

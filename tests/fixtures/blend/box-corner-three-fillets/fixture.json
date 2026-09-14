@@ -1,0 +1,20 @@
+{
+  "description": "the 2-cube's three edges at the corner (2, 2, 2) filleted in one call at r 0.2: the sphere corner, an octant through the ball's centre (2 - r, 2 - r, 2 - r), which Open CASCADE builds and Arris refuses as Reason::VertexBlend until the sphere corner lands (plans/fillet-and-chamfer step 9); each edge loses (1 - pi/4) r^2 along 2 - r and the corner cube r^3 (1 - pi/6)",
+  "params": {"r": 0.2},
+  "steps": [
+    {"name": "cube", "op": "box", "min": [0, 0, 0], "max": [2, 2, 2]},
+    {"name": "result", "op": "fillet", "of": "cube", "edges": [[2, 2, 1], [1, 2, 2], [2, 1, 2]], "radius": "r"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [1, 1, 1], "expect": "in"},
+    {"label": "corner_gone", "point": [1.95, 1.95, 1.95], "expect": "out"},
+    {"label": "on_sphere", "point": ["2 - r + r / sqrt(3)", "2 - r + r / sqrt(3)", "2 - r + r / sqrt(3)"], "expect": "on"},
+    {"label": "far_vertex", "point": [0, 0, 0], "expect": "on"}
+  ],
+  "analytic": {
+    "expect_error": "vertex-blend",
+    "volume": "8 - 3 * (1 - pi / 4) * r^2 * (2 - r) - (1 - pi / 6) * r^3",
+    "genus": 0
+  }
+}

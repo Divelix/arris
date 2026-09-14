@@ -1,0 +1,24 @@
+{
+  "description": "a second blend that meets the first at a vertex: the extruded 2-square's side edge 0–1 (the rise at (2, 0)) filleted at r 0.2, then the cap edge of side face 0 (y = 0, z = 2), which now ends where the first blend's contact line and end arc meet — the contact is a tangent edge, so the cap edge continues into a chain through the arc, which Open CASCADE follows and blends and Arris refuses as Reason::TangentChain (C6's); the second radius is below the arc's so Open CASCADE's torus over the arc is not degenerate",
+  "params": {"r": 0.2, "r2": 0.1},
+  "steps": [
+    {
+      "name": "square",
+      "op": "profile",
+      "plane": {"origin": [0, 0, 0], "x": [1, 0, 0], "y": [0, 1, 0]},
+      "outer": {"start": [0, 0], "segments": [{"line_to": [2, 0]}, {"line_to": [2, 2]}, {"line_to": [0, 2]}, {"line_to": [0, 0]}]}
+    },
+    {"name": "cube", "op": "extrude", "profile": "square", "direction": [0, 0, 1], "length": 2},
+    {"name": "first", "op": "fillet", "of": "cube", "edges": [[2, 0, 1]], "radius": "r"},
+    {"name": "result", "op": "fillet", "of": "first", "edges": [[1, 0, 2]], "radius": "r2"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [1, 1, 1], "expect": "in"},
+    {"label": "far_vertex", "point": [0, 2, 0], "expect": "on"}
+  ],
+  "analytic": {
+    "expect_error": "tangent-chain",
+    "genus": 0
+  }
+}

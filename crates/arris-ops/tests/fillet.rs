@@ -2,8 +2,9 @@
 //! cylinder, its contacts and its end arcs — clean at `Full` with nothing
 //! unchecked, the closed-form volume, the provenance rooted at the edge
 //! and audited, identical over two runs; two edges meeting in a miter,
-//! held to the oracle's numbers while its S5 row waits; and every typed
-//! refusal.
+//! held to the oracle's numbers while its S5 row waits; a second fillet
+//! on a filleted body, its records composed back to the extrude; and
+//! every typed refusal.
 
 use arris_debug::fixtures::Class;
 use arris_debug::{corpus, dump_text, fixtures};
@@ -11,7 +12,7 @@ use arris_ops::arris_check::arris_topo::arris_geom::{
     Profile, ProfileLoop, ProfileSegment, SurfaceKind,
 };
 use arris_ops::arris_check::arris_topo::arris_math::{Axis, Frame, Point2, Point3, Vec3};
-use arris_ops::arris_check::arris_topo::provenance::audit;
+use arris_ops::arris_check::arris_topo::provenance::{Origin, Relation, Role, SweepPart, audit};
 use arris_ops::arris_check::arris_topo::{Body, Edge, EntityId, Model, Orientation, Shape};
 use arris_ops::arris_check::classify::{Classification, classify_point};
 use arris_ops::arris_check::{Level, Unchecked, check};
@@ -519,6 +520,74 @@ fn two_edges_at_a_vertex_meet_in_a_miter() {
         dump_text(&again, blended2).unwrap()
     );
     assert_eq!(result.provenance, provenance2);
+}
+
+/// A second fillet on a filleted body, `blend/second-fillet`: the
+/// extruded square's rise at (2, 0) filleted, then the rise at (2, 2) of
+/// that result. Each step's record audits, and the three records composed
+/// with `Provenance::then` — in either bracketing — name every face of the
+/// result from one `SweepPart` of the extrude: the six faces from their
+/// caps and sides, the side face both blends trimmed still from its
+/// segment, and each blend face with its two contacts, two arcs and four
+/// vertices from the rise its edge was.
+#[test]
+fn a_second_fillet_composes_back_to_the_extrude() {
+    let dir = fixtures::corpus_root().join("blend/second-fillet");
+    let chain = corpus::chain(&dir, "default").unwrap();
+    let m = &chain.model;
+    let [cube, first, second] = ["cube", "first", "result"].map(|name| &chain.steps[name]);
+    for step in [first, second] {
+        audit(m, &step.inputs, step.body, &step.provenance).unwrap();
+    }
+    let whole = cube
+        .provenance
+        .then(&first.provenance)
+        .then(&second.provenance);
+    assert_eq!(
+        whole,
+        cube.provenance
+            .then(&first.provenance.then(&second.provenance))
+    );
+
+    let side = |segment| SweepPart::Side {
+        loop_index: 0,
+        segment,
+    };
+    let rise = |vertex| SweepPart::Rise {
+        loop_index: 0,
+        vertex,
+    };
+    let mut expected: Vec<SweepPart> = vec![SweepPart::StartCap, SweepPart::EndCap];
+    expected.extend((0..4).map(side));
+    expected.extend([rise(1), rise(2)]);
+    expected.sort();
+    let mut found: Vec<SweepPart> = Vec::new();
+    for face in m.faces(second.body).unwrap() {
+        let origins = whole.origins(Shape::new(face.id, Orientation::Forward));
+        let [(Relation::Generated, Origin::Role(Role::Extrude(part)))] = origins[..] else {
+            panic!("{} from {origins:?}", face.id);
+        };
+        found.push(part);
+    }
+    found.sort();
+    assert_eq!(found, expected);
+
+    // Each blend whole from its rise; the shared side face one face.
+    for vertex in [1, 2] {
+        let generated = whole.generated_from(Role::Extrude(rise(vertex)));
+        let count = |pick: fn(&EntityId) -> bool| generated.iter().filter(|s| pick(&s.id)).count();
+        assert_eq!(
+            (
+                count(|id| matches!(id, EntityId::Face(_))),
+                count(|id| matches!(id, EntityId::Edge(_))),
+                count(|id| matches!(id, EntityId::Vertex(_)))
+            ),
+            (1, 4, 4),
+            "rise {vertex}: {generated:?}"
+        );
+    }
+    let shared = whole.generated_from(Role::Extrude(side(1)));
+    assert_eq!(shared.len(), 1, "{shared:?}");
 }
 
 fn cube_body(m: &mut Model) -> Body {

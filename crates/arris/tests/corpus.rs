@@ -361,6 +361,36 @@ fn blend_box_corner_chamfers() {
     run("blend/box-corner-chamfers");
 }
 
+/// A second fillet on a filleted body: the extruded square's side edge
+/// 0–1, then 1–2 of that result, the two blends sharing the side face
+/// the first modified.
+#[test]
+fn blend_second_fillet() {
+    run("blend/second-fillet");
+}
+
+/// The cap edge of a face a first blend trimmed, ending where that
+/// blend's contact meets its arc: a tangent chain Open CASCADE follows,
+/// `Reason::TangentChain` through the runner's expected-error path.
+#[test]
+fn blend_tangent_chain_cap_edge() {
+    run("blend/tangent-chain-cap-edge");
+}
+
+/// A rise ending at a vertex of five edges, where a box stands on its
+/// corner on another's top edge: `Reason::VertexBlend`.
+#[test]
+fn blend_five_edge_vertex() {
+    run("blend/five-edge-vertex");
+}
+
+/// Three fillets at one box corner: the sphere corner, `Reason::
+/// VertexBlend` until plans/fillet-and-chamfer step 9 builds it.
+#[test]
+fn blend_box_corner_three_fillets() {
+    run("blend/box-corner-three-fillets");
+}
+
 /// The miter: the vertical and the cap edge at one corner blended in one
 /// call, two cylinders meeting in the ellipse of their bisecting plane
 /// (ADR-0007). Waits under `regression/` because S5 has no closed form

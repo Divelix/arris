@@ -292,7 +292,12 @@ with their `#[ignore]`d twins — green.*
   `box-four-vertical-chamfers`); two chamfers at a corner meet in a line
   and pass every stage (`box-corner-chamfers`), and the fillet miter builds and
   matches the oracle (`regression/fillet-miter`, waiting on the
-  cylinder–cylinder line below for its one S5 row).
+  cylinder–cylinder line below for its one S5 row). A second fillet on a
+  filleted body passes (`second-fillet`), its composed record naming
+  every face by the extrude's parts; the C6 cases Open CASCADE builds are
+  refusals by fixture — a tangent chain (`tangent-chain-cap-edge`), a
+  vertex of five edges (`five-edge-vertex`), three fillets at a corner
+  (`box-corner-three-fillets`).
 - Cone, sphere and torus in the intersector in the positions a blend and
   M5's revolves put them, every one a conic: a plane against a quadric
   with the plane perpendicular to the axis, a cylinder against a quadric

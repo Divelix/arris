@@ -1045,7 +1045,11 @@ shortened, is `Modified`; no face across takes an arc. A chamfer's record
 is a fillet's with its end segments in place of the arcs, and two
 chamfers at a corner meet in a line recorded as a miter's ellipse is. A sphere corner
 face is `Generated` from its three edges. `audit` holds on every
-result.
+result. A second blend on a blended body is rooted at an edge the first
+kept or modified, so the records composed with `then` name each blend
+face from the role its edge came from (`blend/second-fillet`: both blend
+faces from the extrude's `Rise`s, the side face both trimmed still from
+its `Side`).
 
 Queries: `generated_from(origin) -> &[Shape]`, `modified_from(origin)`,
 `is_deleted(input)`, `origins(output) -> Vec<(Relation, Origin)>` (the

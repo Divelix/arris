@@ -293,8 +293,26 @@ bound has to be established here.
   - Recipe op `chamfer`. Fixtures `blend/box-edge-chamfer` (`8 − d²·2/2 =
     7.96`), `blend/box-four-vertical-chamfers` (`7.84`),
     `blend/box-corner-chamfers` (a vertical and a cap edge).
-- [ ] Step 5 **[2]** — **A second blend on a blended body, and the C6
-  refusals.**
+- [x] Step 5 **[2]** — **A second blend on a blended body, and the C6
+  refusals.** Landed 2026-09-14. The second fillet needed no change: it
+  passes every stage (7.96566371, two disjoint blends' number). The three
+  records composed with `then`, in either bracketing, name every face of
+  the result by one extrude `SweepPart`. Three findings. First, the
+  tangent chain was not detected: `TangentChain` covered only the edge's
+  own dihedral, so the cap edge reached the face across, the first blend's
+  cylinder, and was refused as `Unsupported`. `face_end` now refuses an end
+  whose corner edge has tangent faces at the vertex, before it reads the
+  face across. A fillet's contact is always such an edge, so no blend-face
+  attribute is needed. Second, Open CASCADE reports "not done" for a
+  fillet of either top-edge half at the five-edge vertex. The fixture
+  blends the upper box's rise instead, which ends at the same vertex
+  (8.99785398 in Open CASCADE); Arris's fuse builds that vertex. Third,
+  the three-fillet refusal is `blend/box-corner-three-fillets`, whose
+  oracle volume already matches step 9's closed form. The tangent-chain
+  fixture's second radius is 0.1, below the first blend's 0.2, so Open
+  CASCADE's torus over the arc it chains into is not degenerate.
+  Fixtures `blend/second-fillet`, `tangent-chain-cap-edge`,
+  `five-edge-vertex`, `box-corner-three-fillets`.
   - Fillet an edge whose faces an earlier blend `Modified` and whose
     ends are clear of it (the consumer's twin: side edges 0–1, then 1–2
     — the two never meet, the box's side faces do). Fixture
