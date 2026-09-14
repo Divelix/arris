@@ -1,0 +1,126 @@
+{
+  "occt": "8.0.1.0.0",
+  "recipe_sha256": "3a4d990e31d1aa6cb565f653c4d00496975933b4f9e6a03ff8886cdb4093eecd",
+  "results": {
+    "default": {
+      "area": 21.845486677646164,
+      "centroid": [
+        0.8339363280397708,
+        0.8339363280397707,
+        1.0
+      ],
+      "counts": {
+        "edges": 21,
+        "faces": 9,
+        "loops": 9,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 14
+      },
+      "degenerate": false,
+      "euler_characteristic": 2,
+      "genus": 0,
+      "inertia": [
+        [
+          3.8398448156742866,
+          0.6659162481043994,
+          8.881784197001252e-16
+        ],
+        [
+          0.6659162481043994,
+          3.839844815674285,
+          0.0
+        ],
+        [
+          8.881784197001252e-16,
+          0.0,
+          3.6682442000631017
+        ]
+      ],
+      "probes": [
+        {
+          "class": "in",
+          "label": "inside",
+          "point": [
+            0.5,
+            0.5,
+            1.0
+          ]
+        },
+        {
+          "class": "in",
+          "label": "notch_filled",
+          "point": [
+            1.02,
+            1.02,
+            1.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "notch_open",
+          "point": [
+            1.5,
+            1.5,
+            1.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "past_blend",
+          "point": [
+            1.0685786437626905,
+            1.0685786437626905,
+            1.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_blend",
+          "point": [
+            1.0585786437626905,
+            1.0585786437626905,
+            1.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_contact",
+          "point": [
+            1.2,
+            1.0,
+            1.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_arc",
+          "point": [
+            1.0585786437626905,
+            1.0585786437626905,
+            0.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_top",
+          "point": [
+            1.02,
+            1.02,
+            2.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "far_vertex",
+          "point": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      ],
+      "volume": 6.017168146928205
+    }
+  }
+}

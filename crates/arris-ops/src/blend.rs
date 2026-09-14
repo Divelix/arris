@@ -305,15 +305,20 @@ fn placed(pcurve: Curve2, t: f64, target: f64) -> Curve2 {
     }
 }
 
-/// `true` when `pcurve` over `range` lies strictly inside `face` at
+/// `true` when `pcurve` over `range` lies strictly on `side` of `face` at
 /// `samples` interior parameters, by the face's own domain at its own
 /// tolerance: the test a contact line and an end arc pass before a blend
-/// is built (ADR-0007, the `BlendTooLarge` bound).
-fn inside_face(
+/// is built (ADR-0007, the `BlendTooLarge` bound). A contact lies inside
+/// its face; an end arc inside the face across when the blend removes
+/// material and outside it when a concave blend adds the corner to it —
+/// either way, a curve that changes side crosses an edge of the face
+/// that is not the corner's own.
+fn on_side_of_face(
     m: &Model,
     face: FaceId,
     pcurve: &Curve2,
     range: Interval,
+    side: Side,
     samples: usize,
 ) -> Result<bool, OpError> {
     let tolerance = m.face(face)?.tolerance();
@@ -321,7 +326,7 @@ fn inside_face(
     let n = samples.max(1);
     for i in 1..=n {
         let t = range.lerp(i as f64 / (n + 1) as f64);
-        if domain.side(pcurve.point(t)).0 != Side::Inside {
+        if domain.side(pcurve.point(t)).0 != side {
             return Ok(false);
         }
     }
@@ -629,7 +634,12 @@ fn face_end(
     let arc_tol = Tolerance::new(arc_tolerance, tol.angular);
     let on_face = pcurve_on(&arc_curve, arc_range, surface3, arc_tol)
         .map_err(|g| OpError::Internal(Fault::Geometry(g)))?;
-    if !inside_face(m, face3, &on_face, arc_range, samples)? {
+    let arc_side = if s.convex {
+        Side::Inside
+    } else {
+        Side::Outside
+    };
+    if !on_side_of_face(m, face3, &on_face, arc_range, arc_side, samples)? {
         return Err(degenerate(vec![e, forward(face3)], Reason::BlendTooLarge));
     }
     let on_blend = pcurve_on(&arc_curve, arc_range, &s.surface, arc_tol)
@@ -675,7 +685,7 @@ fn contacts(
         let line_tol = Tolerance::new(s.tolerance, tol.angular);
         let on_face = pcurve_on(line, range, plane, line_tol)
             .map_err(|g| OpError::Internal(Fault::Geometry(g)))?;
-        if !inside_face(m, face, &on_face, range, samples)? {
+        if !on_side_of_face(m, face, &on_face, range, Side::Inside, samples)? {
             return Err(too_large());
         }
         let u = if k == 0 { 0.0 } else { s.beta };

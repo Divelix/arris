@@ -131,6 +131,129 @@ fn one_convex_box_edge_end_to_end() {
     assert_eq!(provenance, provenance2);
 }
 
+/// An extruded L, (0,0)–(2,0)–(2,1)–(1,1)–(1,2)–(0,2) at height 2: its
+/// inner vertical edge at (1, 1) is concave.
+fn ell(m: &mut Model) -> Body {
+    let p = |u, v| Point2::new(u, v);
+    let profile = Profile {
+        plane: Frame::world(),
+        outer: ProfileLoop::Path {
+            start: p(0.0, 0.0),
+            segments: vec![
+                ProfileSegment::LineTo(p(2.0, 0.0)),
+                ProfileSegment::LineTo(p(2.0, 1.0)),
+                ProfileSegment::LineTo(p(1.0, 1.0)),
+                ProfileSegment::LineTo(p(1.0, 2.0)),
+                ProfileSegment::LineTo(p(0.0, 2.0)),
+                ProfileSegment::LineTo(p(0.0, 0.0)),
+            ],
+        },
+        holes: Vec::new(),
+    };
+    extrude(m, &profile, Vec3::z(), 2.0).unwrap().0
+}
+
+/// A concave edge adds material: the L's inner edge gains
+/// `(1 − π/4) r² · 2`, its blend face is reversed against its cylinder,
+/// and the arcs on the caps lie outside the caps as they were. A radius
+/// the notch's walls cannot hold is still refused.
+#[test]
+fn a_concave_edge_adds_material() {
+    let mut m = Model::default();
+    let body = ell(&mut m);
+    let edge = edge_at(&m, body, Point3::new(1.0, 1.0, 1.0));
+    let (blended, provenance) = fillet(&mut m, body, &[edge], 0.2).unwrap();
+
+    let report = check(&m, blended, Level::Full);
+    assert!(report.is_ok(), "{report}");
+    assert!(report.unchecked().is_empty(), "{report}");
+    let line = report.euler().unwrap();
+    assert_eq!(
+        (line.vertices, line.edges, line.faces, line.loops),
+        (14, 21, 9, 9)
+    );
+    let r: f64 = 0.2;
+    let props = mass_properties(&m, blended).unwrap();
+    let volume = 6.0 + (1.0 - core::f64::consts::FRAC_PI_4) * r * r * 2.0;
+    assert!(
+        (props.volume - volume).abs() <= 1e-9 * volume,
+        "{}",
+        props.volume
+    );
+    audit(&m, &[body], blended, &provenance).unwrap();
+    let [face_id] = provenance
+        .generated_from(edge.shape())
+        .iter()
+        .filter_map(|s| match s.id {
+            EntityId::Face(id) => Some(id),
+            _ => None,
+        })
+        .collect::<Vec<_>>()[..]
+    else {
+        panic!("{provenance}");
+    };
+    let blend = m
+        .faces(blended)
+        .unwrap()
+        .into_iter()
+        .find(|f| f.id == face_id)
+        .unwrap();
+    assert_eq!(blend.orientation, Orientation::Reversed);
+
+    // The walls of the notch are 1 long: a ball of 1.2 does not fit.
+    let err = fillet(&mut m, body, &[edge], 1.2).unwrap_err();
+    assert_eq!(reason(&err), Some(Reason::BlendTooLarge), "{err}");
+}
+
+/// The four vertical edges of the consumer's cube in one call: each cap
+/// edge is cut at both its ends by two different blends; the volume is
+/// the consumer's number, and the same set listed in reverse is the same
+/// result and the same record.
+#[test]
+fn four_disjoint_edges_in_one_call_in_either_order() {
+    let corners = [(0.0, 0.0), (2.0, 0.0), (2.0, 2.0), (0.0, 2.0)];
+    let build = |reversed: bool| {
+        let mut m = Model::default();
+        let body = cube(&mut m, 2.0);
+        let mut edges: Vec<Edge> = corners
+            .iter()
+            .map(|&(x, y)| edge_at(&m, body, Point3::new(x, y, 1.0)))
+            .collect();
+        if reversed {
+            edges.reverse();
+        }
+        let (blended, provenance) = fillet(&mut m, body, &edges, 0.2).unwrap();
+        (m, body, blended, provenance)
+    };
+    let (m, body, blended, provenance) = build(false);
+    let report = check(&m, blended, Level::Full);
+    assert!(report.is_ok(), "{report}");
+    assert!(report.unchecked().is_empty(), "{report}");
+    let line = report.euler().unwrap();
+    assert_eq!(
+        (line.vertices, line.edges, line.faces, line.loops),
+        (16, 24, 10, 10)
+    );
+    let props = mass_properties(&m, blended).unwrap();
+    assert!(
+        (props.volume - 7.93132741).abs() <= 1e-8,
+        "{}",
+        props.volume
+    );
+    audit(&m, &[body], blended, &provenance).unwrap();
+    // Each cap edge is shortened at both ends, into one edge.
+    let cap = edge_at(&m, body, Point3::new(1.0, 0.0, 2.0));
+    let cap = Shape::new(cap.id, Orientation::Forward);
+    assert_eq!(provenance.modified_from(cap).len(), 1, "{provenance}");
+
+    let (again, _, blended2, provenance2) = build(true);
+    assert_eq!(
+        dump_text(&m, blended).unwrap(),
+        dump_text(&again, blended2).unwrap()
+    );
+    assert_eq!(provenance, provenance2);
+}
+
 /// A radius that is not finite or not positive is the parameter's own
 /// refusal.
 #[test]

@@ -285,8 +285,10 @@ with their `#[ignore]`d twins — green.*
   and one ellipse, not a vertex blend (Open CASCADE, checked). Blends are
   rolling-ball stripes built in closed form on analytic face pairs,
   ADR-0007: `ops::fillet` on a plane–plane edge with its ends trimmed by
-  the face across is in (`blend/box-edge-fillet`, `box-cap-edge-fillet`,
-  `box-posed-edge-fillet`, `box-oblique-end`), and the miter builds and
+  the face across is in, convex or concave and several disjoint edges in
+  one call (`blend/box-edge-fillet`, `box-cap-edge-fillet`,
+  `box-posed-edge-fillet`, `box-oblique-end`, `l-inner-edge`,
+  `box-four-verticals`), and the miter builds and
   matches the oracle (`regression/fillet-miter`, waiting on the
   cylinder–cylinder line below for its one S5 row).
 - Cone, sphere and torus in the intersector in the positions a blend and

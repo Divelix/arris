@@ -1,0 +1,28 @@
+{
+  "description": "an extruded L (0,0)–(2,0)–(2,1)–(1,1)–(1,2)–(0,2), height 2, its inner vertical edge filleted at r 0.2: a concave plane–plane blend that adds material, a cylinder of a quarter turn whose axis is in the notch, its contacts at r from the edge on the faces' far sides and its ends circle arcs on the caps",
+  "params": {"r": 0.2},
+  "steps": [
+    {"name": "sketch", "op": "profile", "plane": {"origin": [0, 0, 0], "x": [1, 0, 0], "y": [0, 1, 0]},
+     "outer": {"start": [0, 0], "segments": [{"line_to": [2, 0]}, {"line_to": [2, 1]}, {"line_to": [1, 1]}, {"line_to": [1, 2]}, {"line_to": [0, 2]}, {"line_to": [0, 0]}]}},
+    {"name": "ell", "op": "extrude", "profile": "sketch", "direction": [0, 0, 1], "length": 2},
+    {"name": "result", "op": "fillet", "of": "ell", "edges": [[1, 1, 1]], "radius": "r"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [0.5, 0.5, 1], "expect": "in"},
+    {"label": "notch_filled", "point": [1.02, 1.02, 1], "expect": "in"},
+    {"label": "notch_open", "point": [1.5, 1.5, 1], "expect": "out"},
+    {"label": "past_blend", "point": ["1 + r - r / sqrt(2) + 0.01", "1 + r - r / sqrt(2) + 0.01", 1], "expect": "out"},
+    {"label": "on_blend", "point": ["1 + r - r / sqrt(2)", "1 + r - r / sqrt(2)", 1], "expect": "on"},
+    {"label": "on_contact", "point": ["1 + r", 1, 1], "expect": "on"},
+    {"label": "on_arc", "point": ["1 + r - r / sqrt(2)", "1 + r - r / sqrt(2)", 0], "expect": "on"},
+    {"label": "on_top", "point": [1.02, 1.02, 2], "expect": "on"},
+    {"label": "far_vertex", "point": [0, 0, 0], "expect": "on"}
+  ],
+  "analytic": {
+    "volume": "6 + (1 - pi / 4) * r^2 * 2",
+    "area": "22 - 4 * r + 2 * (1 - pi / 4) * r^2 + pi * r",
+    "counts": {"vertices": 14, "edges": 21, "faces": 9, "loops": 9, "shells": 1},
+    "genus": 0
+  }
+}

@@ -325,6 +325,21 @@ fn blend_box_oblique_end() {
     run("blend/box-oblique-end");
 }
 
+/// An extruded L's inner vertical edge: a concave plane–plane blend that
+/// adds material, its cylinder's axis in the notch and the blend face
+/// reversed against it.
+#[test]
+fn blend_l_inner_edge() {
+    run("blend/l-inner-edge");
+}
+
+/// The cube's four vertical edges in one call: four disjoint blends, each
+/// cap edge cut at both its ends by two of them.
+#[test]
+fn blend_box_four_verticals() {
+    run("blend/box-four-verticals");
+}
+
 /// The miter: the vertical and the cap edge at one corner blended in one
 /// call, two cylinders meeting in the ellipse of their bisecting plane
 /// (ADR-0007). Waits under `regression/` because S5 has no closed form

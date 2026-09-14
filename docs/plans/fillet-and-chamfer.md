@@ -246,8 +246,19 @@ bound has to be established here.
   - **Gate:** if the corner needs anything beyond the equal-radius
     ellipse — a face the ellipse leaves, a second ellipse arc inside a
     blend face — stop and return to the human before step 3.
-- [ ] Step 3 **[2]** — **The rest of the plane–plane table, several
-  edges in one call.**
+- [x] Step 3 **[2]** — **The rest of the plane–plane table, several
+  edges in one call.** Landed 2026-09-14. Both cases pass every corpus
+  stage against Open CASCADE, and both match the closed forms: the L
+  6.01716815, the four verticals 7.93132741. One finding. The
+  `BlendTooLarge` test on an end arc required the arc to be inside the
+  face across. A concave blend's arc lies in the notch, outside the cap
+  as it was, so the L was refused. The test now takes the side the blend
+  leaves the face on: inside when the blend removes the corner, outside
+  when it adds it. A curve that changes side still crosses an edge that
+  is not the corner's own, as ADR-0007 words the bound. Nothing else
+  needed the concave case: the construction's sign and the blend face's
+  reversed orientation were already in. Four disjoint edges worked with
+  no change.
   - A concave edge: the inner edge of an extruded L, where the blend adds
     material and the contact lines lie on the faces' far sides.
   - Several disjoint edges: the four vertical edges of the consumer's

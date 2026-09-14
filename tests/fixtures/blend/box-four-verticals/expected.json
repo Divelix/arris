@@ -1,0 +1,135 @@
+{
+  "occt": "8.0.1.0.0",
+  "recipe_sha256": "3ca3c80eb895fde396229cbbde7922278f7c405fd10d068ae1b896d3b8714be4",
+  "results": {
+    "default": {
+      "area": 23.244601535159017,
+      "centroid": [
+        0.9999999999999999,
+        0.9999999999999999,
+        1.0
+      ],
+      "counts": {
+        "edges": 24,
+        "faces": 10,
+        "loops": 10,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 16
+      },
+      "degenerate": false,
+      "euler_characteristic": 2,
+      "genus": 0,
+      "inertia": [
+        [
+          5.247671955415729,
+          0.0,
+          -8.881784197001252e-16
+        ],
+        [
+          0.0,
+          5.247671955415729,
+          8.881784197001252e-16
+        ],
+        [
+          -8.881784197001252e-16,
+          8.881784197001252e-16,
+          5.207792302640007
+        ]
+      ],
+      "probes": [
+        {
+          "class": "in",
+          "label": "inside",
+          "point": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "corner_gone_00",
+          "point": [
+            0.05,
+            0.05,
+            1.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "corner_gone_20",
+          "point": [
+            1.95,
+            0.05,
+            1.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "corner_gone_22",
+          "point": [
+            1.95,
+            1.95,
+            1.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "corner_gone_02",
+          "point": [
+            0.05,
+            1.95,
+            1.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_blend",
+          "point": [
+            0.05857864376269051,
+            1.9414213562373095,
+            1.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_contact",
+          "point": [
+            1.8,
+            0.0,
+            1.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_arc",
+          "point": [
+            0.05857864376269051,
+            0.05857864376269051,
+            2.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_top_edge",
+          "point": [
+            1.0,
+            0.0,
+            2.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_bottom",
+          "point": [
+            1.0,
+            1.0,
+            0.0
+          ]
+        }
+      ],
+      "volume": 7.931327412287184
+    }
+  }
+}

@@ -388,10 +388,15 @@ edge at one point exactly when the two edges' dihedrals are equal (a box
 corner, any right-angled prism), which the operation requires; a corner
 of unequal dihedrals is two arcs and C6's. The edges are blended in the
 body's iteration order, whatever order they are listed in, so the result
-and its ids are the same for any order of one set. A contact line or an end arc that
+and its ids are the same for any order of one set; disjoint blends share
+nothing but the faces across their ends, where a corner edge between two
+of them is cut at both its ends in one edge. A contact line or an end arc that
 would leave its face through an edge that is not the corner's own, or a
 corner edge shorter than the trim — decided in the face's own (u, v)
-through `FaceDomain::side` at `check_samples` interior parameters — is
+through `FaceDomain::side` at `check_samples` interior parameters, a
+contact inside its face and an end arc inside the face across when the
+blend removes the corner and outside it when a concave blend adds the
+corner to that face — is
 `Reason::BlendTooLarge` naming the edge and the face or edge the blend
 runs out of; a tangent dihedral is `Reason::TangentChain`; a vertex of
 other than three edges, a miter whose two blends have unequal dihedrals
