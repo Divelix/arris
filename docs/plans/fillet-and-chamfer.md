@@ -328,7 +328,27 @@ bound has to be established here.
     refused until step 9.
   - Each refusal a fixture with `expect_error`, since Open CASCADE builds
     every one of them.
-- [ ] Step 6 **[2]** — **Property tests** (seeded, `prop_shards!`).
+- [x] Step 6 **[2]** — **Property tests** (seeded, `prop_shards!`).
+  Landed 2026-09-14, `crates/arris-ops/tests/blend_prop.rs`: fillets and
+  chamfers eight shards each, green at 256 cases and at 4096 on a second
+  seed. The strategy draws a density before the edge mask. Of 2000 cases,
+  14% blend one edge, 22% have no miter, a quarter blend the L's concave
+  edge and 39% fill every corner they may. Blending needed no change.
+  Two findings, each loosening the bullets below by what the model
+  already states. First, "nothing unchecked" holds for chamfers
+  everywhere, and at rest for fillets but for exactly one S5 row per
+  miter. In a random pose, world-aligned face boxes grow, and two blend
+  cylinders that share no corner overlap in them. S5 has no closed form
+  for two cylinders that are not coaxial. So the posed fillet allows S5
+  rows between two blend cylinders, and nothing else. The
+  cylinder–cylinder plan's parallel and equal-radius crossing arms narrow
+  that. Blends on a rise and on a cap edge away from its vertex remain,
+  a skew pair, C3's quartic. Second, a fillet miter's volume holds to
+  `fitted_rel`, not `REL`. Its ellipse's pcurves are fitted at the
+  model's tolerance, and in a pose the fit misses the closed form by
+  9.4e-9 at `tol` 1e-7, 6.9e-11 at 1e-8 and 1e-11 at 1e-9. At rest it is
+  8e-11. `fitted_rel` moved from `boolean_prop.rs` to
+  `arris_debug::testing` for both.
   - Operands: a box and an extruded L in a random pose; a random subset
     of their plane–plane edges with no vertex holding three of them and
     no edge adjacent to a concave one at a vertex; `r` (or `d`) drawn

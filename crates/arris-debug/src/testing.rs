@@ -1,7 +1,8 @@
 //! Helpers copied across test files, once (dev-only: not part of a
 //! consumer's dependency graph, and not built for wasm32 since it takes
 //! `proptest`'s `TestCaseError`): a relative-tolerance and a
-//! period-aware numeric comparison, the provenance accounting a
+//! period-aware numeric comparison, the bound a mass property holds to
+//! along a fitted pcurve, the provenance accounting a
 //! generated body's record owes (`docs/DATA-MODEL.md` §Provenance), and
 //! central differences against a curve's or surface's own analytic
 //! derivatives.
@@ -10,6 +11,7 @@ use std::collections::BTreeSet;
 
 use arris_geom::{CurveEval, SurfaceEval};
 use arris_math::{Point3, Vec3};
+use arris_ops::measure::MassProperties;
 use arris_topo::provenance::{Origin, Provenance, Relation, Role, SweepPart};
 use arris_topo::{Body, EntityId, Model, Orientation, Shape};
 use proptest::test_runner::TestCaseError;
@@ -32,6 +34,23 @@ pub fn fail(what: impl core::fmt::Display) -> TestCaseError {
 /// exactly zero is not compared relatively.
 pub fn close_to(a: f64, b: f64, floor: f64, rel: f64) -> bool {
     (a - b).abs() <= rel * a.abs().max(b.abs()).max(floor)
+}
+
+/// The relative bound a mass property holds to when a face's boundary
+/// runs along a fitted pcurve: [`REL`] plus what the model's own
+/// tolerance permits over the body's size. A pcurve is fitted to within
+/// its edge's tolerance, so a face's (u, v) region is bounded to within
+/// `tol` in 3D and every mass property — each an integral over that
+/// boundary — carries a relative error of order `tol` over a length of
+/// the body, taken as `√A`. Measured twice, each time scaling with the
+/// model's tolerance: a boolean's section curve fitted once for a union
+/// and again for the cut it is restored from, 7.4e-9 in a volume of 7.2
+/// at `tol` 1e-7 and 8.3e-11 at 1e-9; a fillet miter's ellipse fitted on
+/// a unit box moved 60 away, 9.4e-9 of its closed-form volume at 1e-7,
+/// 6.9e-11 at 1e-8 and 1e-11 at 1e-9. `REL` alone is a literal, and the
+/// kernel's rule is that the tolerance is the model's.
+pub fn fitted_rel(m: &Model, p: &MassProperties) -> f64 {
+    REL + m.precision().default_tolerance / p.area.sqrt()
 }
 
 /// [`close_to`] at [`REL`] and a floor of `1.0`.

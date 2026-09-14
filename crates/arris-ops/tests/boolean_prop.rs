@@ -9,7 +9,7 @@
 //! failures).
 
 use arris_debug::prop::body::{Boxed, Cylindrical, OverlappingPair, TangentPair};
-use arris_debug::testing::{REL, close_to, fail};
+use arris_debug::testing::{REL, close_to, fail, fitted_rel};
 use arris_debug::{dump_text, prop, prop_shards};
 use arris_ops::arris_check::arris_topo::arris_math::nalgebra::{Quaternion, UnitQuaternion};
 use arris_ops::arris_check::arris_topo::arris_math::{Axis, Isometry, Point3, Vec3};
@@ -26,21 +26,6 @@ type Boolean = fn(&mut Model, Body, Body) -> Result<(Body, Provenance), OpError>
 /// [`arris_debug::testing::close_to`] at [`REL`].
 fn close(a: f64, b: f64, floor: f64) -> bool {
     close_to(a, b, floor, REL)
-}
-
-/// The relative bound an identity holds to when its two sides are built
-/// from different fittings of the same curve: `REL` plus what the
-/// model's own tolerance permits over the body's size. A pcurve is
-/// fitted to within its edge's tolerance, so a face's (u, v) region is
-/// bounded to within `tol` in 3D and every mass property — each an
-/// integral over that boundary — carries a relative error of order
-/// `tol` over a length of the body, taken as `√A`. Measured on the case
-/// below: the difference scales linearly with the model's tolerance,
-/// 7.4e-9 in a volume of 7.2 at `tol` 1e-7 and 8.3e-11 at 1e-9. `REL`
-/// alone is a literal, and the kernel's rule is that the tolerance is
-/// the model's.
-fn fitted_rel(m: &Model, p: &MassProperties) -> f64 {
-    REL + m.precision().default_tolerance / p.area.sqrt()
 }
 
 /// `op(a, b)`, its result clean at `Full` with nothing unchecked, and its
