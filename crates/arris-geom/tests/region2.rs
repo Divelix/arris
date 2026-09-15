@@ -9,7 +9,9 @@ use core::f64::consts::{PI, TAU};
 use arris_debug::prop::{DEFAULT_SCALE, check, finite_f64, radius};
 use arris_debug::sample;
 use arris_geom::integrate::{self, region_integral};
-use arris_geom::region2::{Piece, Polygon2, Side, discretise, interior_point, point_side};
+use arris_geom::region2::{
+    Piece, Polygon2, Side, SideIndex, discretise, interior_point, point_side,
+};
 use arris_geom::{Curve2, Surface};
 use arris_math::predicates::{Sign, orient2d};
 use arris_math::{Frame2, Handedness, Interval, Point2, Point3, UnitVec2, Vec2};
@@ -466,4 +468,65 @@ fn a_point_on_a_loop_is_on_the_boundary_and_a_hole_is_outside() {
     // either side of it are equal, and the leftmost wins the tie.
     assert_eq!(interior_point(&region, 0.0), Some(q(0.5, 2.0)));
     assert_eq!(interior_point(&[], 0.0), None);
+}
+
+/// `SideIndex` answers `point_side`'s question the same way for every
+/// point: across and around a star with holes, and a fraction of the
+/// tolerance either side of each of its vertices and segment midpoints,
+/// at tolerances from far below a segment's length to far above it
+/// (plans/cylinder-cylinder-booleans step 9).
+#[test]
+fn the_side_index_answers_as_the_walk() {
+    check(
+        (
+            star_with_holes(),
+            proptest::collection::vec((finite_f64(-1.5..=1.5), finite_f64(-1.5..=1.5)), 32),
+            finite_f64(-12.0..=0.0),
+            finite_f64(-2.0..=2.0),
+        ),
+        |(polygons, spots, log_tolerance, offset)| {
+            let index = SideIndex::new(&polygons);
+            let corners: Vec<Point2> = polygons
+                .iter()
+                .flat_map(|p| p.points().iter().copied())
+                .collect();
+            let lo = corners
+                .iter()
+                .fold(Point2::new(f64::INFINITY, f64::INFINITY), |m, p| {
+                    Point2::new(m.x.min(p.x), m.y.min(p.y))
+                });
+            let hi = corners
+                .iter()
+                .fold(Point2::new(f64::NEG_INFINITY, f64::NEG_INFINITY), |m, p| {
+                    Point2::new(m.x.max(p.x), m.y.max(p.y))
+                });
+            let centre = lo + 0.5 * (hi - lo);
+            let half = 0.5 * (hi - lo);
+            let tolerance = 10f64.powf(log_tolerance) * (hi - lo).norm();
+            let mut points: Vec<Point2> = spots
+                .iter()
+                .map(|&(s, t)| centre + Vec2::new(s * half.x, t * half.y))
+                .collect();
+            for polygon in &polygons {
+                for (a, b) in polygon.segments() {
+                    let along = (b - a).normalize();
+                    let across = Vec2::new(-along.y, along.x);
+                    for q in [a, a + 0.5 * (b - a)] {
+                        points.push(q);
+                        points.push(q + offset * tolerance * across);
+                    }
+                }
+            }
+            for p in points {
+                prop_assert_eq!(
+                    index.side(p, tolerance),
+                    point_side(&polygons, p, tolerance),
+                    "{:?} at tolerance {}",
+                    p,
+                    tolerance
+                );
+            }
+            Ok(())
+        },
+    );
 }

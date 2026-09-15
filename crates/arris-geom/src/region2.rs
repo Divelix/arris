@@ -336,17 +336,7 @@ impl Polygon2 {
     /// zero and is counted as neither side; ask [`Polygon2::contains`]
     /// when that matters.
     pub fn winding_number(&self, p: Point2) -> i32 {
-        let mut winding = 0;
-        for (a, b) in self.segments() {
-            if a.y <= p.y {
-                if b.y > p.y && orient2d(a, b, p) == Sign::Positive {
-                    winding += 1;
-                }
-            } else if b.y <= p.y && orient2d(a, b, p) == Sign::Negative {
-                winding -= 1;
-            }
-        }
-        winding
+        self.segments().map(|(a, b)| crossing(a, b, p)).sum()
     }
 
     /// `true` when `p` lies on a segment of the ring, exactly.
@@ -429,6 +419,154 @@ pub fn point_side(polygons: &[Polygon2], p: Point2, boundary_tolerance: f64) -> 
         Side::Inside
     } else {
         Side::Outside
+    }
+}
+
+/// What the segment `a → b` adds to a winding number about `p`: `+1` for
+/// an upward segment with `p` strictly on its left, `−1` for a downward
+/// one with `p` strictly on its right, `0` otherwise — the crossing of the
+/// horizontal ray from `p` toward increasing `u`, half-open in `v` so a
+/// vertex on the ray is counted once.
+fn crossing(a: Point2, b: Point2, p: Point2) -> i32 {
+    if a.y <= p.y {
+        i32::from(b.y > p.y && orient2d(a, b, p) == Sign::Positive)
+    } else {
+        -i32::from(b.y <= p.y && orient2d(a, b, p) == Sign::Negative)
+    }
+}
+
+/// Segments per strip a [`SideIndex`] aims for: a tuning constant of the
+/// index's cost, not a tolerance — any value gives the same answers.
+const SEGMENTS_PER_STRIP: usize = 8;
+
+/// How many units of `f64::EPSILON` times the region's `v` magnitude a
+/// strip must be tall, at least, for the index to use more than one: the
+/// rounding in [`point_segment_distance`] is a few such units, and one
+/// neighbouring strip of slack on each side of a query then covers it
+/// many times over. A region thinner than that is one strip, which is the
+/// linear walk.
+const STRIP_HEIGHT_IN_ROUNDINGS: f64 = (1u64 << 20) as f64;
+
+/// [`point_side`] over a region read once: for every finite point and
+/// every tolerance the same [`Side`], found among the segments near the
+/// point instead of all of them.
+///
+/// The region's `v` span is cut into strips of equal height, about
+/// eight segments' worth each, and every segment is filed
+/// under each strip its `v` span meets. A segment whose `v` span does not
+/// hold `p.y` adds nothing to the winding number, so the winding is summed
+/// over `p`'s own strip — every segment that could count is filed there,
+/// the strip of a coordinate being monotone in it, and each is counted
+/// once. A segment within the tolerance of `p` has its `v` span within the
+/// tolerance of `p.y`, so the boundary test is `point_side`'s own over the
+/// strips that band meets and one more on each side, which absorbs the
+/// distance's rounding. A ring of long segments across the whole span, or
+/// many at one height, costs up to the walk; a discretised pcurve is
+/// neither.
+///
+/// ```
+/// use arris_geom::region2::{Polygon2, Side, SideIndex, point_side};
+/// use arris_math::Point2;
+///
+/// let p = |x, y| Point2::new(x, y);
+/// let square = Polygon2::from_points([p(0.0, 0.0), p(4.0, 0.0), p(4.0, 4.0), p(0.0, 4.0)]);
+/// let hole = Polygon2::from_points([p(1.0, 1.0), p(1.0, 2.0), p(2.0, 2.0), p(2.0, 1.0)]);
+/// let region = [square, hole];
+/// let index = SideIndex::new(&region);
+/// for q in [p(3.0, 3.0), p(1.5, 1.5), p(4.0, 2.0), p(9.0, 9.0)] {
+///     assert_eq!(index.side(q, 1e-9), point_side(&region, q, 1e-9));
+/// }
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub struct SideIndex {
+    /// Every segment of every polygon, in polygon and ring order.
+    segments: Vec<(Point2, Point2)>,
+    /// The bottom of the first strip.
+    lo: f64,
+    /// The strips' common height; zero for a single strip.
+    height: f64,
+    /// For each strip, ascending, the indices of the segments filed there.
+    strips: Vec<Vec<usize>>,
+}
+
+impl SideIndex {
+    /// The index of the region `polygons` bound.
+    pub fn new(polygons: &[Polygon2]) -> SideIndex {
+        let segments: Vec<(Point2, Point2)> =
+            polygons.iter().flat_map(Polygon2::segments).collect();
+        let (lo, hi) = segments
+            .iter()
+            .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), (a, b)| {
+                (lo.min(a.y).min(b.y), hi.max(a.y).max(b.y))
+            });
+        let count = segments.len().div_ceil(SEGMENTS_PER_STRIP).max(1);
+        let height = if count > 1 && hi > lo {
+            (hi - lo) / count as f64
+        } else {
+            0.0
+        };
+        let rounding = f64::EPSILON * lo.abs().max(hi.abs());
+        let height = if height > STRIP_HEIGHT_IN_ROUNDINGS * rounding {
+            height
+        } else {
+            0.0
+        };
+        let mut index = SideIndex {
+            segments,
+            lo,
+            height,
+            strips: Vec::new(),
+        };
+        index.strips = vec![Vec::new(); if height > 0.0 { count } else { 1 }];
+        let spans: Vec<(usize, usize)> = index
+            .segments
+            .iter()
+            .map(|(a, b)| (index.strip(a.y.min(b.y)), index.strip(a.y.max(b.y))))
+            .collect();
+        for (i, (first, last)) in spans.into_iter().enumerate() {
+            for strip in &mut index.strips[first..=last] {
+                strip.push(i);
+            }
+        }
+        index
+    }
+
+    /// The strip `v` falls in, the ends clamped to the first and last.
+    fn strip(&self, v: f64) -> usize {
+        if self.height > 0.0 {
+            let at = ((v - self.lo) / self.height).floor().max(0.0);
+            // A saturating cast: a `v` far past the top is the last strip.
+            (at as usize).min(self.strips.len() - 1)
+        } else {
+            0
+        }
+    }
+
+    /// Where `p` lies with respect to the region, as
+    /// [`point_side`]`(polygons, p, boundary_tolerance)` would answer.
+    pub fn side(&self, p: Point2, boundary_tolerance: f64) -> Side {
+        let first = self.strip(p.y - boundary_tolerance).saturating_sub(1);
+        let last = (self.strip(p.y + boundary_tolerance) + 1).min(self.strips.len() - 1);
+        for strip in &self.strips[first..=last] {
+            for &i in strip {
+                let (a, b) = self.segments[i];
+                if point_segment_distance(a, b, p) <= boundary_tolerance {
+                    return Side::Boundary;
+                }
+            }
+        }
+        let winding: i32 = self.strips[self.strip(p.y)]
+            .iter()
+            .map(|&i| {
+                let (a, b) = self.segments[i];
+                crossing(a, b, p)
+            })
+            .sum();
+        if winding != 0 {
+            Side::Inside
+        } else {
+            Side::Outside
+        }
     }
 }
 

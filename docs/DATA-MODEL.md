@@ -390,7 +390,13 @@ polygons of a face's loops: within the tolerance of any segment is
 tolerance is a distance in the parameter plane and is the caller's — the
 checker passes the model's parametric tolerance scaled to the surface, a
 boolean the face's tolerance converted the same way; nothing in `region2`
-knows the model. `region2::interior_point(polygons, clearance)` is a
+knows the model. `region2::SideIndex::new(polygons)` reads a region once
+so that `side(p, boundary_tolerance)` is `point_side`'s answer for every
+finite point, taken from the segments filed under strips of `v`: the
+winding from `p`'s own strip, which holds every segment that could cross
+the ray, and the boundary test over the strips the band meets and one
+more either side, which absorbs the distance's rounding; `FaceDomain`
+holds one per face. `region2::interior_point(polygons, clearance)` is a
 point strictly inside the region and further than `clearance` from every
 segment: a horizontal is cut by the segments into spans, the spans whose
 midpoint has a non-zero winding number are the inside ones, and the

@@ -97,7 +97,10 @@ row.
   same curves bit for bit.
 - **`arris-check` `FaceDomain::side` (step 9):** unchanged signature and
   answers; an index over each polygon's segments built once in
-  `FaceDomain::of` replaces the walk over every segment.
+  `FaceDomain::of` replaces the walk over every segment. Public API
+  (addition, `arris-geom`): `region2::SideIndex`, `new(&[Polygon2]) ->
+  SideIndex` and `side(&self, p: Point2, boundary_tolerance: f64) ->
+  Side`, `point_side`'s answer for every finite point.
 - **The curvature rule** in `boolean/result.rs`: `tangent_side` stops
   matching on plane–cylinder. At a contact point it takes:
   - `n`, the other face's effective outward normal;
@@ -329,7 +332,11 @@ bound has to be established here.
   deltas), exact under the swap; a test swaps random crossing pairs and
   compares the curves bit for bit. The crossing fixtures' dumps move if a
   sign does, as a `fixtures:` note.
-- [ ] Step 9 **[3]** — **An indexed `FaceDomain::side`.** `side` walked
+- [x] Step 9 **[3]** — **An indexed `FaceDomain::side`.** *Landed:*
+  `arris_geom::region2::SideIndex`, v-strips of about eight segments,
+  the boundary test over the band's strips and one more each side, the
+  winding over `p`'s own strip; `Full` on the crossing fuse from 1.23 s
+  to 19.6 ms at `R = 1` and from 5.92 s to 58.9 ms at `R = 5`. `side` walked
   every segment of polygons discretised at the parametric tolerance
   (7 000 points for a cap circle at `R = 1`, 40 000 for a wall bounded by
   section ellipses at `R = 5`), so a `Full` check of two crossing

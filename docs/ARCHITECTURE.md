@@ -600,7 +600,9 @@ Result<FaceDomain, NotFound>` is the one answer to "where is this (u, v)
 point on this face": a face's loops read once as polygons within a chord
 of their pcurves, its (u, v) and 3D boxes, and `FaceDomain::side(uv) ->
 (Side, Vec2)`, which tries every period translate of the surface
-(`domain::shifts`) before answering `Outside`, so a periodic face's loops
+(`domain::shifts`) before answering `Outside`, each try answered by the
+domain's `region2::SideIndex` in the segments near the point rather than
+a walk over tens of thousands of them, so a periodic face's loops
 need only be written in one translate and S5, B1, the boolean and
 tessellation can never disagree about a point past a period —
 `FaceDomain::winds_around` and `FaceDomain::boundary_entity` resolve a

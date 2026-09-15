@@ -4,9 +4,9 @@
 
 use core::f64::consts::TAU;
 
-use arris_check::domain::FaceDomain;
+use arris_check::domain::{FaceDomain, band, shifts};
 use arris_debug::prop::finite_f64;
-use arris_topo::arris_geom::region2::Side;
+use arris_topo::arris_geom::region2::{Side, point_side};
 use arris_topo::arris_geom::{Curve, Curve2, Surface};
 use arris_topo::arris_math::{Frame, Interval, Point2, Point3, Vec2, Vec3};
 use arris_topo::entity::{Coedge, Edge, EdgeGeometry, Face, Loop, Vertex};
@@ -159,6 +159,67 @@ arris_debug::prop_shards! {
             prop_assert_eq!(a.side(uv), (Side::Inside, Vec2::zeros()), "{:?}", rect);
             prop_assert_eq!(b.side(uv), (Side::Inside, along), "{:?} a period along {:?}", rect, along);
             prop_assert!(a.winds_around(uv) && b.winds_around(uv), "{:?}", rect);
+            Ok(())
+        }
+}
+
+/// What `FaceDomain::side` answered before it read an index: the walk
+/// over every segment in every translate, `point_side` at the band.
+fn walk(d: &FaceDomain, uv: Point2) -> (Side, Vec2) {
+    let near = band(d.surface(), uv, d.tolerance());
+    let periods = d.surface().period();
+    let mut best = (Side::Outside, Vec2::zeros());
+    for du in shifts(periods[0]) {
+        for dv in shifts(periods[1]) {
+            let shift = Vec2::new(du, dv);
+            match point_side(d.polygons(), uv + shift, near) {
+                Side::Inside => return (Side::Inside, shift),
+                Side::Boundary => {
+                    if best.0 == Side::Outside {
+                        best = (Side::Boundary, shift);
+                    }
+                }
+                Side::Outside => {}
+            }
+        }
+    }
+    best
+}
+
+arris_debug::prop_shards! {
+    /// `FaceDomain::side`, which reads an index, answers as the walk over
+    /// every segment: a cylinder or torus patch written in any translate,
+    /// at points across and around its (u, v) box and on its loops'
+    /// vertices (plans/cylinder-cylinder-booleans step 9).
+    the_indexed_side_is_the_walk [shard_0 shard_1 shard_2 shard_3]
+        ((torus, u0, du, v0, dv, k, spots)) = (
+            any::<bool>(),
+            finite_f64(0.0..=TAU),
+            finite_f64(0.1..=3.0),
+            finite_f64(-3.0..=3.0),
+            finite_f64(0.1..=3.0),
+            -1i32..=1,
+            proptest::collection::vec((finite_f64(-0.2..=1.2), finite_f64(-0.2..=1.2)), 16),
+        ) => {
+            let tolerance = Model::default().precision().parametric_tolerance;
+            let mut m = Model::default();
+            let along = Vec2::new(f64::from(k) * TAU, 0.0);
+            let face = patch(&mut m, torus, [u0, du, v0, dv], along);
+            let d = FaceDomain::of(&m, face, tolerance)
+                .map_err(|e| TestCaseError::fail(e.to_string()))?;
+            let mut points: Vec<Point2> = spots
+                .iter()
+                .map(|&(s, t)| Point2::new(u0 + s * du, v0 + t * dv))
+                .collect();
+            points.extend(
+                d.polygons()
+                    .iter()
+                    .flat_map(|p| p.points().iter().copied())
+                    .step_by(7),
+            );
+            for uv in points {
+                prop_assert_eq!(d.side(uv), walk(&d, uv), "{:?}", uv);
+            }
             Ok(())
         }
 }

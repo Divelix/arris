@@ -12,7 +12,7 @@
 use std::collections::BTreeSet;
 
 use arris_topo::arris_geom::Surface;
-use arris_topo::arris_geom::region2::{Piece, Polygon2, Side, discretise, point_side};
+use arris_topo::arris_geom::region2::{Piece, Polygon2, Side, SideIndex, discretise};
 use arris_topo::arris_math::{Aabb, Interval, Point2, Point3, Vec2, is_negligible};
 use arris_topo::entity::{Face, Loop};
 use arris_topo::{EdgeId, FaceId, Model, NotFound, Orientation, Shape};
@@ -143,6 +143,7 @@ pub struct FaceDomain<'m> {
     surface: &'m Surface,
     tolerance: f64,
     polygons: Vec<Polygon2>,
+    index: SideIndex,
     uv_box: Option<[Interval; 2]>,
     bounds: Option<Aabb>,
     edges: Vec<EdgeId>,
@@ -232,11 +233,13 @@ impl<'m> FaceDomain<'m> {
             ),
             _ => None,
         };
+        let index = SideIndex::new(&polygons);
         Ok(FaceDomain {
             face,
             surface,
             tolerance,
             polygons,
+            index,
             uv_box,
             bounds,
             edges,
@@ -294,7 +297,7 @@ impl<'m> FaceDomain<'m> {
         for du in shifts(periods[0]) {
             for dv in shifts(periods[1]) {
                 let shift = Vec2::new(du, dv);
-                match point_side(&self.polygons, uv + shift, near) {
+                match self.index.side(uv + shift, near) {
                     Side::Inside => return (Side::Inside, shift),
                     Side::Boundary => {
                         if best.0 == Side::Outside {
