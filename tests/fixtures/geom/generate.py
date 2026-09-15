@@ -533,12 +533,19 @@ def c2_quadric_pairs():
     pair("sphere", "ball")
     pair("sphere", "pebble")
     pair("marble", "sphere")
+    # Planes through the axis, their origins slid along it and across it in
+    # the plane: through the cone (its two rulings through the apex) and
+    # through the torus (its two tube circles) — a partial revolve's caps.
+    plane("meridian_cone", add(on_axis(-0.7), mul(1.3, across)), a, z)
+    plane("meridian_torus", add(on_axis(2.2), mul(-0.9, a)), mul(-1.0, across), z)
+    pair("meridian_cone", "cone")
+    pair("torus", "meridian_torus")
     # Two pairs the other way round.
     pair("cone", "cap_cone")
     pair("torus", "sleeve")
     return {
         "kind": "geometry",
-        "description": "the coaxial pairs with a cone, a sphere or a torus in them, and the pairs any sphere makes, around one axis in the tilt pose: planes perpendicular to the axis crossing a cone, a sphere and a torus, touching the sphere at a pole and the torus at its tube's top, and through the cone's apex; cylinders on the axis through the cone, the sphere (its frame turned, which Open CASCADE leaves unsolved, and along the axis, which it answers) and the torus, clear of the torus, around it at its outer equator and at the sphere's equator; two cones on the axis at the same and at another angle; a sphere through the torus; a plane oblique to a sphere; two spheres crossing, touching outside and touching inside; two pairs swapped; written by generate.py",
+        "description": "the coaxial pairs with a cone, a sphere or a torus in them, and the pairs any sphere makes, around one axis in the tilt pose: planes perpendicular to the axis crossing a cone, a sphere and a torus, touching the sphere at a pole and the torus at its tube's top, and through the cone's apex; cylinders on the axis through the cone, the sphere (its frame turned, which Open CASCADE leaves unsolved, and along the axis, which it answers) and the torus, clear of the torus, around it at its outer equator and at the sphere's equator; two cones on the axis at the same and at another angle; a sphere through the torus; a plane oblique to a sphere; two spheres crossing, touching outside and touching inside; planes through the cone's and the torus's axis, giving two rulings through the apex and two tube circles; two pairs swapped; written by generate.py",
         "surfaces": surfaces,
         "curves": {},
         "samples": [],

@@ -23,6 +23,8 @@
 //! cone–torus and sphere–torus pairs) are one closed form per pair; here
 //! the sections replace the table.
 
+use core::f64::consts::FRAC_PI_2;
+
 use arris_math::{Frame, Point3, Tolerance, UnitVec3, Vec3};
 
 use crate::intersect::line_angle;
@@ -31,11 +33,13 @@ use crate::{Curve, GeomError, GeomKind, Surface, SurfaceIntersection, SurfaceKin
 /// The intersection of two surfaces at least one of which is a cone, a
 /// sphere or a torus, when they share an axis: `Transversal` or `Tangent`
 /// circles about the axis ascending along it, `Points` on the axis
-/// ascending along it, `Coincident` or `Empty`. A pair that shares no
-/// axis, and a pair whose meetings mix kinds — a circle beside a point on
-/// the axis, a crossing beside a touch — is `Unsupported` naming the
-/// kinds: the first is C3's general position, the second a result type
-/// decided with it.
+/// ascending along it, `Coincident` or `Empty`; and a plane through a
+/// cone's or a torus's axis, which cuts the meridian itself — two
+/// `Transversal` rulings or tube circles ([`through_the_axis`]). A pair
+/// that shares no axis, and a pair whose meetings mix kinds — a circle
+/// beside a point on the axis, a crossing beside a touch — is
+/// `Unsupported` naming the kinds: the first is C3's general position,
+/// the second a result type decided with it.
 pub(crate) fn intersect_coaxial(
     a: &Surface,
     b: &Surface,
@@ -53,6 +57,10 @@ pub(crate) fn intersect_coaxial(
             } else {
                 SurfaceIntersection::Empty
             });
+        }
+        Shared::InPlane { normal } => {
+            let carrier = if a.kind() == SurfaceKind::Plane { b } else { a };
+            return through_the_axis(carrier, normal).ok_or_else(unsupported);
         }
         Shared::None => return Err(unsupported()),
     };
@@ -136,6 +144,9 @@ enum Shared {
     Axis(Frame),
     /// Two spheres about one centre, the same surface or not.
     Concentric { same: bool },
+    /// A plane the carrier's axis lies in, with the plane's normal: the
+    /// plane cuts the carrier in its meridian, not in a parallel.
+    InPlane { normal: UnitVec3 },
     /// No axis: a general position, C3's.
     None,
 }
@@ -144,7 +155,9 @@ enum Shared {
 /// means the axes parallel within `tol.angular` and the second operand's
 /// origin within `tol.linear` of the first's axis; a sphere is coaxial
 /// with anything whose axis passes within `tol.linear` of its centre; a
-/// plane is coaxial with an axis its normal is parallel to. The frame is
+/// plane is coaxial with an axis its normal is parallel to, and holds an
+/// axis it is parallel to within `tol.angular` and passes within
+/// `tol.linear` of, whose carrier it then cuts through. The frame is
 /// the first operand's whose frame carries the axis — a cylinder, a cone
 /// or a torus always, a sphere when its own `Z` is along the axis —
 /// else, for a plane against a sphere, the plane's frame moved to the
@@ -197,8 +210,13 @@ fn shared_axis(a: &Surface, b: &Surface, tol: Tolerance) -> Result<Shared, GeomE
             | Surface::Cone { frame: carrier, .. }
             | Surface::Torus { frame: carrier, .. },
         ) => {
+            let across = FRAC_PI_2 - line_angle(&plane.z(), &carrier.z()) <= tol.angular;
             if parallel(&plane.z(), &carrier.z()) {
                 Shared::Axis(*carrier)
+            } else if across
+                && plane.z().dot(&(carrier.origin() - plane.origin())).abs() <= tol.linear
+            {
+                Shared::InPlane { normal: plane.z() }
             } else {
                 Shared::None
             }
@@ -277,6 +295,62 @@ fn shared_axis(a: &Surface, b: &Surface, tol: Tolerance) -> Result<Shared, GeomE
             Surface::Nurbs(_),
         ) => Shared::None,
     })
+}
+
+/// A plane through `carrier`'s axis, whose normal is `n`: the carrier's
+/// meridian, both halves of it, each `Transversal` — the normals across
+/// the cut are the plane's and one in the plane. With `w = Z × n` over
+/// the carrier's own `Z`, a cone gives the two rulings through its apex
+/// on the sides `+w` then `−w`, each from the apex along the cone's
+/// `∂P/∂v` there, so a ruling's `t` is the cone's `v` less the apex's; a
+/// torus gives its two tube circles about `O ± R·w`, in that order, each
+/// with `X` the side and `Y` the torus's `Z`, so a circle's `t` is the
+/// torus's `v`. A cylinder is `plane_cylinder`'s, and a plane, a sphere
+/// or a NURBS carries no axis: `None`, which the caller turns into the
+/// refusal naming the pair.
+fn through_the_axis(carrier: &Surface, n: UnitVec3) -> Option<SurfaceIntersection> {
+    let side = |frame: &Frame| UnitVec3::try_new(frame.z().cross(&n), 0.0);
+    match *carrier {
+        Surface::Cone {
+            ref frame,
+            radius,
+            half_angle,
+        } => {
+            let w = side(frame)?.into_inner();
+            let (sa, ca) = half_angle.sin_cos();
+            let z = frame.z().into_inner();
+            let apex = frame.origin() - (radius * ca / sa) * z;
+            let ruling = |w: Vec3| Curve::Line {
+                origin: apex,
+                direction: UnitVec3::new_normalize(sa * w + ca * z),
+            };
+            Some(SurfaceIntersection::Transversal(vec![
+                ruling(w),
+                ruling(-w),
+            ]))
+        }
+        Surface::Torus {
+            ref frame,
+            major_radius,
+            minor_radius,
+        } => {
+            let w = side(frame)?.into_inner();
+            let z = frame.z().into_inner();
+            let tube = |w: Vec3| {
+                Frame::new(frame.origin() + major_radius * w, w.cross(&z), w)
+                    .ok()
+                    .map(|frame| Curve::Circle {
+                        frame,
+                        radius: minor_radius,
+                    })
+            };
+            Some(SurfaceIntersection::Transversal(vec![tube(w)?, tube(-w)?]))
+        }
+        Surface::Plane { .. }
+        | Surface::Cylinder { .. }
+        | Surface::Sphere { .. }
+        | Surface::Nurbs(_) => None,
+    }
 }
 
 /// A meridian section in the plane through the axis: `(ρ, z)`.

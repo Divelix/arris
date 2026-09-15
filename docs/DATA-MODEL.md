@@ -248,10 +248,17 @@ revolution is its distance to the full symmetric section. A result that
 would mix kinds — a circle beside a point on the axis (a sphere centred
 on a cone's axis through its apex), a crossing beside a touch — is
 `Unsupported`, as is every pair sharing no axis: a plane oblique to a
-cone's or a torus's axis, a plane parallel to the axis (through it too,
-until the next step lands the cone's rulings and the torus's meridian
-circles), two cones or tori on different axes, a sphere off the axis;
-these are C3's general positions.
+cone's or a torus's axis, a plane parallel to the axis and further than
+`tol.linear` from it, two cones or tori on different axes, a sphere off
+the axis; these are C3's general positions.
+
+**A plane through the axis** — its normal perpendicular to a cone's or a
+torus's axis within `tol.angular`, the carrier's origin within
+`tol.linear` of it — cuts the meridian itself, both halves, each
+`Transversal`: a cone in the two rulings through its apex, a torus in its
+two tube circles. These are a partial revolve's flat ends against its
+cone and torus faces. A sphere's is the meridian arm's (a plane through
+its centre), a cylinder's the plane–cylinder rulings.
 
 An intersection curve's frame is Arris's own deterministic choice,
 matching Open CASCADE only where the *surface's* parametrisation is
@@ -287,7 +294,13 @@ first sphere's `X` or `Y`, whichever has the larger component across
 that line. The circles come ascending along the frame's `Z`, and so do
 the points of a `Points` result; swapping the operands gives the same
 point sets, and reverses the order when the second operand's axis points
-the other way.
+the other way. A plane through the axis, with normal `n`, orders its two
+curves by the side `w = Z × n` of the carrier's own `Z`, `+w` first: a
+cone's ruling starts at the apex and runs along the cone's `∂P/∂v` on its
+side, so its `t` is the cone's `v` less the apex's; a torus's tube circle
+is centred at `O + R·w` (then `O − R·w`) with `X` the side and `Y` the
+torus's `Z`, so its `t` is the torus's `v`. Neither depends on the
+operand order.
 
 `intersect_curve_surface(c, s, tol)` returns `CurveSurfaceIntersection::{
 Points(Vec<CurveSurfaceHit>), Coincident}` for the pairs with a closed form

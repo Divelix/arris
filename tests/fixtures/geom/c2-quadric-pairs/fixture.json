@@ -1,6 +1,6 @@
 {
   "kind": "geometry",
-  "description": "the coaxial pairs with a cone, a sphere or a torus in them, and the pairs any sphere makes, around one axis in the tilt pose: planes perpendicular to the axis crossing a cone, a sphere and a torus, touching the sphere at a pole and the torus at its tube's top, and through the cone's apex; cylinders on the axis through the cone, the sphere (its frame turned, which Open CASCADE leaves unsolved, and along the axis, which it answers) and the torus, clear of the torus, around it at its outer equator and at the sphere's equator; two cones on the axis at the same and at another angle; a sphere through the torus; a plane oblique to a sphere; two spheres crossing, touching outside and touching inside; two pairs swapped; written by generate.py",
+  "description": "the coaxial pairs with a cone, a sphere or a torus in them, and the pairs any sphere makes, around one axis in the tilt pose: planes perpendicular to the axis crossing a cone, a sphere and a torus, touching the sphere at a pole and the torus at its tube's top, and through the cone's apex; cylinders on the axis through the cone, the sphere (its frame turned, which Open CASCADE leaves unsolved, and along the axis, which it answers) and the torus, clear of the torus, around it at its outer equator and at the sphere's equator; two cones on the axis at the same and at another angle; a sphere through the torus; a plane oblique to a sphere; two spheres crossing, touching outside and touching inside; planes through the cone's and the torus's axis, giving two rulings through the apex and two tube circles; two pairs swapped; written by generate.py",
   "surfaces": {
     "cone": {
       "type": "cone",
@@ -378,6 +378,42 @@
         -0.00617945576653564
       ],
       "radius": 0.6
+    },
+    "meridian_cone": {
+      "type": "plane",
+      "origin": [
+        -2.0949268357064494,
+        2.385726270178063,
+        -0.7695541898535486
+      ],
+      "z": [
+        0.8376945264427496,
+        -0.5461041060954285,
+        -0.006179455766535667
+      ],
+      "x": [
+        0.28571428571428575,
+        0.4285714285714285,
+        0.8571428571428571
+      ]
+    },
+    "meridian_torus": {
+      "type": "plane",
+      "origin": [
+        -2.6253536452270465,
+        3.184350838343029,
+        2.391275795904168
+      ],
+      "z": [
+        -0.4654408956104234,
+        -0.7197894385985097,
+        0.5150416845027294
+      ],
+      "x": [
+        0.2857142857142857,
+        0.42857142857142855,
+        0.8571428571428571
+      ]
     }
   },
   "curves": {},
@@ -466,6 +502,14 @@
     {
       "a": "marble",
       "b": "sphere"
+    },
+    {
+      "a": "meridian_cone",
+      "b": "cone"
+    },
+    {
+      "a": "torus",
+      "b": "meridian_torus"
     },
     {
       "a": "cone",

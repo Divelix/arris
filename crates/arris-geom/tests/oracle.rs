@@ -610,6 +610,8 @@ fn the_c2_quadric_pairs_classify_as_built() {
         ("sphere", "ball", "circle", 1),
         ("sphere", "pebble", "point", 1),
         ("marble", "sphere", "point", 1),
+        ("meridian_cone", "cone", "line", 2),
+        ("torus", "meridian_torus", "circle", 2),
         ("cone", "cap_cone", "circle", 1),
         ("torus", "sleeve", "circle", 2),
     ];

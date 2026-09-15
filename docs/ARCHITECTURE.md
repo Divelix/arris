@@ -736,9 +736,12 @@ an axis — a plane perpendicular to it, a cylinder, cone or torus on it, a
 sphere centred on it, and every plane–sphere and sphere–sphere pair — by
 one arm over the meridian sections in the plane through the axis rather
 than a table of pairwise closed forms (ADR-0008): circles about the axis,
-points on it, `Coincident` or `Empty`. The general positions — a plane
-oblique to a cone's or a torus's axis, two tori on different axes, a
-sphere off the axis — are `Unsupported` and C3's, as is a result that
+points on it, `Coincident` or `Empty` — and where a plane holds a cone's
+or a torus's axis, its meridian: two rulings through the apex, or two
+tube circles, a partial revolve's flat ends. The general positions — a
+plane oblique to a cone's or a torus's axis or parallel to it and off
+it, two tori on different axes, a sphere off the axis — are
+`Unsupported` and C3's, as is a result that
 would mix a circle with a point, whose type is decided with C3's ADR. The
 NURBS variant is one arm like the others; a NURBS–NURBS marcher, when it
 comes, is what that arm calls, and analytic pairs never route through

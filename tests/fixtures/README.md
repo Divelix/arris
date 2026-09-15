@@ -233,7 +233,8 @@ oracle's sampled points on Arris's curves to 1e-9.
   `c2-cylinder-pairs` (every pose of the cylinder–cylinder table) and
   `c2-quadric-pairs` (the coaxial pairs with a cone, a sphere or a torus
   in them, and the pairs any sphere makes: crossings, touches, a plane
-  through an apex, two spheres touching).
+  through an apex, two spheres touching; and a plane through a cone's
+  and a torus's axis, two rulings and two tube circles).
 - A surface pair Open CASCADE finds no conic for is `"type": "unsolved"`
   (`IntAna_NoGeometricSolution`). The oracle test holds Arris to
   `Unsupported` or to a closed-form `Empty` against it — or, where Arris

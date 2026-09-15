@@ -193,7 +193,7 @@ bound has to be established here.
     within `tol.linear` somewhere — near a cone's apex, at a torus's inner
     equator, or on a sphere taken about a borrowed axis — stop and return
     to the human before step 2.
-- [ ] Step 2 **[2]** — **A plane through the axis.**
+- [x] Step 2 **[2]** — **A plane through the axis.**
   - Plane–cone gives two rulings and plane–torus two meridian circles.
     Properties at random poses, and `c2-quadric-pairs` gains both pairs.
   - These are the caps of M5's partial revolves against their cone and

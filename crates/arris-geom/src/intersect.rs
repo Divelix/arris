@@ -17,8 +17,10 @@ use crate::{Curve, GeomError, GeomKind, Surface};
 /// component is positive, a ruling on a cylinder runs along its `Z` from
 /// the point nearest the cylinder's origin (the first cylinder's, for two
 /// parallel ones), and the line of two planes starts at its point nearest
-/// the first plane's origin, and a circle about a shared axis takes the
-/// frame of the first operand that carries the axis (ADR-0008). Swapping
+/// the first plane's origin, a circle about a shared axis takes the
+/// frame of the first operand that carries the axis (ADR-0008), and a
+/// plane through a cone's or a torus's axis gives a ruling from the apex
+/// along `∂P/∂v` or a tube circle whose `t` is the torus's `v`. Swapping
 /// the operands gives the same point sets, up to the orientation of a
 /// line and the order of two parallel cylinders' rulings — and two
 /// crossing cylinders' ellipses bit for bit.
@@ -77,7 +79,9 @@ pub enum SurfaceIntersection {
 /// arm over the meridian sections in the plane through the axis
 /// (ADR-0008, `docs/DATA-MODEL.md` §Curves): circles about the axis,
 /// `Transversal` or `Tangent`, `Points` on it, `Coincident` or `Empty`;
-/// a pair sharing no axis, and a result that would mix kinds, is
+/// a plane through a cone's or a torus's axis cuts its meridian, two
+/// `Transversal` rulings through the apex or two tube circles; a pair
+/// sharing no axis, and a result that would mix kinds, is
 /// `Unsupported`. Read `IntAna_QuadQuadGeo` in the reference tree for
 /// the case analysis, reimplemented on our frames.
 ///

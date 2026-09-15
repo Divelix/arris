@@ -470,7 +470,19 @@ fn coaxial(a: &Surface, b: &Surface) -> bool {
         (true, false) | (false, true) => {
             let (carrier, other) = if carries(a) { (fa, b) } else { (fb, a) };
             match other.kind() {
-                SurfaceKind::Plane => parallel(&other.frame().unwrap().z(), &carrier.z()),
+                SurfaceKind::Plane => {
+                    let plane = other.frame().unwrap();
+                    let across = FRAC_PI_2
+                        - plane
+                            .z()
+                            .cross(&carrier.z())
+                            .norm()
+                            .atan2(plane.z().dot(&carrier.z()).abs())
+                        <= tol().angular;
+                    let holds =
+                        plane.z().dot(&(carrier.origin() - plane.origin())).abs() <= tol().linear;
+                    parallel(&plane.z(), &carrier.z()) || (across && holds)
+                }
                 SurfaceKind::Sphere => on_axis(carrier, other.frame().unwrap().origin()),
                 _ => unreachable!(),
             }
@@ -1442,12 +1454,109 @@ fn constructed_apexes_are_points_and_equal_cones_coincide() {
     });
 }
 
+/// A plane through the axis of a cone cuts its two rulings through the
+/// apex, and through the axis of a torus its two tube circles: each
+/// `Transversal`, on both surfaces, a ruling from the apex along the
+/// cone's `∂P/∂v` at the half-angle to the axis and a circle of radius
+/// `r` about `O ± R·w` in the plane with its `t` the torus's `v`, the
+/// first on the side `w = Z × n`; the plane's origin anywhere in it, its
+/// normal either way. The same plane a hair off the axis is C3's.
+#[test]
+fn a_plane_through_the_axis_cuts_the_meridian() {
+    check(
+        (frame(), placement(), placement(), any::<bool>()),
+        |(axis, pa, pb, flip)| {
+            let z = axis.z().into_inner();
+            let around = tilted(&axis, FRAC_PI_2, pb.phase);
+            let n = if flip { -around } else { around };
+            let anchor = axis.origin() + pb.slide * z + pb.shift * z.cross(&around);
+            let plane = Surface::Plane {
+                frame: Frame::new(anchor, n, z).unwrap(),
+            };
+            let w = axis.z().cross(&UnitVec3::new_normalize(n));
+            for kind in [Coaxial::Cone, Coaxial::Torus] {
+                let carrier = on_axis(kind, &axis, pa);
+                let own_z = carrier.frame().unwrap().z().into_inner();
+                // `on_axis` may reverse the carrier's own Z, and the side
+                // is taken from it.
+                let w = w * own_z.dot(&z).signum();
+                let r = common_properties(&plane, &carrier)?;
+                let SurfaceIntersection::Transversal(c) = &r else {
+                    return Err(TestCaseError::fail(format!("{kind:?}: {r:?}")));
+                };
+                prop_assert_eq!(c.len(), 2, "{:?}: {:?}", kind, r);
+                prop_assert_eq!(
+                    &intersect_surfaces(&carrier, &plane, tol()).unwrap(),
+                    &r,
+                    "either order"
+                );
+                for (curve, sign) in c.iter().zip([1.0, -1.0]) {
+                    match (&carrier, curve) {
+                        (
+                            Surface::Cone {
+                                frame,
+                                radius,
+                                half_angle,
+                            },
+                            Curve::Line { origin, direction },
+                        ) => {
+                            let apex = frame.origin() - (radius / half_angle.tan()) * own_z;
+                            prop_assert!((origin - apex).norm() <= EXACT, "{origin} vs {apex}");
+                            let (sa, ca) = half_angle.sin_cos();
+                            let expected = sa * sign * w + ca * own_z;
+                            prop_assert!((direction.into_inner() - expected).norm() <= EXACT);
+                        }
+                        (
+                            Surface::Torus {
+                                frame,
+                                major_radius,
+                                minor_radius,
+                            },
+                            Curve::Circle {
+                                frame: cf,
+                                radius: cr,
+                            },
+                        ) => {
+                            let centre = frame.origin() + sign * major_radius * w;
+                            prop_assert!((cf.origin() - centre).norm() <= EXACT);
+                            prop_assert_eq!(cr, minor_radius);
+                            for t in [0.0, 1.0, 2.5, 4.0] {
+                                let u =
+                                    (sign * w).dot(&frame.y()).atan2((sign * w).dot(&frame.x()));
+                                let d = (curve.point(t) - carrier.point(u, t)).norm();
+                                prop_assert!(d <= EXACT, "t = {t} is not the torus's v: {d}");
+                            }
+                        }
+                        _ => return Err(TestCaseError::fail(format!("{kind:?}: {curve:?}"))),
+                    }
+                }
+                // Off the axis by more than the tolerance: a hyperbola or
+                // a spiric section, C3's.
+                let off = Surface::Plane {
+                    frame: plane
+                        .frame()
+                        .unwrap()
+                        .with_origin(anchor + (pb.r2 + 0.5) * around),
+                };
+                let apart = intersect_surfaces(&off, &carrier, tol());
+                prop_assert!(
+                    matches!(apart, Err(GeomError::Unsupported { .. })),
+                    "a plane off the axis: {:?}",
+                    apart
+                );
+            }
+            Ok(())
+        },
+    );
+}
+
 /// A non-coaxial pose from §Non-goals of the quadric plan.
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Apart {
     /// A plane oblique to a cone's or a torus's axis.
     Oblique,
-    /// A plane parallel to the axis, through it or off it.
+    /// A plane parallel to the axis and off it: through it, the plane
+    /// cuts the meridian (`a_plane_through_the_axis_cuts_the_meridian`).
     Parallel,
     /// Two cones or two tori on parallel axes apart, or on crossing axes.
     OtherAxis,
@@ -1493,12 +1602,8 @@ fn every_non_coaxial_quadric_pose_is_unsupported() {
                     .unwrap(),
                 },
                 Apart::Parallel => Surface::Plane {
-                    frame: Frame::new(
-                        axis.origin() + pb.slide * z + if through { 0.0 } else { offset } * around,
-                        around,
-                        z,
-                    )
-                    .unwrap(),
+                    frame: Frame::new(axis.origin() + pb.slide * z + offset * around, around, z)
+                        .unwrap(),
                 },
                 Apart::OtherAxis => {
                     let direction = if through {
