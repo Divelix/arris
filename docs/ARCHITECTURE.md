@@ -655,7 +655,11 @@ a fresh `Classifier`. The boundary test comes first, by the entities' own
 tolerances; only a point that is on nothing is cast for, and then the
 eight fixed directions are tried in order, a direction abandoned on a
 boundary, tangent or coincident hit, with all eight abandoned reported as
-`ClassifyError::Undecided` naming the body and the point. B1 is the same
+`ClassifyError::Undecided` naming the body and the point. A ray meets
+every analytic surface by closed form (ADR-0008), so only a NURBS face is
+`ClassifyError::Geometry`; a hit at a cone's apex or a sphere's pole lands
+on that face's degenerate edge, a boundary like any other, and abandons
+its direction. B1 is the same
 code over one shell's faces — `Checker::shell_contains` and `nesting`
 build one `Classifier` per shell rather than one per ray, and a boolean's
 piece selection builds one per operand rather than one per piece it

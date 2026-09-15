@@ -210,7 +210,7 @@ bound has to be established here.
     - a line grazing the torus's inner and outer equators, as touches.
   - `c2-quadric-pairs` gains line pairs against the oracle, the torus's
     through `IntAna_IntLinTorus`.
-- [ ] Step 4 **[2]** — **The checker and the classifier over the arms;
+- [x] Step 4 **[2]** — **The checker and the classifier over the arms;
   the revolve tests' allowances gone.**
   - `Classifier::contains` over the line arms, abandoning a hit on a
     degenerate edge. `ClassifyError`'s docs narrow.
@@ -313,7 +313,13 @@ None for the human. The agent decides two, each at its step:
   scale their bound with the point's magnitude and pass at 4096; the two
   older ones pass at the configured count and are a backlog line.
 - Whether any mixed-kind result is reached by a revolve or a blend in
-  C2's positions (step 4). By construction a hole-rim torus touches its
+  C2's positions (step 4). Decided at step 4: none. With the allowance
+  gone, the general-profile and staircase shards are clean at `Full`
+  with nothing unchecked at the configured count and at 4096 cases, and
+  no property failed. The classifier needed no code: `FaceDomain::side`
+  already answers `Boundary` at a degenerate edge's singular `v`, which a
+  test in `revolve.rs` now pins. `ClassifyError`'s docs narrowed in step
+  3, whose line arms changed the behaviour. By construction a hole-rim torus touches its
   cylinder and plane without crossing either, and the random profiles
   have measure zero on a touch, so none is expected. If the shards find
   one, it goes to the human with the fixture, not into a wider enum.

@@ -5,9 +5,9 @@
 //! the exact volume, one `Generated` per entity and every part of the
 //! sketch present, the dump identical on two runs; a thousand general
 //! profiles whose segments sweep cones, spheres and tori — the same,
-//! with every unchecked row a face pair on one of those three and
-//! nothing else; the closed forms of a frustum, a spherical zone and a
-//! ring, each read back from Arris's STEP by the oracle; the tube's
+//! nothing unchecked either, a ray through an apex or a pole abandoned on
+//! its degenerate edge; the closed forms of a frustum, a spherical zone
+//! and a ring, each read back from Arris's STEP by the oracle; the tube's
 //! numbers equal to `boolean/coaxial-cut`'s; a profile given clockwise
 //! the same body as counter-clockwise; the angle's bounds; and every
 //! typed refusal with the model untouched.
@@ -22,6 +22,7 @@ use arris_debug::testing::{close, fail};
 use arris_debug::{corpus, dump_text, euler_line, fixtures, oracle, prop, prop_shards, sample};
 use arris_io::step;
 use arris_mesh::tessellate;
+use arris_ops::arris_check::arris_topo::arris_geom::region2::Side;
 use arris_ops::arris_check::arris_topo::arris_geom::{
     Curve2, Profile, ProfileEdge, ProfileError, ProfileLoop, ProfileSegment, Surface, SurfaceKind,
 };
@@ -30,7 +31,9 @@ use arris_ops::arris_check::arris_topo::arris_math::{
 };
 use arris_ops::arris_check::arris_topo::provenance::SweepPart;
 use arris_ops::arris_check::arris_topo::{Body, EntityId, Model, Provenance, Role, Shape};
-use arris_ops::arris_check::{Level, Unchecked, check, lumps};
+use arris_ops::arris_check::classify::{Classification, classify_point};
+use arris_ops::arris_check::domain::FaceDomain;
+use arris_ops::arris_check::{Level, check, lumps};
 use arris_ops::measure::mass_properties;
 use arris_ops::{OpError, Reason, revolve};
 use core::f64::consts::{PI, TAU};
@@ -189,15 +192,11 @@ fn expected_parts(sweep: &Sweep, tol: Tolerance) -> BTreeSet<SweepPart> {
 
 /// The property every random sweep is held to: it revolves — a full turn
 /// into one lump with a void per hole and per notch cut in from the
-/// axis — is clean
-/// at `Fast`, has no violation at `Full` and no unchecked row but those
-/// `undecidable` admits, has Pappus's volume and area, a closed mesh
-/// within its chord of the exact volume, one `Generated` per entity and
-/// every part of the sketch, and the same dump on a second run.
-fn revolves_to_pappus(
-    sweep: &Sweep,
-    undecidable: impl Fn(&Unchecked) -> bool,
-) -> Result<(), TestCaseError> {
+/// axis — is clean at `Fast`, has no violation at `Full` and no unchecked
+/// row, has Pappus's volume and area, a closed mesh within its chord of
+/// the exact volume, one `Generated` per entity and every part of the
+/// sketch, and the same dump on a second run.
+fn revolves_to_pappus(sweep: &Sweep) -> Result<(), TestCaseError> {
     let mut m = Model::default();
     let tol = m.precision().tolerance();
     let (body, p) = revolve(&mut m, &sweep.profile, sweep.axis, sweep.angle)
@@ -205,13 +204,8 @@ fn revolves_to_pappus(
     let fast = check(&m, body, Level::Fast);
     prop_assert!(fast.is_ok(), "not clean at Fast\n{}", fast);
     let report = check(&m, body, Level::Full);
-    let undecided: Vec<&Unchecked> = report
-        .unchecked()
-        .iter()
-        .filter(|u| !undecidable(u))
-        .collect();
     prop_assert!(
-        report.is_ok() && undecided.is_empty(),
+        report.is_ok() && report.unchecked().is_empty(),
         "not clean at Full\n{}\n{}",
         report,
         dump_text(&m, body).map_err(fail)?
@@ -250,28 +244,6 @@ fn revolves_to_pappus(
     Ok(())
 }
 
-/// Whether an unchecked row is one the plan admits on a general profile:
-/// a face pair with a cone, sphere or torus in it — within a shell (S5)
-/// or between a lump's outer shell and a void (B1) — since the intersector
-/// has no closed form against those until cycle 2, and a B1 cast from a
-/// void of a full turn, since no ray has one either. Never a pair of
-/// planes and cylinders.
-fn on_a_quadric(row: &Unchecked) -> bool {
-    let quadric = |k: SurfaceKind| {
-        matches!(
-            k,
-            SurfaceKind::Cone | SurfaceKind::Sphere | SurfaceKind::Torus
-        )
-    };
-    match row {
-        Unchecked::FacePair { kinds, .. } | Unchecked::ShellFacePair { kinds, .. } => {
-            quadric(kinds.0) || quadric(kinds.1)
-        }
-        Unchecked::ShellNesting { .. } => true,
-        _ => false,
-    }
-}
-
 prop_shards! {
     /// A staircase of segments parallel and perpendicular to the axis,
     /// every face a plane or a cylinder the checker decides every pair
@@ -279,19 +251,20 @@ prop_shards! {
     /// area, a closed mesh, complete provenance, a deterministic dump.
     rectilinear_profiles_revolve_to_pappus [shard_0 shard_1 shard_2 shard_3]
         (sweep) = prop::profile::rectilinear() => {
-            revolves_to_pappus(&sweep, |_| false)
+            revolves_to_pappus(&sweep)
         }
 }
 
 prop_shards! {
     /// A profile whose segments sweep cones in both orientations, spheres
-    /// and tori beside planes and cylinders: clean at `Fast`, no
-    /// violation at `Full` and every unchecked row a pair on one of the
-    /// three, Pappus's volume and area, a closed mesh, complete
+    /// and tori beside planes and cylinders: clean at `Fast`, clean at
+    /// `Full` with nothing unchecked — S5 and B1 decide every pair on the
+    /// three by the coaxial and meridian arms and the line arms
+    /// (ADR-0008) — Pappus's volume and area, a closed mesh, complete
     /// provenance, a deterministic dump.
     general_profiles_revolve_to_pappus [shard_0 shard_1 shard_2 shard_3]
         (sweep) = prop::profile::general() => {
-            revolves_to_pappus(&sweep, on_a_quadric)
+            revolves_to_pappus(&sweep)
         }
 }
 
@@ -893,12 +866,11 @@ fn profile_of(recipe: &Recipe) -> Profile {
     fixtures::geom::build_profile(name, plane, outer, holes, &Default::default()).unwrap()
 }
 
-/// The three quadric-faced revolves the corpus cannot run yet (`⚠ OPEN`
-/// 2 of the plan: S5 has no arm against a cone, sphere or torus), held
-/// to their closed forms and to the oracle's reading of Arris's STEP
-/// through a scratch fixture: a trapezoid's frustum less its bore, an
-/// arc's spherical zone less its bore, and a circle's ring — the last
-/// with the counts and the Euler line of `sample::torus`.
+/// The three quadric-faced revolves, held to the checker at `Full` with
+/// nothing unchecked, to their closed forms and to the oracle's reading
+/// of Arris's STEP through a scratch fixture: a trapezoid's frustum less
+/// its bore, an arc's spherical zone less its bore, and a circle's ring —
+/// the last with the counts and the Euler line of `sample::torus`.
 #[test]
 fn the_frustum_the_zone_and_the_ring_have_their_closed_forms_and_the_oracles_volume() {
     let z = Axis::z_at(Point3::origin());
@@ -991,9 +963,8 @@ fn the_frustum_the_zone_and_the_ring_have_their_closed_forms_and_the_oracles_vol
         let profile = profile_of(&recipe);
         let (body, _) = revolve(&mut m, &profile, z, TAU).unwrap();
         let report = check(&m, body, Level::Full);
-        assert!(report.is_ok(), "{name}\n{report}");
         assert!(
-            report.unchecked().iter().all(on_a_quadric),
+            report.is_ok() && report.unchecked().is_empty(),
             "{name}\n{report}"
         );
         let props = mass_properties(&m, body).unwrap();
@@ -1034,8 +1005,8 @@ fn the_frustum_the_zone_and_the_ring_have_their_closed_forms_and_the_oracles_vol
 /// axis into a ball with a degenerate edge at each pole — `sample::sphere`
 /// as a revolve builds it; and a quarter turn of a kite touching the axis
 /// at one vertex into two cones closing there, each on a degenerate edge
-/// of its own. Each is clean at `Full` with every unchecked row a pair on
-/// a quadric, closes its Euler line at genus 0 without the degenerate
+/// of its own. Each is clean at `Full` with nothing unchecked, closes its
+/// Euler line at genus 0 without the degenerate
 /// edges, has its closed-form volume and area, meshes closed with every
 /// degenerate edge one index, accounts for every entity — a `Rise` naming
 /// the degenerate edge of each face closing there — and is read back from
@@ -1117,13 +1088,9 @@ fn a_cone_a_ball_and_a_pinch_close_on_degenerate_edges_at_the_axis() {
             .unwrap_or_else(|e| panic!("{name}: {e}"));
         let report = check(&m, body, Level::Full);
         assert!(
-            report.is_ok(),
+            report.is_ok() && report.unchecked().is_empty(),
             "{name}\n{report}\n{}",
             dump_text(&m, body).unwrap()
-        );
-        assert!(
-            report.unchecked().iter().all(on_a_quadric),
-            "{name}\n{report}"
         );
         assert_eq!(report.euler().unwrap().to_string(), line, "{name}");
         let degenerate: Vec<_> = m
@@ -1133,6 +1100,41 @@ fn a_cone_a_ball_and_a_pinch_close_on_degenerate_edges_at_the_axis() {
             .filter(|e| m.edge(e.id).unwrap().is_degenerate())
             .collect();
         assert_eq!(degenerate.len(), singular, "{name}");
+        // Each degenerate edge is where its face's surface is singular: a
+        // ray through the apex or a pole lands on the face's boundary
+        // there, so the classifier abandons that direction rather than
+        // count the hit — its `uv`, `u = 0` at the singular `v`, is on the
+        // degenerate edge's side of the domain at every `u`.
+        for e in &degenerate {
+            let edge = m.edge(e.id).unwrap();
+            let at = m.vertex(edge.start()).unwrap().point();
+            for used in m.edge_uses(e.id).unwrap().iter() {
+                let face = m.face(used.face).unwrap();
+                let surface = m.surface(face.surface()).unwrap();
+                let v = match surface {
+                    Surface::Cone {
+                        radius, half_angle, ..
+                    } => -radius / half_angle.sin(),
+                    other => other.project(at).unwrap().uv.y,
+                };
+                let domain =
+                    FaceDomain::of(&m, used.face, m.precision().parametric_tolerance).unwrap();
+                let [us, _] = domain.uv_box().unwrap();
+                for u in [us.lo(), us.lerp(0.5), us.hi(), 0.0] {
+                    assert_eq!(
+                        domain.side(Point2::new(u, v)).0,
+                        Side::Boundary,
+                        "{name}: ({u}, {v}) on {surface:?}"
+                    );
+                }
+            }
+        }
+        // A full turn classifies the axis by a cast past its apex or pole.
+        if angle_deg == 360.0 {
+            let on_axis = |z: f64| classify_point(&m, body, Point3::new(0.0, 0.0, z)).unwrap();
+            assert_eq!(on_axis(0.5), Classification::Inside, "{name}");
+            assert_eq!(on_axis(1.5), Classification::Outside, "{name}");
+        }
 
         let props = mass_properties(&m, body).unwrap();
         assert!(close(props.volume, volume), "{name}: {}", props.volume);
