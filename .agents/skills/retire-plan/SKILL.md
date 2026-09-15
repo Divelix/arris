@@ -26,6 +26,11 @@ Deletion is the "done" signal. Anything worth keeping was moved first.
 6. Anything deferred from the plan goes to `docs/BACKLOG.md` as one line.
 7. `git rm docs/plans/<slug>.md` and commit everything as
    `docs: retire plan <slug>` with a body listing the docs updated.
+8. End the reply with **one recommended next step**, read from the
+   roadmap's open lines, the other active plan and the backlog: the
+   skill to run and its argument (`/plan <slug>`, `/idea <topic>`,
+   `/work <plan>`, `/close-cycle`) and one sentence on why it comes
+   before the alternatives.
 
 ## Don't
 
