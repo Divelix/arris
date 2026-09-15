@@ -515,10 +515,10 @@ vertex manifold. Every other segment sweeps one face: a segment
 parallel to the axis a cylinder, perpendicular a plane (an annulus, or a
 sector of one), oblique a cone with its apex on the axis; an arc centred
 on the axis a sphere, elsewhere a torus of `R` its centre's distance and
-`r` its radius (the quadric faces are cycle 1's *as surfaces*; their
-booleans, and the checker's S5 and B1 arms against them, are C2–C3's, so
-those rows report the pairs unchecked and `classify_point` refuses a ray
-against them). The
+`r` its radius. Every pair of faces a revolve makes shares its axis or
+has a plane through it, so S5 and B1 decide them by the meridian arm and
+`classify_point` casts against them by the line arms (ADR-0008); their
+booleans are C3's, behind the quadric guard (§Operations). The
 surfaces of revolution share one frame: origin on the axis, `X` the unit
 radial from the axis into the profile's plane — so `u = 0` *is* the
 profile plane and every seam lies in it — `Z` the axis direction, except
@@ -950,8 +950,8 @@ mesh-based mass properties (`ops::measure` integrates the B-Rep).
   then `compare.py` through `uv`, a missing environment a loud error;
   `oracle::scratch_fixture`: a test's own recipe written under
   `target/inspect/<name>/` with its `expected.json` from `expected.py`,
-  for a body the corpus does not hold — the quadric-faced revolves, off
-  the axis or closing on it, and the STEP tests' own bodies — held to the
+  for a body the corpus does not hold — the revolves closing at a cone's
+  apex or a sphere's pole, and the STEP tests' own bodies — held to the
   oracle's reading of its STEP all the same), and
   the seeded property-test runner and strategies (`prop`,
   with every analytic surface and curve in a random pose and random

@@ -143,11 +143,10 @@ Two plans this one does not contain, in the order the steps need them:
    S5 needs on the miter's two blend cylinders (step 2's fixture, moved
    at step 7). Neither arm is built here; step 2 takes the miter ellipse
    from the construction and leaves exactly one S5 row unchecked.
-2. **The quadric checker arms** (`plans/quadric-checker-arms`, planned
-   2026-09-15; C2's second and third
-   lines, narrowed by step 1): the intersector arms above, S5, B1 and
-   `classify_point` dispatching them, and the three M5 revolves into the
-   corpus. Steps 8–9 wait on it.
+2. **The quadric checker arms** (retired 2026-09-15, ADR-0008; C2's
+   second and third lines, narrowed by step 1): the intersector arms
+   above, S5, B1 and `classify_point` dispatching them, and the three M5
+   revolves into the corpus. Steps 8–9 check their blends by them.
 
 With two active plans at most, the human sequences these (§Open
 questions); steps 1–6 need neither.
@@ -391,8 +390,7 @@ bound has to be established here.
   - ~~`regression/fillet-miter` into `blend/fillet-miter` with its dump.~~
     Done by `plans/cylinder-cylinder-booleans` step 1, whose arm fixed it.
   - Fixtures `blend/d-chord-edge`, `blend/rib-root-edge`.
-- [ ] Step 8 **[2]** — **Closed edges** (waits on
-  `plans/quadric-checker-arms`).
+- [ ] Step 8 **[2]** — **Closed edges** (S5 by ADR-0008's meridian arm).
   - A hole's rim: plane against cylinder along a circle, a convex torus
     blend (its frame coaxial with the hole's, `X` the cylinder's so the
     seams share a plane, `v` over one quarter turn), and a cone chamfer.
@@ -400,8 +398,8 @@ bound has to be established here.
     is a tube circle at `u = 0`.
   - Fixtures `blend/hole-rim-fillet`, `blend/hole-rim-chamfer`,
     `blend/boss-base-fillet`, the closed forms by Pappus.
-- [ ] Step 9 **[2]** — **The sphere corner** (waits on
-  `plans/quadric-checker-arms`).
+- [ ] Step 9 **[2]** — **The sphere corner** (S5 by ADR-0008's meridian
+  arm).
   - Three blended edges at a vertex of three planes: a sphere octant
     through the ball's centre, tangent to each cylinder along a great
     circle; its frame's `Z` along one cylinder's axis so the three

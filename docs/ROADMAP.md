@@ -310,14 +310,22 @@ with their `#[ignore]`d twins — green.*
   M5's revolves put them, every one a conic: a plane against a quadric
   with the plane perpendicular to the axis, a cylinder against a quadric
   coaxial with it, a sphere against a cylinder through its centre,
-  plane–sphere, and a line against each quadric. The general pairs —
-  plane–cone, plane–sphere and plane–torus in general position — are
-  C3's.
+  plane–sphere, a plane through a cone's or a torus's axis (M5's partial
+  revolves), and a line against each quadric. The general pairs —
+  plane–cone and plane–torus off the axis, two cones or tori on different
+  axes — are C3's. **Done 2026-09-15**, ADR-0008: one meridian arm for
+  every pair sharing an axis, isolated meetings as
+  `SurfaceIntersection::Points`; a plane through the axis cuts the
+  meridian; a line meets each quadric by closed form;
+  `geom/c2-quadric-pairs` against the oracle. Booleans with a quadric
+  face stay refused by the pave model's quadric guard.
 - The checker's S5 and B1 arms, and `classify_point`, against cone,
   sphere and torus faces over those arms, so M5's quadric-faced revolves
-  become corpus fixtures (`sweep/revolve-frustum`, `revolve-barrel`,
-  `revolve-ring`) instead of closed-form tests with the oracle reading a
-  scratch STEP.
+  become corpus fixtures. **Done 2026-09-15**: `sweep/revolve-frustum`
+  (narrowing, widening, a quarter turn), `revolve-barrel` and
+  `revolve-ring` (full and a quarter turn) pass every stage; random
+  general revolve profiles check at `Full` with nothing unchecked
+  (`revolve.rs`).
 - Cylinder–cylinder booleans. Parallel axes (rulings, a tangent line)
   are what the transversal probe needs and what a blend along a ruling's
   S5 row needs; equal radii with crossing axes, two ellipses, is the
