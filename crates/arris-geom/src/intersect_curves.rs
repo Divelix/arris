@@ -126,6 +126,94 @@ pub fn intersect_curves(
     }
 }
 
+/// Whether two curves are the same curve within `tol`: the
+/// [`CurveIntersection::Coincident`] verdict of [`intersect_curves`],
+/// without the common points of a pair that is not. A question such as
+/// "does this edge lie along that section curve" needs only this, and it
+/// has a closed form for every pair of lines and conics — including two
+/// coplanar conics with an ellipse among them, whose crossings are the
+/// quartic [`intersect_curves`] refuses.
+///
+/// Guarantees: wherever [`intersect_curves`] answers, this is `true`
+/// exactly when that answer is `Coincident`, by the same arms. Two lines
+/// coincide when parallel within `tol.angular` and within `tol.linear` of
+/// each other; a line never coincides with a conic; two conics coincide
+/// when the first lies in the second's plane and they are the same conic
+/// — the centres, the radii and, for an ellipse, the major axes agreeing
+/// within the tolerance. Any NURBS operand is
+/// [`GeomError::Unsupported`] naming the pair.
+///
+/// ```
+/// use arris_geom::{Curve, curves_coincide, intersect_curves};
+/// use arris_math::{Frame, Precision};
+///
+/// let tol = Precision::DEFAULT.tolerance();
+/// let circle = Curve::Circle { frame: Frame::world(), radius: 1.0 };
+/// let ellipse = Curve::Ellipse { frame: Frame::world(), major_radius: 3.0, minor_radius: 2.0 };
+/// // Coplanar and apart: where they meet is the quartic, but they are not
+/// // the same curve.
+/// assert!(intersect_curves(&circle, &ellipse, tol).is_err());
+/// assert!(!curves_coincide(&circle, &ellipse, tol)?);
+/// assert!(curves_coincide(&ellipse, &ellipse, tol)?);
+/// # Ok::<(), arris_geom::GeomError>(())
+/// ```
+pub fn curves_coincide(a: &Curve, b: &Curve, tol: Tolerance) -> Result<bool, GeomError> {
+    if !tol.is_consistent() {
+        return Err(GeomError::InvalidTolerance(tol));
+    }
+    let unsupported = || GeomError::Unsupported {
+        a: GeomKind::Curve(a.kind()),
+        b: GeomKind::Curve(b.kind()),
+    };
+    match (a, b) {
+        (
+            &Curve::Line {
+                origin: oa,
+                direction: da,
+            },
+            &Curve::Line {
+                origin: ob,
+                direction: db,
+            },
+        ) => Ok(line_line(oa, da.into_inner(), ob, db.into_inner(), tol)
+            == CurveIntersection::Coincident),
+        (Curve::Line { .. }, Curve::Circle { .. } | Curve::Ellipse { .. })
+        | (Curve::Circle { .. } | Curve::Ellipse { .. }, Curve::Line { .. }) => Ok(false),
+        (
+            Curve::Circle { .. } | Curve::Ellipse { .. },
+            Curve::Circle { .. } | Curve::Ellipse { .. },
+        ) => {
+            let (Some((fa, ra)), Some((fb, rb))) = (conic_frame(a), conic_frame(b)) else {
+                return Err(unsupported());
+            };
+            // Through `b`'s plane, as `through_plane`: a curve that meets
+            // it at points is not in it, and is not `b`.
+            let plane = Surface::Plane { frame: *fb };
+            if !matches!(
+                intersect_curve_surface(a, &plane, tol)?,
+                CurveSurfaceIntersection::Coincident
+            ) {
+                return Ok(false);
+            }
+            // In it, as `coplanar`: two circles by their own arm, a pair
+            // with an ellipse by the conics' closed form.
+            let circles = matches!((a, b), (Curve::Circle { .. }, Curve::Circle { .. }));
+            if circles {
+                Ok(coplanar(a, b, tol)? == CurveIntersection::Coincident)
+            } else {
+                Ok(conics_coincide(fa, ra, fb, rb, tol))
+            }
+        }
+        (
+            Curve::Nurbs(_),
+            Curve::Line { .. } | Curve::Circle { .. } | Curve::Ellipse { .. } | Curve::Nurbs(_),
+        )
+        | (Curve::Line { .. } | Curve::Circle { .. } | Curve::Ellipse { .. }, Curve::Nurbs(_)) => {
+            Err(unsupported())
+        }
+    }
+}
+
 /// `hits` sorted by `ta`; a total order, since every parameter is finite.
 fn points(mut hits: Vec<CurveCurveHit>) -> CurveIntersection {
     hits.sort_by(|x, y| x.ta.total_cmp(&y.ta));

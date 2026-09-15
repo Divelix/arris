@@ -36,7 +36,7 @@ pub use curve2::{Curve2, Curve2Eval, Curve2Kind, Curve2Projection};
 pub use error::{AmbiguousLocus, GeomError, GeomKind};
 pub use intersect::{SurfaceIntersection, intersect_surfaces};
 pub use intersect_curve::{CurveSurfaceHit, CurveSurfaceIntersection, intersect_curve_surface};
-pub use intersect_curves::{CurveCurveHit, CurveIntersection, intersect_curves};
+pub use intersect_curves::{CurveCurveHit, CurveIntersection, curves_coincide, intersect_curves};
 pub use nurbs::{
     FitError, MAX_DEGREE, MAX_FIT_SPANS, NurbsCurve, NurbsCurve2, NurbsSurface, fit_curve2,
 };

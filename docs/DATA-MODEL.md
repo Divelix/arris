@@ -267,6 +267,11 @@ with an ellipse in it is `Coincident` when the two are the same conic
 (centres, radii and major axes agreeing within the tolerance — the edge
 a boolean made and the edge a second boolean meets it with) and
 `Unsupported` otherwise, as is any pair with a `Nurbs` operand.
+`curves_coincide(a, b, tol) -> Result<bool, GeomError>` is that
+`Coincident` verdict alone, by the same arms, so it answers the coplanar
+pair with an ellipse too — the same conic or not — without the quartic
+of where two such conics meet; it is `Unsupported` only for a `Nurbs`
+operand.
 
 `⚠ OPEN:` the intersection curve of two cylinders in a quartic pose (and of
 the other quadric pairs whose curves are not conics) has an exact parametrisation that is not

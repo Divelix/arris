@@ -335,6 +335,14 @@ fn boolean_pin_in_bore_cut() {
     run("boolean/pin-in-bore-cut");
 }
 
+/// Two short cylinders crossing at 30°: each of the tool's cap planes cuts
+/// the target's wall in an ellipse coplanar with the tool's rim circle, and
+/// whether that rim lies along the ellipse is decided without the quartic.
+#[test]
+fn boolean_short_cross_cylinders_fuse() {
+    run("boolean/short-cross-cylinders-fuse");
+}
+
 /// A rectangle with a circular hole extruded: `boolean/through-hole`'s
 /// solid and numbers by the other path.
 #[test]

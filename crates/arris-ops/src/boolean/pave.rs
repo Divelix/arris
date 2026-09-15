@@ -13,7 +13,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use arris_check::arris_topo::arris_geom::region2::Side;
 use arris_check::arris_topo::arris_geom::{
     Curve, Curve2, CurveIntersection, CurveSurfaceIntersection, GeomError, SurfaceIntersection,
-    intersect_curve_surface, intersect_curves, intersect_surfaces, pcurve_on,
+    curves_coincide, intersect_curve_surface, intersect_curves, intersect_surfaces, pcurve_on,
 };
 use arris_check::arris_topo::arris_math::{
     Interval, Point2, Point3, Precision, Tolerance, Vec2, period_end, wrap_angle,
@@ -941,9 +941,12 @@ impl<'m> Build<'m> {
                 };
                 let tol =
                     tolerance_of(&self.precision, e.tolerance, fa.tolerance.max(fb.tolerance));
-                if intersect_curves(curve, e.curve, tol)
+                // Only the verdict: an edge in the plane of a planar
+                // section conic — a rim circle beside the ellipse its cap
+                // plane cuts from the other wall — has no closed form for
+                // where the two meet, and needs none here.
+                if curves_coincide(curve, e.curve, tol)
                     .map_err(|err| geometry(err, fa.shape(), e.shape()))?
-                    == CurveIntersection::Coincident
                 {
                     along.push(e);
                 }

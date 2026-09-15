@@ -1,0 +1,29 @@
+{
+  "description": "two cylinders R 1 crossing at ψ = 30°, each only 4R / sin ψ long, the tool turned 40° about its own axis: the shortest pair crossing_cylinders_obey_every_identity draws. Each cap plane of the tool cuts the target's wall in an ellipse lying in the plane of the tool's own rim circle, and the cap's disc stands clear of the wall; asking whether the rim is an edge along that ellipse is a question about two coplanar conics, which the section-curve pave answered by intersecting them — the quartic, no closed form — and refused (plans/cylinder-cylinder-booleans step 7). The fuse is 2πR²L − 16R³/(3 sin ψ)",
+  "params": {"R": 1, "psi": 30, "L": 8, "turn": 40},
+  "steps": [
+    {"name": "a", "op": "cylinder", "base": [0, 0, "-L / 2"], "axis": [0, 0, 1], "radius": "R", "height": "L"},
+    {"name": "b0", "op": "cylinder",
+     "base": ["-L / 2 * sin(radians(psi))", 0, "-L / 2 * cos(radians(psi))"],
+     "axis": ["sin(radians(psi))", 0, "cos(radians(psi))"], "radius": "R", "height": "L"},
+    {"name": "b", "op": "transform", "of": "b0",
+     "rotate": {"axis": ["sin(radians(psi))", 0, "cos(radians(psi))"], "angle_deg": "turn"}},
+    {"name": "result", "op": "fuse", "a": "a", "b": "b"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [0, 0, 0], "expect": "in"},
+    {"label": "in_a_only", "point": [0, 0, -3.9], "expect": "in"},
+    {"label": "outside", "point": [0, 3, 0], "expect": "out"},
+    {"label": "above_a", "point": [0, 0, 4.5], "expect": "out"},
+    {"label": "on_a_wall", "point": ["-R", 0, -3.9], "expect": "on"},
+    {"label": "on_b_top", "point": ["L / 2 * sin(radians(psi))", 0, "L / 2 * cos(radians(psi))"], "expect": "on"}
+  ],
+  "analytic": {
+    "volume": "2 * pi * R^2 * L - 16 * R^3 / (3 * sin(radians(psi)))",
+    "centroid": [0, 0, 0],
+    "counts": {"vertices": 10, "edges": 16, "faces": 8, "loops": 8, "shells": 1},
+    "counts_differ": "Open CASCADE also cuts a section arc that runs through an ellipse's parameter origin there, one more vertex and edge, as in cross-cylinders-common; Arris's edge range crosses the period once (E1)",
+    "genus": 0
+  }
+}

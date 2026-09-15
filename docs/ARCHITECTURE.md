@@ -252,7 +252,10 @@ dropped when it lies outside — the coincidence is the curves' verdict,
 never the polygon band's, which two fitted pcurves of one curve can
 straddle. For the same reason a block of a section curve that is a
 piece of an operand edge of either face is that edge and not a section
-edge. An edge that lies in a face of the other operand
+edge; whether an edge runs along the curve is `curves_coincide`, the
+verdict without the points, so a rim circle in the plane of the ellipse
+its own cap plane cuts from the other wall — two short cylinders crossing
+steeply — needs no closed form for where the two conics would meet. An edge that lies in a face of the other operand
 (`Interferences::coincident`) is paved and placed the same way whether
 or not a face of its own is coincident with that face: a seam on the
 ruling two parallel walls cross along splits the other wall as an image,

@@ -86,6 +86,18 @@ row.
     surface bends toward it.
   - It returns `None` where `normal` is `None` or `direction` is not
     tangent within `tol.angular`.
+- **`arris-geom` public API (addition, step 7):**
+  `curves_coincide(a: &Curve, b: &Curve, tol: Tolerance) -> Result<bool, GeomError>`,
+  the `Coincident` verdict of `intersect_curves` without the points, by
+  the same arms: `Unsupported` only for a NURBS operand. The pave's test
+  of whether an operand edge runs along a section curve uses it.
+- **The crossing ellipses' frames (step 8):** each `Z` and `X` of the
+  table above takes the sign that makes its largest-magnitude component
+  positive (the lower index on a tie), so both operand orders give the
+  same curves bit for bit.
+- **`arris-check` `FaceDomain::side` (step 9):** unchanged signature and
+  answers; an index over each polygon's segments built once in
+  `FaceDomain::of` replaces the walk over every segment.
 - **The curvature rule** in `boolean/result.rs`: `tangent_side` stops
   matching on plane–cylinder. At a contact point it takes:
   - `n`, the other face's effective outward normal;
@@ -291,7 +303,43 @@ bound has to be established here.
       characteristic is odd (its `expected.json` moved: loops 11 → 10, no
       genus), so a `tangent-contact` result may carry an odd one, as a
       `non-manifold` compound already could, in the oracle and the lint.
-- [ ] Step 7 **[2]** — **Property tests** (seeded, `prop_shards!`).
+  Steps 7–9 were split out of the property step (now 10) by what its
+  first runs found; each is a fix with its own test, landed before the
+  property that found it (decisions of 2026-09-15, the human's).
+- [x] Step 7 **[2]** — **A rim beside a coplanar section ellipse.** Two
+  short cylinders crossing steeply: each of the tool's cap planes cuts
+  the target's wall in an ellipse lying in the plane of the tool's rim
+  circle. The pave asked `intersect_curves` whether the rim runs along
+  that ellipse, and two coplanar conics that are not the same one are
+  the quartic, `Unsupported` — `fuse` and `common` refused for any
+  pose whose face boxes overlap there.
+  - `arris_geom::curves_coincide` (§Design deltas): the `Coincident`
+    verdict alone, by `intersect_curves`' own arms; the pave's
+    along-the-curve test uses it.
+  - A property holding it to `intersect_curves` wherever that answers,
+    and to the conics' closed form where it refuses.
+  - Fixture `boolean/short-cross-cylinders-fuse`, `R = 1`, `ψ = 30°`,
+    `L = 4R / sin ψ`, the tool turned 40°: refused before, every stage
+    after, Open CASCADE's ellipse-origin vertex in `counts_differ`.
+- [ ] Step 8 **[2]** — **Crossing ellipses independent of operand
+  order.** Swapping the operands negated each ellipse's `X` and `Z`, so
+  the section curve ran the other way, its pcurve fits sampled it
+  differently (37 knots against 38) and `fuse(a, b)` and `fuse(b, a)`
+  differed up to ids. Each frame's `Z` and `X` take a fixed sign (§Design
+  deltas), exact under the swap; a test swaps random crossing pairs and
+  compares the curves bit for bit. The crossing fixtures' dumps move if a
+  sign does, as a `fixtures:` note.
+- [ ] Step 9 **[3]** — **An indexed `FaceDomain::side`.** `side` walked
+  every segment of polygons discretised at the parametric tolerance
+  (7 000 points for a cap circle at `R = 1`, 40 000 for a wall bounded by
+  section ellipses at `R = 5`), so a `Full` check of two crossing
+  cylinders' fuse took 1 s at `R = 1` and 6 s at `R = 5` — the crossing
+  property ran 25 minutes. An index built once per domain (§Design
+  deltas) answers the same `Side` with the same shift: a property holds
+  it to the linear walk on random and corpus faces, and the check of that
+  fuse is timed before and after in the commit body. The backlog's S5
+  cost line is updated or retired.
+- [ ] Step 10 **[2]** — **Property tests** (seeded, `prop_shards!`).
   - `arris_debug::prop::body::parallel_pair` and `crossing_pair`, both
     under one random motion:
     - parallel: `d` drawn between the tangent distances, clear of each
@@ -302,9 +350,14 @@ bound has to be established here.
   - Held to `boolean_prop.rs`'s identities: additivity, the cut identity
     whatever the lumps, commutativity, `Full` with nothing unchecked,
     `audit`, and two runs dumping identically. The crossing common is
-    also held to `16R³/(3 sin ψ)`.
+    also held to `16R³/(3 sin ψ)`, within `REL + tol·A/V`: a boundary
+    within the tolerance of the exact one moves the volume by at most
+    `tol·A` (the fitted pcurves' bound `fitted_rel` states only its order,
+    and a pair at `R = 0.5` exceeded it by 2%).
+  - Either crossing cut is `NonManifold` (step 2's finding), asserted in
+    place of the cut identity.
   - A failure is shrunk to a `regression/` fixture in this step.
-- [ ] Step 8 **[2]** — **The S5 rows gone.** (The miter's move into
+- [ ] Step 11 **[2]** — **The S5 rows gone.** (The miter's move into
   `blend/`, `fillet.rs`'s two miter tests and "nothing unchecked at rest"
   landed with step 1.)
   - `extrude.rs` drops `non_coaxial_cylinders` and allows nothing

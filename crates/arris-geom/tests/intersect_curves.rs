@@ -11,7 +11,8 @@ use core::f64::consts::TAU;
 use arris_debug::prop::geom::{circle, curve, ellipse, line, nurbs_curve};
 use arris_debug::prop::{DEFAULT_SCALE, check, finite_f64, point_in_box, unit_vec3};
 use arris_geom::{
-    Curve, CurveCurveHit, CurveIntersection, CurveKind, GeomError, GeomKind, intersect_curves,
+    Curve, CurveCurveHit, CurveIntersection, CurveKind, GeomError, GeomKind, curves_coincide,
+    intersect_curves,
 };
 use arris_math::{Frame, Point3, Precision, Tolerance, Vec3};
 use proptest::prelude::*;
@@ -548,6 +549,83 @@ fn every_analytic_pair_passes_the_common_properties() {
             // sharing a plane.
             Err(GeomError::Unsupported { .. }) => {}
             Err(e) => return fail(e.to_string()),
+        }
+        Ok(())
+    });
+}
+
+/// `curves_coincide` is `intersect_curves`' `Coincident` verdict wherever
+/// that answers, any pair; where it refuses — two conics in one plane with
+/// an ellipse among them — the conics are the same only as the closed
+/// form says: an ellipse's twins are, a circle or a second ellipse in its
+/// plane is not (plans/cylinder-cylinder-booleans step 7). A NURBS
+/// operand is `Unsupported` naming the pair.
+#[test]
+fn curves_coincide_is_the_coincident_verdict_without_the_quartic() {
+    check((curve(), curve()), |(a, b)| {
+        let verdict = curves_coincide(&a, &b, tol());
+        match intersect_curves(&a, &b, tol()) {
+            Ok(found) => {
+                prop_assert_eq!(
+                    verdict.map_err(|e| TestCaseError::fail(e.to_string()))?,
+                    found == CurveIntersection::Coincident,
+                    "{:?} vs {:?}",
+                    a,
+                    b
+                );
+            }
+            Err(GeomError::Unsupported { a: ka, b: kb }) => {
+                let nurbs =
+                    matches!(a.kind(), CurveKind::Nurbs) || matches!(b.kind(), CurveKind::Nurbs);
+                if nurbs {
+                    prop_assert!(
+                        matches!(verdict, Err(GeomError::Unsupported { a: x, b: y }) if x == ka && y == kb),
+                        "{:?}",
+                        verdict
+                    );
+                } else {
+                    prop_assert!(verdict.is_ok(), "{:?}", verdict);
+                }
+            }
+            Err(e) => return fail(e.to_string()),
+        }
+        Ok(())
+    });
+    check((ellipse(), finite_f64(0.1..=2.0)), |(e, factor)| {
+        let Curve::Ellipse {
+            frame,
+            major_radius,
+            minor_radius,
+        } = e
+        else {
+            return fail("not an ellipse".to_string());
+        };
+        let swapped = Frame::new(
+            frame.origin(),
+            frame.z().into_inner(),
+            frame.y().into_inner(),
+        )
+        .map_err(|e| TestCaseError::fail(e.to_string()))?;
+        let twin = Curve::Ellipse {
+            frame: swapped,
+            major_radius: minor_radius,
+            minor_radius: major_radius,
+        };
+        let circle = Curve::Circle {
+            frame,
+            radius: factor * major_radius,
+        };
+        let other = Curve::Ellipse {
+            frame,
+            major_radius: factor * major_radius + minor_radius,
+            minor_radius,
+        };
+        let same = |x: &Curve, y: &Curve| {
+            curves_coincide(x, y, tol()).map_err(|e| TestCaseError::fail(e.to_string()))
+        };
+        prop_assert!(same(&e, &twin)?);
+        for (x, y) in [(&e, &circle), (&circle, &e), (&e, &other)] {
+            prop_assert!(!same(x, y)?, "{:?} vs {:?}", x, y);
         }
         Ok(())
     });
