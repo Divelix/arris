@@ -140,7 +140,10 @@ of the step that made the fixture pass, and a later change to it is a
   `expect_error: "tangent-contact" | "non-manifold" | "blend-too-large" |
   "tangent-chain" | "vertex-blend"` says Open CASCADE
   builds a result Arris refuses by design (the tangent cases,
-  `Reason::TangentContact` — ADR-0004; `boolean/edge-touching-fuse`, two
+  `Reason::TangentContact` — ADR-0004, whose contact Open CASCADE carries
+  as an edge of four faces, so where that makes the Euler characteristic
+  odd, as in `boolean/tangent-hole`, the oracle records no genus
+  and the recipe states none; `boolean/edge-touching-fuse`, two
   solids sharing an edge, `Reason::NonManifold` — ADR-0006, whose
   compound has an odd Euler characteristic, so the oracle records no
   genus for it and the recipe states none; a blend it builds and Arris

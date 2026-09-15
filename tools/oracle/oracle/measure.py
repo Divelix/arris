@@ -5,13 +5,15 @@
                                  unit density, physical convention (the
                                  products of inertia carried negated)
     counts                       unique vertices, edges (a seam once, a
-                                 degenerate edge not at all), faces, loops
-                                 (wires), shells, solids
+                                 degenerate or an INTERNAL edge not at
+                                 all), faces, loops (wires), shells, solids
     euler_characteristic         V − E + 2F − L: 2(S − G) for closed shells
     genus                        S − χ/2, what the fixture's analytic genus
                                  is checked against (the "Euler line");
                                  None for a non-manifold result, whose
-                                 shared edge or vertex makes χ odd
+                                 shared edge or vertex, or tangent contact
+                                 carried as an edge of four faces, makes
+                                 χ odd
     degenerate                   no solid in the result
     probes                       in / out / on for each probe point
 """
@@ -26,9 +28,11 @@ from OCP.gp import gp_Pnt
 from OCP.TopAbs import (
     TopAbs_EDGE,
     TopAbs_FACE,
+    TopAbs_FORWARD,
     TopAbs_IN,
     TopAbs_ON,
     TopAbs_OUT,
+    TopAbs_REVERSED,
     TopAbs_SHELL,
     TopAbs_SOLID,
     TopAbs_VERTEX,
@@ -55,14 +59,34 @@ def _count(shape: TopoDS_Shape, kind) -> int:
     return m.Extent()
 
 
-def _count_edges(shape: TopoDS_Shape) -> int:
-    """Unique edges that are not degenerate. A degenerate edge (a cone's
+def _count_boundary(shape: TopoDS_Shape) -> tuple[int, int, int]:
+    """Unique vertices, edges and wires of the faces' boundaries. An edge
+    oriented INTERNAL or EXTERNAL bounds nothing — Open CASCADE leaves a
+    tangent contact it imprints as one, in a wire of its own, and its STEP
+    writer drops it — so it, a wire of nothing else and a vertex on nothing
+    else are left out, as a round trip would. A degenerate edge (a cone's
     apex, a sphere's pole) is a singular point of its surface, not a
     boundary between faces, so the Euler line leaves it out, as Arris's
-    `Report::euler` does (docs/DATA-MODEL.md §Euler–Poincaré)."""
-    m = IndexedMapOfShape()
-    TopExp.MapShapes_s(shape, TopAbs_EDGE, m)
-    return sum(1 for i in range(1, m.Extent() + 1) if not BRep_Tool.Degenerated_s(TopoDS.Edge(m.FindKey(i))))
+    `Report::euler` does (docs/DATA-MODEL.md §Euler–Poincaré); its vertex
+    is counted."""
+    vertices, edges, wires = IndexedMapOfShape(), IndexedMapOfShape(), IndexedMapOfShape()
+    wx = TopExp_Explorer(shape, TopAbs_WIRE)
+    while wx.More():
+        wire = wx.Current()
+        bounds = False
+        ex = TopExp_Explorer(wire, TopAbs_EDGE)
+        while ex.More():
+            edge = ex.Current()
+            if edge.Orientation() in (TopAbs_FORWARD, TopAbs_REVERSED):
+                bounds = True
+                TopExp.MapShapes_s(edge, TopAbs_VERTEX, vertices)
+                if not BRep_Tool.Degenerated_s(TopoDS.Edge(edge)):
+                    edges.Add(edge)
+            ex.Next()
+        if bounds:
+            wires.Add(wire)
+        wx.Next()
+    return vertices.Extent(), edges.Extent(), wires.Extent()
 
 
 def solids(shape: TopoDS_Shape) -> list:
@@ -104,13 +128,16 @@ def inertia(props: GProp_GProps) -> list[list[float]]:
 def measure(shape: TopoDS_Shape, probes: list[dict], probe_tolerance: float, manifold: bool = True) -> dict:
     """Everything expected.json records for one result. `manifold` false
     admits an odd Euler characteristic — solids of a compound sharing an
-    edge or a vertex, what a recipe expecting `non-manifold` builds — and
-    records no genus for it; otherwise an odd one is an error."""
+    edge or a vertex, what a recipe expecting `non-manifold` builds, or a
+    tangent contact carried as an edge of four faces, what one expecting
+    `tangent-contact` may build — and records no genus for it; otherwise
+    an odd one is an error."""
+    vertices, edges, loops = _count_boundary(shape)
     counts = {
-        "vertices": _count(shape, TopAbs_VERTEX),
-        "edges": _count_edges(shape),
+        "vertices": vertices,
+        "edges": edges,
         "faces": _count(shape, TopAbs_FACE),
-        "loops": _count(shape, TopAbs_WIRE),
+        "loops": loops,
         "shells": _count(shape, TopAbs_SHELL),
         "solids": _count(shape, TopAbs_SOLID),
     }

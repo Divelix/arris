@@ -413,7 +413,9 @@ fn one() -> usize {
 #[serde(rename_all = "kebab-case")]
 pub enum ExpectError {
     /// `OpError::Degenerate` with `Reason::TangentContact`: two faces
-    /// touch along a curve interior to both.
+    /// touch along a curve interior to both. The oracle's result carries
+    /// the contact as an edge of four faces; where that makes its Euler
+    /// characteristic odd it records no genus, and the recipe states none.
     TangentContact,
     /// `OpError::Degenerate` with `Reason::NonManifold`: two shells of the
     /// result would share an edge or a vertex (ADR-0006). The oracle's
@@ -825,10 +827,14 @@ pub fn lint(dir: &Path) -> Vec<String> {
                 "[{variant}] euler_characteristic {chi} does not match the counts ({chi_from_counts})"
             ));
         }
-        let non_manifold = a.expect_error == Some(ExpectError::NonManifold);
+        let non_manifold = matches!(
+            a.expect_error,
+            Some(ExpectError::NonManifold | ExpectError::TangentContact)
+        );
         let genus = match (m.genus, non_manifold) {
             (Some(genus), _) => Some(genus),
-            // Solids sharing an edge or a vertex close no Euler line.
+            // Solids sharing an edge or a vertex, or faces sharing a
+            // tangent contact as an edge of four, close no Euler line.
             (None, true) => {
                 if a.genus.is_some() {
                     problem(format!(

@@ -42,7 +42,9 @@ commit that says so (`.agents/rules/git.md`).
 - `oracle/measure.py` — volume, area, centroid and the inertia tensor
   (`GProp`), counts by unique
   sub-shape (a seam edge once, an edge `BRep_Tool::Degenerated` names not
-  at all), loops, shells, solids, the Euler
+  at all), loops, shells, solids — of the boundary only: an edge oriented
+  INTERNAL or EXTERNAL, a wire of nothing else and a vertex on nothing
+  else are left out, as a STEP round trip leaves them — the Euler
   characteristic `V − E + 2F − L` and the genus it implies, in/out/on
   classification of probe points (`BRepClass3d`), and the comparison with
   its tolerances.

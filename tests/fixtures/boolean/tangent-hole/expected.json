@@ -12,14 +12,14 @@
       "counts": {
         "edges": 19,
         "faces": 9,
-        "loops": 11,
+        "loops": 10,
         "shells": 1,
         "solids": 1,
         "vertices": 12
       },
       "degenerate": false,
-      "euler_characteristic": 0,
-      "genus": 1,
+      "euler_characteristic": 1,
+      "genus": null,
       "inertia": [
         [
           998421.0436478024,
