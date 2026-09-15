@@ -5,7 +5,8 @@
 //! primitives and `ops::transform`, so a failing case prints as numbers a
 //! fixture can be written from.
 
-use arris_math::{Axis, Isometry, Point3, UnitVec3, Vec3};
+use arris_math::nalgebra::UnitQuaternion;
+use arris_math::{Axis, Frame, Isometry, Point3, UnitVec3, Vec3};
 use arris_ops::{OpError, primitive_box, primitive_cylinder, transform};
 use arris_topo::{Body, Model};
 use proptest::prelude::*;
@@ -217,6 +218,185 @@ pub fn tangent_pair() -> impl Strategy<Value = TangentPair> {
         )
 }
 
+/// Where a [`ParallelPair`]'s second cylinder stands against the first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParallelKind {
+    /// It reaches past both caps of the first, at a random angle about it.
+    Clear,
+    /// It reaches past both caps, and one ruling of the pair is the
+    /// first cylinder's seam.
+    SeamOnRuling,
+    /// It is as tall as the first and their caps are coincident: the rim
+    /// circles cross on each cap plane at the rulings' ends.
+    FlushCaps,
+}
+
+/// Two cylinders on parallel axes whose walls cross in two rulings, both
+/// under one motion (plans/cylinder-cylinder-booleans step 7): `a` on the
+/// `z` axis centred at the origin, `b`'s axis `distance` from it, strictly
+/// between the internal and external tangent distances `|R₁ − R₂|` and
+/// `R₁ + R₂`, so neither wall holds the other and neither touches it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ParallelPair {
+    /// The first cylinder.
+    pub a: Cylindrical,
+    /// The second.
+    pub b: Cylindrical,
+    /// The distance between the axes.
+    pub distance: f64,
+    /// Where `b` stands.
+    pub kind: ParallelKind,
+}
+
+impl ParallelPair {
+    /// Both bodies in `m`, `a` first.
+    pub fn build(&self, m: &mut Model) -> Result<(Body, Body), OpError> {
+        Ok((self.a.build(m)?, self.b.build(m)?))
+    }
+}
+
+/// [`ParallelPair`]s: two radii, the axes' distance drawn between the
+/// tangent distances a tenth of the gap clear of each, and `b` placed at
+/// a random angle about `a` — a quarter [`ParallelKind::SeamOnRuling`],
+/// a quarter [`ParallelKind::FlushCaps`], the rest
+/// [`ParallelKind::Clear`], reaching a tenth to a half of `a`'s height
+/// past each cap.
+pub fn parallel_pair() -> impl Strategy<Value = ParallelPair> {
+    (
+        radius(MIN_EXTENT / 2.0..=MAX_EXTENT / 2.0),
+        radius(MIN_EXTENT / 2.0..=MAX_EXTENT / 2.0),
+        finite_f64(0.1..=0.9),
+        finite_f64(0.0..=core::f64::consts::TAU),
+        radius(MIN_EXTENT..=MAX_EXTENT),
+        finite_f64(0.1..=0.5),
+        0u8..4,
+        pose_in(DEFAULT_SCALE),
+    )
+        .prop_map(|(r1, r2, gap, angle, height, reach, kind, pose)| {
+            let (near, far) = ((r1 - r2).abs(), r1 + r2);
+            let distance = near + gap * (far - near);
+            let kind = match kind {
+                0 => ParallelKind::SeamOnRuling,
+                1 => ParallelKind::FlushCaps,
+                _ => ParallelKind::Clear,
+            };
+            // `a`'s seam runs along its frame's `x`, through (r1, 0); the
+            // rulings are at `angle ± α` about `a`'s axis, with `cos α` from
+            // the triangle of the two radii and the distance.
+            let angle = if kind == ParallelKind::SeamOnRuling {
+                ((distance * distance + r1 * r1 - r2 * r2) / (2.0 * distance * r1))
+                    .clamp(-1.0, 1.0)
+                    .acos()
+            } else {
+                angle
+            };
+            let (below, tall) = if kind == ParallelKind::FlushCaps {
+                (0.0, height)
+            } else {
+                (reach * height, height * (1.0 + 2.0 * reach))
+            };
+            let centre = Point3::new(distance * angle.cos(), distance * angle.sin(), 0.0);
+            ParallelPair {
+                a: Cylindrical {
+                    axis: Axis::z_at(Point3::new(0.0, 0.0, -height / 2.0)),
+                    radius: r1,
+                    height,
+                    pose,
+                },
+                b: Cylindrical {
+                    axis: Axis::z_at(centre - Vec3::new(0.0, 0.0, height / 2.0 + below)),
+                    radius: r2,
+                    height: tall,
+                    pose,
+                },
+                distance,
+                kind,
+            }
+        })
+}
+
+/// Two cylinders of one radius whose axes cross at their midpoints at an
+/// angle `psi`, each through the other, both under one motion
+/// (plans/cylinder-cylinder-booleans step 7): `a` on the `z` axis centred
+/// at the origin, `b` in the `xz` plane, turned about its own axis first.
+/// Their walls cross in two ellipses, which cross each other at
+/// `(0, ±R, 0)` before the motion.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CrossingPair {
+    /// The first cylinder.
+    pub a: Cylindrical,
+    /// The second; its pose is a turn about its own axis, then `a`'s.
+    pub b: Cylindrical,
+    /// The angle between the axes, in radians.
+    pub psi: f64,
+    /// Whether `b`'s turn puts its seam through the crossing vertex
+    /// `(0, R, 0)`, where the seam is tangent to `a`'s wall.
+    pub seam_through_crossing: bool,
+}
+
+impl CrossingPair {
+    /// Both bodies in `m`, `a` first.
+    pub fn build(&self, m: &mut Model) -> Result<(Body, Body), OpError> {
+        Ok((self.a.build(m)?, self.b.build(m)?))
+    }
+
+    /// The volume of their common, the Steinmetz solid at `psi`:
+    /// `16R³ / (3 sin ψ)`.
+    pub fn common_volume(&self) -> f64 {
+        16.0 * self.a.radius.powi(3) / (3.0 * self.psi.sin())
+    }
+}
+
+/// [`CrossingPair`]s: a radius, `ψ ∈ [30°, 90°]`, both cylinders
+/// `4R / sin ψ` to `8R / sin ψ` long — so each cap's disc stands clear of
+/// the other wall, its centre more than `2R` from the other axis — and
+/// `b` turned about its axis by a random angle, or in a quarter of cases
+/// so its seam runs through the crossing vertex `(0, R, 0)`.
+pub fn crossing_pair() -> impl Strategy<Value = CrossingPair> {
+    (
+        radius(MIN_EXTENT / 2.0..=MAX_EXTENT / 2.0),
+        finite_f64(30.0..=90.0),
+        finite_f64(1.0..=2.0),
+        finite_f64(0.0..=core::f64::consts::TAU),
+        0u8..4,
+        pose_in(DEFAULT_SCALE),
+    )
+        .prop_filter_map(
+            "two crossing cylinders",
+            |(r, psi_deg, stretch, turn, kind, pose)| {
+                let psi = psi_deg.to_radians();
+                let length = stretch * 4.0 * r / psi.sin();
+                let d = Vec3::new(psi.sin(), 0.0, psi.cos());
+                let seam_through_crossing = kind == 0;
+                let turn = if seam_through_crossing {
+                    // The seam runs along the frame's `x`, perpendicular to
+                    // the axis like `y`: the rotation taking one to the
+                    // other is about the axis.
+                    let seam = Frame::from_z(Point3::origin(), d).ok()?.x().into_inner();
+                    UnitQuaternion::rotation_between(&seam, &Vec3::y())?
+                } else {
+                    UnitQuaternion::from_axis_angle(&UnitVec3::try_new(d, 0.0)?, turn)
+                };
+                Some(CrossingPair {
+                    a: Cylindrical {
+                        axis: Axis::z_at(Point3::new(0.0, 0.0, -length / 2.0)),
+                        radius: r,
+                        height: length,
+                        pose,
+                    },
+                    b: Cylindrical {
+                        axis: Axis::new(Point3::origin() - (length / 2.0) * d, d).ok()?,
+                        radius: r,
+                        height: length,
+                        pose: Isometry::from_rotation(turn).then(&pose),
+                    },
+                    psi,
+                    seam_through_crossing,
+                })
+            },
+        )
+}
+
 /// Box extents, each in `[MIN_EXTENT, MAX_EXTENT]`.
 fn extents() -> impl Strategy<Value = Vec3> {
     (
@@ -363,6 +543,75 @@ mod tests {
                     .filter(|&c| c != i)
                     .all(|c| lo[c] < foot[c] && foot[c] < hi[c])
             );
+            Ok(())
+        });
+    }
+
+    /// The parallel pairs cross: the axes `distance` apart, strictly
+    /// between the tangent distances; a seam pair's seam on `b`'s wall; a
+    /// flush pair's caps level with each other and every other `b` past
+    /// both of `a`'s caps; the bodies are clean.
+    #[test]
+    fn the_parallel_pairs_cross_in_two_rulings() {
+        check(parallel_pair(), |pair| {
+            let mut m = Model::default();
+            let (a, b) = pair
+                .build(&mut m)
+                .map_err(|e| TestCaseError::fail(e.to_string()))?;
+            prop_assert!(check_body(&m, a, Level::Fast).is_ok());
+            prop_assert!(check_body(&m, b, Level::Fast).is_ok());
+            let (r1, r2, d) = (pair.a.radius, pair.b.radius, pair.distance);
+            prop_assert!((r1 - r2).abs() < d && d < r1 + r2);
+            let offset = pair.b.axis.origin - pair.a.axis.origin;
+            let across = Vec3::new(offset.x, offset.y, 0.0);
+            prop_assert!((across.norm() - d).abs() < 1e-12 * MAX_EXTENT);
+            let (za, zb) = (pair.a.axis.origin.z, pair.b.axis.origin.z);
+            let (ha, hb) = (pair.a.height, pair.b.height);
+            match pair.kind {
+                ParallelKind::SeamOnRuling => {
+                    let seam = Vec3::new(r1, 0.0, 0.0);
+                    prop_assert!(((seam - across).norm() - r2).abs() < 1e-12 * MAX_EXTENT);
+                }
+                ParallelKind::FlushCaps => {
+                    prop_assert!((za - zb).abs() < 1e-12 * MAX_EXTENT && ha == hb);
+                }
+                ParallelKind::Clear => {}
+            }
+            if pair.kind != ParallelKind::FlushCaps {
+                prop_assert!(zb < za && zb + hb > za + ha);
+            }
+            Ok(())
+        });
+    }
+
+    /// The crossing pairs pass through each other: equal radii, the axes
+    /// at `psi` through both midpoints, each cap's centre more than two
+    /// radii from the other axis, and a seam pair's turned seam along `y`,
+    /// through the crossing vertex; the bodies are clean.
+    #[test]
+    fn the_crossing_pairs_pass_through_each_other() {
+        check(crossing_pair(), |pair| {
+            let mut m = Model::default();
+            let (a, b) = pair
+                .build(&mut m)
+                .map_err(|e| TestCaseError::fail(e.to_string()))?;
+            prop_assert!(check_body(&m, a, Level::Fast).is_ok());
+            prop_assert!(check_body(&m, b, Level::Fast).is_ok());
+            let r = pair.a.radius;
+            prop_assert_eq!(pair.b.radius, r);
+            let cos = pair.a.axis.direction.dot(&pair.b.axis.direction);
+            prop_assert!((cos - pair.psi.cos()).abs() < 1e-12);
+            for c in [pair.a, pair.b] {
+                prop_assert!(c.axis.at(c.height / 2.0).coords.norm() < 1e-12 * MAX_EXTENT);
+                prop_assert!(c.height / 2.0 * pair.psi.sin() > 2.0 * r);
+            }
+            if pair.seam_through_crossing {
+                let turn = pair.b.pose.then(&pair.a.pose.inverse());
+                let frame = Frame::from_z(pair.b.axis.origin, pair.b.axis.direction.into_inner())
+                    .map_err(|e| TestCaseError::fail(e.to_string()))?;
+                let seam = turn.apply_vec(frame.x().into_inner());
+                prop_assert!((seam.y.abs() - 1.0).abs() < 1e-12);
+            }
             Ok(())
         });
     }

@@ -346,7 +346,7 @@ bound has to be established here.
   it to the linear walk on random and corpus faces, and the check of that
   fuse is timed before and after in the commit body. The backlog's S5
   cost line is updated or retired.
-- [ ] Step 10 **[2]** — **Property tests** (seeded, `prop_shards!`).
+- [x] Step 10 **[2]** — **Property tests** (seeded, `prop_shards!`).
   - `arris_debug::prop::body::parallel_pair` and `crossing_pair`, both
     under one random motion:
     - parallel: `d` drawn between the tangent distances, clear of each
@@ -364,6 +364,17 @@ bound has to be established here.
   - Either crossing cut is `NonManifold` (step 2's finding), asserted in
     place of the cut identity.
   - A failure is shrunk to a `regression/` fixture in this step.
+  - *Found at the step:* the first runs found three kernel defects and
+    one bound, each fixed before this step landed rather than shrunk to
+    `regression/`: the coplanar rim and section ellipse (step 7, its
+    fixture), operand-order-dependent crossing frames (step 8), and the
+    checker's point-in-polygon walk that made the crossing property run
+    25 minutes (step 9). The fourth, a Steinmetz common at `R = 0.5`
+    missing the closed form by 2% over `fitted_rel`, is the `tol·A/V`
+    bound above, `tol` the largest edge tolerance of the common. The
+    commutativity check reuses the checked `op(a, b)` result instead of
+    checking it again. At 256 cases a parallel shard takes 8 s and a
+    crossing shard 60 s.
 - [ ] Step 11 **[2]** — **The S5 rows gone.** (The miter's move into
   `blend/`, `fillet.rs`'s two miter tests and "nothing unchecked at rest"
   landed with step 1.)

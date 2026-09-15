@@ -1,8 +1,10 @@
 //! The booleans at random poses (ADR-0004): a
-//! box and a cylinder from `prop::body`, both operand orders — volume
+//! box and a cylinder, and two cylinders on parallel or crossing axes,
+//! from `prop::body`, both operand orders — volume
 //! and area additivity, the cut identity, commutativity of `fuse` and
 //! `common`, results of several lumps held to the same identities
-//! (ADR-0006), and every result clean at `Full` with nothing unchecked. A
+//! (ADR-0006), two runs dumping identically, and every result clean at
+//! `Full` with nothing unchecked. A
 //! failure
 //! prints the shrunk pair and the seed, and becomes a fixture under
 //! `tests/fixtures/boolean/` (`tests/fixtures/README.md` §Property-test
@@ -51,8 +53,16 @@ fn run(
 fn operands(
     pair: &OverlappingPair,
 ) -> Result<(Model, Body, Body, MassProperties, MassProperties), TestCaseError> {
+    operands_by(|m| pair.build(m))
+}
+
+/// The operands `build` makes in a fresh model, with their mass
+/// properties.
+fn operands_by(
+    build: impl FnOnce(&mut Model) -> Result<(Body, Body), OpError>,
+) -> Result<(Model, Body, Body, MassProperties, MassProperties), TestCaseError> {
     let mut m = Model::default();
-    let (a, b) = pair.build(&mut m).map_err(fail)?;
+    let (a, b) = build(&mut m).map_err(fail)?;
     let pa = mass_properties(&m, a).map_err(fail)?;
     let pb = mass_properties(&m, b).map_err(fail)?;
     Ok((m, a, b, pa, pb))
@@ -307,30 +317,57 @@ prop_shards! {
         (pair) = prop::body::overlapping_pair() => {
             for (name, op) in [("fuse", fuse as Boolean), ("common", common as Boolean)] {
                 let (mut m, a, b, _, _) = operands(&pair)?;
-                let (ab, pab) = run(&mut m, &format!("{name}(a, b)"), op, a, b)?;
-                let (ba, pba) = run(&mut m, &format!("{name}(b, a)"), op, b, a)?;
-                assert_same_properties(&pab, &pba, name)?;
-                let (da, db) = (
-                    dump_text(&m, ab).map_err(fail)?,
-                    dump_text(&m, ba).map_err(fail)?,
-                );
-                prop_assert_eq!(
-                    arris_debug::dump::euler_line(&m, ab).map_err(fail)?,
-                    arris_debug::dump::euler_line(&m, ba).map_err(fail)?,
-                    "{}: counts",
-                    name
-                );
-                prop_assert_eq!(
-                    up_to_ids(&da),
-                    up_to_ids(&db),
-                    "{}: dumps\n{}\n{}",
-                    name,
-                    da,
-                    db
-                );
+                assert_commutes(&mut m, name, op, a, b)?;
             }
             Ok(())
         }
+}
+
+/// `op(a, b)` and `op(b, a)`: the same mass properties, the same counts,
+/// the same dump up to ids.
+fn assert_commutes(
+    m: &mut Model,
+    name: &str,
+    op: Boolean,
+    a: Body,
+    b: Body,
+) -> Result<(), TestCaseError> {
+    let first = run(m, &format!("{name}(a, b)"), op, a, b)?;
+    assert_commutes_with(m, name, op, first, a, b)
+}
+
+/// [`assert_commutes`] against `first`, the result of `op(a, b)` already
+/// run and checked: only `op(b, a)` is run, and checked, here.
+fn assert_commutes_with(
+    m: &mut Model,
+    name: &str,
+    op: Boolean,
+    first: (Body, MassProperties),
+    a: Body,
+    b: Body,
+) -> Result<(), TestCaseError> {
+    let (ab, pab) = first;
+    let (ba, pba) = run(m, &format!("{name}(b, a)"), op, b, a)?;
+    assert_same_properties(&pab, &pba, name)?;
+    let (da, db) = (
+        dump_text(m, ab).map_err(fail)?,
+        dump_text(m, ba).map_err(fail)?,
+    );
+    prop_assert_eq!(
+        arris_debug::dump::euler_line(m, ab).map_err(fail)?,
+        arris_debug::dump::euler_line(m, ba).map_err(fail)?,
+        "{}: counts",
+        name
+    );
+    prop_assert_eq!(
+        up_to_ids(&da),
+        up_to_ids(&db),
+        "{}: dumps\n{}\n{}",
+        name,
+        da,
+        db
+    );
+    Ok(())
 }
 
 // -- coincident faces (plan step 10, `⚠ OPEN` 4) -----------------------
@@ -490,4 +527,112 @@ fn cut_then_fuse_of_a_cylinder_across_a_small_box() {
     );
     let rel = fitted_rel(&m, &punion);
     assert_same_properties_to(&prestored, &punion, "(a − b) ∪ b against a ∪ b", rel).unwrap();
+}
+
+// -- two cylinders (plans/cylinder-cylinder-booleans step 7) -----------
+
+/// `op` over the operands `build` makes, in two fresh models: the same
+/// dump, ids and all.
+fn assert_deterministic(
+    build: impl Fn(&mut Model) -> Result<(Body, Body), OpError>,
+    name: &str,
+    op: Boolean,
+) -> Result<(), TestCaseError> {
+    let once = || -> Result<String, TestCaseError> {
+        let mut m = Model::default();
+        let (a, b) = build(&mut m).map_err(fail)?;
+        let (body, _) = op(&mut m, a, b).map_err(|e| fail(format!("{name}: {e}")))?;
+        dump_text(&m, body).map_err(fail)
+    };
+    let (first, second) = (once()?, once()?);
+    prop_assert_eq!(first, second, "{}: two runs", name);
+    Ok(())
+}
+
+prop_shards! {
+    /// Two parallel walls crossing in two rulings — the tool clear of both
+    /// caps, a ruling on the target's seam, or the caps flush: `fuse`,
+    /// `common` and both cuts clean at `Full` with nothing unchecked and
+    /// their provenance audited, additive, the cut identity both ways
+    /// whatever the lumps, `fuse` and `common` commuting, and every result
+    /// dumping identically in a second run.
+    parallel_cylinders_obey_every_identity
+        [shard_0 shard_1 shard_2 shard_3 shard_4 shard_5 shard_6 shard_7]
+        (pair) = prop::body::parallel_pair() => {
+            let (mut m, a, b, pa, pb) = operands_by(|m| pair.build(m))?;
+            let (u, union) = run(&mut m, "fuse(a, b)", fuse, a, b)?;
+            let (c, inter) = run(&mut m, "common(a, b)", common, a, b)?;
+            let (_, diff) = run(&mut m, "cut(a, b)", cut, a, b)?;
+            let (_, back) = run(&mut m, "cut(b, a)", cut, b, a)?;
+            assert_additive(&union, &inter, &pa, &pb)?;
+            assert_cut_identity(&diff, &inter, &pa, &pb)?;
+            assert_cut_identity(&back, &inter, &pb, &pa)?;
+            assert_commutes_with(&mut m, "fuse", fuse, (u, union), a, b)?;
+            assert_commutes_with(&mut m, "common", common, (c, inter), a, b)?;
+            for (name, op) in [
+                ("fuse", fuse as Boolean),
+                ("common", common as Boolean),
+                ("cut", cut as Boolean),
+            ] {
+                assert_deterministic(|m| pair.build(m), name, op)?;
+            }
+            Ok(())
+        }
+}
+
+prop_shards! {
+    /// Two cylinders of one radius crossing at `ψ ∈ [30°, 90°]`, each
+    /// through the other, a quarter with the tool's seam through a
+    /// crossing vertex: `fuse` and `common` clean at `Full` with nothing
+    /// unchecked and their provenance audited, additive, commuting and
+    /// dumping identically in a second run, and the common the Steinmetz
+    /// solid `16R³ / (3 sin ψ)` within `REL + tol·A/V`. Either cut is the designed
+    /// `NonManifold`: the tool is as wide as the target, so the two lumps
+    /// left meet at the crossing vertices (ADR-0006, `boolean/cross-cylinders-cut`).
+    crossing_cylinders_obey_every_identity
+        [shard_0 shard_1 shard_2 shard_3 shard_4 shard_5 shard_6 shard_7]
+        (pair) = prop::body::crossing_pair() => {
+            let (mut m, a, b, pa, pb) = operands_by(|m| pair.build(m))?;
+            let (u, union) = run(&mut m, "fuse(a, b)", fuse, a, b)?;
+            let (c, inter) = run(&mut m, "common(a, b)", common, a, b)?;
+            assert_additive(&union, &inter, &pa, &pb)?;
+            // The section ellipses' pcurves are fitted within their edges'
+            // tolerance, so the common's boundary lies within the largest
+            // of those of the exact one, and its volume within that times
+            // its area; additivity compares the same fits and holds to
+            // `REL`.
+            let steinmetz = pair.common_volume();
+            let mut tolerance = m.precision().default_tolerance;
+            for e in m.edges(c).map_err(fail)? {
+                tolerance = tolerance.max(m.edge(e.id).map_err(fail)?.tolerance());
+            }
+            let rel = REL + tolerance * inter.area / inter.volume;
+            prop_assert!(
+                close_to(inter.volume, steinmetz, steinmetz, rel),
+                "V(A ∩ B) = {}, 16R³ / (3 sin ψ) = {}, to {}",
+                inter.volume,
+                steinmetz,
+                rel
+            );
+            for (name, target, tool) in [("cut(a, b)", a, b), ("cut(b, a)", b, a)] {
+                match cut(&mut m, target, tool) {
+                    Err(OpError::Degenerate {
+                        reason: Reason::NonManifold,
+                        ..
+                    }) => {}
+                    Ok(_) => {
+                        return Err(fail(format!(
+                            "{name}: the two lumps meet at the crossing vertices"
+                        )));
+                    }
+                    Err(e) => return Err(fail(format!("{name}: {e}"))),
+                }
+            }
+            assert_commutes_with(&mut m, "fuse", fuse, (u, union), a, b)?;
+            assert_commutes_with(&mut m, "common", common, (c, inter), a, b)?;
+            for (name, op) in [("fuse", fuse as Boolean), ("common", common as Boolean)] {
+                assert_deterministic(|m| pair.build(m), name, op)?;
+            }
+            Ok(())
+        }
 }
