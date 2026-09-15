@@ -1,0 +1,29 @@
+{
+  "description": "split order across variants (ADR-0009): a bar cut through a box [0,0,0]–[40,30,10] at x0 ± w/2 splits it into two lumps and its top, bottom, front and back faces into two pieces each. The variants move the bar to either side of the centre, so the larger piece swaps sides, and narrow it; which entities bound which piece never changes, so piece k of every split face must keep its neighbours in every variant",
+  "params": {"x0": 20, "w": 4},
+  "variants": {
+    "left": {"x0": 12},
+    "right": {"x0": 28},
+    "narrow": {"w": 1.5}
+  },
+  "steps": [
+    {"name": "plate", "op": "box", "min": [0, 0, 0], "max": [40, 30, 10]},
+    {"name": "bar", "op": "box", "min": ["x0 - w / 2", -1, -1], "max": ["x0 + w / 2", 31, 11]},
+    {"name": "result", "op": "cut", "target": "plate", "tool": "bar"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "left_lump", "point": ["(x0 - w / 2) / 2", 15, 5], "expect": "in"},
+    {"label": "in_bar", "point": ["x0", 15, 5], "expect": "out"},
+    {"label": "right_lump", "point": ["(x0 + w / 2 + 40) / 2", 15, 5], "expect": "in"},
+    {"label": "on_cut_face", "point": ["x0 - w / 2", 15, 5], "expect": "on"},
+    {"label": "on_top", "point": [5, 15, 10], "expect": "on"}
+  ],
+  "analytic": {
+    "volume": "(40 - w) * 30 * 10",
+    "area": "2 * (40 - w) * 30 + 2 * (40 - w) * 10 + 4 * 30 * 10",
+    "centroid": ["(800 - x0 * w) / (40 - w)", 15, 5],
+    "counts": {"vertices": 16, "edges": 24, "faces": 12, "loops": 12, "shells": 2, "solids": 2},
+    "genus": 0
+  }
+}

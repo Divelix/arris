@@ -609,6 +609,89 @@ fn provenance_bolt_pattern_rebuild_tighter() {
     run_variant("provenance/bolt-pattern-rebuild", "tighter");
 }
 
+/// The split-order fixtures (ADR-0009), one test per variant as above:
+/// `provenance.rs` holds piece `k` of every split face to the same
+/// neighbours in every variant; these hold each variant's solid.
+#[test]
+fn provenance_split_bar_cut() {
+    run_variant("provenance/split-bar-cut", "default");
+}
+
+#[test]
+fn provenance_split_bar_cut_left() {
+    run_variant("provenance/split-bar-cut", "left");
+}
+
+#[test]
+fn provenance_split_bar_cut_right() {
+    run_variant("provenance/split-bar-cut", "right");
+}
+
+#[test]
+fn provenance_split_bar_cut_narrow() {
+    run_variant("provenance/split-bar-cut", "narrow");
+}
+
+#[test]
+fn provenance_split_frame_cut() {
+    run_variant("provenance/split-frame-cut", "default");
+}
+
+#[test]
+fn provenance_split_frame_cut_left() {
+    run_variant("provenance/split-frame-cut", "left");
+}
+
+#[test]
+fn provenance_split_frame_cut_right() {
+    run_variant("provenance/split-frame-cut", "right");
+}
+
+#[test]
+fn provenance_split_frame_cut_narrow() {
+    run_variant("provenance/split-frame-cut", "narrow");
+}
+
+#[test]
+fn provenance_split_cylinder_seam() {
+    run_variant("provenance/split-cylinder-seam", "default");
+}
+
+#[test]
+fn provenance_split_cylinder_seam_turned_back() {
+    run_variant("provenance/split-cylinder-seam", "turned-back");
+}
+
+#[test]
+fn provenance_split_cylinder_seam_turned_on() {
+    run_variant("provenance/split-cylinder-seam", "turned-on");
+}
+
+#[test]
+fn provenance_split_cylinder_seam_narrow() {
+    run_variant("provenance/split-cylinder-seam", "narrow");
+}
+
+#[test]
+fn provenance_split_cross_common() {
+    run_variant("provenance/split-cross-common", "default");
+}
+
+#[test]
+fn provenance_split_cross_common_larger() {
+    run_variant("provenance/split-cross-common", "larger");
+}
+
+#[test]
+fn provenance_split_cross_common_longer() {
+    run_variant("provenance/split-cross-common", "longer");
+}
+
+#[test]
+fn provenance_split_cross_common_turned() {
+    run_variant("provenance/split-cross-common", "turned");
+}
+
 /// A variant the recipe does not have fails naming it.
 #[test]
 fn an_unknown_variant_fails_with_its_name() {

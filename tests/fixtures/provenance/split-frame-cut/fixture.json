@@ -1,0 +1,32 @@
+{
+  "description": "split order of a Generated list (ADR-0009): a bar cut through a rectangular frame — a box [0,0,0]–[40,30,10] less a window [10,30]×[10,20] through it — crosses both arms, so the bar's two X faces each survive in two pieces, Generated from one tool face, and the frame's top and bottom faces are Modified into two pieces each. The variants move the bar to either side of the centre within the window's span and narrow it; which entities bound which piece never changes",
+  "params": {"x0": 20, "w": 4},
+  "variants": {
+    "left": {"x0": 13},
+    "right": {"x0": 27},
+    "narrow": {"w": 1.5}
+  },
+  "steps": [
+    {"name": "plate", "op": "box", "min": [0, 0, 0], "max": [40, 30, 10]},
+    {"name": "window", "op": "box", "min": [10, 10, -1], "max": [30, 20, 11]},
+    {"name": "frame", "op": "cut", "target": "plate", "tool": "window"},
+    {"name": "bar", "op": "box", "min": ["x0 - w / 2", -1, -1], "max": ["x0 + w / 2", 31, 11]},
+    {"name": "result", "op": "cut", "target": "frame", "tool": "bar"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "left_arm", "point": [5, 15, 5], "expect": "in"},
+    {"label": "right_arm", "point": [35, 15, 5], "expect": "in"},
+    {"label": "in_bar", "point": ["x0", 5, 5], "expect": "out"},
+    {"label": "in_window", "point": [20, 15, 5], "expect": "out"},
+    {"label": "on_cut_face", "point": ["x0 - w / 2", 5, 5], "expect": "on"},
+    {"label": "on_top", "point": [5, 15, 10], "expect": "on"}
+  ],
+  "analytic": {
+    "volume": "10000 - 200 * w",
+    "area": "4400 - 80 * w",
+    "centroid": ["(1000 - w * x0) / (50 - w)", 15, 5],
+    "counts": {"vertices": 32, "edges": 48, "faces": 20, "loops": 20, "shells": 2, "solids": 2},
+    "genus": 0
+  }
+}

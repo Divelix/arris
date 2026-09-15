@@ -10,9 +10,17 @@
 //!
 //! The corpus test in `corpus.rs` holds the same fixture to the oracle's
 //! numbers in each variant; this one reads only the records.
+//!
+//! The split-order fixtures (`provenance/split-*`, ADR-0009) are the same
+//! kind of proof for the *order* of an origin's pieces: a recipe whose
+//! variants move, resize and turn a split without changing which
+//! entities bound which piece, and piece `k` of every split face has to
+//! keep its neighbours in every variant.
 
-use std::collections::BTreeSet;
+use std::cmp::Ordering;
+use std::collections::{BTreeMap, BTreeSet};
 
+use arris::topo::entity::EdgeGeometry;
 use arris::topo::provenance::{
     BoxPart, Coord, CylinderPart, Origin, Provenance, Relation, Role, Side,
 };
@@ -279,4 +287,243 @@ fn the_chain_accounts_for_every_entity_of_the_result() {
             );
         }
     }
+}
+
+/// The split-order fixtures and their variants, `default` first: a bar
+/// through a box, the same bar through a frame (a tool face surviving
+/// in two `Generated` pieces), a slab through a rod along its axis, and
+/// the Steinmetz solid — the two closed walls each with a tie only the
+/// (u, v) tiebreak orders.
+const SPLIT_FIXTURES: [(&str, &[&str]); 4] = [
+    (
+        "provenance/split-bar-cut",
+        &["default", "left", "right", "narrow"],
+    ),
+    (
+        "provenance/split-frame-cut",
+        &["default", "left", "right", "narrow"],
+    ),
+    (
+        "provenance/split-cylinder-seam",
+        &["default", "turned-back", "turned-on", "narrow"],
+    ),
+    (
+        "provenance/split-cross-common",
+        &["default", "larger", "longer", "turned"],
+    ),
+];
+
+/// The step names of `fixture`'s recipe in recipe order, profile steps
+/// left out, which is the order the records compose in.
+fn step_names(fixture: &str) -> Vec<String> {
+    let loaded = fixtures::load(&fixtures::corpus_root().join(fixture)).unwrap();
+    loaded
+        .recipe
+        .steps
+        .iter()
+        .map(|s| s.name().to_string())
+        .collect()
+}
+
+/// A piece's signature: for every face it shares an edge with in the
+/// result, that face's origins through the whole recipe — roles, which
+/// a parameter edit leaves alone. Two pieces of one origin with the same
+/// signature are a tie, and the fixtures that hold one are posed so that
+/// the tied pieces lie on either side of a coordinate plane through the
+/// world origin: [`side_of`] tells them apart.
+type Signature = BTreeSet<Vec<(Relation, Origin)>>;
+
+/// Every face of `body` using each edge, from the faces' loops.
+fn faces_by_edge(chain: &Chain) -> BTreeMap<EntityId, Vec<FaceId>> {
+    let body = chain.result().unwrap();
+    let mut out: BTreeMap<EntityId, Vec<FaceId>> = BTreeMap::new();
+    for f in chain.model.faces(body).unwrap() {
+        for l in chain.model.face(f.id).unwrap().loops() {
+            for c in l.coedges() {
+                let users = out.entry(EntityId::Edge(c.edge())).or_default();
+                if !users.contains(&f.id) {
+                    users.push(f.id);
+                }
+            }
+        }
+    }
+    out
+}
+
+fn signature_of(
+    chain: &Chain,
+    whole: &Provenance,
+    by_edge: &BTreeMap<EntityId, Vec<FaceId>>,
+    face: FaceId,
+) -> Signature {
+    let mut out = Signature::new();
+    for l in chain.model.face(face).unwrap().loops() {
+        for c in l.coedges() {
+            for &g in &by_edge[&EntityId::Edge(c.edge())] {
+                if g != face {
+                    out.insert(whole.origins(forward(g)));
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Which side of each coordinate plane of the origin face's own surface
+/// frame the piece lies on — the frame a transform carries with the
+/// face, so the answer is the pose's — read from the mean of the piece's
+/// edge midpoints: `Less`, `Equal` (within the model's default
+/// tolerance) or `Greater` per axis.
+fn side_of(chain: &Chain, origin: FaceId, piece: FaceId) -> [Ordering; 3] {
+    let m = &chain.model;
+    let frame = *m
+        .surface(m.face(origin).unwrap().surface())
+        .unwrap()
+        .frame()
+        .expect("an analytic origin face");
+    let mut sum = [0.0; 3];
+    let mut n = 0.0;
+    for l in m.face(piece).unwrap().loops() {
+        for c in l.coedges() {
+            let EdgeGeometry::Curve { curve, range } = m.edge(c.edge()).unwrap().geometry() else {
+                continue;
+            };
+            let p = frame.to_local(m.curve(curve).unwrap().point(range.midpoint()));
+            sum = [sum[0] + p.x, sum[1] + p.y, sum[2] + p.z];
+            n += 1.0;
+        }
+    }
+    let tol = m.precision().default_tolerance;
+    sum.map(|s| {
+        let mean = s / n;
+        if mean.abs() <= tol {
+            Ordering::Equal
+        } else {
+            mean.partial_cmp(&0.0).unwrap()
+        }
+    })
+}
+
+/// The ordered pieces of every origin the result step split into two or
+/// more faces, `Modified` and `Generated` alike, each piece as its
+/// signature and, for a piece that ties with another of the same origin,
+/// its side.
+fn split_order(fixture: &str, variant: &str) -> BTreeMap<(Relation, Origin), Vec<String>> {
+    let chain = chain_of_fixture(fixture, variant);
+    let names = step_names(fixture);
+    let names: Vec<&str> = names.iter().map(String::as_str).collect();
+    let whole = composed(&chain, &names);
+    let p = &chain.steps[*names.last().unwrap()].provenance;
+    let by_edge = faces_by_edge(&chain);
+    let mut out = BTreeMap::new();
+    for origin in p.origins_recorded() {
+        for (relation, list) in [
+            (Relation::Modified, p.modified_from(origin)),
+            (Relation::Generated, p.generated_from(origin)),
+        ] {
+            let pieces = faces(list);
+            if pieces.len() < 2 {
+                continue;
+            }
+            let signatures: Vec<Signature> = pieces
+                .iter()
+                .map(|&f| signature_of(&chain, &whole, &by_edge, f))
+                .collect();
+            let described: Vec<String> = pieces
+                .iter()
+                .zip(&signatures)
+                .map(|(&f, s)| {
+                    let tied = signatures.iter().filter(|t| *t == s).count() > 1;
+                    let sides = if tied {
+                        let Origin::Entity(Shape {
+                            id: EntityId::Face(origin_face),
+                            ..
+                        }) = origin
+                        else {
+                            panic!("{fixture}: a tie of pieces of {origin}, which is no face");
+                        };
+                        format!(" side {:?}", side_of(&chain, origin_face, f))
+                    } else {
+                        String::new()
+                    };
+                    let roles: Vec<String> = s
+                        .iter()
+                        .map(|o| {
+                            o.iter()
+                                .map(|(r, o)| format!("{r} {o}"))
+                                .collect::<Vec<_>>()
+                                .join(" & ")
+                        })
+                        .collect();
+                    format!("[{}]{sides}", roles.join(" | "))
+                })
+                .collect();
+            out.insert((relation, origin), described);
+        }
+    }
+    out
+}
+
+fn chain_of_fixture(fixture: &str, variant: &str) -> Chain {
+    let dir = fixtures::corpus_root().join(fixture);
+    corpus::chain(&dir, variant).unwrap_or_else(|e| panic!("{fixture} [{variant}]: {e}"))
+}
+
+/// Every split-order fixture splits something: at least one origin into
+/// two or more faces. The bar cuts have no tie; the two fixtures on a
+/// closed wall each hold one, the pieces on either side of a seam. The
+/// frame cut is the one with a `Generated` list of two pieces.
+#[test]
+fn the_split_fixtures_split_faces_and_the_closed_walls_tie() {
+    for (fixture, variants) in SPLIT_FIXTURES {
+        let order = split_order(fixture, variants[0]);
+        assert!(!order.is_empty(), "{fixture} splits nothing");
+        let tied = order
+            .values()
+            .flatten()
+            .any(|piece| piece.contains(" side "));
+        let cylindrical = fixture.contains("cylinder") || fixture.contains("cross");
+        assert_eq!(tied, cylindrical, "{fixture}: {order:#?}");
+        let generated = order.keys().any(|(r, _)| *r == Relation::Generated);
+        assert_eq!(
+            generated,
+            fixture == "provenance/split-frame-cut",
+            "{fixture}: {order:#?}"
+        );
+    }
+}
+
+/// Piece `k` of every split origin has the same signature — the same
+/// neighbours by role, and for a tie the same side — in every variant:
+/// the order a consumer's `Split(k)` name relies on (ADR-0009).
+#[test]
+fn piece_k_of_every_split_origin_is_the_same_in_every_variant() {
+    let mut failures = Vec::new();
+    for (fixture, variants) in SPLIT_FIXTURES {
+        let first = split_order(fixture, variants[0]);
+        for variant in &variants[1..] {
+            let order = split_order(fixture, variant);
+            assert_eq!(
+                order.keys().collect::<Vec<_>>(),
+                first.keys().collect::<Vec<_>>(),
+                "{fixture} [{variant}] splits different origins"
+            );
+            for ((relation, origin), pieces) in &order {
+                let expected = &first[&(*relation, *origin)];
+                assert_eq!(
+                    pieces.len(),
+                    expected.len(),
+                    "{fixture} [{variant}]: {origin}"
+                );
+                for (k, (got, want)) in pieces.iter().zip(expected).enumerate() {
+                    if got != want {
+                        failures.push(format!(
+                            "{fixture} [{variant}]: piece {k} of {origin} ({relation}) is {got}, the default's is {want}"
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }

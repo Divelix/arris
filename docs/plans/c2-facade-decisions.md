@@ -76,9 +76,9 @@ entities bound which piece, and by a property test in random poses.
     on a tool face that ends up in several pieces.
   - A section edge generated from a face pair is ordered along its own
     curve.
-- **Fixtures.** Boolean fixtures' blessed dumps may reorder where a dump
-  lists a record's outputs; each is restaged in its step's commit as
-  `fixtures:`, geometry unchanged, oracle values untouched.
+- **Fixtures.** A dump lists topology only, no record, and the assembly
+  is untouched, so no blessed dump moves (step 1 finding; the plan
+  assumed dumps might reorder).
 - **ARCHITECTURE:**
   - §The model: the compaction `⚠ OPEN` closed by ADR-0010.
   - §Threading: the `f32` `⚠ OPEN` closed by ADR-0011.
@@ -100,33 +100,39 @@ mechanical; **[2]** careful — a geometric or numeric case to get right
 within a given design; **[3]** unproven — an algorithm whose robustness or
 bound has to be established here.
 
-- [ ] Step 1 **[3]** — **A face's split order: the rule and its proof.**
-  - **Fixtures,** each with variants that keep the split's combinatorics:
-    - `provenance/split-bar-cut`: a bar cut through a box, splitting it
-      into two lumps and its top, bottom and two side faces into two
-      pieces each. Variants move the bar to either side of the centre, so
-      the larger piece swaps, and narrow it.
-    - `provenance/split-cylinder-seam`: a slab cut through a cylinder
-      along its axis, leaving two wall pieces bounded by different slab
-      faces. Variants rotate the slab past the seam, so the seam changes
-      piece; the boundary key must hold here, where a (u, v) order would
-      fail.
-    - A tie, if the representation allows one to be built (two kept
-      pieces bounded by the same origins): a variant that stays clear of
-      the seam holds the tiebreak. If none can be built, ADR-0009 says
-      why.
-  - **A test in `crates/arris/tests/provenance.rs`:** give each piece a
-    signature, the origins (composed back to roles with `then`) of the
-    faces it shares an edge with. For every origin with two or more
-    pieces, piece `k`'s signature is the same in every variant.
-  - **Run the test on today's order first**, and record what fails.
-  - **Implement it:** `Provenance` keeps insertion order, and the boolean
-    adds a face's `Modified` and `Generated` pieces by boundary key, then
-    the tiebreak. `then` and `mapped` keep the order.
-  - ADR-0009 in this commit.
-  - **Gate:** if the boundary key fails on a variant whose pieces are not
-    tied, stop and return to the human before step 2 (the idea's reopen
-    condition: a per-piece key in the record instead of an index).
+- [x] Step 1 **[3]** — **A face's split order: the rule and its proof.**
+  Done 2026-09-15, ADR-0009.
+  - **Fixtures,** each with variants that keep the split's combinatorics,
+    four as built (the plan named two and a possible tie):
+    - `provenance/split-bar-cut`: a bar cut through a box, two lumps, top,
+      bottom, front and back faces in two pieces each. Variants move the
+      bar to either side of the centre and narrow it.
+    - `provenance/split-frame-cut` (added): the same bar through a
+      rectangular frame, so each X face of the bar survives in two pieces
+      `Generated` from one tool face — the `Generated` list the design
+      promises the same order for.
+    - `provenance/split-cylinder-seam`: a slab through a rod along its
+      axis, turned about it. **Finding:** a piece never contains a seam —
+      the split's arrangement keeps the seam as a boundary, so a wall cut
+      with the seam inside one region is *three* faces, on the oracle's
+      side too. The plan's variants ("rotate the slab past the seam")
+      would change the piece count, which no order survives; the variants
+      turn within (0°, 180°) instead, the seam staying on one side.
+    - The tie exists, on both closed walls: the two pieces on either
+      side of a seam are bounded by the same origins. `split-cylinder-seam`
+      holds one, and `provenance/split-cross-common` (the Steinmetz solid
+      at three radii and lengths and two turns) holds one per wall.
+  - **The test** (`crates/arris/tests/provenance.rs`): piece signatures
+    from the neighbours' composed origins; a tied pair told apart by its
+    side of the origin face's own frame (a world-axis sign failed on the
+    turned tool, whose frame turns with it).
+  - **Today's order held**: ascending by id passed every variant of all
+    four fixtures — the walk's piece order and the lump order are
+    combinatorial there — but nothing defined it. Against it, the key
+    reorders eight boolean records: a face split across two lumps
+    (`split-cut`, the frame) came in lump order, and the Steinmetz walls.
+    No id and no dump changed.
+  - **Gate:** did not fire; the key holds on every non-tied variant.
 - [ ] Step 2 **[2]** — **An edge's split order, and section edges.**
   - An operand edge's pieces are added ascending along its curve; a closed
     edge's from its range start, across the seam.
@@ -214,3 +220,10 @@ None. The two raised at planning were decided 2026-09-15 by the agent
 - **A `Generated` list follows the same order.** A cut's wall generated
   from a tool face is named by a consumer just as a `Modified` piece is,
   so an order guaranteed for one and not the other would be a trap.
+
+Step 1 findings, for steps 2 and 3: outputs of different kinds from one
+origin come in the operation's recording order (a tool face's wall
+piece, then the section edges, then the vertices it generated), so the
+guarantee is among outputs of one kind; step 3's property may include a
+frame target for a two-piece `Generated` list; and a tie's side is read
+in the origin face's own frame, never a world axis.

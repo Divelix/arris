@@ -1,0 +1,29 @@
+{
+  "description": "split order across variants on a closed face (ADR-0009): a slab of thickness w through a rod's axis, turned by `turn` about it, cuts the rod into two lumps and its wall into three pieces — one bounded by the slab's Y-max face, and the two the rod's seam (at +x) separates, bounded by the Y-min face: a piece never contains a seam, so the seam stays a boundary of the pieces on its two sides and those two are tied by their boundaries. The variants turn the slab within (0, 180) degrees, which keeps the seam on the Y-min side, and narrow it. theta is acos(w / 2r) at full precision, per variant",
+  "params": {"r": 10, "h": 20, "w": 4, "turn": 90, "theta": 1.369438406004566},
+  "variants": {
+    "turned-back": {"turn": 60},
+    "turned-on": {"turn": 120},
+    "narrow": {"w": 2, "theta": 1.4706289056333368}
+  },
+  "steps": [
+    {"name": "rod", "op": "cylinder", "base": [0, 0, 0], "axis": [0, 0, 1], "radius": "r", "height": "h"},
+    {"name": "slab0", "op": "box", "min": ["-(r + 1)", "-w / 2", -1], "max": ["r + 1", "w / 2", "h + 1"]},
+    {"name": "slab", "op": "transform", "of": "slab0", "rotate": {"axis": [0, 0, 1], "origin": [0, 0, 0], "angle_deg": "turn"}},
+    {"name": "result", "op": "cut", "target": "rod", "tool": "slab"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "y_max_side", "point": ["r / 2 * cos(radians(turn + 90))", "r / 2 * sin(radians(turn + 90))", "h / 2"], "expect": "in"},
+    {"label": "y_min_side", "point": ["r / 2 * cos(radians(turn - 90))", "r / 2 * sin(radians(turn - 90))", "h / 2"], "expect": "in"},
+    {"label": "in_slab", "point": [0, 0, "h / 2"], "expect": "out"},
+    {"label": "on_seam", "point": ["r", 0, "h / 2"], "expect": "on"},
+    {"label": "on_cut_face", "point": ["w / 2 * cos(radians(turn + 90))", "w / 2 * sin(radians(turn + 90))", "h / 2"], "expect": "on"}
+  ],
+  "analytic": {
+    "volume": "2 * (r^2 * theta - w / 2 * sqrt(r^2 - w^2 / 4)) * h",
+    "area": "4 * (r^2 * theta - w / 2 * sqrt(r^2 - w^2 / 4)) + 4 * r * h * theta + 4 * h * sqrt(r^2 - w^2 / 4)",
+    "centroid": [0, 0, "h / 2"],
+    "genus": 0
+  }
+}

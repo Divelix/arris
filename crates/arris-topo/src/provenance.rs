@@ -272,8 +272,15 @@ impl fmt::Display for Origin {
 }
 
 /// The record an operation returns: `generated` and `modified` from each
-/// origin to its outputs (sorted, no duplicates), and the `deleted`
-/// inputs. Every entity of every input body is kept — present in the
+/// origin to its outputs, in the order the operation added them and
+/// without duplicates, and the `deleted` inputs. **The order of an
+/// origin's outputs is a contract** (ADR-0009, `docs/DATA-MODEL.md`
+/// §Provenance, "Split order"): an operation adds pieces in split order —
+/// a face's by the origins that bound each piece, an edge's along its
+/// curve — so `Split(k)` in a consumer's persistent name means the same
+/// piece after a parameter edit that keeps which entities bound which
+/// piece. Two records are equal only when they list every origin's
+/// outputs in the same order. Every entity of every input body is kept — present in the
 /// output and unrecorded — or recorded: `Modified` into pieces,
 /// `Generated` from, `Deleted`, or both `Deleted` and `Generated` from
 /// (the tool face that is gone and whose image is the hole's wall); never
@@ -302,9 +309,11 @@ pub struct Provenance {
     deleted: BTreeSet<Shape>,
 }
 
-fn insert_sorted(list: &mut Vec<Shape>, s: Shape) {
-    if let Err(at) = list.binary_search(&s) {
-        list.insert(at, s);
+/// Appends `s` unless the list already holds it: the order is the
+/// caller's, the split order, and never sorted (ADR-0009).
+fn push_once(list: &mut Vec<Shape>, s: Shape) {
+    if !list.contains(&s) {
+        list.push(s);
     }
 }
 
@@ -314,17 +323,19 @@ impl Provenance {
         Self::default()
     }
 
-    /// Records `output` as generated from `origin`.
+    /// Records `output` as generated from `origin`, after every output
+    /// recorded from `origin` so far; recording it again changes nothing.
     pub fn add_generated(&mut self, origin: impl Into<Origin>, output: impl Into<Shape>) {
-        insert_sorted(
+        push_once(
             self.generated.entry(origin.into()).or_default(),
             output.into(),
         );
     }
 
-    /// Records `output` as a piece of `origin`.
+    /// Records `output` as a piece of `origin`, after every piece recorded
+    /// from `origin` so far; recording it again changes nothing.
     pub fn add_modified(&mut self, origin: impl Into<Origin>, output: impl Into<Shape>) {
-        insert_sorted(
+        push_once(
             self.modified.entry(origin.into()).or_default(),
             output.into(),
         );
@@ -335,14 +346,16 @@ impl Provenance {
         self.deleted.insert(input.into());
     }
 
-    /// The outputs generated from `origin`, ascending.
+    /// The outputs generated from `origin`, in the order they were added:
+    /// the split order for pieces (ADR-0009).
     pub fn generated_from(&self, origin: impl Into<Origin>) -> &[Shape] {
         self.generated
             .get(&origin.into())
             .map_or(&[], Vec::as_slice)
     }
 
-    /// The outputs that are pieces of `origin`, ascending.
+    /// The outputs that are pieces of `origin`, in the order they were
+    /// added: the split order (ADR-0009).
     pub fn modified_from(&self, origin: impl Into<Origin>) -> &[Shape] {
         self.modified.get(&origin.into()).map_or(&[], Vec::as_slice)
     }
@@ -394,7 +407,7 @@ impl Provenance {
             (Relation::Modified, &self.modified),
         ] {
             for (origin, outputs) in map {
-                if outputs.binary_search(&output).is_ok() {
+                if outputs.contains(&output) {
                     out.push((relation, *origin));
                 }
             }
@@ -440,7 +453,10 @@ impl Provenance {
     /// appear nowhere. Associative over well-formed chains (an output is
     /// a new entity and a record names only what exists when it runs), so
     /// a chain of operations reports against its first inputs whatever
-    /// the bracketing.
+    /// the bracketing. The order nests (ADR-0009): the outputs that stand
+    /// for piece `i` of an origin — what `next` generated from it, then
+    /// its pieces, then the piece itself when it stays — come before
+    /// those of piece `i + 1`, so `Split(k)` composes.
     pub fn then(&self, next: &Provenance) -> Provenance {
         let mine = self.outputs();
         let next_origins: BTreeSet<Shape> = next
@@ -520,7 +536,7 @@ impl Provenance {
     /// The same record with every entity id translated through `map`
     /// (an [`IdMap`] from `import`); an id the map does not hold stays as
     /// it is, since an origin in another body is not imported with this
-    /// one.
+    /// one. Every origin's outputs keep their order.
     pub fn mapped(&self, map: &IdMap) -> Provenance {
         let translate = |s: Shape| map.map(s).unwrap_or(s);
         let origin = |o: &Origin| match o {

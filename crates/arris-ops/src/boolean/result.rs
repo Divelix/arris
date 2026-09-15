@@ -659,12 +659,66 @@ impl<'m> Build<'m> {
                         f.orientation
                     },
                     loops: piece.loops,
+                    uv: piece.uv,
                     stands_for,
                 });
             }
+            self.split_order(&mut pieces);
             self.face_pieces.insert(f.id, (split.untouched, pieces));
         }
         Ok(())
+    }
+
+    /// `pieces` — indices into `kept`, the surviving pieces of one face —
+    /// put in **split order** (ADR-0009, `docs/DATA-MODEL.md`
+    /// §Provenance), the order the record lists them in: ascending by
+    /// boundary key, and for equal keys by the interior point in the
+    /// face's own (u, v), `u` first, two coordinates within the model's
+    /// parametric tolerance counting as equal. The order the walk found
+    /// the pieces in decides nothing but a full tie of both.
+    fn split_order(&self, pieces: &mut [usize]) {
+        let keys: BTreeMap<usize, Vec<Shape>> = pieces
+            .iter()
+            .map(|&k| (k, self.boundary_key(&self.kept[k])))
+            .collect();
+        // The face's own tolerance in (u, v): rounding in an interior
+        // point never orders two pieces a symmetric split makes alike.
+        let tolerance = self.precision.parametric_tolerance;
+        let uv = |a: Point2, b: Point2| {
+            [(a.x, b.x), (a.y, b.y)]
+                .into_iter()
+                .find(|(x, y)| (x - y).abs() > tolerance)
+                .map_or(core::cmp::Ordering::Equal, |(x, y)| x.total_cmp(&y))
+        };
+        pieces.sort_by(|&a, &b| {
+            keys[&a]
+                .cmp(&keys[&b])
+                .then_with(|| uv(self.kept[a].uv, self.kept[b].uv))
+        });
+    }
+
+    /// A piece's **boundary key**: the origins of its boundary edges as
+    /// the record names them — an operand edge for a piece of one, and
+    /// both faces of the pair for a section edge — sorted, without
+    /// duplicates. Every one is an input of the operation, whose ids a
+    /// rebuild of the same upstream recipe repeats, so the key reads no
+    /// output id and no geometry, and two pieces bounded by different
+    /// entities compare the same way in every variant of the recipe.
+    fn boundary_key(&self, piece: &Kept) -> Vec<Shape> {
+        let mut key: Vec<Shape> = Vec::new();
+        for u in piece.loops.iter().flatten() {
+            match u.edge {
+                ERef::Sub { edge, .. } => key.push(forward(edge)),
+                ERef::Section(k) => {
+                    let pair = &self.i.pairs[self.i.curves[self.i.sections[k].curve].pair];
+                    key.push(forward(pair.a));
+                    key.push(forward(pair.b));
+                }
+            }
+        }
+        key.sort();
+        key.dedup();
+        key
     }
 
     /// [`split_face`] over every face of both operands, in `a`'s faces'

@@ -1,0 +1,342 @@
+{
+  "occt": "8.0.1.0.0",
+  "recipe_sha256": "50c25f4f112487ff952760a6293953356019d1339d19603e2d141f8643de24c5",
+  "results": {
+    "default": {
+      "area": 4079.9999999999995,
+      "centroid": [
+        20.0,
+        15.0,
+        4.999999999999999
+      ],
+      "counts": {
+        "edges": 24,
+        "faces": 12,
+        "loops": 12,
+        "shells": 2,
+        "solids": 2,
+        "vertices": 16
+      },
+      "degenerate": false,
+      "euler_characteristic": 4,
+      "genus": 0,
+      "inertia": [
+        [
+          900000.0,
+          0.0,
+          -2.3283064365386963e-10
+        ],
+        [
+          0.0,
+          1688400.0,
+          -1.1641532182693481e-10
+        ],
+        [
+          -2.3283064365386963e-10,
+          -1.1641532182693481e-10,
+          2408400.0
+        ]
+      ],
+      "probes": [
+        {
+          "class": "in",
+          "label": "left_lump",
+          "point": [
+            9.0,
+            15.0,
+            5.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "in_bar",
+          "point": [
+            20.0,
+            15.0,
+            5.0
+          ]
+        },
+        {
+          "class": "in",
+          "label": "right_lump",
+          "point": [
+            31.0,
+            15.0,
+            5.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_cut_face",
+          "point": [
+            18.0,
+            15.0,
+            5.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_top",
+          "point": [
+            5.0,
+            15.0,
+            10.0
+          ]
+        }
+      ],
+      "volume": 10800.0
+    },
+    "left": {
+      "area": 4080.0,
+      "centroid": [
+        20.888888888888886,
+        14.999999999999996,
+        5.0
+      ],
+      "counts": {
+        "edges": 24,
+        "faces": 12,
+        "loops": 12,
+        "shells": 2,
+        "solids": 2,
+        "vertices": 16
+      },
+      "degenerate": false,
+      "euler_characteristic": 4,
+      "genus": 0,
+      "inertia": [
+        [
+          900000.0000000014,
+          -9.313225746154785e-10,
+          0.0
+        ],
+        [
+          -9.313225746154785e-10,
+          1603066.666666667,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          2323066.666666667
+        ]
+      ],
+      "probes": [
+        {
+          "class": "in",
+          "label": "left_lump",
+          "point": [
+            5.0,
+            15.0,
+            5.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "in_bar",
+          "point": [
+            12.0,
+            15.0,
+            5.0
+          ]
+        },
+        {
+          "class": "in",
+          "label": "right_lump",
+          "point": [
+            27.0,
+            15.0,
+            5.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_cut_face",
+          "point": [
+            10.0,
+            15.0,
+            5.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_top",
+          "point": [
+            5.0,
+            15.0,
+            10.0
+          ]
+        }
+      ],
+      "volume": 10800.0
+    },
+    "narrow": {
+      "area": 4279.999999999999,
+      "centroid": [
+        20.000000000000004,
+        15.0,
+        5.0
+      ],
+      "counts": {
+        "edges": 24,
+        "faces": 12,
+        "loops": 12,
+        "shells": 2,
+        "solids": 2,
+        "vertices": 16
+      },
+      "degenerate": false,
+      "euler_characteristic": 4,
+      "genus": 0,
+      "inertia": [
+        [
+          962500.0,
+          4.656612873077393e-10,
+          2.3283064365386963e-10
+        ],
+        [
+          4.656612873077393e-10,
+          1696165.6249999972,
+          1.1641532182693481e-10
+        ],
+        [
+          2.3283064365386963e-10,
+          1.1641532182693481e-10,
+          2466165.624999997
+        ]
+      ],
+      "probes": [
+        {
+          "class": "in",
+          "label": "left_lump",
+          "point": [
+            9.625,
+            15.0,
+            5.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "in_bar",
+          "point": [
+            20.0,
+            15.0,
+            5.0
+          ]
+        },
+        {
+          "class": "in",
+          "label": "right_lump",
+          "point": [
+            30.375,
+            15.0,
+            5.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_cut_face",
+          "point": [
+            19.25,
+            15.0,
+            5.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_top",
+          "point": [
+            5.0,
+            15.0,
+            10.0
+          ]
+        }
+      ],
+      "volume": 11550.0
+    },
+    "right": {
+      "area": 4080.0,
+      "centroid": [
+        19.11111111111111,
+        14.999999999999996,
+        5.0
+      ],
+      "counts": {
+        "edges": 24,
+        "faces": 12,
+        "loops": 12,
+        "shells": 2,
+        "solids": 2,
+        "vertices": 16
+      },
+      "degenerate": false,
+      "euler_characteristic": 4,
+      "genus": 0,
+      "inertia": [
+        [
+          900000.0000000014,
+          -4.656612873077393e-10,
+          2.3283064365386963e-10
+        ],
+        [
+          -4.656612873077393e-10,
+          1603066.666666666,
+          -1.1641532182693481e-10
+        ],
+        [
+          2.3283064365386963e-10,
+          -1.1641532182693481e-10,
+          2323066.666666666
+        ]
+      ],
+      "probes": [
+        {
+          "class": "in",
+          "label": "left_lump",
+          "point": [
+            13.0,
+            15.0,
+            5.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "in_bar",
+          "point": [
+            28.0,
+            15.0,
+            5.0
+          ]
+        },
+        {
+          "class": "in",
+          "label": "right_lump",
+          "point": [
+            35.0,
+            15.0,
+            5.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_cut_face",
+          "point": [
+            26.0,
+            15.0,
+            5.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_top",
+          "point": [
+            5.0,
+            15.0,
+            10.0
+          ]
+        }
+      ],
+      "volume": 10800.0
+    }
+  }
+}

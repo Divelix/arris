@@ -19,3 +19,4 @@ here; the first ADR is the first decision taken *after* the seed.
 | [0006](0006-lumps-in-one-solid.md) | Lumps in one `Solid`: several shells, nested by B1, derived and never stored | accepted |
 | [0007](0007-blends-as-rolling-ball-stripes-on-analytic-pairs.md) | Blends are rolling-ball stripes on analytic face pairs, built in closed form and assembled with kept ids | accepted |
 | [0008](0008-coaxial-surfaces-of-revolution-meet-through-their-meridians.md) | Coaxial surfaces of revolution meet through their meridians: one arm over the meridian sections, `Points` on the axis, the boolean's quadric guard | accepted |
+| [0009](0009-no-name-grammar-a-guaranteed-split-order.md) | Arris owns no name grammar: a consumer names from `Provenance`, and the kernel guarantees the split order | accepted |

@@ -8,6 +8,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use arris_check::arris_topo::arris_math::Point2;
 use arris_check::arris_topo::builder::{
     Assembly, Builder, EdgeKey, EdgeSpec, FaceSpec, UseSpec, VertexKey, VertexSpec, effective_uses,
 };
@@ -49,6 +50,9 @@ pub(crate) struct Kept {
     pub orientation: Orientation,
     /// In the stored sense.
     pub loops: Vec<Vec<PieceUse>>,
+    /// A point strictly inside the piece in the face's own (u, v): the
+    /// split order's tiebreak (ADR-0009).
+    pub uv: Point2,
     /// The coincident face of the other operand the piece lies on and
     /// stands in for, when it does.
     pub stands_for: Option<FaceId>,

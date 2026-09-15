@@ -31,15 +31,11 @@ fn origins_inverts_generated_from_and_modified_from() {
     p.add_modified(target, face(11));
     p.add_modified(target, face(12));
     p.add_deleted(face(2));
-    assert_eq!(
-        p.generated_from(tool),
-        [face(10), edge(20)]
-            .iter()
-            .copied()
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .collect::<Vec<_>>()
-    );
+    // In the order they were added, not by id (ADR-0009): the face was
+    // recorded before the edge although the edge's id sorts first.
+    assert_eq!(p.generated_from(tool), [face(10), edge(20)]);
+    p.add_generated(tool, face(10));
+    assert_eq!(p.generated_from(tool), [face(10), edge(20)], "no duplicate");
     assert_eq!(p.modified_from(target), [face(11), face(12)]);
     assert_eq!(p.generated_pair(tool, target), [edge(20)]);
     assert!(p.generated_pair(tool, face(9)).is_empty());
@@ -62,7 +58,7 @@ fn origins_inverts_generated_from_and_modified_from() {
     assert!(p.origins(face(99)).is_empty());
     assert_eq!(
         p.to_string(),
-        "+f0 generated +e20 +f10\n+f1 generated +e20\n+f1 modified +f11 +f12\n+f2 deleted\n"
+        "+f0 generated +f10 +e20\n+f1 generated +e20\n+f1 modified +f11 +f12\n+f2 deleted\n"
     );
 }
 

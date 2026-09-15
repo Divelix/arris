@@ -1077,8 +1077,8 @@ pub enum Origin   { Entity(Shape), Role(Role) }
 pub enum Role     { Box(BoxPart), Cylinder(CylinderPart), Extrude(SweepPart), Revolve(SweepPart) }   // exhaustive
 
 pub struct Provenance {
-    generated: BTreeMap<Origin, Vec<Shape>>,   // origin → outputs generated from it, sorted
-    modified:  BTreeMap<Origin, Vec<Shape>>,   // origin → outputs that are pieces of it
+    generated: BTreeMap<Origin, Vec<Shape>>,   // origin → outputs generated from it, in split order
+    modified:  BTreeMap<Origin, Vec<Shape>>,   // origin → outputs that are pieces of it, in split order
     deleted:   BTreeSet<Shape>,
 }
 ```
@@ -1224,8 +1224,35 @@ persistent name is therefore a function of the origins chain, and the
 roadmap's acceptance corpus asserts that function is constant across
 parameter changes.
 
-`⚠ OPEN:` how a consumer's persistent topological references map onto
-provenance ids — architecture §How a consumer's kernel facade maps on.
+**Split order** (ADR-0009). Arris ships no name grammar: a consumer
+names from the record, and what only the kernel can give it is the order
+of one origin's outputs, which is what `Split(k)` in such a name means.
+`generated_from` and `modified_from` list an origin's outputs in the
+order the operation added them, deduplicated, and every operation adds
+pieces in split order; `PartialEq` compares that order; `mapped` keeps
+it; `then` nests it — the outputs standing for piece `i` (what the next
+operation generated from it, then its pieces, then the piece itself when
+it stays) before those of piece `i + 1`. **A face's pieces ascend by
+their boundary key**: the sorted, deduplicated origins of the piece's
+boundary edges as the record names them — an operand edge for a piece of
+one, both faces of the pair for a section edge — compared
+lexicographically. Every such origin is an input of the operation, whose
+ids a rebuild of the same upstream recipe repeats, so the key reads no
+output id and no geometry, and the order holds under every parameter
+edit that keeps which entities bound which piece. Two pieces with equal
+keys, a tie, are ordered by a point strictly inside each in the origin
+face's own (u, v), `u` first, coordinates within the model's parametric
+tolerance counting as equal. A tie needs a closed face: the pieces on
+either side of a seam are bounded by the same origins, since a piece
+never contains a seam — the split keeps a periodic face's seam as a
+boundary, so a wall cut with the seam inside one region is three faces,
+as Open CASCADE builds it too. A `Generated` list of pieces (a cut tool's
+face surviving in several) follows the same order. An edge's pieces
+ascend along its curve, a closed edge's from its range's start, and a
+section edge generated from a face pair is ordered along its own curve
+(`c2-facade-decisions` step 2). The `provenance/split-*` fixtures hold
+piece `k` of every split origin to the same neighbours, by role, in
+every variant of their recipes.
 
 ## Native format
 
@@ -1269,5 +1296,3 @@ skipped, so the dump of an invalid body says where.
 
 - `⚠ OPEN:` quadric–quadric intersection curves, exact variant or fitted
   NURBS (§Curves).
-- `⚠ OPEN:` consumer references onto provenance (§Provenance,
-  architecture §How a consumer's kernel facade maps on).

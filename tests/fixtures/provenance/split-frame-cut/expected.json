@@ -1,0 +1,378 @@
+{
+  "occt": "8.0.1.0.0",
+  "recipe_sha256": "86fc8629461dbfa9ea0aef01bbde65be10c23725079fab547fec8a08dbaf92f2",
+  "results": {
+    "default": {
+      "area": 4079.9999999999995,
+      "centroid": [
+        20.000000000000004,
+        15.000000000000004,
+        5.0
+      ],
+      "counts": {
+        "edges": 48,
+        "faces": 20,
+        "loops": 20,
+        "shells": 2,
+        "solids": 2,
+        "vertices": 32
+      },
+      "degenerate": false,
+      "euler_characteristic": 4,
+      "genus": 0,
+      "inertia": [
+        [
+          873333.333333333,
+          4.656612873077393e-10,
+          1.1641532182693481e-10
+        ],
+        [
+          4.656612873077393e-10,
+          1608933.3333333302,
+          0.0
+        ],
+        [
+          1.1641532182693481e-10,
+          0.0,
+          2328933.333333331
+        ]
+      ],
+      "probes": [
+        {
+          "class": "in",
+          "label": "left_arm",
+          "point": [
+            5.0,
+            15.0,
+            5.0
+          ]
+        },
+        {
+          "class": "in",
+          "label": "right_arm",
+          "point": [
+            35.0,
+            15.0,
+            5.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "in_bar",
+          "point": [
+            20.0,
+            5.0,
+            5.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "in_window",
+          "point": [
+            20.0,
+            15.0,
+            5.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_cut_face",
+          "point": [
+            18.0,
+            5.0,
+            5.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_top",
+          "point": [
+            5.0,
+            15.0,
+            10.0
+          ]
+        }
+      ],
+      "volume": 9199.999999999998
+    },
+    "left": {
+      "area": 4080.0,
+      "centroid": [
+        20.608695652173903,
+        15.0,
+        4.999999999999999
+      ],
+      "counts": {
+        "edges": 48,
+        "faces": 20,
+        "loops": 20,
+        "shells": 2,
+        "solids": 2,
+        "vertices": 32
+      },
+      "degenerate": false,
+      "euler_characteristic": 4,
+      "genus": 0,
+      "inertia": [
+        [
+          873333.333333333,
+          -9.313225746154785e-10,
+          -6.984919309616089e-10
+        ],
+        [
+          -9.313225746154785e-10,
+          1566324.637681163,
+          -1.1641532182693481e-10
+        ],
+        [
+          -6.984919309616089e-10,
+          -1.1641532182693481e-10,
+          2286324.637681162
+        ]
+      ],
+      "probes": [
+        {
+          "class": "in",
+          "label": "left_arm",
+          "point": [
+            5.0,
+            15.0,
+            5.0
+          ]
+        },
+        {
+          "class": "in",
+          "label": "right_arm",
+          "point": [
+            35.0,
+            15.0,
+            5.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "in_bar",
+          "point": [
+            13.0,
+            5.0,
+            5.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "in_window",
+          "point": [
+            20.0,
+            15.0,
+            5.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_cut_face",
+          "point": [
+            11.0,
+            5.0,
+            5.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_top",
+          "point": [
+            5.0,
+            15.0,
+            10.0
+          ]
+        }
+      ],
+      "volume": 9200.0
+    },
+    "narrow": {
+      "area": 4279.999999999999,
+      "centroid": [
+        20.0,
+        15.0,
+        4.999999999999999
+      ],
+      "counts": {
+        "edges": 48,
+        "faces": 20,
+        "loops": 20,
+        "shells": 2,
+        "solids": 2,
+        "vertices": 32
+      },
+      "degenerate": false,
+      "euler_characteristic": 4,
+      "genus": 0,
+      "inertia": [
+        [
+          931666.6666666665,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          1614110.416666666,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          2384110.416666666
+        ]
+      ],
+      "probes": [
+        {
+          "class": "in",
+          "label": "left_arm",
+          "point": [
+            5.0,
+            15.0,
+            5.0
+          ]
+        },
+        {
+          "class": "in",
+          "label": "right_arm",
+          "point": [
+            35.0,
+            15.0,
+            5.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "in_bar",
+          "point": [
+            20.0,
+            5.0,
+            5.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "in_window",
+          "point": [
+            20.0,
+            15.0,
+            5.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_cut_face",
+          "point": [
+            19.25,
+            5.0,
+            5.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_top",
+          "point": [
+            5.0,
+            15.0,
+            10.0
+          ]
+        }
+      ],
+      "volume": 9700.0
+    },
+    "right": {
+      "area": 4080.0,
+      "centroid": [
+        19.391304347826086,
+        15.0,
+        4.999999999999998
+      ],
+      "counts": {
+        "edges": 48,
+        "faces": 20,
+        "loops": 20,
+        "shells": 2,
+        "solids": 2,
+        "vertices": 32
+      },
+      "degenerate": false,
+      "euler_characteristic": 4,
+      "genus": 0,
+      "inertia": [
+        [
+          873333.333333334,
+          0.0,
+          -2.3283064365386963e-10
+        ],
+        [
+          0.0,
+          1566324.6376811587,
+          -2.3283064365386963e-10
+        ],
+        [
+          -2.3283064365386963e-10,
+          -2.3283064365386963e-10,
+          2286324.63768116
+        ]
+      ],
+      "probes": [
+        {
+          "class": "in",
+          "label": "left_arm",
+          "point": [
+            5.0,
+            15.0,
+            5.0
+          ]
+        },
+        {
+          "class": "in",
+          "label": "right_arm",
+          "point": [
+            35.0,
+            15.0,
+            5.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "in_bar",
+          "point": [
+            27.0,
+            5.0,
+            5.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "in_window",
+          "point": [
+            20.0,
+            15.0,
+            5.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_cut_face",
+          "point": [
+            25.0,
+            5.0,
+            5.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_top",
+          "point": [
+            5.0,
+            15.0,
+            10.0
+          ]
+        }
+      ],
+      "volume": 9200.0
+    }
+  }
+}

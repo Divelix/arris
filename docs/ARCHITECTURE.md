@@ -1039,7 +1039,7 @@ facade needs Arris types above it.
 | Mass properties (volume, area, centroid, inertia) | `ops::measure::mass_properties` → `MassProperties` (exact over the B-Rep, the tensor about the centroid); or the consumer's own integrator over `TriMesh` |
 | STEP export of several bodies | `io::step::write(&model, &[bodies])` |
 | Projecting an edge or vertex onto a sketch plane | `geom::project_to_plane` on the edge's `Curve` — a line stays a line, a circle becomes a circle or an ellipse, an ellipse stays an ellipse, a NURBS a `Curve2::Nurbs`; a point-set projection with the variant's own parameter (02 §Pcurves) |
-| Persistent topological names (origin-based) | Emitted by the consumer from `Provenance`: an output face is named after the input face it was `Modified` from, `Split(k)` when one input yields several outputs, and after the tool face when `Generated`; edges and vertices derive from their faces exactly as today. No centroid matching. `⚠ OPEN:` whether Arris ships the origin-name grammar as a helper (`arris-topo::naming`) or leaves it to the consumer; the seed lists this among the kickoff questions. Decided in cycle 2 with the consumer's adapter |
+| Persistent topological names (origin-based) | Emitted by the consumer from `Provenance`: an output face is named after the input face it was `Modified` from, `Split(k)` when one input yields several outputs, and after the tool face when `Generated`; edges and vertices derive from their faces exactly as today. No centroid matching. Arris ships no name grammar (ADR-0009): the words are the application's. What the kernel guarantees is the **split order** — an origin's outputs in `generated_from` and `modified_from` are the pieces in an order that holds under every parameter edit keeping which entities bound which piece (a face's by the origins bounding each piece, an edge's along its curve; data-model §Provenance), so `Split(k)` means the same piece after the edit |
 | Memoising shapes by content, dropping unreferenced ones | Memoisation stays in the consumer (it is about features, not geometry); dropping is `Model::retain` (§The model, `⚠ OPEN`) |
 | Units | Arris is unit-agnostic. The consumer sets `Precision` for its unit (metres: `default_tolerance` at the micrometre scale) when it creates the `Model` |
 
@@ -1053,5 +1053,3 @@ Collected from this document; each closes with an ADR.
 
 - `⚠ OPEN:` compaction renumbers slots or keeps them sparse (§The model).
 - `⚠ OPEN:` `f32` positions at the tessellation boundary (§Threading).
-- `⚠ OPEN:` origin-name helper in Arris or in the consumer (§How a consumer's kernel
-  facade maps on).
