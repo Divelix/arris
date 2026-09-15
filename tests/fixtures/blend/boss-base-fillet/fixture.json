@@ -1,0 +1,28 @@
+{
+  "description": "a disc of radius 3 and height 1 with a boss of radius R 1 and height 1 on it, revolved whole about z, the boss's base filleted at r 0.25: a plane against a cylinder along a circle, concave, the blend a quarter of a torus coaxial with the boss, major radius R + r and minor r, adding material, tangent to the disc's top and to the boss's wall along circles, with no ends; its u seam lies in the half-plane of the boss's own seam, which is shortened to the contact on the wall. Every face shares the axis. The corner's section (1 − π/4) r² swept about the axis at R + r (10 − 3π) / (12 − 3π) by Pappus",
+  "params": {"r": 0.25},
+  "steps": [
+    {"name": "sketch", "op": "profile", "plane": {"origin": [0, 0, 0], "x": [1, 0, 0], "y": [0, 0, 1]},
+     "outer": {"start": [0, 0], "segments": [{"line_to": [3, 0]}, {"line_to": [3, 1]}, {"line_to": [1, 1]}, {"line_to": [1, 2]}, {"line_to": [0, 2]}, {"line_to": [0, 0]}]}},
+    {"name": "disc", "op": "revolve", "profile": "sketch", "axis": {"origin": [0, 0, 0], "direction": [0, 0, 1]}, "angle_deg": 360},
+    {"name": "result", "op": "fillet", "of": "disc", "edges": [[-1, 0, 1]], "radius": "r"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [2, 0, 0.5], "expect": "in"},
+    {"label": "inside_boss", "point": [0, 0, 1.5], "expect": "in"},
+    {"label": "corner_filled", "point": ["1 + r - (r - 0.05) * cos(radians(45))", 0, "1 + r - (r - 0.05) * sin(radians(45))"], "expect": "out"},
+    {"label": "corner_added", "point": ["1 + 0.03", 0, "1 + 0.03"], "expect": "in"},
+    {"label": "on_blend", "point": ["1 + r - r * cos(radians(45))", 0, "1 + r - r * sin(radians(45))"], "expect": "on"},
+    {"label": "on_blend_behind", "point": [0, "-(1 + r - r * cos(radians(45)))", "1 + r - r * sin(radians(45))"], "expect": "on"},
+    {"label": "on_disc_contact", "point": [0, "1 + r", 1], "expect": "on"},
+    {"label": "on_wall_contact", "point": [-1, 0, "1 + r"], "expect": "on"},
+    {"label": "on_boss_top", "point": [0.5, 0, 2], "expect": "on"},
+    {"label": "outside", "point": [2, 0, 1.5], "expect": "out"}
+  ],
+  "analytic": {
+    "volume": "3 * pi * 3 + pi + 2 * pi * (1 + r * (10 - 3 * pi) / (12 - 3 * pi)) * (1 - pi / 4) * r^2",
+    "area": "9 * pi + (9 * pi - pi * (1 + r)^2) + 6 * pi + 2 * pi * (1 - r) + pi + pi^2 * r * (1 + r) - 2 * pi * r^2",
+    "genus": 0
+  }
+}

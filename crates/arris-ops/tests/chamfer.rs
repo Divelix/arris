@@ -5,13 +5,13 @@
 //! words differently from a fillet.
 
 use arris_debug::dump_text;
-use arris_ops::arris_check::arris_topo::arris_geom::{Profile, ProfileLoop, ProfileSegment};
-use arris_ops::arris_check::arris_topo::arris_math::{Frame, Point2, Point3, Vec3};
+use arris_ops::arris_check::arris_topo::arris_geom::{Curve, Profile, ProfileLoop, ProfileSegment};
+use arris_ops::arris_check::arris_topo::arris_math::{Axis, Frame, Point2, Point3, Vec3};
 use arris_ops::arris_check::arris_topo::provenance::audit;
 use arris_ops::arris_check::arris_topo::{Body, Edge, EntityId, Model, Orientation, Shape};
 use arris_ops::arris_check::{Level, check};
 use arris_ops::measure::mass_properties;
-use arris_ops::{OpError, Reason, chamfer, extrude, primitive_box};
+use arris_ops::{OpError, Reason, chamfer, extrude, primitive_box, revolve};
 
 /// The edge of `body` whose curve's midpoint is `at`.
 fn edge_at(m: &Model, body: Body, at: Point3) -> Edge {
@@ -31,6 +31,108 @@ fn cube(m: &mut Model) -> Body {
     primitive_box(m, Point3::origin(), Point3::new(2.0, 2.0, 2.0))
         .unwrap()
         .0
+}
+
+/// The closed edge of `body` that is a circle about `centre` of `radius`.
+fn rim_at(m: &Model, body: Body, centre: Point3, radius: f64) -> Edge {
+    m.edges(body)
+        .unwrap()
+        .into_iter()
+        .find(|e| {
+            let entity = m.edge(e.id).unwrap();
+            entity.start() == entity.end()
+                && entity.curve().is_some_and(|(curve, _)| {
+                    matches!(
+                        m.curve(curve).unwrap(),
+                        Curve::Circle { frame, radius: r }
+                            if (frame.origin() - centre).norm() < 1e-9 && (r - radius).abs() < 1e-9
+                    )
+                })
+        })
+        .unwrap_or_else(|| panic!("no rim of radius {radius} about {centre}"))
+}
+
+/// A plane against a cylinder along a circle chamfers to a 45° cone
+/// (ADR-0007): a hole's top rim, convex with the material outside the
+/// cylinder, a boss's base, concave, and its top rim, convex with the
+/// material inside. Each is clean at `Full` with nothing unchecked and
+/// audited, and moves the volume by Pappus: the triangle `d²/2` swept
+/// about the axis at its centroid, `d/3` from the edge toward the cut.
+#[test]
+fn a_rim_chamfers_to_a_cone() {
+    use core::f64::consts::TAU;
+    let d: f64 = 0.25;
+    let p = |u, v| Point2::new(u, v);
+    let mut m = Model::default();
+    let plate = extrude(
+        &mut m,
+        &Profile {
+            plane: Frame::world(),
+            outer: ProfileLoop::Path {
+                start: p(0.0, 0.0),
+                segments: [p(4.0, 0.0), p(4.0, 4.0), p(0.0, 4.0), p(0.0, 0.0)]
+                    .map(ProfileSegment::LineTo)
+                    .to_vec(),
+            },
+            holes: vec![ProfileLoop::Circle {
+                center: p(2.0, 2.0),
+                radius: 1.0,
+            }],
+        },
+        Vec3::z(),
+        1.0,
+    )
+    .unwrap()
+    .0;
+    let disc = revolve(
+        &mut m,
+        &Profile {
+            plane: Frame::new(Point3::origin(), -Vec3::y(), Vec3::x()).unwrap(),
+            outer: ProfileLoop::Path {
+                start: p(0.0, 0.0),
+                segments: [
+                    p(3.0, 0.0),
+                    p(3.0, 1.0),
+                    p(1.0, 1.0),
+                    p(1.0, 2.0),
+                    p(0.0, 2.0),
+                    p(0.0, 0.0),
+                ]
+                .map(ProfileSegment::LineTo)
+                .to_vec(),
+            },
+            holes: Vec::new(),
+        },
+        Axis::z_at(Point3::origin()),
+        TAU,
+    )
+    .unwrap()
+    .0;
+    // A name, the body, the rim, the sign the chamfer moves the volume by
+    // and the side of the rim the cut is on.
+    let cases = [
+        ("hole top rim", plate, Point3::new(2.0, 2.0, 1.0), -1.0, 1.0),
+        ("boss base", disc, Point3::new(0.0, 0.0, 1.0), 1.0, 1.0),
+        ("boss top rim", disc, Point3::new(0.0, 0.0, 2.0), -1.0, -1.0),
+    ];
+    for (name, body, centre, sign, side) in cases {
+        let before = mass_properties(&m, body).unwrap().volume;
+        let rim = rim_at(&m, body, centre, 1.0);
+        let (chamfered, provenance) =
+            chamfer(&mut m, body, &[rim], d).unwrap_or_else(|err| panic!("{name}: {err}"));
+        let report = check(&m, chamfered, Level::Full);
+        assert!(report.is_ok(), "{name}: {report}");
+        assert!(report.unchecked().is_empty(), "{name}: {report}");
+        audit(&m, &[body], chamfered, &provenance).unwrap();
+        let generated = provenance.generated_from(Shape::new(rim.id, Orientation::Forward));
+        assert_eq!(generated.len(), 6, "{name}: {generated:?}");
+        let volume = before + sign * TAU * (1.0 + side * d / 3.0) * d * d / 2.0;
+        let got = mass_properties(&m, chamfered).unwrap().volume;
+        assert!(
+            (got - volume).abs() <= 1e-9 * volume,
+            "{name}: {got} against {volume}"
+        );
+    }
 }
 
 /// A plane against a cylinder along a ruling — a half disc's chord edge —

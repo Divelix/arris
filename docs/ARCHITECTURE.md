@@ -415,8 +415,20 @@ the face's own loop; the contacts sit at `u = 0` and at the angle
 between them about the blend's axis, no longer `π − φ`. That pair has no
 chamfer in the table, and no miter: its contact on the cylinder misses
 the other blend's on the third edge, so a corner with a ruling blend is
-`VertexBlend`. A plane against a cylinder along a circle follows in this
-cycle. `ops::chamfer(m, body, edges, distance)` is the same
+`VertexBlend`. A plane against a cylinder along a circle — a hole's rim,
+a boss's base — is a closed edge and blends with no ends: a torus
+coaxial with the cylinder, its centre circle at `R + sσr` for `s` `−1`
+on a convex edge and `σ` the side of the axis the cylinder's outward
+normal points to, minor radius `r`, one quarter of its tube between the
+contacts; it chamfers to the 45° cone through the same two circles at
+`distance`. Each contact is the edge's own circle moved along the axis
+or widened, so it keeps the edge's frame and range. The blend's frame
+has the cylinder's `Z` and its `X` at the edge's vertex, so its `u` seam
+— a tube circle of the torus, a ruling of the cone — runs between the
+two contacts' vertices in the half-plane of the cylinder's own seam,
+which is shortened to the contact on the cylinder; that vertex must
+carry no other edge. A torus that would not be a ring torus is
+`BlendTooLarge`. `ops::chamfer(m, body, edges, distance)` is the same
 operation cut flat: two planes chamfer to the plane through the lines at
 `distance` from the edge along each face — its frame's origin on one
 contact, `X` across to the other and `Y` along the edge — and every end

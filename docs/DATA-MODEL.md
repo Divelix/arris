@@ -1180,7 +1180,11 @@ blends' ends are one edge and two vertices, `Generated` from both edges
 they join, so `generated_pair` finds them; the corner's third edge,
 shortened, is `Modified`; no face across takes an arc. A chamfer's record
 is a fillet's with its end segments in place of the arcs, and two
-chamfers at a corner meet in a line recorded as a miter's ellipse is. A sphere corner
+chamfers at a corner meet in a line recorded as a miter's ellipse is. A
+closed edge's blend has no ends: its torus or cone face, its two contact
+circles, its seam and the seam's two vertices are `Generated` from the
+edge; the edge's two faces and the cylinder's seam, shortened to the
+contact, are `Modified`; the edge and its one vertex are `Deleted`. A sphere corner
 face is `Generated` from its three edges. `audit` holds on every
 result. A second blend on a blended body is rooted at an edge the first
 kept or modified, so the records composed with `then` name each blend

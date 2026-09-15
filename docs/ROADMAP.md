@@ -300,7 +300,11 @@ with their `#[ignore]`d twins — green.*
   (`box-corner-three-fillets`). A plane against a cylinder along a ruling
   fillets to a cylinder, convex or concave (`d-chord-edge`,
   `rib-root-edge`), S5 deciding the blend against the face it is tangent
-  to by the parallel-axis arm. At random, a pick of a box's or an L's
+  to by the parallel-axis arm. A plane against a cylinder along a circle
+  is a closed edge with no ends: a hole's rim fillets to a torus and
+  chamfers to a cone, a boss's base fillets to a concave torus
+  (`hole-rim-fillet`, `hole-rim-chamfer`, `boss-base-fillet`), S5
+  deciding each against its faces by ADR-0008's meridian arm. At random, a pick of a box's or an L's
   edges in a random pose fillets and chamfers clean at `Full`, audited, at
   its closed-form volume miters included, the same moved before or after
   and deterministic (`crates/arris-ops/tests/blend_prop.rs`), nothing

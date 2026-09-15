@@ -553,6 +553,28 @@ fn blend_rib_root_edge() {
     run("blend/rib-root-edge");
 }
 
+/// A hole's top rim: a plane against a cylinder along a circle, convex,
+/// the blend a quarter of a torus coaxial with the hole with no ends
+/// (ADR-0007), S5 deciding it against the top face and the wall by the
+/// meridian arm (ADR-0008).
+#[test]
+fn blend_hole_rim_fillet() {
+    run("blend/hole-rim-fillet");
+}
+
+/// The same rim chamfered: a 45° cone coaxial with the hole.
+#[test]
+fn blend_hole_rim_chamfer() {
+    run("blend/hole-rim-chamfer");
+}
+
+/// A boss's base on a revolved disc: the circle arm concave, the torus
+/// adding material, every face on the one axis.
+#[test]
+fn blend_boss_base_fillet() {
+    run("blend/boss-base-fillet");
+}
+
 /// The same recipe under three parameter sets, one test each so a
 /// variant that drifts says which: the eight bolt holes' chain is
 /// `crates/arris/tests/provenance.rs`'s subject, and these hold each

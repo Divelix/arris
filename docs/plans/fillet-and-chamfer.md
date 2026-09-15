@@ -390,7 +390,26 @@ bound has to be established here.
   - ~~`regression/fillet-miter` into `blend/fillet-miter` with its dump.~~
     Done by `plans/cylinder-cylinder-booleans` step 1, whose arm fixed it.
   - Fixtures `blend/d-chord-edge`, `blend/rib-root-edge`.
-- [ ] Step 8 **[2]** — **Closed edges** (S5 by ADR-0008's meridian arm).
+- [x] Step 8 **[2]** — **Closed edges** (S5 by ADR-0008's meridian arm).
+  Landed 2026-09-15. All three fixtures pass every stage against Open
+  CASCADE, counts included (11/17/8/10 for both hole rims), and match
+  their closed forms by Pappus. Nothing is unchecked, since every face
+  the torus or cone meets shares its axis or is apart. Three findings.
+  First, a closed edge is a `Ring` beside `Stripe`, not a stripe without
+  ends. Its contacts are the edge's own circle moved or widened, kept at
+  the edge's frame and range, so each face's coedge keeps its
+  orientation. The one entity it cuts is the cylinder's seam, through the
+  shared `cuts`, so both rims of a hole blend in one call. Second, the
+  signs come from the same two quantities as the ruling arm: the
+  centre circle is at `R + sσr`. The frame's `Z` is the cylinder's, so a
+  top rim's quarter is `v ∈ [π/2, π]`, and the orientation is the
+  surface normal against `n_plane + n_cylinder`. That rule also covers
+  the cone, whose normal follows no convexity. Third, the table's
+  circle row covers all four sign cases: a hole's rims, a boss's base,
+  and a boss's or a disc's top rim. An `arris-ops` test holds each to
+  Pappus, fillet and chamfer. Two limits are refused as `BlendTooLarge`:
+  a torus whose centre circle is no wider than its tube (a boss's top rim
+  at `r ≥ R/2`), and a contact that reaches the axis.
   - A hole's rim: plane against cylinder along a circle, a convex torus
     blend (its frame coaxial with the hole's, `X` the cylinder's so the
     seams share a plane, `v` over one quarter turn), and a cone chamfer.

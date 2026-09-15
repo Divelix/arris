@@ -1,0 +1,29 @@
+{
+  "description": "a 4 × 4 plate 1 thick with a hole of radius R 1 through its middle, the hole's top rim chamfered at d 0.25: a plane against a cylinder along a circle, convex, the chamfer a 45° cone coaxial with the hole from the circle of radius R on the wall, d below the top, to the circle of radius R + d on the top face, with no ends; its u seam is a ruling in the half-plane of the hole's own seam, which is shortened to the contact on the wall. The triangle d²/2 swept about the axis at R + d/3 by Pappus",
+  "params": {"d": 0.25},
+  "steps": [
+    {"name": "sketch", "op": "profile", "plane": {"origin": [0, 0, 0], "x": [1, 0, 0], "y": [0, 1, 0]},
+     "outer": {"start": [0, 0], "segments": [{"line_to": [4, 0]}, {"line_to": [4, 4]}, {"line_to": [0, 4]}, {"line_to": [0, 0]}]},
+     "holes": [{"circle": {"center": [2, 2], "radius": 1}}]},
+    {"name": "plate", "op": "extrude", "profile": "sketch", "direction": [0, 0, 1], "length": 1},
+    {"name": "result", "op": "chamfer", "of": "plate", "edges": [[1, 2, 1]], "distance": "d"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [0.5, 0.5, 0.5], "expect": "in"},
+    {"label": "in_the_hole", "point": [2, 2, 0.5], "expect": "out"},
+    {"label": "corner_gone", "point": ["3 + d / 4", 2, "1 - d / 4"], "expect": "out"},
+    {"label": "on_chamfer", "point": ["3 + d / 2", 2, "1 - d / 2"], "expect": "on"},
+    {"label": "on_chamfer_behind", "point": [2, "1 - d / 2", "1 - d / 2"], "expect": "on"},
+    {"label": "on_top_contact", "point": [2, "3 + d", 1], "expect": "on"},
+    {"label": "on_wall_contact", "point": [1, 2, "1 - d"], "expect": "on"},
+    {"label": "on_bottom_rim", "point": [3, 2, 0], "expect": "on"},
+    {"label": "on_top", "point": [0.5, 0.5, 1], "expect": "on"}
+  ],
+  "analytic": {
+    "volume": "16 - pi - 2 * pi * (1 + d / 3) * d^2 / 2",
+    "area": "2 * (16 - pi) - pi * ((1 + d)^2 - 1) + 16 + 2 * pi * (1 - d) + pi * (2 + d) * d * sqrt(2)",
+    "counts": {"vertices": 11, "edges": 17, "faces": 8, "loops": 10, "shells": 1},
+    "genus": 1
+  }
+}

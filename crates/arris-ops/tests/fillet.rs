@@ -8,7 +8,7 @@
 
 use arris_debug::fixtures::Class;
 use arris_debug::{corpus, dump_text, fixtures};
-use arris_ops::arris_check::arris_topo::arris_geom::{Profile, ProfileLoop, ProfileSegment};
+use arris_ops::arris_check::arris_topo::arris_geom::{Curve, Profile, ProfileLoop, ProfileSegment};
 use arris_ops::arris_check::arris_topo::arris_math::{Axis, Frame, Point2, Point3, Vec3};
 use arris_ops::arris_check::arris_topo::provenance::{Origin, Relation, Role, SweepPart, audit};
 use arris_ops::arris_check::arris_topo::{Body, Edge, EntityId, Model, Orientation, Shape};
@@ -529,6 +529,191 @@ fn a_plane_against_a_cylinder_along_a_ruling_blends_to_a_cylinder() {
             "{name}: {got} against {volume}"
         );
     }
+}
+
+/// The closed edge of `body` that is a circle about `centre` of `radius`.
+fn rim_at(m: &Model, body: Body, centre: Point3, radius: f64) -> Edge {
+    m.edges(body)
+        .unwrap()
+        .into_iter()
+        .find(|e| {
+            let entity = m.edge(e.id).unwrap();
+            entity.start() == entity.end()
+                && entity.curve().is_some_and(|(curve, _)| {
+                    matches!(
+                        m.curve(curve).unwrap(),
+                        Curve::Circle { frame, radius: r }
+                            if (frame.origin() - centre).norm() < 1e-9 && (r - radius).abs() < 1e-9
+                    )
+                })
+        })
+        .unwrap_or_else(|| panic!("no rim of radius {radius} about {centre}"))
+}
+
+/// A 4 × 4 plate 1 thick with a hole of radius 1 through its middle.
+fn holed_plate(m: &mut Model) -> Body {
+    let p = |u, v| Point2::new(u, v);
+    let profile = Profile {
+        plane: Frame::world(),
+        outer: ProfileLoop::Path {
+            start: p(0.0, 0.0),
+            segments: vec![
+                line_to(4.0, 0.0),
+                line_to(4.0, 4.0),
+                line_to(0.0, 4.0),
+                line_to(0.0, 0.0),
+            ],
+        },
+        holes: vec![ProfileLoop::Circle {
+            center: p(2.0, 2.0),
+            radius: 1.0,
+        }],
+    };
+    extrude(m, &profile, Vec3::z(), 1.0).unwrap().0
+}
+
+/// A disc of radius 3 and height 1 with a boss of radius 1 and height 1
+/// on it, revolved whole about `z`.
+fn bossed_disc(m: &mut Model) -> Body {
+    let p = |u, v| Point2::new(u, v);
+    let plane = Frame::new(Point3::origin(), -Vec3::y(), Vec3::x()).unwrap();
+    let profile = Profile {
+        plane,
+        outer: ProfileLoop::Path {
+            start: p(0.0, 0.0),
+            segments: vec![
+                line_to(3.0, 0.0),
+                line_to(3.0, 1.0),
+                line_to(1.0, 1.0),
+                line_to(1.0, 2.0),
+                line_to(0.0, 2.0),
+                line_to(0.0, 0.0),
+            ],
+        },
+        holes: Vec::new(),
+    };
+    revolve(
+        m,
+        &profile,
+        Axis::z_at(Point3::origin()),
+        core::f64::consts::TAU,
+    )
+    .unwrap()
+    .0
+}
+
+/// A plane against a cylinder along a circle (ADR-0007): a torus coaxial
+/// with the cylinder, with no ends. A hole's top rim, its bottom rim and
+/// both in one call — convex, the material outside the cylinder — a
+/// boss's base, concave, and its top rim and the disc's outer rim, convex
+/// with the material inside. Each is clean at `Full` with nothing
+/// unchecked and audited, generates one face, two contacts, a seam and
+/// two vertices from the edge, and moves the volume by Pappus: the
+/// corner's section `(1 − π/4) r²` swept about the axis at its centroid,
+/// `(10 − 3π) / (12 − 3π) · r` from the edge toward the ball.
+#[test]
+fn a_plane_against_a_cylinder_along_a_circle_blends_to_a_torus() {
+    use core::f64::consts::{PI, TAU};
+    let r: f64 = 0.25;
+    let section = (1.0 - PI / 4.0) * r * r;
+    let reach = r * (10.0 - 3.0 * PI) / (12.0 - 3.0 * PI);
+    // A name, the body, each rim's centre and radius with the sign the
+    // blend moves the volume by and the side of the rim the ball is on.
+    type Build = fn(&mut Model) -> Body;
+    type Rim = (Point3, f64, f64, f64);
+    let cases: Vec<(&str, Build, Vec<Rim>)> = vec![
+        (
+            "hole top rim",
+            holed_plate,
+            vec![(Point3::new(2.0, 2.0, 1.0), 1.0, -1.0, 1.0)],
+        ),
+        (
+            "hole bottom rim",
+            holed_plate,
+            vec![(Point3::new(2.0, 2.0, 0.0), 1.0, -1.0, 1.0)],
+        ),
+        (
+            "both hole rims",
+            holed_plate,
+            vec![
+                (Point3::new(2.0, 2.0, 1.0), 1.0, -1.0, 1.0),
+                (Point3::new(2.0, 2.0, 0.0), 1.0, -1.0, 1.0),
+            ],
+        ),
+        (
+            "boss base",
+            bossed_disc,
+            vec![(Point3::new(0.0, 0.0, 1.0), 1.0, 1.0, 1.0)],
+        ),
+        (
+            "boss top rim",
+            bossed_disc,
+            vec![(Point3::new(0.0, 0.0, 2.0), 1.0, -1.0, -1.0)],
+        ),
+        (
+            "disc outer rim",
+            bossed_disc,
+            vec![(Point3::new(0.0, 0.0, 1.0), 3.0, -1.0, -1.0)],
+        ),
+    ];
+    for (name, build, rims) in cases {
+        let mut m = Model::default();
+        let body = build(&mut m);
+        let before = mass_properties(&m, body).unwrap().volume;
+        let edges: Vec<Edge> = rims
+            .iter()
+            .map(|&(c, radius, _, _)| rim_at(&m, body, c, radius))
+            .collect();
+        let (blended, provenance) =
+            fillet(&mut m, body, &edges, r).unwrap_or_else(|err| panic!("{name}: {err}"));
+        let report = check(&m, blended, Level::Full);
+        assert!(report.is_ok(), "{name}: {report}");
+        assert!(report.unchecked().is_empty(), "{name}: {report}");
+        audit(&m, &[body], blended, &provenance).unwrap();
+        for edge in &edges {
+            let edge = Shape::new(edge.id, Orientation::Forward);
+            let generated = provenance.generated_from(edge);
+            let count =
+                |pick: fn(&EntityId) -> bool| generated.iter().filter(|s| pick(&s.id)).count();
+            assert_eq!(
+                (
+                    count(|id| matches!(id, EntityId::Face(_))),
+                    count(|id| matches!(id, EntityId::Edge(_))),
+                    count(|id| matches!(id, EntityId::Vertex(_)))
+                ),
+                (1, 3, 2),
+                "{name}: {generated:?}"
+            );
+            assert!(provenance.is_deleted(edge), "{name}");
+        }
+        let volume = before
+            + rims
+                .iter()
+                .map(|&(_, radius, sign, side)| sign * TAU * (radius + side * reach) * section)
+                .sum::<f64>();
+        let got = mass_properties(&m, blended).unwrap().volume;
+        assert!(
+            (got - volume).abs() <= 1e-9 * volume,
+            "{name}: {got} against {volume}"
+        );
+    }
+}
+
+/// A closed rim's refusals: a ball whose torus would not be a ring — its
+/// centre circle no wider than its tube, at the boss's top rim — and a
+/// ball wider than the plate the hole goes through.
+#[test]
+fn a_rim_blend_too_large_is_refused() {
+    let mut m = Model::default();
+    let disc = bossed_disc(&mut m);
+    let top = rim_at(&m, disc, Point3::new(0.0, 0.0, 2.0), 1.0);
+    let err = fillet(&mut m, disc, &[top], 0.5).unwrap_err();
+    assert_eq!(reason(&err), Some(Reason::BlendTooLarge), "{err}");
+    fillet(&mut m, disc, &[top], 0.45).unwrap();
+    let plate = holed_plate(&mut m);
+    let rim = rim_at(&m, plate, Point3::new(2.0, 2.0, 1.0), 1.0);
+    let err = fillet(&mut m, plate, &[rim], 1.2).unwrap_err();
+    assert_eq!(reason(&err), Some(Reason::BlendTooLarge), "{err}");
 }
 
 /// The ruling arm's refusals: a ruling blend meeting a plane–plane blend
