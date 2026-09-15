@@ -1,0 +1,16 @@
+{
+  "description": "tangent-cylinders-cut's operands, fused: the two walls touch from outside along the ruling x = 0, y = R interior to both, and both survive a fuse, so the result would carry two faces sharing a line with no material between them. Open CASCADE builds it; Arris refuses with OpError::Degenerate and Reason::TangentContact naming the pair, decided by the curvature rule (plans/cylinder-cylinder-booleans step 6)",
+  "params": {"R": 1, "h": 2},
+  "steps": [
+    {"name": "a", "op": "cylinder", "base": [0, 0, 0], "axis": [0, 0, 1], "radius": "R", "height": "h"},
+    {"name": "b", "op": "cylinder", "base": [0, "2 * R", "-h / 2"], "axis": [0, 0, 1], "radius": "R", "height": "2 * h"},
+    {"name": "result", "op": "fuse", "a": "a", "b": "b"}
+  ],
+  "result": "result",
+  "probes": [],
+  "analytic": {
+    "expect_error": "tangent-contact",
+    "volume": "pi * R^2 * h + pi * R^2 * 2 * h",
+    "area": "2 * pi * R^2 + 2 * pi * R * h + 2 * pi * R^2 + 2 * pi * R * 2 * h"
+  }
+}

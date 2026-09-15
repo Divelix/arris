@@ -306,6 +306,35 @@ fn boolean_parallel_cylinders_seam() {
     run("boolean/parallel-cylinders-seam");
 }
 
+/// Two walls touching from outside along a ruling: the curvature rule puts
+/// each outside the other, and the cut is the target with every id kept.
+/// Open CASCADE imprints the ruling (`analytic.counts_differ`).
+#[test]
+fn boolean_tangent_cylinders_cut() {
+    run("boolean/tangent-cylinders-cut");
+}
+
+/// The same operands fused: both walls survive through the contact,
+/// `Reason::TangentContact` through the runner's expected-error path.
+#[test]
+fn boolean_tangent_cylinders_fuse() {
+    run("boolean/tangent-cylinders-fuse");
+}
+
+/// A pin touching a bore's wall from inside: the pin's wall is inside the
+/// bore, and the fuse is the bore with every id kept.
+#[test]
+fn boolean_pin_in_bore_fuse() {
+    run("boolean/pin-in-bore-fuse");
+}
+
+/// The pin cut from the bore: both walls survive through the contact,
+/// `Reason::TangentContact`.
+#[test]
+fn boolean_pin_in_bore_cut() {
+    run("boolean/pin-in-bore-cut");
+}
+
 /// A rectangle with a circular hole extruded: `boolean/through-hole`'s
 /// solid and numbers by the other path.
 #[test]

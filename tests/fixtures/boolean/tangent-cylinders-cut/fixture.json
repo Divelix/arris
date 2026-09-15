@@ -1,0 +1,25 @@
+{
+  "description": "a cylinder R 1, 2 tall, minus a cylinder of the same radius whose axis is parallel and 2R away, clearing both caps: the walls touch from outside along the ruling x = 0, y = R, a tangent contact that removes no material, so the result is the target with every id kept (2/3/3/3). The contact lies off both seams, which run along +x. Open CASCADE imprints the ruling on the wall, a convention Arris does not follow, stated in counts_differ as tangent-outside-cut's (plans/cylinder-cylinder-booleans step 6)",
+  "params": {"R": 1, "h": 2},
+  "steps": [
+    {"name": "target", "op": "cylinder", "base": [0, 0, 0], "axis": [0, 0, 1], "radius": "R", "height": "h"},
+    {"name": "tool", "op": "cylinder", "base": [0, "2 * R", "-h / 2"], "axis": [0, 0, 1], "radius": "R", "height": "2 * h"},
+    {"name": "result", "op": "cut", "target": "target", "tool": "tool"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [0, 0, "h / 2"], "expect": "in"},
+    {"label": "in_tool", "point": [0, "2 * R", "h / 2"], "expect": "out"},
+    {"label": "on_wall", "point": ["-R", 0, "h / 2"], "expect": "on"},
+    {"label": "on_contact", "point": [0, "R", "h / 2"], "expect": "on"},
+    {"label": "on_top", "point": [0, 0, "h"], "expect": "on"}
+  ],
+  "analytic": {
+    "volume": "pi * R^2 * h",
+    "area": "2 * pi * R^2 + 2 * pi * R * h",
+    "centroid": [0, 0, "h / 2"],
+    "counts": {"vertices": 2, "edges": 3, "faces": 3, "loops": 3, "shells": 1},
+    "counts_differ": "Open CASCADE imprints the tangent ruling on the target's wall and splits the two rim circles it meets; Arris keeps the wall whole — a touch from outside removes no material and makes no edge",
+    "genus": 0
+  }
+}

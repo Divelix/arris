@@ -1,0 +1,16 @@
+{
+  "description": "pin-in-bore-fuse's operands, the pin cut from the bore: a blind pocket whose wall touches the bore's wall from inside along the ruling x = 0, y = R, interior to both, and both walls survive a cut, so the result would need them to share a slit. Open CASCADE builds it; Arris refuses with OpError::Degenerate and Reason::TangentContact naming the pair, decided by the curvature rule (plans/cylinder-cylinder-booleans step 6)",
+  "params": {"R": 2, "r": 1, "H": 4, "h": 2},
+  "steps": [
+    {"name": "bore", "op": "cylinder", "base": [0, 0, 0], "axis": [0, 0, 1], "radius": "R", "height": "H"},
+    {"name": "pin", "op": "cylinder", "base": [0, "R - r", "(H - h) / 2"], "axis": [0, 0, 1], "radius": "r", "height": "h"},
+    {"name": "result", "op": "cut", "target": "bore", "tool": "pin"}
+  ],
+  "result": "result",
+  "probes": [],
+  "analytic": {
+    "expect_error": "tangent-contact",
+    "volume": "pi * R^2 * H - pi * r^2 * h",
+    "area": "2 * pi * R^2 + 2 * pi * R * H + 2 * pi * r^2 + 2 * pi * r * h"
+  }
+}

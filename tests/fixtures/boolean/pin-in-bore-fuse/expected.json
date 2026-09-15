@@ -1,0 +1,99 @@
+{
+  "occt": "8.0.1.0.0",
+  "recipe_sha256": "79f5db8cd365a8c55c6110c7b9e4edc292c5bc8a421e8d7dbb7b1f6a3006fff7",
+  "results": {
+    "default": {
+      "area": 75.39822368615502,
+      "centroid": [
+        -1.5019285995799943e-16,
+        8.834874115176437e-18,
+        2.0
+      ],
+      "counts": {
+        "edges": 3,
+        "faces": 3,
+        "loops": 3,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 2
+      },
+      "degenerate": false,
+      "euler_characteristic": 2,
+      "genus": 0,
+      "inertia": [
+        [
+          117.28612573401975,
+          -1.9984014443252818e-15,
+          4.440892098500626e-15
+        ],
+        [
+          -1.9984014443252818e-15,
+          117.28612573401873,
+          -2.220446049250313e-16
+        ],
+        [
+          4.440892098500626e-15,
+          -2.220446049250313e-16,
+          100.53096491487392
+        ]
+      ],
+      "probes": [
+        {
+          "class": "in",
+          "label": "in_pin",
+          "point": [
+            0.0,
+            1.0,
+            2.0
+          ]
+        },
+        {
+          "class": "in",
+          "label": "in_bore_only",
+          "point": [
+            0.0,
+            -1.0,
+            2.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "outside",
+          "point": [
+            0.0,
+            3.0,
+            2.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_contact",
+          "point": [
+            0.0,
+            2.0,
+            2.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_wall",
+          "point": [
+            -2.0,
+            0.0,
+            2.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_top",
+          "point": [
+            0.0,
+            0.0,
+            4.0
+          ]
+        }
+      ],
+      "volume": 50.26548245743668
+    }
+  }
+}

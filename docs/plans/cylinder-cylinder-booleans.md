@@ -267,7 +267,7 @@ bound has to be established here.
     boolean dump pass unchanged. The open question's tie is
     `a_tangent_cylinder_pair_never_ties_its_curvatures`
     (`arris-geom/tests/curvature.rs`).
-- [ ] Step 6 **[2]** — **Tangent cylinders.**
+- [x] Step 6 **[2]** — **Tangent cylinders.**
   - External, two `R = 1` cylinders with axes 2 apart:
     `boolean/tangent-cylinders-fuse` is `expect_error:
     "tangent-contact"`; `tangent-cylinders-cut` is the target, with the
@@ -276,6 +276,21 @@ bound has to be established here.
     both clearing the caps: `pin-in-bore-fuse` is the outer cylinder, and
     `pin-in-bore-cut` is `"tangent-contact"`. Open CASCADE builds both
     refusals, so each gets `expect_error`.
+  - *Found at the step:* the curvature rule decides all four with no
+    change to the kernel; each contact lies off both seams (which run
+    along +x). The oracle needed two things, landed first on their own
+    (`fixtures(tools)`):
+    - Open CASCADE leaves a contact it imprints inside a face as an
+      INTERNAL edge in a wire of its own, which its STEP writer drops, so
+      `pin-in-bore-fuse`'s own round trip lost an edge, two vertices and
+      a wire. The oracle now counts the boundary only, and the fuse
+      matches Arris's counts with no `counts_differ`;
+      `tangent-cylinders-cut`'s imprint splits the wall and keeps its
+      `counts_differ`.
+    - Without that INTERNAL wire, `boolean/tangent-hole`'s Euler
+      characteristic is odd (its `expected.json` moved: loops 11 → 10, no
+      genus), so a `tangent-contact` result may carry an odd one, as a
+      `non-manifold` compound already could, in the oracle and the lint.
 - [ ] Step 7 **[2]** — **Property tests** (seeded, `prop_shards!`).
   - `arris_debug::prop::body::parallel_pair` and `crossing_pair`, both
     under one random motion:

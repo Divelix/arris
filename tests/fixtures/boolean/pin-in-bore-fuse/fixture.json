@@ -1,0 +1,25 @@
+{
+  "description": "a bore R 2, 4 tall, fused with a pin r 1 whose axis is parallel and R − r away, the pin strictly between the bore's caps: the pin's wall touches the bore's from inside along the ruling x = 0, y = R. The curvature rule puts the pin's wall inside the bore, so only the bore's faces survive and the result is the bore with every id kept (2/3/3/3). The contact lies off both seams, which run along +x. Open CASCADE leaves the ruling on the bore's wall as an INTERNAL edge, which bounds nothing and which the oracle does not count (plans/cylinder-cylinder-booleans step 6)",
+  "params": {"R": 2, "r": 1, "H": 4, "h": 2},
+  "steps": [
+    {"name": "bore", "op": "cylinder", "base": [0, 0, 0], "axis": [0, 0, 1], "radius": "R", "height": "H"},
+    {"name": "pin", "op": "cylinder", "base": [0, "R - r", "(H - h) / 2"], "axis": [0, 0, 1], "radius": "r", "height": "h"},
+    {"name": "result", "op": "fuse", "a": "bore", "b": "pin"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "in_pin", "point": [0, "R - r", "H / 2"], "expect": "in"},
+    {"label": "in_bore_only", "point": [0, "-r", "H / 2"], "expect": "in"},
+    {"label": "outside", "point": [0, "R + r", "H / 2"], "expect": "out"},
+    {"label": "on_contact", "point": [0, "R", "H / 2"], "expect": "on"},
+    {"label": "on_wall", "point": ["-R", 0, "H / 2"], "expect": "on"},
+    {"label": "on_top", "point": [0, 0, "H"], "expect": "on"}
+  ],
+  "analytic": {
+    "volume": "pi * R^2 * H",
+    "area": "2 * pi * R^2 + 2 * pi * R * H",
+    "centroid": [0, 0, "H / 2"],
+    "counts": {"vertices": 2, "edges": 3, "faces": 3, "loops": 3, "shells": 1},
+    "genus": 0
+  }
+}
