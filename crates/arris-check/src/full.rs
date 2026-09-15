@@ -21,7 +21,7 @@ use arris_topo::arris_geom::{
 };
 use arris_topo::arris_math::{Aabb, Interval, Point2, Point3, Tolerance};
 use arris_topo::entity::BodyKind;
-use arris_topo::{EdgeId, FaceId, Orientation, ShellId};
+use arris_topo::{EdgeId, FaceId, Orientation, ShellId, VertexId};
 
 use crate::check::{Checker, coedges, samples};
 use crate::classify::Classifier;
@@ -203,7 +203,70 @@ impl<'m> Checker<'m> {
             | Ok(SurfaceIntersection::Tangent(curves)) => curves
                 .iter()
                 .any(|c| self.curve_is_interior_to_both(a, sa, b, sb, c, tolerance)),
+            Ok(SurfaceIntersection::Points(points)) => points
+                .iter()
+                .any(|&p| self.point_is_interior_to_both(a, sa, b, sb, p, tolerance)),
         })
+    }
+
+    /// `true` when an isolated meeting point of the two surfaces — a
+    /// touch, or a crossing through an apex — is interior to both faces,
+    /// within `tolerance` of both surfaces, and not within tolerance of a
+    /// vertex both faces reach or of an edge they share. The vertex
+    /// clause is what excuses two cones closing on one apex, or a blend
+    /// sphere touching a plane at the corner of its contact lines: a
+    /// vertex shared through no edge.
+    fn point_is_interior_to_both(
+        &self,
+        a: FaceId,
+        sa: &Surface,
+        b: FaceId,
+        sb: &Surface,
+        point: Point3,
+        tolerance: f64,
+    ) -> bool {
+        let model = self.model;
+        let shared = self.shared_edges(a, b);
+        if boundary_entity(model, shared.iter().copied(), point).is_ok_and(|on| on.is_some()) {
+            return false;
+        }
+        let at_shared_vertex = self.shared_vertices(a, b).into_iter().any(|v| {
+            model
+                .vertex(v)
+                .is_ok_and(|vx| (vx.point() - point).norm() <= vx.tolerance().max(tolerance))
+        });
+        if at_shared_vertex {
+            return false;
+        }
+        let (Ok(pa), Ok(pb)) = (sa.project(point), sb.project(point)) else {
+            return false;
+        };
+        if pa.distance > tolerance || pb.distance > tolerance {
+            return false;
+        }
+        let inside = |face: FaceId, uv: Point2| {
+            self.domains
+                .get(&face)
+                .is_some_and(|d| d.side(uv).0 == Side::Inside)
+        };
+        inside(a, pa.uv) && inside(b, pb.uv)
+    }
+
+    /// The vertices two faces both reach through their edges, in id order.
+    fn shared_vertices(&self, a: FaceId, b: FaceId) -> Vec<VertexId> {
+        let model = self.model;
+        let of = |face: FaceId| -> BTreeSet<VertexId> {
+            model.face(face).map_or_else(
+                |_| BTreeSet::new(),
+                |f| {
+                    coedges(f)
+                        .filter_map(|(_, _, c)| model.edge(c.edge()).ok())
+                        .flat_map(|e| [e.start(), e.end()])
+                        .collect()
+                },
+            )
+        };
+        of(a).intersection(&of(b)).copied().collect()
     }
 
     /// S5: two faces of a shell meet only along the edges and vertices

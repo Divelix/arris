@@ -522,13 +522,16 @@ pub struct PairResult {
     pub a: String,
     /// The second name.
     pub b: String,
-    /// `empty`, `coincident`, `line`, `circle`, `ellipse`, `unsolved` (no
-    /// conic: `IntAna_NoGeometricSolution`) or `points`.
+    /// `empty`, `coincident`, `point`, `line`, `circle`, `ellipse`,
+    /// `unsolved` (no conic: `IntAna_NoGeometricSolution`) or `points`.
     #[serde(rename = "type")]
     pub kind: String,
     /// The result curves of a surface pair.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub curves: Vec<CurveSample>,
+    /// The isolated points of a surface pair that meets in points.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub points: Vec<[f64; 3]>,
     /// The hits of a curve against a surface.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub hits: Vec<Hit>,

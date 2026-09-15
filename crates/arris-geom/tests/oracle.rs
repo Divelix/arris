@@ -179,6 +179,7 @@ fn surface_type(r: &SurfaceIntersection) -> (String, &[Curve]) {
     match r {
         SurfaceIntersection::Empty => ("empty".into(), &[]),
         SurfaceIntersection::Coincident => ("coincident".into(), &[]),
+        SurfaceIntersection::Points(_) => ("point".into(), &[]),
         SurfaceIntersection::Transversal(c) | SurfaceIntersection::Tangent(c) => {
             let kinds: std::collections::BTreeSet<String> =
                 c.iter().map(|c| c.kind().to_string()).collect();
@@ -187,16 +188,47 @@ fn surface_type(r: &SurfaceIntersection) -> (String, &[Curve]) {
     }
 }
 
+/// Every sampled point of `c` within `REL` of both surfaces by their own
+/// projections: what a curve of Arris's is held to where the oracle is
+/// silent.
+fn on_both_surfaces(c: &Curve, a: &Surface, b: &Surface) -> bool {
+    (0..8).all(|i| {
+        let t = match c.period() {
+            Some(p) => p * i as f64 / 8.0,
+            None => -3.0 + i as f64,
+        };
+        let p = c.point(t);
+        let bound = REL * p.coords.norm().max(1.0);
+        [a, b].iter().all(|s| {
+            s.project(p)
+                .map(|proj| proj.distance <= bound)
+                .unwrap_or(false)
+        })
+    })
+}
+
 fn check_surface_pair(a: &Surface, b: &Surface, res: &PairResult, errors: &mut Vec<String>) {
     let label = format!("{} vs {}", res.a, res.b);
     if res.kind == "unsolved" {
-        // The oracle found no conic: a quartic Arris refuses too, or a
-        // pair Arris decides empty by its closed form (skew axes further
-        // apart than the radii), which the oracle has no case for. Which
-        // one each pair is, is pinned by name below.
+        // The oracle found no conic: a quartic Arris refuses too, a pair
+        // Arris decides empty by its closed form (skew axes further apart
+        // than the radii), which the oracle has no case for, or a coaxial
+        // sphere the oracle's exact test on its own axis lets go — whose
+        // curves are then held to both surfaces here, since the oracle
+        // says nothing about them. Which one each pair is, is pinned by
+        // name below.
         match intersect_surfaces(a, b, tol()) {
             Err(GeomError::Unsupported { .. }) | Ok(SurfaceIntersection::Empty) => {}
-            other => errors.push(format!("{label}: {other:?} vs oracle unsolved")),
+            Ok(r) => {
+                for c in surface_type(&r).1 {
+                    if !on_both_surfaces(c, a, b) {
+                        errors.push(format!(
+                            "{label}: {c:?} is not on both surfaces, and the oracle is silent"
+                        ));
+                    }
+                }
+            }
+            Err(e) => errors.push(format!("{label}: {e} vs oracle unsolved")),
         }
         return;
     }
@@ -208,6 +240,49 @@ fn check_surface_pair(a: &Surface, b: &Surface, res: &PairResult, errors: &mut V
         }
     };
     let (kind, curves) = surface_type(&r);
+    if let SurfaceIntersection::Points(points) = &r {
+        // Isolated points: the oracle's `point` has the same count, each
+        // of its points within REL of one of ours — the foot of a centre,
+        // well conditioned unlike the crossings a touch splits into. The
+        // oracle decides a plane on a sphere at machine epsilon and may
+        // report the touch as `empty` or as a circle of rounding radius
+        // instead, which is accepted within TOUCH.
+        match res.kind.as_str() {
+            "point" if res.points.len() == points.len() => {
+                for p in &res.points {
+                    let q = p3(p);
+                    if !points
+                        .iter()
+                        .any(|ours| (ours - q).norm() <= REL * q.coords.norm().max(1.0))
+                    {
+                        errors.push(format!(
+                            "{label}: the oracle's point {p:?} is not one of {points:?}"
+                        ));
+                    }
+                }
+            }
+            "empty" => {}
+            "circle" => {
+                for sample in &res.curves {
+                    for p in &sample.points {
+                        let q = p3(p);
+                        if !points.iter().any(|ours| (ours - q).norm() <= TOUCH) {
+                            errors.push(format!(
+                                "{label}: the oracle's circle through {p:?} is not a touch at {points:?}"
+                            ));
+                        }
+                    }
+                }
+            }
+            _ => errors.push(format!(
+                "{label}: {} points vs oracle {} with {} points",
+                points.len(),
+                res.kind,
+                res.points.len()
+            )),
+        }
+        return;
+    }
     // At a touch the oracle, deciding it by rounding, may split one ruling
     // into two a square root of the rounding apart: every oracle curve is
     // then held to TOUCH against our one, whatever their count.
@@ -324,8 +399,8 @@ fn turn_diff(a: f64, b: f64, c: &Curve) -> f64 {
 fn every_geometry_fixture_matches_the_oracle() {
     let fixtures = geometry_fixtures();
     assert!(
-        fixtures.len() >= 3,
-        "expected geom/analytic-eval, geom/c1-intersections and geom/c2-cylinder-pairs"
+        fixtures.len() >= 4,
+        "expected geom/analytic-eval, geom/c1-intersections, geom/c2-cylinder-pairs and geom/c2-quadric-pairs"
     );
     let mut errors = Vec::new();
     for f in &fixtures {
@@ -499,5 +574,63 @@ fn the_c2_cylinder_pairs_classify_as_built() {
             }
         };
         assert_eq!((got.0.as_str(), got.1), (*kind, *count), "{a} vs {b}");
+    }
+}
+
+/// What Arris says about every pair of `geom/c2-quadric-pairs`, by name.
+/// A touch reads as a circle in the oracle, a plane on a sphere's pole as
+/// `empty`, and a sphere whose own frame is turned across a cylinder's
+/// axis as `unsolved`, so the case is pinned here.
+#[test]
+fn the_c2_quadric_pairs_classify_as_built() {
+    let f = geometry_fixtures()
+        .into_iter()
+        .find(|f| f.name == "geom/c2-quadric-pairs")
+        .expect("geom/c2-quadric-pairs");
+    let built = build(&f);
+    let cases: &[(&str, &str, &str, usize)] = &[
+        ("cap_cone", "cone", "circle", 1),
+        ("cap_sphere", "sphere", "circle", 1),
+        ("cap_torus", "torus", "circle", 2),
+        ("touch_sphere", "sphere", "point", 1),
+        ("touch_torus", "torus", "tangent circle", 1),
+        ("apex_plane", "cone", "point", 1),
+        ("bore", "cone", "circle", 2),
+        ("bore", "sphere", "circle", 2),
+        ("bore", "orb", "circle", 2),
+        ("bore", "torus", "empty", 0),
+        ("sleeve", "torus", "circle", 2),
+        ("touch_sleeve", "torus", "tangent circle", 1),
+        ("hoop", "sphere", "tangent circle", 1),
+        ("hoop", "orb", "tangent circle", 1),
+        ("cone", "cone_same", "circle", 1),
+        ("cone", "cone_steep", "circle", 2),
+        ("ball", "torus", "circle", 2),
+        ("oblique", "sphere", "circle", 1),
+        ("sphere", "ball", "circle", 1),
+        ("sphere", "pebble", "point", 1),
+        ("marble", "sphere", "point", 1),
+        ("cone", "cap_cone", "circle", 1),
+        ("torus", "sleeve", "circle", 2),
+    ];
+    assert_eq!(
+        cases.len(),
+        f.recipe.pairs.len(),
+        "every pair of the fixture is pinned here"
+    );
+    for (a, b, kind, count) in cases {
+        let r = intersect_surfaces(&built.surfaces[*a], &built.surfaces[*b], tol())
+            .unwrap_or_else(|e| panic!("{a} vs {b}: {e}"));
+        let (got, curves) = surface_type(&r);
+        let got = match &r {
+            SurfaceIntersection::Tangent(_) => (format!("tangent {got}"), curves.len()),
+            SurfaceIntersection::Points(p) => (got, p.len()),
+            _ => (got, curves.len()),
+        };
+        assert_eq!(
+            (got.0.as_str(), got.1),
+            (*kind, *count),
+            "{a} vs {b}: {r:?}"
+        );
     }
 }

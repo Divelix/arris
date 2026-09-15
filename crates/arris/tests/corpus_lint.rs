@@ -185,6 +185,7 @@ fn a_geometry_fixture_is_linted_for_presence_hash_and_shape() {
         "geom/analytic-eval",
         "geom/c1-intersections",
         "geom/c2-cylinder-pairs",
+        "geom/c2-quadric-pairs",
     ] {
         assert!(geometry.iter().any(|n| n == expected), "missing {expected}");
     }

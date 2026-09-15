@@ -6,12 +6,14 @@
 use arris_debug::{corpus, fixtures, prop, sample};
 use arris_ops::OpError;
 use arris_ops::arris_check::arris_topo::arris_geom::{
-    Curve, Curve2, GeomKind, Surface, SurfaceIntersection, SurfaceKind,
+    Curve, Curve2, GeomKind, Profile, ProfileLoop, ProfileSegment, Surface, SurfaceIntersection,
+    SurfaceKind,
 };
-use arris_ops::arris_check::arris_topo::arris_math::{Interval, Point3};
+use arris_ops::arris_check::arris_topo::arris_math::{Axis, Frame, Interval, Point3, Vec3};
 use arris_ops::arris_check::arris_topo::{Body, EdgeId, Model};
 use arris_ops::boolean::{Interferences, Landing, VertexSource, interferences};
-use arris_ops::primitive_box;
+use arris_ops::{primitive_box, revolve};
+use core::f64::consts::TAU;
 use proptest::prelude::*;
 
 /// The operands of a boolean fixture, built by its recipe.
@@ -427,6 +429,68 @@ fn an_unsupported_surface_pair_names_the_faces() {
             );
         }
         other => panic!("{other}"),
+    }
+}
+
+/// The quadric guard (ADR-0008): a revolve with a cone face against a
+/// box through it is refused before any intersector is asked, as the
+/// same `Unsupported` naming the box's plane face and the cone face it
+/// got while the intersector had no arm for the pair. The box's face is
+/// the first operand's, the cone the second's.
+#[test]
+fn a_quadric_face_is_refused_before_the_intersector() {
+    let mut m = Model::default();
+    let p = |u, v| Point2::new(u, v);
+    // The frustum of `sweep/revolve-frustum`: x ∈ [1, 4] at z = −1
+    // narrowing to x ∈ [1, 2] at z = 1, about z.
+    let profile = Profile {
+        plane: Frame::new(Point3::origin(), -Vec3::y(), Vec3::x()).unwrap(),
+        outer: ProfileLoop::Path {
+            start: p(1.0, -1.0),
+            segments: vec![
+                ProfileSegment::LineTo(p(4.0, -1.0)),
+                ProfileSegment::LineTo(p(2.0, 1.0)),
+                ProfileSegment::LineTo(p(1.0, 1.0)),
+                ProfileSegment::LineTo(p(1.0, -1.0)),
+            ],
+        },
+        holes: Vec::new(),
+    };
+    let (frustum, _) = revolve(&mut m, &profile, Axis::z_at(Point3::origin()), TAU).unwrap();
+    assert!(
+        m.faces(frustum).unwrap().iter().any(|f| m
+            .surface(m.face(f.id).unwrap().surface())
+            .unwrap()
+            .kind()
+            == SurfaceKind::Cone)
+    );
+    let (cube, _) = primitive_box(
+        &mut m,
+        Point3::new(-5.0, -5.0, -0.5),
+        Point3::new(5.0, 5.0, 0.5),
+    )
+    .unwrap();
+    for err in [
+        interferences(&m, cube, frustum).unwrap_err(),
+        cut(&mut m, cube, frustum).unwrap_err(),
+    ] {
+        let OpError::Unsupported { a, b } = err else {
+            panic!("{err}");
+        };
+        assert_eq!(a.0, GeomKind::Surface(SurfaceKind::Plane));
+        assert_eq!(b.0, GeomKind::Surface(SurfaceKind::Cone));
+        assert!(
+            m.faces(cube)
+                .unwrap()
+                .iter()
+                .any(|f| f.shape().id == a.1.id)
+        );
+        assert!(
+            m.faces(frustum)
+                .unwrap()
+                .iter()
+                .any(|f| f.shape().id == b.1.id)
+        );
     }
 }
 

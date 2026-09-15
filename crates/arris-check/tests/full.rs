@@ -19,7 +19,7 @@ use arris_topo::entity::{
 };
 use arris_topo::{
     Body, Curve2Id, Edge as EdgeHandle, EdgeId, Face as FaceHandle, FaceId, Model, Orientation,
-    Shell as ShellHandle, ShellId, SurfaceId,
+    Shell as ShellHandle, ShellId, SurfaceId, VertexId,
 };
 
 /// `(code, entity)` per line of the report.
@@ -72,15 +72,27 @@ fn ring_on(m: &mut Model, frame: &Frame, corners: &[Point3]) -> Ring {
 
 /// [`ring_on`] with every vertex and edge at `tol`.
 fn ring_at(m: &mut Model, frame: &Frame, corners: &[Point3], tol: f64) -> Ring {
+    let vertices: Vec<_> = corners
+        .iter()
+        .map(|&c| m.raw().add_vertex(Vertex::new(c, tol)))
+        .collect();
+    ring_through(m, frame, corners, tol, vertices)
+}
+
+/// [`ring_at`] through the given vertices, one per corner — some of them
+/// vertices another face already reaches.
+fn ring_through(
+    m: &mut Model,
+    frame: &Frame,
+    corners: &[Point3],
+    tol: f64,
+    vertices: Vec<VertexId>,
+) -> Ring {
     let n = corners.len();
     let at = |p: Point3| {
         let local = frame.to_local(p);
         Point2::new(local.x, local.y)
     };
-    let vertices: Vec<_> = corners
-        .iter()
-        .map(|&c| m.raw().add_vertex(Vertex::new(c, tol)))
-        .collect();
     let mut edges = Vec::with_capacity(n);
     let mut coedges = Vec::with_capacity(n);
     for k in 0..n {
@@ -378,6 +390,103 @@ fn s5_two_faces_that_cross_along_the_line_of_their_planes() {
             face_b: face_upright,
         }
     );
+}
+
+/// S5 through the `Points` arm (ADR-0008): a plane face touching a sphere
+/// face at one point interior to both — the sphere's equator at `u = π/2`,
+/// off its seam and its poles — with nothing shared to excuse it. S3
+/// says alongside that two faces sharing no edge are two components.
+#[test]
+fn s5_a_plane_touching_a_sphere_inside_both_faces() {
+    let mut m = Model::default();
+    let tol = m.precision().default_tolerance;
+    let ball = sample::sphere(&mut m, Point3::origin(), 3.0).unwrap();
+    let face_ball = m.faces(ball).unwrap()[0].id;
+    // The plane `y = 3`, its (u, v) the world's `x` and `−z`.
+    let frame = Frame::new(Point3::new(0.0, 3.0, 0.0), Vec3::y(), Vec3::x()).unwrap();
+    let surface = m.add_surface(Surface::Plane { frame });
+    let r = ring_on(
+        &mut m,
+        &frame,
+        &[
+            Point3::new(-2.0, 3.0, 2.0),
+            Point3::new(2.0, 3.0, 2.0),
+            Point3::new(2.0, 3.0, -2.0),
+            Point3::new(-2.0, 3.0, -2.0),
+        ],
+    );
+    let face_plane = m
+        .raw()
+        .add_face(Face::new(surface, vec![Loop::new(r.coedges)], tol));
+    let (body, shell) = body_of(
+        &mut m,
+        vec![
+            FaceHandle::forward(face_ball),
+            FaceHandle::forward(face_plane),
+        ],
+        BodyKind::Sheet,
+    );
+    let report = check(&m, body, Level::Full);
+    let s = shell.to_string();
+    assert_lines(&report, &[("S3", s.clone()), ("S5", s)]);
+    assert_eq!(
+        report.violations()[1],
+        Violation::FacesIntersect {
+            shell,
+            face_a: face_ball,
+            face_b: face_plane,
+        }
+    );
+    assert!(report.unchecked().is_empty(), "{report}");
+}
+
+/// The same touch at a vertex both faces reach: the plane `z = −3`
+/// touches the sphere at its south pole, and the plane face's loop goes
+/// through the pole's own vertex — shared through no edge, as two cones
+/// closing on one apex share theirs — so S5 has nothing to report.
+#[test]
+fn s5_a_touch_at_a_vertex_both_faces_reach_passes() {
+    let mut m = Model::default();
+    let tol = m.precision().default_tolerance;
+    let ball = sample::sphere(&mut m, Point3::origin(), 3.0).unwrap();
+    let face_ball = m.faces(ball).unwrap()[0].id;
+    let south = m
+        .edges(ball)
+        .unwrap()
+        .iter()
+        .map(|e| m.edge(e.id).unwrap().start())
+        .find(|&v| m.vertex(v).unwrap().point().z < 0.0)
+        .expect("the south pole");
+    let pole = m.vertex(south).unwrap().point();
+    let frame = Frame::new(pole, -Vec3::z(), Vec3::x()).unwrap();
+    let surface = m.add_surface(Surface::Plane { frame });
+    let corners = [
+        pole,
+        Point3::new(0.0, 4.0, -3.0),
+        Point3::new(4.0, 4.0, -3.0),
+        Point3::new(4.0, 0.0, -3.0),
+    ];
+    let mut vertices = vec![south];
+    vertices.extend(
+        corners[1..]
+            .iter()
+            .map(|&c| m.raw().add_vertex(Vertex::new(c, tol))),
+    );
+    let r = ring_through(&mut m, &frame, &corners, tol, vertices);
+    let face_plane = m
+        .raw()
+        .add_face(Face::new(surface, vec![Loop::new(r.coedges)], tol));
+    let (body, shell) = body_of(
+        &mut m,
+        vec![
+            FaceHandle::forward(face_ball),
+            FaceHandle::forward(face_plane),
+        ],
+        BodyKind::Sheet,
+    );
+    let report = check(&m, body, Level::Full);
+    assert_lines(&report, &[("S3", shell.to_string())]);
+    assert!(report.unchecked().is_empty(), "{report}");
 }
 
 /// The tolerance the loose tests' entities are at: ten times the model's

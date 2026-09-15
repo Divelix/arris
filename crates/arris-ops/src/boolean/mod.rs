@@ -746,6 +746,12 @@ impl fmt::Display for Interferences {
                         writeln!(f, "    {}", curve(c))?;
                     }
                 }
+                SurfaceIntersection::Points(points) => {
+                    writeln!(f, "  p{i} {} x {}: points", p.a, p.b)?;
+                    for q in points {
+                        writeln!(f, "    point {}", point3(*q))?;
+                    }
+                }
             }
         }
         writeln!(f, "hits {}", self.hits.len())?;

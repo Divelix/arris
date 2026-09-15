@@ -12,8 +12,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use arris_check::arris_topo::arris_geom::region2::Side;
 use arris_check::arris_topo::arris_geom::{
-    Curve, Curve2, CurveIntersection, CurveSurfaceIntersection, GeomError, SurfaceIntersection,
-    curves_coincide, intersect_curve_surface, intersect_curves, intersect_surfaces, pcurve_on,
+    Curve, Curve2, CurveIntersection, CurveSurfaceIntersection, GeomError, GeomKind, Surface,
+    SurfaceIntersection, SurfaceKind, curves_coincide, intersect_curve_surface, intersect_curves,
+    intersect_surfaces, pcurve_on,
 };
 use arris_check::arris_topo::arris_math::{
     Interval, Point2, Point3, Precision, Tolerance, Vec2, period_end, wrap_angle,
@@ -176,6 +177,19 @@ fn shape_of(body: Body) -> Shape {
     Shape::new(body.id, body.orientation)
 }
 
+/// The quadric guard: a face on a cone, a sphere or a torus is refused
+/// before any intersector is asked — as the same [`OpError::Unsupported`]
+/// naming the pair it got while the intersector had no arm for it — so
+/// the coaxial arm (ADR-0008) widens no boolean silently. Booleans with
+/// quadric operand faces are C3's, with their corpus
+/// (`docs/ARCHITECTURE.md` §Operations).
+fn quadric(s: &Surface) -> bool {
+    matches!(
+        s.kind(),
+        SurfaceKind::Cone | SurfaceKind::Sphere | SurfaceKind::Torus
+    )
+}
+
 /// The tolerance a geometric query between two entities runs at: the
 /// larger of their tolerances for lengths, the model's angle.
 fn tolerance_of(precision: &Precision, a: f64, b: f64) -> Tolerance {
@@ -245,6 +259,12 @@ impl<'m> Build<'m> {
     ) -> Result<Vec<SurfaceIntersection>, OpError> {
         let one = |&(ia, ib): &(usize, usize)| {
             let (fa, fb) = (&self.faces[0][ia], &self.faces[1][ib]);
+            if quadric(fa.surface) || quadric(fb.surface) {
+                return Err(OpError::Unsupported {
+                    a: (GeomKind::Surface(fa.surface.kind()), fa.shape()),
+                    b: (GeomKind::Surface(fb.surface.kind()), fb.shape()),
+                });
+            }
             let tol = tolerance_of(&self.precision, fa.tolerance, fb.tolerance);
             intersect_surfaces(fa.surface, fb.surface, tol)
                 .map_err(|e| geometry(e, fa.shape(), fb.shape()))
@@ -299,6 +319,12 @@ impl<'m> Build<'m> {
         found: &mut Vec<(EdgeFaceHit, f64)>,
         coincident: &mut Vec<(EdgeId, FaceId)>,
     ) -> Result<(), OpError> {
+        if quadric(f.surface) {
+            return Err(OpError::Unsupported {
+                a: (GeomKind::Curve(e.curve.kind()), e.shape()),
+                b: (GeomKind::Surface(f.surface.kind()), f.shape()),
+            });
+        }
         let tol = tolerance_of(&self.precision, e.tolerance, f.tolerance);
         let hits = match intersect_curve_surface(e.curve, f.surface, tol)
             .map_err(|err| geometry(err, e.shape(), f.shape()))?
@@ -786,6 +812,14 @@ impl<'m> Build<'m> {
                 SurfaceIntersection::Empty
                 | SurfaceIntersection::Coincident
                 | SurfaceIntersection::Tangent(_) => continue,
+                // Only a pair with a cone, a sphere or a torus meets in
+                // points, and the quadric guard refuses those before the
+                // intersector is asked.
+                SurfaceIntersection::Points(_) => {
+                    return Err(OpError::Internal(Fault::Invariant {
+                        what: "a face pair meeting in points past the quadric guard",
+                    }));
+                }
             };
             for (ci, curve) in curves.iter().enumerate() {
                 self.section_curve(pi, ci, curve)?;
@@ -802,7 +836,8 @@ impl<'m> Build<'m> {
                 SurfaceIntersection::Tangent(curves) => curves.clone(),
                 SurfaceIntersection::Empty
                 | SurfaceIntersection::Coincident
-                | SurfaceIntersection::Transversal(_) => continue,
+                | SurfaceIntersection::Transversal(_)
+                | SurfaceIntersection::Points(_) => continue,
             };
             for (ci, curve) in curves.iter().enumerate() {
                 self.contact_curve(pi, ci, curve)?;

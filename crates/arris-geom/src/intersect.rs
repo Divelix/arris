@@ -17,14 +17,17 @@ use crate::{Curve, GeomError, GeomKind, Surface};
 /// component is positive, a ruling on a cylinder runs along its `Z` from
 /// the point nearest the cylinder's origin (the first cylinder's, for two
 /// parallel ones), and the line of two planes starts at its point nearest
-/// the first plane's origin. Swapping the operands gives the same point
-/// sets, up to the orientation of a line and the order of two parallel
-/// cylinders' rulings — and two crossing cylinders' ellipses bit for bit.
+/// the first plane's origin, and a circle about a shared axis takes the
+/// frame of the first operand that carries the axis (ADR-0008). Swapping
+/// the operands gives the same point sets, up to the orientation of a
+/// line and the order of two parallel cylinders' rulings — and two
+/// crossing cylinders' ellipses bit for bit.
 #[derive(Debug, Clone, PartialEq)]
 pub enum SurfaceIntersection {
     /// The surfaces do not meet: parallel planes apart by more than the
     /// linear tolerance, a plane clear of a cylinder, two cylinders apart
-    /// or one nested in the other.
+    /// or one nested in the other, coaxial surfaces of revolution whose
+    /// meridians never meet.
     Empty,
     /// The surfaces are the same surface within the tolerance; there is
     /// no curve to return.
@@ -32,9 +35,17 @@ pub enum SurfaceIntersection {
     /// The surfaces cross along these curves.
     Transversal(Vec<Curve>),
     /// The surfaces touch along these curves without crossing: a plane
-    /// tangent to a cylinder along a ruling, or two cylinders with
-    /// parallel axes touching outside or inside.
+    /// tangent to a cylinder along a ruling, two cylinders with parallel
+    /// axes touching outside or inside, a torus on a plane or inside a
+    /// cylinder, a sphere on a cylinder of its radius.
     Tangent(Vec<Curve>),
+    /// The surfaces meet only at these isolated points: a touch — a plane
+    /// tangent to a sphere, two spheres touching — or a crossing through a
+    /// singular point — a plane perpendicular to a cone through its apex,
+    /// two cones closing on one apex. Every point lies on the surfaces'
+    /// shared axis, and they come ascending along it in the direction the
+    /// first operand carrying the axis points.
+    Points(Vec<Point3>),
 }
 
 /// The intersection of two surfaces, by the case table: every
@@ -59,8 +70,16 @@ pub enum SurfaceIntersection {
 /// it is two `Transversal` ellipses in the planes bisecting the axes;
 /// with skew axes further apart than `ra + rb` it is `Empty`. Crossing
 /// axes of unequal radii and skew axes within `ra + rb` meet in a quartic
-/// space curve and are `Unsupported`, C3's. Read `IntAna_QuadQuadGeo` in
-/// the reference tree for the case analysis, reimplemented on our frames.
+/// space curve and are `Unsupported`, C3's. Every pair with a cone, a
+/// sphere or a torus in it is decided when the two share an axis — a
+/// plane perpendicular to it, a cylinder, cone or torus on it, a sphere
+/// centred on it, and every plane–sphere and sphere–sphere pair — by one
+/// arm over the meridian sections in the plane through the axis
+/// (ADR-0008, `docs/DATA-MODEL.md` §Curves): circles about the axis,
+/// `Transversal` or `Tangent`, `Points` on it, `Coincident` or `Empty`;
+/// a pair sharing no axis, and a result that would mix kinds, is
+/// `Unsupported`. Read `IntAna_QuadQuadGeo` in the reference tree for
+/// the case analysis, reimplemented on our frames.
 ///
 /// ```
 /// use arris_geom::{Curve, Surface, SurfaceIntersection, intersect_surfaces};
@@ -105,14 +124,29 @@ pub fn intersect_surfaces(
             | Surface::Cylinder { .. }
             | Surface::Cone { .. }
             | Surface::Sphere { .. }
-            | Surface::Torus { .. }
-            | Surface::Nurbs(_),
+            | Surface::Torus { .. },
+            Surface::Cone { .. } | Surface::Sphere { .. } | Surface::Torus { .. },
+        )
+        | (
+            Surface::Cone { .. } | Surface::Sphere { .. } | Surface::Torus { .. },
+            Surface::Plane { .. } | Surface::Cylinder { .. },
+        ) => crate::meridian::intersect_coaxial(a, b, tol),
+        (
+            Surface::Nurbs(_),
             Surface::Plane { .. }
             | Surface::Cylinder { .. }
             | Surface::Cone { .. }
             | Surface::Sphere { .. }
             | Surface::Torus { .. }
             | Surface::Nurbs(_),
+        )
+        | (
+            Surface::Plane { .. }
+            | Surface::Cylinder { .. }
+            | Surface::Cone { .. }
+            | Surface::Sphere { .. }
+            | Surface::Torus { .. },
+            Surface::Nurbs(_),
         ) => Err(GeomError::Unsupported {
             a: GeomKind::Surface(a.kind()),
             b: GeomKind::Surface(b.kind()),
@@ -297,7 +331,7 @@ fn crossing_cylinders(
 /// The angle in `[0, π/2]` between the lines carried by two unit vectors:
 /// `atan2` of the cross and dot magnitudes, well conditioned at both ends
 /// where `acos` is not.
-fn line_angle(a: &UnitVec3, b: &UnitVec3) -> f64 {
+pub(crate) fn line_angle(a: &UnitVec3, b: &UnitVec3) -> f64 {
     a.cross(b).norm().atan2(a.dot(b).abs())
 }
 

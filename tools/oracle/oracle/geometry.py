@@ -26,9 +26,10 @@ and both are normalised, `y = z × x`. A pair is two surfaces or a curve
 The result per sample: `Geom_*::D2` at every parameter and
 `GeomAPI_ProjectPointOnSurf` / `OnCurve` for every point (nearest point,
 its parameters, the distance). Per pair: `IntAna_QuadQuadGeo` for two
-surfaces — the type (`empty`, `coincident`, `line`, `circle`, `ellipse`,
-or `unsolved` where it finds no conic, `IntAna_NoGeometricSolution`)
-and, for every curve it returns, its type and sampled points — or
+surfaces — the type (`empty`, `coincident`, `point`, `line`, `circle`,
+`ellipse`, or `unsolved` where it finds no conic,
+`IntAna_NoGeometricSolution`) and, for every curve it returns, its type
+and sampled points, or for a `point` result its points — or
 `IntAna_IntConicQuad` for a curve against a surface: `coincident`, or
 `points` with every hit's point and conic parameter, duplicates within
 `Precision::Confusion` reported once (a tangent touch comes back twice).
@@ -180,16 +181,46 @@ _QUADRIC_OF = {
     "torus": lambda s: s.Torus(),
 }
 
+# The overloads of `IntAna_QuadQuadGeo`, by the kinds in the order it
+# takes them and the tolerances each takes: an angle and a distance
+# (`angular`), a distance alone (`linear`), or none. A pair the other way
+# round is swapped before the call; the result does not depend on the order.
+_OVERLOADS = {
+    ("plane", "plane"): "angular",
+    ("plane", "cylinder"): "angular",
+    ("plane", "cone"): "angular",
+    ("plane", "sphere"): "none",
+    ("plane", "torus"): "linear",
+    ("cylinder", "cylinder"): "linear",
+    ("cylinder", "cone"): "linear",
+    ("cylinder", "sphere"): "linear",
+    ("cylinder", "torus"): "linear",
+    ("cone", "cone"): "linear",
+    ("cone", "torus"): "linear",
+    ("sphere", "cone"): "linear",
+    ("sphere", "sphere"): "linear",
+    ("sphere", "torus"): "linear",
+    ("torus", "torus"): "linear",
+}
+
 
 def intersect_surfaces(name_a: str, kind_a: str, a, name_b: str, kind_b: str, b) -> dict:
     """`IntAna_QuadQuadGeo` on the two `gp` quadrics."""
     qa, qb = _QUADRIC_OF[kind_a](a), _QUADRIC_OF[kind_b](b)
+    if (kind_a, kind_b) in _OVERLOADS:
+        tolerances = _OVERLOADS[(kind_a, kind_b)]
+    elif (kind_b, kind_a) in _OVERLOADS:
+        tolerances = _OVERLOADS[(kind_b, kind_a)]
+        qa, qb = qb, qa
+    else:
+        raise OracleError(f"{name_a} vs {name_b}: no IntAna_QuadQuadGeo for {kind_a}–{kind_b}")
     try:
-        if kind_a == "cylinder" and kind_b == "cylinder":
-            # The cylinder pair's overload takes only the distance tolerance.
+        if tolerances == "angular":
+            r = IntAna_QuadQuadGeo(qa, qb, Precision.Angular_s(), Precision.Confusion_s())
+        elif tolerances == "linear":
             r = IntAna_QuadQuadGeo(qa, qb, Precision.Confusion_s())
         else:
-            r = IntAna_QuadQuadGeo(qa, qb, Precision.Angular_s(), Precision.Confusion_s())
+            r = IntAna_QuadQuadGeo(qa, qb)
     except TypeError as e:
         raise OracleError(f"{name_a} vs {name_b}: no IntAna_QuadQuadGeo for {kind_a}–{kind_b}: {e}") from e
     if not r.IsDone():
@@ -200,6 +231,9 @@ def intersect_surfaces(name_a: str, kind_a: str, a, name_b: str, kind_b: str, b)
         out["type"] = "empty"
     elif t == IntAna_ResultType.IntAna_Same:
         out["type"] = "coincident"
+    elif t == IntAna_ResultType.IntAna_Point:
+        out["type"] = "point"
+        out["points"] = [_xyz(r.Point(i + 1)) for i in range(r.NbSolutions())]
     elif t == IntAna_ResultType.IntAna_Line:
         out["type"] = "line"
         out["curves"] = [_sample_line(r.Line(i + 1)) for i in range(r.NbSolutions())]

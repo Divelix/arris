@@ -208,7 +208,13 @@ is `OpError::Degenerate` with `Reason::NotSolid`; an invalid one
 
 `ops::boolean::interferences(&Model, a, b) -> Result<Interferences,
 OpError>` is the second query: the boolean decomposition of ADR-0004 as
-a value, computed without building anything. It holds every face pair
+a value, computed without building anything. A face pair, or an edge
+against a face, whose boxes overlap and that has a face on a cone, a
+sphere or a torus is refused before any intersector is asked — the
+*quadric guard*, `OpError::Unsupported` naming the pair exactly as the
+intersector named it before the coaxial arm existed (ADR-0008) — so a
+new intersector arm widens no boolean silently; booleans with quadric
+operand faces are C3's, with their corpus. It holds every face pair
 whose boxes overlap with its `SurfaceIntersection`; every point where
 an edge of one operand pierces a face of the other, kept when the
 parameter is in the edge's range and the (u, v) is on the face
@@ -713,19 +719,30 @@ compile until it is handled, and a pair without an exact formula is a
 once an operation wraps it with the entities) — never a wildcard falling
 back to a generic marcher where a closed form exists. The results are
 enums too: `SurfaceIntersection::{Empty, Coincident, Transversal,
-Tangent}` for a surface pair, `CurveSurfaceIntersection::{Points,
-Coincident}` for a curve against a surface and `CurveIntersection::{
-Points, Coincident}` for two curves, so a caller matches the case rather
-than counting curves or points. A pair may be supported in part: two
-cylinders meet by closed form when their axes are parallel (rulings, or
-`Coincident` or `Empty` when coaxial), when their axes cross at equal
-radii (two ellipses), and when skew axes are further apart than the two
-radii (`Empty`); crossing axes of unequal radii and skew axes within the
-radii are `Unsupported`, since the curve is a quartic and C3's — which is
-still a named arm in the pose analysis, not a wildcard
-(`docs/DATA-MODEL.md` §Curves has the table). The NURBS variant is one arm like the
-others; a NURBS–NURBS marcher, when it comes, is what that arm calls, and
-analytic pairs never route through it.
+Tangent, Points}` for a surface pair — `Points` where the surfaces meet
+only at isolated points, a touch or a crossing through an apex —
+`CurveSurfaceIntersection::{Points, Coincident}` for a curve against a
+surface and `CurveIntersection::{Points, Coincident}` for two curves, so
+a caller matches the case rather than counting curves or points. A pair
+may be supported in part: two cylinders meet by closed form when their
+axes are parallel (rulings, or `Coincident` or `Empty` when coaxial),
+when their axes cross at equal radii (two ellipses), and when skew axes
+are further apart than the two radii (`Empty`); crossing axes of unequal
+radii and skew axes within the radii are `Unsupported`, since the curve
+is a quartic and C3's — which is still a named arm in the pose analysis,
+not a wildcard (`docs/DATA-MODEL.md` §Curves has the table). Every pair
+with a cone, a sphere or a torus in it is supported where the two share
+an axis — a plane perpendicular to it, a cylinder, cone or torus on it, a
+sphere centred on it, and every plane–sphere and sphere–sphere pair — by
+one arm over the meridian sections in the plane through the axis rather
+than a table of pairwise closed forms (ADR-0008): circles about the axis,
+points on it, `Coincident` or `Empty`. The general positions — a plane
+oblique to a cone's or a torus's axis, two tori on different axes, a
+sphere off the axis — are `Unsupported` and C3's, as is a result that
+would mix a circle with a point, whose type is decided with C3's ADR. The
+NURBS variant is one arm like the others; a NURBS–NURBS marcher, when it
+comes, is what that arm calls, and analytic pairs never route through
+it.
 
 ## Tessellation
 

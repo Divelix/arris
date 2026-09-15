@@ -816,6 +816,7 @@ fn face_end(
                 SurfaceIntersection::Transversal(curves) if curves.len() == 1 => curves[0].clone(),
                 SurfaceIntersection::Transversal(_)
                 | SurfaceIntersection::Tangent(_)
+                | SurfaceIntersection::Points(_)
                 | SurfaceIntersection::Empty
                 | SurfaceIntersection::Coincident => {
                     return Err(invariant("a transversal section of the blend at its end"));

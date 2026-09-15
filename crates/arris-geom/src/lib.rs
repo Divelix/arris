@@ -24,6 +24,7 @@ pub mod integrate;
 mod intersect;
 mod intersect_curve;
 mod intersect_curves;
+mod meridian;
 mod nurbs;
 mod pcurve;
 pub mod profile;

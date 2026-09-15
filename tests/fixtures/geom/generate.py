@@ -3,8 +3,10 @@
 directory: `analytic-eval` (every analytic variant in three poses,
 parameters on and off the seam, projections from both sides),
 `c1-intersections` (every case of the cycle-1 intersection table in one
-committed general pose) and `c2-cylinder-pairs` (every pose of the
-cylinder–cylinder table in that pose). Plain Python, no Open CASCADE: the coordinates
+committed general pose), `c2-cylinder-pairs` (every pose of the
+cylinder–cylinder table in that pose) and `c2-quadric-pairs` (the coaxial
+pairs with a cone, a sphere or a torus in them, and the pairs any sphere
+makes, in that pose). Plain Python, no Open CASCADE: the coordinates
 are the closed forms of `docs/DATA-MODEL.md` §Geometry written out in
 world space at full precision, so both sides read identical numbers.
 Rerun after editing, then `tools/oracle/expected.py` on each directory.
@@ -427,6 +429,123 @@ def c2_cylinder_pairs():
     }
 
 
+# --- c2-quadric-pairs --------------------------------------------------------------
+
+
+def c2_quadric_pairs():
+    f = POSES["tilt"]
+    z = f.z
+    surfaces = {}
+    pairs = []
+
+    def plane(name, origin, normal, x_hint):
+        surfaces[name] = {"type": "plane", **Frame(origin, normal, x_hint).spec()}
+
+    def cylinder(name, origin, axis, x_hint, radius):
+        surfaces[name] = {"type": "cylinder", **Frame(origin, axis, x_hint).spec(radius=radius)}
+
+    def cone(name, origin, axis, x_hint, radius, half_angle_deg):
+        surfaces[name] = {"type": "cone", **Frame(origin, axis, x_hint).spec(radius=radius, half_angle_deg=half_angle_deg)}
+
+    def sphere(name, centre, axis, x_hint, radius):
+        surfaces[name] = {"type": "sphere", **Frame(centre, axis, x_hint).spec(radius=radius)}
+
+    def torus(name, origin, axis, x_hint, big, small):
+        surfaces[name] = {"type": "torus", **Frame(origin, axis, x_hint).spec(major_radius=big, minor_radius=small)}
+
+    def pair(a, b):
+        pairs.append({"a": a, "b": b})
+
+    a, across = f.around(0.6)
+    on_axis = lambda h: f.to_world([0.0, 0.0, h])
+    # The three surfaces of revolution on the axis: a cone of radius 2 at
+    # 30° whose apex is 2 / tan 30° below its origin, a sphere whose own
+    # frame is turned across the axis, a torus of radii 4 and 1.5.
+    cone("cone", on_axis(1.5), z, a, 2.0, 30.0)
+    apex = on_axis(1.5 - 2.0 / math.tan(math.radians(30.0)))
+    sphere("sphere", on_axis(-0.5), a, z, 2.5)
+    torus("torus", on_axis(3.0), z, across, 4.0, 1.5)
+    # Planes perpendicular to the axis, their origins off it: crossing the
+    # cone, the sphere and the torus (one circle, one circle, two circles),
+    # touching the sphere at its pole (a point) and the torus at the top of
+    # its tube (a tangent circle of radius 4), and through the cone's apex,
+    # normal reversed (a point).
+    plane("cap_cone", add(on_axis(2.5), mul(0.7, a)), z, a)
+    plane("cap_sphere", add(on_axis(0.5), mul(-0.4, across)), z, across)
+    plane("cap_torus", add(on_axis(3.6), mul(1.1, a)), z, across)
+    plane("touch_sphere", add(on_axis(2.0), mul(0.9, a)), z, a)
+    plane("touch_torus", add(on_axis(4.5), mul(-0.6, a)), z, a)
+    plane("apex_plane", add(apex, mul(0.3, a)), mul(-1.0, z), across)
+    for name, other in [
+        ("cap_cone", "cone"),
+        ("cap_sphere", "sphere"),
+        ("cap_torus", "torus"),
+        ("touch_sphere", "sphere"),
+        ("touch_torus", "torus"),
+        ("apex_plane", "cone"),
+    ]:
+        pair(name, other)
+    # Cylinders on the axis, slid along it: a bore of radius 1.2 through
+    # the cone (two circles, one per nappe) and the sphere (two circles),
+    # clear of the torus's tube (empty); a sleeve of radius 3 through the
+    # torus (two circles); a sleeve of radius 5.5 around it (a tangent
+    # circle at the outer equator); a hoop of the sphere's radius (a
+    # tangent circle at its equator).
+    # Open CASCADE's cylinder–sphere case wants the sphere's own axis on
+    # the cylinder's exactly: the turned sphere is `unsolved` there, and
+    # the orb, the same sphere with its frame along the axis, is answered.
+    cylinder("bore", on_axis(-2.0), z, a, 1.2)
+    cylinder("sleeve", on_axis(6.0), mul(-1.0, z), across, 3.0)
+    cylinder("touch_sleeve", on_axis(1.0), z, a, 5.5)
+    cylinder("hoop", on_axis(-4.0), z, across, 2.5)
+    sphere("orb", on_axis(-0.5), z, a, 2.5)
+    for name, other in [
+        ("bore", "cone"),
+        ("bore", "sphere"),
+        ("bore", "orb"),
+        ("bore", "torus"),
+        ("sleeve", "torus"),
+        ("touch_sleeve", "torus"),
+        ("hoop", "sphere"),
+        ("hoop", "orb"),
+    ]:
+        pair(name, other)
+    # A second cone on the axis at the same angle with another apex (one
+    # circle), and one at another angle opening the other way (two
+    # circles); a larger sphere on the axis through the torus's tube (two
+    # circles).
+    cone("cone_same", on_axis(3.5), z, across, 2.0, 30.0)
+    cone("cone_steep", on_axis(4.0), mul(-1.0, z), a, 1.0, 50.0)
+    sphere("ball", on_axis(2.0), across, a, 4.2)
+    pair("cone", "cone_same")
+    pair("cone", "cone_steep")
+    pair("ball", "torus")
+    # A plane oblique to the sphere's axis, in general position (a circle);
+    # two spheres crossing (a circle), touching from outside and from
+    # inside (a point each).
+    n = unit(add(mul(math.cos(0.5), z), mul(math.sin(0.5), a)))
+    plane("oblique", add(add(on_axis(-0.5), mul(1.0, n)), mul(0.4, across)), n, across)
+    d = unit(add(add(mul(0.3, z), mul(0.8, a)), mul(-0.5, across)))
+    sphere("pebble", add(on_axis(-0.5), mul(2.5 + 0.8, d)), across, z, 0.8)
+    e = unit(add(add(mul(-0.7, z), mul(0.2, a)), mul(0.6, across)))
+    sphere("marble", add(on_axis(-0.5), mul(2.5 - 0.6, e)), z, a, 0.6)
+    pair("oblique", "sphere")
+    pair("sphere", "ball")
+    pair("sphere", "pebble")
+    pair("marble", "sphere")
+    # Two pairs the other way round.
+    pair("cone", "cap_cone")
+    pair("torus", "sleeve")
+    return {
+        "kind": "geometry",
+        "description": "the coaxial pairs with a cone, a sphere or a torus in them, and the pairs any sphere makes, around one axis in the tilt pose: planes perpendicular to the axis crossing a cone, a sphere and a torus, touching the sphere at a pole and the torus at its tube's top, and through the cone's apex; cylinders on the axis through the cone, the sphere (its frame turned, which Open CASCADE leaves unsolved, and along the axis, which it answers) and the torus, clear of the torus, around it at its outer equator and at the sphere's equator; two cones on the axis at the same and at another angle; a sphere through the torus; a plane oblique to a sphere; two spheres crossing, touching outside and touching inside; two pairs swapped; written by generate.py",
+        "surfaces": surfaces,
+        "curves": {},
+        "samples": [],
+        "pairs": pairs,
+    }
+
+
 def write(name, recipe):
     directory = HERE / name
     directory.mkdir(exist_ok=True)
@@ -438,3 +557,4 @@ if __name__ == "__main__":
     write("analytic-eval", analytic_eval())
     write("c1-intersections", c1_intersections())
     write("c2-cylinder-pairs", c2_cylinder_pairs())
+    write("c2-quadric-pairs", c2_quadric_pairs())

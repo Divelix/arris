@@ -54,7 +54,8 @@ commit that says so (`.agents/rules/git.md`).
   `Geom_Circle` and `Geom_Ellipse` from named specs; `D2` at every
   parameter; `GeomAPI_ProjectPointOnSurf` / `OnCurve` for every point;
   `IntAna_QuadQuadGeo` for surface pairs (`unsolved` where it reports
-  `NoGeometricSolution`) and `IntAna_IntConicQuad` for a
+  `NoGeometricSolution`, `point` where it reports `IntAna_Point`, through
+  the overload each kind pair has) and `IntAna_IntConicQuad` for a
   curve against a surface, hits deduplicated within `Precision::Confusion`
   and dropped (counted) when off either operand.
 - `oracle/step.py` — STEP AP214 write and read, with OCCT's transfer
@@ -116,12 +117,18 @@ of `results`, one entry per recipe sample and pair:
 }
 ```
 
-A surface pair's `type` is `empty`, `coincident`, `line`, `circle`,
-`ellipse` or `unsolved` (no curves: `IntAna_NoGeometricSolution`), with
-every result curve sampled (five points along a line,
-eight around a closed curve); a curve–surface pair's is `coincident` or
-`points`, hits ascending by the conic parameter, plus `dropped` when the
-intersector reported a point that lies on neither operand.
+A surface pair's `type` is `empty`, `coincident`, `point` (with its
+`points`: a plane tangent to a sphere, two spheres touching, a plane
+through a cone's apex), `line`, `circle`, `ellipse` or `unsolved` (no
+curves: `IntAna_NoGeometricSolution`), with every result curve sampled
+(five points along a line, eight around a closed curve); a curve–surface
+pair's is `coincident` or `points`, hits ascending by the conic
+parameter, plus `dropped` when the intersector reported a point that
+lies on neither operand. `IntAna_QuadQuadGeo` has one overload per
+unordered kind pair, in its own operand order and with its own tolerance
+signature (an angle and a distance, a distance, or none);
+`geometry.py` swaps a pair into that order, since the result does not
+depend on it.
 
 ## Conventions the interpreter mirrors
 

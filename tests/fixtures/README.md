@@ -229,12 +229,18 @@ oracle's sampled points on Arris's curves to 1e-9.
 - The fixtures here are written by `geom/generate.py` (closed forms at
   full precision in committed poses) — edit and rerun it, then
   `expected.py`, rather than the numbers: `analytic-eval`,
-  `c1-intersections` (the plane and plane–cylinder table) and
-  `c2-cylinder-pairs` (every pose of the cylinder–cylinder table).
+  `c1-intersections` (the plane and plane–cylinder table),
+  `c2-cylinder-pairs` (every pose of the cylinder–cylinder table) and
+  `c2-quadric-pairs` (the coaxial pairs with a cone, a sphere or a torus
+  in them, and the pairs any sphere makes: crossings, touches, a plane
+  through an apex, two spheres touching).
 - A surface pair Open CASCADE finds no conic for is `"type": "unsolved"`
   (`IntAna_NoGeometricSolution`). The oracle test holds Arris to
-  `Unsupported` or to a closed-form `Empty` against it, and
-  `oracle.rs` pins which one each pair is by name.
+  `Unsupported` or to a closed-form `Empty` against it — or, where Arris
+  has a closed form the oracle's own case analysis let go, holds Arris's
+  curves to both surfaces — and `oracle.rs` pins which one each pair is
+  by name. A pair meeting in isolated points is `"type": "point"` with
+  its `points`; Arris's `Points` are held to them exactly.
 - The corpus lint checks presence, hash and shape for this kind (every
   name resolves, every spec builds, one result per sample and pair with
   the counts asked for); the values are the oracle test's to compare.
@@ -254,7 +260,14 @@ oracle's sampled points on Arris's curves to 1e-9.
   and two ellipses for equal radii whatever the gap between the axes. So
   `c2-cylinder-pairs` gives its skew pairs unequal radii, and Arris's
   `Empty` for the pair further apart than the radii stands against
-  `unsolved`.
+  `unsolved`. The plane–sphere case decides a touch at machine epsilon,
+  so a plane built tangent at a pole comes back `empty` (or a circle of
+  rounding radius) where Arris says `Points`, which the oracle test
+  accepts within 1e-6 of Arris's point; the cylinder–sphere case wants
+  the sphere's own axis on the cylinder's exactly, so `c2-quadric-pairs`
+  has the same sphere twice — its frame turned across the axis, which
+  comes back `unsolved` and holds Arris's circles to both surfaces, and
+  along the axis, which is answered.
 
 ## `expected.json`
 
