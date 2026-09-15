@@ -7,7 +7,8 @@
 //! on the line where the plane's offset meets the cylinder's, and along a
 //! circle to a torus coaxial with it or chamfer to a cone — with its
 //! contact curves read off the construction, each end of an open edge
-//! trimmed by the face across the corner, and the
+//! trimmed by the face across the corner or met by the blends sharing its
+//! vertex — two in a miter, three in a sphere or a triangle — and the
 //! result assembled through `rebuild::rewrite` with every untouched
 //! entity kept by id (`docs/ARCHITECTURE.md` §Operations,
 //! `docs/DATA-MODEL.md` §Provenance).
@@ -21,7 +22,7 @@ use arris_check::arris_topo::arris_geom::{
     pcurve_on,
 };
 use arris_check::arris_topo::arris_math::{
-    Frame, Interval, Point2, Point3, Tolerance, UnitVec3, Vec2, Vec3, wrap_angle,
+    Frame, Interval, Point2, Point3, Tolerance, UnitVec2, UnitVec3, Vec2, Vec3, wrap_angle,
 };
 use arris_check::arris_topo::builder::{EdgeKey, EdgeSpec, VertexKey, VertexSpec};
 use arris_check::arris_topo::entity::EdgeGeometry;
@@ -213,8 +214,8 @@ struct Stripe {
     tolerance: f64,
 }
 
-/// One end of a blend: trimmed by the face across the corner, or met by
-/// the other blend of a miter.
+/// One end of a blend: trimmed by the face across the corner, met by the
+/// other blend of a miter, or met by the corner face of three blends.
 enum EndKind {
     Face(Box<End>),
     /// The miter at `miters[at]`, this stripe being its `side`.
@@ -222,22 +223,29 @@ enum EndKind {
         at: usize,
         side: usize,
     },
+    /// The corner at `corners[at]`, this stripe being its `side`.
+    Corner {
+        at: usize,
+        side: usize,
+    },
 }
 
 impl EndKind {
     /// The contact lines' parameters at this end, by contact.
-    fn t(&self, miters: &[Miter], k: usize) -> f64 {
+    fn t(&self, miters: &[Miter], corners: &[Corner], k: usize) -> f64 {
         match self {
             EndKind::Face(end) => end.t[k],
             EndKind::Miter { at, side } => miters[*at].t[*side][k],
+            EndKind::Corner { at, side } => corners[*at].t[*side][k],
         }
     }
 
-    /// The tolerance a face end's trim vertex carries, `None` at a miter.
+    /// The tolerance a face end's trim vertex carries, `None` at a miter
+    /// or a corner.
     fn vertex_tolerance(&self, k: usize) -> Option<f64> {
         match self {
             EndKind::Face(end) => Some(end.vertex_tolerance[k]),
-            EndKind::Miter { .. } => None,
+            EndKind::Miter { .. } | EndKind::Corner { .. } => None,
         }
     }
 }
@@ -274,6 +282,64 @@ struct Miter {
     tolerance: f64,
     q_tolerance: f64,
     p3_tolerance: f64,
+}
+
+/// One side of a corner: where one of its three blends meets the corner
+/// face — a great circle of the sphere, or a side of the triangle —
+/// between the corner's points on that blend's two faces.
+struct CornerArc {
+    curve: Curve,
+    range: Interval,
+    /// The corner's points at `range.lo()`, then at `range.hi()`.
+    ends: [usize; 2],
+    /// `true` when `range.lo()` is at the blend's contact at `u = 0`.
+    lo_first: bool,
+    /// Its pcurve on the blend, placed.
+    on_blend: Curve2,
+    /// Its pcurve on the corner face, placed.
+    on_corner: Curve2,
+    /// `true` when the corner face's loop walks it along its range.
+    along: bool,
+}
+
+/// A sphere corner's pole: the degenerate edge where its two meridians
+/// meet, `u` running along its pcurve at `v = π/2` and walked back.
+struct Pole {
+    /// The corner's point it stands at.
+    point: usize,
+    range: Interval,
+    pcurve: Curve2,
+    /// The place in the corner's walk after which its loop crosses it.
+    after: usize,
+}
+
+/// Three blends at a vertex of three planes (ADR-0007). Each face's two
+/// contacts cross at one point, the corner's three points. Three fillets'
+/// axes meet at the ball's one centre, and the corner is the sphere of the
+/// radius about it, tangent to each cylinder along the great circle in the
+/// plane through the centre square to its axis, between the points on its
+/// two faces: its frame's `Z` toward the point of a face square to the
+/// other two, the pole, so that the side between those two is the equator
+/// and the other two sides meridians. Three chamfers meet in the triangle
+/// of the three points, each side a chord in one chamfer's plane.
+struct Corner {
+    /// The three blended edges, in the blends' order: the sides.
+    edges: [EdgeId; 3],
+    /// The corner's three faces, each holding the point at its index.
+    faces: [FaceId; 3],
+    points: [Point3; 3],
+    /// For each side, the point each of its contacts ends at.
+    contact_point: [[usize; 2]; 3],
+    /// The contact lines' parameters at the corner, `[side][contact]`.
+    t: [[f64; 2]; 3],
+    /// By side.
+    arcs: [CornerArc; 3],
+    /// The sides in the order the corner face's loop walks them.
+    walk: [usize; 3],
+    pole: Option<Pole>,
+    surface: Surface,
+    orientation: Orientation,
+    tolerance: f64,
 }
 
 /// One edge's blend, decided and checked, before anything is written.
@@ -1232,6 +1298,318 @@ fn miter(
     })
 }
 
+/// The corner of stripes `stripes` at `vertex`, a vertex of these three
+/// edges and no other (ADR-0007). Every face there a plane and every blend
+/// convex or every one concave is what puts the three fillets' axes
+/// through one centre; a fillet corner also needs a face square to the
+/// other two, so that its sides are the sphere's equator and two meridians
+/// with exact pcurves. A corner that is not all planes, of mixed blends or,
+/// for fillets, with no such face is `Reason::VertexBlend`, C6's.
+fn corner(
+    m: &Model,
+    view: &View,
+    stripes: [&Stripe; 3],
+    vertex: VertexId,
+    tol: Tolerance,
+) -> Result<Corner, OpError> {
+    let edges = stripes.map(|s| s.edge);
+    let vertex_blend = || {
+        let entities = edges
+            .iter()
+            .map(|&e| forward(e))
+            .chain([forward(vertex)])
+            .collect();
+        degenerate(entities, Reason::VertexBlend)
+    };
+    let at_vertex = view
+        .vertex_edges
+        .get(&vertex)
+        .ok_or(invariant("the corner vertex's edges"))?;
+    if *at_vertex != edges.iter().copied().collect::<BTreeSet<EdgeId>>() {
+        return Err(vertex_blend());
+    }
+    // A blend along a ruling has a cylinder face at the corner.
+    if stripes
+        .iter()
+        .any(|s| s.ruling || s.convex != stripes[0].convex)
+    {
+        return Err(vertex_blend());
+    }
+    // The corner's faces, in the blends' order, and the point each
+    // blend's contacts end at: the one on that contact's face.
+    let mut found: Vec<FaceId> = Vec::with_capacity(3);
+    for s in &stripes {
+        for &f in &s.faces {
+            if !found.contains(&f) {
+                found.push(f);
+            }
+        }
+    }
+    let faces: [FaceId; 3] = found.try_into().map_err(|_| vertex_blend())?;
+    let mut contact_point = [[0usize; 2]; 3];
+    for (points, s) in contact_point.iter_mut().zip(&stripes) {
+        for (point, face) in points.iter_mut().zip(&s.faces) {
+            *point = faces
+                .iter()
+                .position(|f| f == face)
+                .ok_or(invariant("a corner face"))?;
+        }
+    }
+    let tolerance = stripes.iter().map(|s| s.tolerance).fold(0.0, f64::max);
+    let crossing = |o1: Point3, d1: Vec3, o2: Point3, d2: Vec3, what: &'static str| {
+        let (t1, t2) = lines_cross(o1, d1, o2, d2, tol).ok_or_else(vertex_blend)?;
+        let (p1, p2) = (o1 + t1 * d1, o2 + t2 * d2);
+        if (p1 - p2).norm() > tolerance {
+            return Err(invariant(what));
+        }
+        Ok((p1 + (p2 - p1) * 0.5, t1, t2))
+    };
+    // Where the two contacts on each face cross.
+    let mut points = [Point3::origin(); 3];
+    let mut t = [[0.0; 2]; 3];
+    for (p, point) in points.iter_mut().enumerate() {
+        let on: Vec<(usize, usize)> = (0..3)
+            .flat_map(|side| [(side, 0), (side, 1)])
+            .filter(|&(side, k)| contact_point[side][k] == p)
+            .collect();
+        let [(sa, ka), (sb, kb)] = on[..] else {
+            return Err(vertex_blend());
+        };
+        let (a, b) = (stripes[sa], stripes[sb]);
+        let (q, ta, tb) = crossing(
+            line_origin(&a.lines[ka])?,
+            a.d,
+            line_origin(&b.lines[kb])?,
+            b.d,
+            "the contacts on a corner face through one point",
+        )?;
+        *point = q;
+        t[sa][ka] = ta;
+        t[sb][kb] = tb;
+    }
+    // The side between two of the corner's points.
+    let side_of = |a: usize, b: usize| {
+        contact_point
+            .iter()
+            .position(|c| c.contains(&a) && c.contains(&b))
+            .ok_or_else(vertex_blend)
+    };
+    let arc_tol = Tolerance::new(tolerance, tol.angular);
+    let geometry = |g| OpError::Internal(Fault::Geometry(g));
+    // The side `side` over `curve`, from point `ends[0]` to `ends[1]`: its
+    // pcurve on that blend placed as its contacts are.
+    let arc = |side: usize,
+               curve: Curve,
+               range: Interval,
+               ends: [usize; 2],
+               on_corner: Curve2,
+               along: bool|
+     -> Result<CornerArc, OpError> {
+        let s = stripes[side];
+        let lo_first = ends[0] == contact_point[side][0];
+        let on_blend = pcurve_on(&curve, range, &s.surface, arc_tol).map_err(geometry)?;
+        let on_blend = s.place(on_blend, range.lo(), if lo_first { 0.0 } else { s.u1 });
+        Ok(CornerArc {
+            curve,
+            range,
+            ends,
+            lo_first,
+            on_blend,
+            on_corner,
+            along,
+        })
+    };
+    let (surface, orientation, sides, pole) = match stripes[0].section {
+        Section::Round { radius, .. } => {
+            let axis = |s: &Stripe| match s.section {
+                Section::Round { axis_origin, .. } => Ok(axis_origin),
+                Section::Flat => Err(invariant("one kind of blend in one call")),
+            };
+            let [a, b, c] = stripes;
+            let (centre, _, _) = crossing(
+                axis(a)?,
+                a.d,
+                axis(b)?,
+                b.d,
+                "the three axes through the ball's centre",
+            )?;
+            let off = centre - axis(c)?;
+            if (off - off.dot(&c.d) * c.d).norm() > tolerance {
+                return Err(invariant("the three axes through the ball's centre"));
+            }
+            // From the centre toward each point, where the ball touches
+            // that face.
+            let mut w = [Vec3::zeros(); 3];
+            for (wp, p) in w.iter_mut().zip(points) {
+                let r = p - centre;
+                if (r.norm() - radius).abs() > tolerance {
+                    return Err(invariant("the ball touching each corner face at its point"));
+                }
+                *wp = r / r.norm();
+            }
+            // The pole: the point of a face square to the other two, taken
+            // off the first blend that has one across it.
+            let mut pole_at = None;
+            for ends in &contact_point {
+                let p = (0..3)
+                    .find(|q| !ends.contains(q))
+                    .ok_or(invariant("a corner face off each blend"))?;
+                if ends.iter().all(|&q| w[p].dot(&w[q]).abs() <= tol.angular) {
+                    pole_at = Some((p, *ends));
+                    break;
+                }
+            }
+            let Some((p, [i0, i1])) = pole_at else {
+                return Err(vertex_blend());
+            };
+            // `X` toward one equator point, `Y` toward the other.
+            let (i, j) = if w[p].cross(&w[i0]).dot(&w[i1]) > 0.0 {
+                (i0, i1)
+            } else {
+                (i1, i0)
+            };
+            let frame = Frame::new(centre, w[p], w[i])?;
+            let gamma = w[j]
+                .dot(&frame.y().into_inner())
+                .atan2(w[j].dot(&frame.x().into_inner()));
+            let equator_range =
+                Interval::new(0.0, gamma).map_err(|_| invariant("a corner of positive angle"))?;
+            let quarter =
+                Interval::new(0.0, FRAC_PI_2).map_err(|_| invariant("a quarter of a turn"))?;
+            let sphere = Surface::Sphere { frame, radius };
+            let on_sphere = |curve: &Curve, range: Interval, u: f64| -> Result<Curve2, OpError> {
+                let pcurve = pcurve_on(curve, range, &sphere, arc_tol).map_err(geometry)?;
+                Ok(placed(pcurve, range.lo(), u))
+            };
+            // Each meridian from its equator point up to the pole.
+            let meridian = |q: usize| -> Result<Curve, OpError> {
+                Ok(Curve::Circle {
+                    frame: Frame::new(centre, w[q].cross(&w[p]), w[q])?,
+                    radius,
+                })
+            };
+            let equator = Curve::Circle { frame, radius };
+            let (to_j, to_i) = (meridian(j)?, meridian(i)?);
+            // In (u, v), counter-clockwise: along the equator from `i` to
+            // `j`, up the meridian at `u = γ`, back along the pole, down
+            // the meridian at `u = 0`.
+            let sides = vec![
+                (
+                    side_of(i, j)?,
+                    arc(
+                        side_of(i, j)?,
+                        equator.clone(),
+                        equator_range,
+                        [i, j],
+                        on_sphere(&equator, equator_range, 0.0)?,
+                        true,
+                    )?,
+                ),
+                (
+                    side_of(j, p)?,
+                    arc(
+                        side_of(j, p)?,
+                        to_j.clone(),
+                        quarter,
+                        [j, p],
+                        on_sphere(&to_j, quarter, gamma)?,
+                        true,
+                    )?,
+                ),
+                (
+                    side_of(i, p)?,
+                    arc(
+                        side_of(i, p)?,
+                        to_i.clone(),
+                        quarter,
+                        [i, p],
+                        on_sphere(&to_i, quarter, 0.0)?,
+                        false,
+                    )?,
+                ),
+            ];
+            let pole = Pole {
+                point: p,
+                range: equator_range,
+                pcurve: Curve2::Line {
+                    origin: Point2::new(0.0, FRAC_PI_2),
+                    direction: UnitVec2::new_unchecked(Vec2::new(1.0, 0.0)),
+                },
+                after: 1,
+            };
+            let orientation = if stripes[0].convex {
+                Orientation::Forward
+            } else {
+                Orientation::Reversed
+            };
+            (sphere, orientation, sides, Some(pole))
+        }
+        Section::Flat => {
+            // The triangle faces out of the material, which every corner
+            // face's outward normal points away from.
+            let mut outward = Vec3::zeros();
+            for &f in &faces {
+                outward += view.outward(m, f, Point2::origin())?;
+            }
+            let turn = |order: [usize; 3]| {
+                (points[order[1]] - points[order[0]]).cross(&(points[order[2]] - points[order[0]]))
+            };
+            let order = if turn([0, 1, 2]).dot(&outward) >= 0.0 {
+                [0, 1, 2]
+            } else {
+                [0, 2, 1]
+            };
+            let normal = UnitVec3::try_new(turn(order), 0.0)
+                .ok_or(invariant("a corner triangle of positive area"))?;
+            let frame = Frame::new(
+                points[order[0]],
+                normal.into_inner(),
+                points[order[1]] - points[order[0]],
+            )?;
+            let plane = Surface::Plane { frame };
+            let mut sides = Vec::with_capacity(3);
+            for w in 0..3 {
+                let (from, to) = (order[w], order[(w + 1) % 3]);
+                let side = side_of(from, to)?;
+                let (curve, range) = chord(points[from], points[to], tol)?;
+                let on_corner = pcurve_on(&curve, range, &plane, arc_tol).map_err(geometry)?;
+                sides.push((side, arc(side, curve, range, [from, to], on_corner, true)?));
+            }
+            (plane, Orientation::Forward, sides, None)
+        }
+    };
+    let walk: [usize; 3] = sides
+        .iter()
+        .map(|(side, _)| *side)
+        .collect::<Vec<_>>()
+        .try_into()
+        .map_err(|_| invariant("three sides of a corner"))?;
+    let mut by_side: Vec<(usize, CornerArc)> = sides;
+    by_side.sort_by_key(|(side, _)| *side);
+    if by_side.iter().enumerate().any(|(i, (side, _))| *side != i) {
+        return Err(vertex_blend());
+    }
+    let arcs: [CornerArc; 3] = by_side
+        .into_iter()
+        .map(|(_, arc)| arc)
+        .collect::<Vec<_>>()
+        .try_into()
+        .map_err(|_| invariant("three sides of a corner"))?;
+    Ok(Corner {
+        edges,
+        faces,
+        points,
+        contact_point,
+        t,
+        arcs,
+        walk,
+        pole,
+        surface,
+        orientation,
+        tolerance,
+    })
+}
+
 /// A contact of a closed edge's blend: a circle about the cylinder's axis
 /// on one of the edge's faces, the edge's own frame moved along the axis
 /// and its radius changed, so it runs as the edge ran over the same range.
@@ -1642,8 +2020,8 @@ struct Cuts {
 
 /// The rewrite's indices of one blend's entities: its four trim vertices
 /// `[end][contact]`, its two contact edges, its two end arcs and its
-/// added face. At a miter the vertices and the arc are the miter's,
-/// shared with the other blend.
+/// added face. At a miter or a corner the vertices and the arc are the
+/// miter's or the corner's, shared with the other blends.
 #[derive(Default, Clone, Copy)]
 struct Made {
     vertices: [[usize; 2]; 2],
@@ -1658,6 +2036,16 @@ struct Made {
 struct MiterMade {
     vertices: [usize; 2],
     edge: usize,
+}
+
+/// The rewrite's indices of one corner's entities: its three vertices,
+/// its three arcs by side, a sphere's pole and its added face.
+#[derive(Clone, Copy)]
+struct CornerMade {
+    vertices: [usize; 3],
+    arcs: [usize; 3],
+    pole: Option<usize>,
+    added: usize,
 }
 
 /// Records `cut` at one end of a corner edge, once.
@@ -1698,8 +2086,8 @@ fn build(
         }
     }
     let edges = &open[..];
-    // The blended edges at each vertex: two meet in a miter, three are
-    // the sphere corner the closed forms do not cover yet.
+    // The blended edges at each vertex: two meet in a miter, three in a
+    // corner, and more at a vertex the closed forms do not cover.
     let mut at_vertex: BTreeMap<VertexId, Vec<EdgeId>> = BTreeMap::new();
     for &e in edges {
         let entity = *m.edge(e)?;
@@ -1708,7 +2096,7 @@ fn build(
         }
     }
     for (&v, es) in &at_vertex {
-        if es.len() > 2 {
+        if es.len() > 3 {
             let entities = es.iter().map(|&e| forward(e)).chain([forward(v)]).collect();
             return Err(degenerate(entities, Reason::VertexBlend));
         }
@@ -1719,20 +2107,39 @@ fn build(
     }
     let index_of: BTreeMap<EdgeId, usize> =
         edges.iter().enumerate().map(|(i, &e)| (e, i)).collect();
-    // The miters, in vertex order.
+    // The miters and the corners, in vertex order.
     let mut miters: Vec<Miter> = Vec::new();
     let mut miter_at: BTreeMap<VertexId, usize> = BTreeMap::new();
+    let mut corners: Vec<Corner> = Vec::new();
+    let mut corner_at: BTreeMap<VertexId, usize> = BTreeMap::new();
     for (&v, es) in &at_vertex {
-        if let [ea, eb] = es[..] {
-            miter_at.insert(v, miters.len());
-            miters.push(miter(
-                m,
-                &view,
-                &stripes[index_of[&ea]],
-                &stripes[index_of[&eb]],
-                v,
-                tol,
-            )?);
+        match es[..] {
+            [ea, eb] => {
+                miter_at.insert(v, miters.len());
+                miters.push(miter(
+                    m,
+                    &view,
+                    &stripes[index_of[&ea]],
+                    &stripes[index_of[&eb]],
+                    v,
+                    tol,
+                )?);
+            }
+            [ea, eb, ec] => {
+                corner_at.insert(v, corners.len());
+                corners.push(corner(
+                    m,
+                    &view,
+                    [
+                        &stripes[index_of[&ea]],
+                        &stripes[index_of[&eb]],
+                        &stripes[index_of[&ec]],
+                    ],
+                    v,
+                    tol,
+                )?);
+            }
+            _ => {}
         }
     }
     // Each stripe's ends, then its contacts between them.
@@ -1740,18 +2147,28 @@ fn build(
     for s in stripes {
         let mut ends: Vec<EndKind> = Vec::with_capacity(2);
         for (at_lo, vertex) in [(true, s.start), (false, s.end)] {
-            ends.push(match miter_at.get(&vertex) {
-                Some(&at) => EndKind::Miter {
+            ends.push(match (miter_at.get(&vertex), corner_at.get(&vertex)) {
+                (Some(&at), _) => EndKind::Miter {
                     at,
                     side: usize::from(miters[at].edges[0] != s.edge),
                 },
-                None => EndKind::Face(Box::new(face_end(m, &view, &s, at_lo, tol, samples)?)),
+                (None, Some(&at)) => EndKind::Corner {
+                    at,
+                    side: corners[at]
+                        .edges
+                        .iter()
+                        .position(|&e| e == s.edge)
+                        .ok_or(invariant("a corner's own blend"))?,
+                },
+                (None, None) => {
+                    EndKind::Face(Box::new(face_end(m, &view, &s, at_lo, tol, samples)?))
+                }
             });
         }
         let ends: [EndKind; 2] = ends
             .try_into()
             .map_err(|_| invariant("two ends of the blend"))?;
-        let t = [0, 1].map(|end| [0, 1].map(|k| ends[end].t(&miters, k)));
+        let t = [0, 1].map(|end| [0, 1].map(|k| ends[end].t(&miters, &corners, k)));
         let contacts = contacts(m, &s, t, tol, samples)?;
         blends.push(Blend {
             stripe: s,
@@ -1797,6 +2214,54 @@ fn build(
             edge,
         });
     }
+    // The corners next: their three vertices, their three arcs and a
+    // sphere's pole; no corner edge is cut.
+    let mut corner_made: Vec<CornerMade> = Vec::with_capacity(corners.len());
+    for c in &corners {
+        let mut vertices = [0usize; 3];
+        for (slot, &point) in vertices.iter_mut().zip(&c.points) {
+            *slot = rw.vertices.len();
+            rw.vertices.push(VertexSpec::New {
+                point,
+                tolerance: c.tolerance,
+            });
+        }
+        let mut arcs = [0usize; 3];
+        for (slot, arc) in arcs.iter_mut().zip(&c.arcs) {
+            *slot = rw.edges.len();
+            rw.edges.push((
+                EdgeSpec::New {
+                    geometry: EdgeGeometry::Curve {
+                        curve: m.add_curve(arc.curve.clone()),
+                        range: arc.range,
+                    },
+                    start: VertexKey::New(vertices[arc.ends[0]]),
+                    end: VertexKey::New(vertices[arc.ends[1]]),
+                    tolerance: c.tolerance,
+                },
+                None,
+            ));
+        }
+        let pole = c.pole.as_ref().map(|pole| {
+            let at = VertexKey::New(vertices[pole.point]);
+            rw.edges.push((
+                EdgeSpec::New {
+                    geometry: EdgeGeometry::Degenerate { range: pole.range },
+                    start: at,
+                    end: at,
+                    tolerance: c.tolerance,
+                },
+                None,
+            ));
+            rw.edges.len() - 1
+        });
+        corner_made.push(CornerMade {
+            vertices,
+            arcs,
+            pole,
+            added: 0,
+        });
+    }
     let mut made: Vec<Made> = Vec::with_capacity(blends.len());
     for blend in &blends {
         let mut vertices = [[0usize; 2]; 2];
@@ -1815,6 +2280,11 @@ fn build(
                     let shared = miters[*at].shared[*side];
                     vertices[end_index][shared] = miter_made[*at].vertices[0];
                     vertices[end_index][1 - shared] = miter_made[*at].vertices[1];
+                }
+                EndKind::Corner { at, side } => {
+                    for (k, slot) in vertices[end_index].iter_mut().enumerate() {
+                        *slot = corner_made[*at].vertices[corners[*at].contact_point[*side][k]];
+                    }
                 }
             }
         }
@@ -1840,6 +2310,10 @@ fn build(
                 EndKind::Face(face_end) => face_end,
                 EndKind::Miter { at, .. } => {
                     arcs[end_index] = miter_made[*at].edge;
+                    continue;
+                }
+                EndKind::Corner { at, side } => {
+                    arcs[end_index] = corner_made[*at].arcs[*side];
                     continue;
                 }
             };
@@ -2041,6 +2515,10 @@ fn build(
                 EndKind::Miter { at, side } => {
                     (miters[*at].lo_first[*side], &miters[*at].on_blend[*side])
                 }
+                EndKind::Corner { at, side } => {
+                    let arc = &corners[*at].arcs[*side];
+                    (arc.lo_first, &arc.on_blend)
+                }
             };
             // The start arc is walked from `u = 0` to `u = β`, the end
             // arc back.
@@ -2083,6 +2561,41 @@ fn build(
             },
             loops: vec![loop_uses],
             tolerance: blend.stripe.tolerance,
+        });
+    }
+    // The corner faces, one per corner, their sides in walking order with
+    // a sphere's pole crossed where its meridians meet.
+    for (c, made) in corners.iter().zip(corner_made.iter_mut()) {
+        let surface = m.add_surface(c.surface.clone());
+        let mut loop_uses: Vec<StoredUse> = Vec::with_capacity(4);
+        for (w, &side) in c.walk.iter().enumerate() {
+            let arc = &c.arcs[side];
+            loop_uses.push(StoredUse {
+                edge: EdgeKey::New(made.arcs[side]),
+                orientation: if arc.along {
+                    Orientation::Forward
+                } else {
+                    Orientation::Reversed
+                },
+                pcurve: m.add_curve2(arc.on_corner.clone()),
+            });
+            if let (Some(pole), Some(edge)) = (&c.pole, made.pole)
+                && pole.after == w
+            {
+                loop_uses.push(StoredUse {
+                    edge: EdgeKey::New(edge),
+                    orientation: Orientation::Reversed,
+                    pcurve: m.add_curve2(pole.pcurve.clone()),
+                });
+            }
+        }
+        made.added = rw.added.len();
+        rw.added.push(AddedFace {
+            shell: view.shell_of[&c.faces[0]],
+            surface,
+            orientation: c.orientation,
+            loops: vec![loop_uses],
+            tolerance: c.tolerance,
         });
     }
     // The ring faces, one per closed edge, in (u, v) counter-clockwise:
@@ -2145,6 +2658,17 @@ fn build(
             p.add_generated(origin, forward(out.vertices[v]));
         }
     }
+    // A corner's face and a sphere's pole from each of its three edges;
+    // its vertices and sides are its blends' own, recorded above.
+    for (c, made) in corners.iter().zip(&corner_made) {
+        for &edge in &c.edges {
+            let origin = forward(edge);
+            p.add_generated(origin, forward(out.added[made.added]));
+            if let Some(pole) = made.pole {
+                p.add_generated(origin, forward(out.edges[pole]));
+            }
+        }
+    }
     // A ring's face, its two contacts, its seam and its two vertices.
     for (r, made) in rings.iter().zip(&ring_made) {
         let origin = forward(r.edge);
@@ -2184,7 +2708,14 @@ fn build(
 /// through the ball's centre bisecting their axes, from where the two
 /// contacts on the shared face cross to where the other two meet the
 /// third edge, a fitted `Nurbs` pcurve on each cylinder; the third edge
-/// is shortened to that point and no face takes an arc. A plane and a
+/// is shortened to that point and no face takes an arc. Three blends at a
+/// vertex of three planes, all convex or all concave, meet in the sphere of
+/// `radius` about the ball's one centre, tangent to each cylinder along the
+/// great circle through the centre square to its axis, between the points
+/// where each face's two contacts cross: its frame's `Z` toward the point
+/// of a face square to the other two, so its sides are its equator and two
+/// meridians, exact lines in (u, v), meeting at its pole, a degenerate
+/// edge; no corner edge is cut. A plane and a
 /// cylinder along a circle — a closed edge, a hole's rim or a boss's
 /// base — blend with no ends to a torus coaxial with the cylinder, its
 /// centre circle where the plane's offset meets the cylinder's and its
@@ -2203,7 +2734,10 @@ fn build(
 /// end and each corner edge the trim shortens `Modified` into its new
 /// self; the edge and the two corner vertices `Deleted`; the shell and
 /// the body `Modified`. A miter's edge and two vertices are `Generated`
-/// from both edges they join. A closed edge's torus face, its two contact
+/// from both edges they join. At a corner of three, each side of the
+/// sphere is its blend's end arc and each corner point is `Generated` from
+/// the two edges whose contacts cross there; the sphere face and its pole
+/// from all three. A closed edge's torus face, its two contact
 /// circles, its seam and the seam's two vertices are `Generated` from it,
 /// the cylinder's seam `Modified` and the edge's vertex `Deleted`.
 /// `arris_topo::provenance::audit` holds on every result
@@ -2220,9 +2754,9 @@ fn build(
 /// forms do not cover — a vertex of other than three edges, a miter
 /// whose two blends have unequal dihedrals or are not both convex or
 /// both concave, a miter with a blend along a ruling, whose contact on
-/// the cylinder misses the other's on the third edge, or three blended
-/// edges at one vertex until the sphere
-/// corner lands — and
+/// the cylinder misses the other's on the third edge, or a corner of three
+/// blended edges whose faces are not all planes, whose blends are mixed or
+/// none of whose faces is square to the other two — and
 /// [`Reason::BlendTooLarge`] where a contact line or an end arc leaves
 /// its face through an edge that is not the corner's own or a corner
 /// edge is shorter than the trim, or a closed edge's torus would not be a
@@ -2276,7 +2810,11 @@ pub fn fillet(
 /// the shared face cross to where the other two meet the third edge,
 /// which is shortened to that point; those two meet it at one point
 /// exactly when the two edges make equal angles with it (a box corner,
-/// any right prism). A plane and a cylinder along a circle chamfer with
+/// any right prism). Three chamfers at a vertex of three planes, all convex
+/// or all concave, meet in the triangle of the points where each face's
+/// two contacts cross, each side a segment in one chamfer's plane, at any
+/// such corner; the triangle and every corner point are recorded as a
+/// fillet's sphere and points are. A plane and a cylinder along a circle chamfer with
 /// no ends to the 45° cone coaxial with the cylinder through the two
 /// circles at `distance` from the edge, its `Z` toward the wider, its `u`
 /// seam the ruling between the contacts' vertices, the cylinder's seam

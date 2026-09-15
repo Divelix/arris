@@ -90,10 +90,13 @@ pub enum Reason {
     /// error's entities are the edge and its two faces, or at an end the
     /// edge, the tangent corner edge and the vertex.
     TangentChain,
-    /// A corner the closed forms do not cover: a vertex of other than
-    /// three edges, or a vertex two or more blended edges meet at — until
-    /// the miter and the sphere corner land (ADR-0007). The error's
-    /// entities are the blended edge and the vertex.
+    /// A corner the closed forms do not cover (ADR-0007): a vertex of
+    /// other than three edges; a miter whose two blends' far contacts miss
+    /// each other on its third edge; or three blended edges at a vertex
+    /// whose faces are not all planes, whose blends are not all convex or
+    /// all concave, or — three fillets — none of whose faces is square to
+    /// the other two. The error's entities are the blended edges and the
+    /// vertex.
     VertexBlend,
 }
 

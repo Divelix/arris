@@ -8,14 +8,16 @@
 
 use arris_debug::fixtures::Class;
 use arris_debug::{corpus, dump_text, fixtures};
-use arris_ops::arris_check::arris_topo::arris_geom::{Curve, Profile, ProfileLoop, ProfileSegment};
+use arris_ops::arris_check::arris_topo::arris_geom::{
+    Curve, Profile, ProfileLoop, ProfileSegment, Surface,
+};
 use arris_ops::arris_check::arris_topo::arris_math::{Axis, Frame, Point2, Point3, Vec3};
 use arris_ops::arris_check::arris_topo::provenance::{Origin, Relation, Role, SweepPart, audit};
 use arris_ops::arris_check::arris_topo::{Body, Edge, EntityId, Model, Orientation, Shape};
 use arris_ops::arris_check::classify::{Classification, classify_point};
 use arris_ops::arris_check::{Level, check};
 use arris_ops::measure::mass_properties;
-use arris_ops::{OpError, Reason, extrude, fillet, primitive_box, revolve};
+use arris_ops::{OpError, Reason, cut, extrude, fillet, primitive_box, revolve};
 
 /// The edge of `body` whose curve's midpoint is `at`.
 fn edge_at(m: &Model, body: Body, at: Point3) -> Edge {
@@ -998,17 +1000,146 @@ fn a_miter_of_unequal_dihedrals_is_a_vertex_blend() {
     fillet(&mut m, prism, &[cap], 0.2).unwrap();
 }
 
-/// Three blended edges at a vertex are the sphere corner, which is not
-/// built yet: refused by name, the model untouched.
+/// Three fillets at a box corner meet in a sphere octant about the ball's
+/// one centre (ADR-0007), tangent to each blend cylinder along a great
+/// circle, its pole a degenerate edge where the cap's two contacts cross.
+/// Clean at `Full` with nothing unchecked, at the closed-form volume and
+/// area, the sphere face and its pole generated from each of the three
+/// edges, the record audited, and the same for the edges in either order.
 #[test]
-fn three_edges_at_a_vertex_are_a_vertex_blend_for_now() {
+fn three_edges_at_a_box_corner_meet_in_a_sphere() {
+    let corner = |m: &mut Model| {
+        let body = cube(m, 2.0);
+        let edges = [
+            edge_at(m, body, Point3::new(2.0, 2.0, 1.0)),
+            edge_at(m, body, Point3::new(1.0, 2.0, 2.0)),
+            edge_at(m, body, Point3::new(2.0, 1.0, 2.0)),
+        ];
+        (body, edges)
+    };
     let mut m = Model::default();
-    let body = cube(&mut m, 2.0);
-    let vertical = edge_at(&m, body, Point3::new(2.0, 2.0, 1.0));
-    let cap_x = edge_at(&m, body, Point3::new(1.0, 2.0, 2.0));
-    let cap_y = edge_at(&m, body, Point3::new(2.0, 1.0, 2.0));
-    let before = dump_text(&m, body).unwrap();
-    let err = fillet(&mut m, body, &[vertical, cap_x, cap_y], 0.2).unwrap_err();
+    let (body, edges) = corner(&mut m);
+    let (blended, provenance) = fillet(&mut m, body, &edges, 0.2).unwrap();
+
+    let report = check(&m, blended, Level::Full);
+    assert!(report.is_ok(), "{report}");
+    assert!(report.unchecked().is_empty(), "{report}");
+    let line = report.euler().unwrap();
+    assert_eq!(
+        (
+            line.vertices,
+            line.edges,
+            line.faces,
+            line.loops,
+            line.genus
+        ),
+        (13, 21, 10, 10, 0)
+    );
+    audit(&m, &[body], blended, &provenance).unwrap();
+
+    let r: f64 = 0.2;
+    let props = mass_properties(&m, blended).unwrap();
+    let volume = 8.0
+        - 3.0 * (1.0 - core::f64::consts::FRAC_PI_4) * r * r * (2.0 - r)
+        - (1.0 - core::f64::consts::PI / 6.0) * r.powi(3);
+    assert!(
+        (props.volume - volume).abs() <= 1e-9 * volume,
+        "{}",
+        props.volume
+    );
+    let area =
+        24.0 - 12.0 * r + 3.0 * core::f64::consts::PI * r - core::f64::consts::FRAC_PI_4 * r * r;
+    assert!((props.area - area).abs() <= 1e-9 * area, "{}", props.area);
+
+    for edge in edges {
+        let generated = provenance.generated_from(Shape::new(edge.id, Orientation::Forward));
+        assert_eq!(
+            generated.len(),
+            11,
+            "the blend and the sphere, two contacts, two arcs, the pole and four vertices"
+        );
+        let spheres = generated
+            .iter()
+            .filter(|s| match s.id {
+                EntityId::Face(f) => matches!(
+                    m.surface(m.face(f).unwrap().surface()).unwrap(),
+                    Surface::Sphere { .. }
+                ),
+                _ => false,
+            })
+            .count();
+        let poles = generated
+            .iter()
+            .filter(|s| match s.id {
+                EntityId::Edge(e) => m.edge(e).unwrap().curve().is_none(),
+                _ => false,
+            })
+            .count();
+        assert_eq!((spheres, poles), (1, 1));
+    }
+
+    let mut again = Model::default();
+    let (body, mut edges) = corner(&mut again);
+    edges.reverse();
+    let (twice, _) = fillet(&mut again, body, &edges, 0.2).unwrap();
+    assert_eq!(
+        dump_text(&again, twice).unwrap(),
+        dump_text(&m, blended).unwrap()
+    );
+}
+
+/// The cube with its corner at `(2, 2, 2)` cut off by the plane
+/// `x + y + z = 5.4`: at the triangle's corner `(2, 2, 1.4)` the vertical
+/// edge meets two edges of the cut, and no face there is square to the
+/// other two.
+fn cut_corner(m: &mut Model) -> Body {
+    let body = cube(m, 2.0);
+    let n = Vec3::new(1.0, 1.0, 1.0).normalize();
+    let p = |u, v| Point2::new(u, v);
+    let profile = Profile {
+        plane: Frame::new(Point3::new(1.8, 1.8, 1.8), n, Vec3::new(1.0, -1.0, 0.0)).unwrap(),
+        outer: ProfileLoop::Path {
+            start: p(-3.0, -3.0),
+            segments: vec![
+                ProfileSegment::LineTo(p(3.0, -3.0)),
+                ProfileSegment::LineTo(p(3.0, 3.0)),
+                ProfileSegment::LineTo(p(-3.0, 3.0)),
+                ProfileSegment::LineTo(p(-3.0, -3.0)),
+            ],
+        },
+        holes: Vec::new(),
+    };
+    let tool = extrude(m, &profile, n, 2.0).unwrap().0;
+    cut(m, body, tool).unwrap().0
+}
+
+/// Three fillets at a corner the sphere's exact sides do not cover are
+/// refused by name, the model untouched (C6's): the L's reflex top
+/// corner, its rise concave and its top edges convex, and the corner of a
+/// cut where no face is square to the other two, so no meridian frame
+/// makes every side a line in (u, v).
+#[test]
+fn a_corner_of_mixed_blends_or_no_square_face_is_a_vertex_blend() {
+    let mut m = Model::default();
+    let ell = ell(&mut m);
+    let reflex = [
+        edge_at(&m, ell, Point3::new(1.0, 1.0, 1.0)),
+        edge_at(&m, ell, Point3::new(1.5, 1.0, 2.0)),
+        edge_at(&m, ell, Point3::new(1.0, 1.5, 2.0)),
+    ];
+    let before = dump_text(&m, ell).unwrap();
+    let err = fillet(&mut m, ell, &reflex, 0.1).unwrap_err();
     assert_eq!(reason(&err), Some(Reason::VertexBlend), "{err}");
-    assert_eq!(dump_text(&m, body).unwrap(), before);
+    assert_eq!(dump_text(&m, ell).unwrap(), before);
+
+    let cornered = cut_corner(&mut m);
+    let oblique = [
+        edge_at(&m, cornered, Point3::new(2.0, 2.0, 0.7)),
+        edge_at(&m, cornered, Point3::new(1.7, 2.0, 1.7)),
+        edge_at(&m, cornered, Point3::new(2.0, 1.7, 1.7)),
+    ];
+    let before = dump_text(&m, cornered).unwrap();
+    let err = fillet(&mut m, cornered, &oblique, 0.1).unwrap_err();
+    assert_eq!(reason(&err), Some(Reason::VertexBlend), "{err}");
+    assert_eq!(dump_text(&m, cornered).unwrap(), before);
 }

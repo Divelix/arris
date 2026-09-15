@@ -295,9 +295,13 @@ with their `#[ignore]`d twins — green.*
   cylinder–cylinder line's equal-radius crossing arm. A second fillet on a
   filleted body passes (`second-fillet`), its composed record naming
   every face by the extrude's parts; the C6 cases Open CASCADE builds are
-  refusals by fixture — a tangent chain (`tangent-chain-cap-edge`), a
-  vertex of five edges (`five-edge-vertex`), three fillets at a corner
-  (`box-corner-three-fillets`). A plane against a cylinder along a ruling
+  refusals by fixture — a tangent chain (`tangent-chain-cap-edge`) and a
+  vertex of five edges (`five-edge-vertex`). Three blends at a box corner
+  meet in a sphere octant, its pole a degenerate edge, or in a triangle,
+  and pass every stage (`box-corner-three-fillets`,
+  `box-corner-three-chamfers`, `box-all-edges-fillet`), S5 deciding the
+  sphere against its cylinders and planes by ADR-0008's meridian arm. A
+  plane against a cylinder along a ruling
   fillets to a cylinder, convex or concave (`d-chord-edge`,
   `rib-root-edge`), S5 deciding the blend against the face it is tangent
   to by the parallel-axis arm. A plane against a cylinder along a circle
@@ -306,10 +310,11 @@ with their `#[ignore]`d twins — green.*
   (`hole-rim-fillet`, `hole-rim-chamfer`, `boss-base-fillet`), S5
   deciding each against its faces by ADR-0008's meridian arm. At random, a pick of a box's or an L's
   edges in a random pose fillets and chamfers clean at `Full`, audited, at
-  its closed-form volume miters included, the same moved before or after
-  and deterministic (`crates/arris-ops/tests/blend_prop.rs`), nothing
-  unchecked at rest; in a pose, S5 leaves unchecked only two blend
-  cylinders on skew axes within `2r` of each other, the quartic and C3's.
+  its closed-form volume miters and corners included, the same moved
+  before or after and deterministic (`crates/arris-ops/tests/blend_prop.rs`),
+  nothing unchecked at rest; in a pose, S5 leaves unchecked only two blend
+  cylinders on skew axes within `2r` of each other and a corner's sphere
+  against a blend cylinder whose axis misses its centre, both C3's.
 - Cone, sphere and torus in the intersector in the positions a blend and
   M5's revolves put them, every one a conic: a plane against a quadric
   with the plane perpendicular to the axis, a cylinder against a quadric

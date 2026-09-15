@@ -522,11 +522,26 @@ fn blend_five_edge_vertex() {
     run("blend/five-edge-vertex");
 }
 
-/// Three fillets at one box corner: the sphere corner, `Reason::
-/// VertexBlend` until plans/fillet-and-chamfer step 9 builds it.
+/// Three fillets at one box corner: the sphere corner, an octant about
+/// the ball's centre tangent to the three cylinders, its pole a degenerate
+/// edge (ADR-0007). S5 decides the sphere against each cylinder and each
+/// plane by the meridian arm, so nothing is unchecked.
 #[test]
 fn blend_box_corner_three_fillets() {
     run("blend/box-corner-three-fillets");
+}
+
+/// Every edge of the cube filleted in one call: twelve cylinders and eight
+/// sphere corners, no face keeping a vertex of the box.
+#[test]
+fn blend_box_all_edges_fillet() {
+    run("blend/box-all-edges-fillet");
+}
+
+/// Three chamfers at one box corner, meeting in a triangle.
+#[test]
+fn blend_box_corner_three_chamfers() {
+    run("blend/box-corner-three-chamfers");
 }
 
 /// The miter: the vertical and the cap edge at one corner blended in one

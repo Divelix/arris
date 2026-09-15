@@ -458,7 +458,22 @@ corner, any right-angled prism), which the operation requires; a corner
 of unequal dihedrals is two arcs and C6's. Two chamfers at such a corner
 meet in the line between the same two points; their far contacts meet
 the third edge at one point exactly when the two edges make equal angles
-with it, which a chamfer corner requires instead. The edges are blended in the
+with it, which a chamfer corner requires instead. Three blended edges at
+a vertex of three planes, every blend convex or every one concave, meet
+in a corner, and no corner edge is cut: each face's two contacts cross at
+one point, the corner's three points, and each blend ends on the
+corner face between the points on its two faces. Three fillets' axes meet
+at the ball's one centre, and the corner is the sphere of the radius
+about it, tangent to each cylinder along the great circle through the
+centre square to its axis — no equal-dihedral condition, as a miter
+needs. The sphere's frame has `Z` toward the point of a face square to
+the other two, so the side between those two is the equator and the other
+two sides meridians, every pcurve on the sphere a line; the meridians
+meet at the pole, that point, crossed by a degenerate edge as a
+revolve's sphere closes at its axis. A fillet corner with no face square
+to the other two would put a side on a tilted great circle with a fitted
+pcurve and is C6's. Three chamfers meet in the triangle of the three
+points, each side a chord in one chamfer's plane, at any such corner. The edges are blended in the
 body's iteration order, whatever order they are listed in, so the result
 and its ids are the same for any order of one set; disjoint blends share
 nothing but the faces across their ends, where a corner edge between two
@@ -476,9 +491,10 @@ neighbours along, so a second blend that reaches a first one's end — is
 `Reason::TangentChain`; a vertex of
 other than three edges, a miter of two fillets with unequal dihedrals,
 of two chamfers whose edges make unequal angles with its third edge, or
-of blends not both convex or both concave, or three blended edges at one
-vertex until the sphere corner lands, is `Reason::VertexBlend` naming
-the vertex; a surface pair
+of blends not both convex or both concave, or a corner of three blended
+edges whose faces are not all planes, whose blends are mixed, or — three
+fillets — none of whose faces is square to the other two, is
+`Reason::VertexBlend` naming the vertex; a surface pair
 outside the table, or a face across an end that is not a plane, is
 `OpError::Unsupported` naming the kinds and the faces; an empty list,
 an edge listed twice and an edge of another body are `Reason::NoEdges`,

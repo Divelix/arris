@@ -1,9 +1,9 @@
 //! `ops::fillet` and `ops::chamfer` at random (ADR-0007): a box and an
 //! extruded L of random proportions, a random subset of their plane–plane
-//! edges — no vertex holding three of them, no edge meeting a concave one
-//! at a vertex — and a size below the bound the faces allow. Each result is
-//! clean at `Full`, its record audits, its volume is the input's less the
-//! closed form per edge corrected by each miter's, blending then moving
+//! edges — no edge meeting a concave one at a vertex — and a size below
+//! the bound the faces allow. Each result is clean at `Full`, its record
+//! audits, its volume is the input's less the closed form per edge
+//! corrected by each miter's and each corner's, blending then moving
 //! it equals moving then blending by volume and counts, and two runs dump
 //! identically. A failure prints the case and the seed, and becomes a
 //! fixture under `tests/fixtures/regression/` (`tests/fixtures/README.md`
@@ -22,7 +22,7 @@ use arris_ops::arris_check::arris_topo::{
 use arris_ops::arris_check::{Level, Report, Unchecked, check};
 use arris_ops::measure::mass_properties;
 use arris_ops::{OpError, chamfer, extrude, fillet, primitive_box, transform};
-use core::f64::consts::{FRAC_PI_2, FRAC_PI_4};
+use core::f64::consts::{FRAC_PI_2, FRAC_PI_4, PI};
 use proptest::prelude::*;
 
 /// Fillet or chamfer, which the closed forms and the checker's
@@ -154,10 +154,10 @@ impl Prism {
     }
 
     /// The edges of `mask` a blend of one call takes, in edge order: an
-    /// edge that meets a concave edge at a vertex, or whose vertex already
-    /// holds two picked edges, or that is concave and meets a picked one,
-    /// is left out. Never empty: the first edge that qualifies alone
-    /// stands in for an empty pick.
+    /// edge that meets a concave edge at a vertex, or that is concave and
+    /// meets a picked one, is left out, so a vertex holding three picked
+    /// edges is a convex right-angled corner. Never empty: the first edge
+    /// that qualifies alone stands in for an empty pick.
     fn pick(&self, mask: &[bool]) -> Vec<PrismEdge> {
         let edges = self.edges();
         let meets = |a: PrismEdge, b: PrismEdge| {
@@ -171,14 +171,10 @@ impl Prism {
             if !on || !clear(e) {
                 continue;
             }
-            let crowded = self
-                .ends(e)
-                .iter()
-                .any(|v| picked.iter().filter(|p| self.ends(**p).contains(v)).count() >= 2);
             let beside_concave = picked
                 .iter()
                 .any(|&p| meets(e, p) && (self.concave(p) || self.concave(e)));
-            if !crowded && !beside_concave {
+            if !beside_concave {
                 picked.push(e);
             }
         }
@@ -188,13 +184,24 @@ impl Prism {
         picked
     }
 
-    /// The vertices where two picked edges meet: the miters.
-    fn miters(&self, picked: &[PrismEdge]) -> usize {
+    /// The vertices where `blends` picked edges meet: two at a miter,
+    /// three at a corner.
+    fn meeting(&self, picked: &[PrismEdge], blends: usize) -> usize {
         let n = self.polygon().len();
         (0..n)
             .flat_map(|k| [(k, false), (k, true)])
-            .filter(|v| picked.iter().filter(|e| self.ends(**e).contains(v)).count() == 2)
+            .filter(|v| picked.iter().filter(|e| self.ends(**e).contains(v)).count() == blends)
             .count()
+    }
+
+    /// The vertices where two picked edges meet: the miters.
+    fn miters(&self, picked: &[PrismEdge]) -> usize {
+        self.meeting(picked, 2)
+    }
+
+    /// The vertices where three picked edges meet: the corners.
+    fn corners(&self, picked: &[PrismEdge]) -> usize {
+        self.meeting(picked, 3)
     }
 
     fn build(&self, m: &mut Model) -> Result<Body, OpError> {
@@ -234,17 +241,21 @@ struct Case {
 impl Case {
     /// The volume after the blend: each convex edge loses its section's
     /// area over its length — `(1 − π/4) r²` round, `d²/2` flat — each
-    /// concave one gains it, and each miter of two convex right-angled
-    /// edges gives back the corner the two prisms both counted, `(5/3 −
-    /// π/2) r³` round and `d³/3` flat.
+    /// concave one gains it, each miter of two convex right-angled edges
+    /// gives back the corner the two prisms both counted, `(5/3 − π/2) r³`
+    /// round and `d³/3` flat, and each corner of three gives back what the
+    /// three prisms counted beyond the sphere octant's or the triangle's
+    /// cut, `3(1 − π/4) r³ − (1 − π/6) r³ = (2 − 7π/12) r³` round and
+    /// `3d³/2 − 5d³/6 = 2d³/3` flat.
     fn volume(&self, kind: Blend) -> f64 {
         let s = self.size;
-        let (section, corner) = match kind {
+        let (section, miter, corner) = match kind {
             Blend::Fillet => (
                 (1.0 - FRAC_PI_4) * s * s,
                 (5.0 / 3.0 - FRAC_PI_2) * s * s * s,
+                (2.0 - 7.0 * PI / 12.0) * s * s * s,
             ),
-            Blend::Chamfer => (s * s / 2.0, s * s * s / 3.0),
+            Blend::Chamfer => (s * s / 2.0, s * s * s / 3.0, 2.0 * s * s * s / 3.0),
         };
         let edges: f64 = self
             .edges
@@ -254,7 +265,10 @@ impl Case {
                 sign * section * self.prism.length(e)
             })
             .sum();
-        self.prism.volume() + edges + corner * self.prism.miters(&self.edges) as f64
+        self.prism.volume()
+            + edges
+            + miter * self.prism.miters(&self.edges) as f64
+            + corner * self.prism.corners(&self.edges) as f64
     }
 }
 
@@ -341,10 +355,14 @@ fn blend_faces(p: &Provenance, edges: &[Edge]) -> Vec<FaceId> {
 
 /// `report` has no violation, and every unchecked row is S5 between two
 /// blend cylinders of `m` whose axes are skew and closer than the sum of
-/// their radii — the one quartic pose two fillets make — and never one of
-/// a chamfer's, of parallel blends or of a miter's crossing pair; at the
-/// identity pose, where every face box of a blend away from a corner is
-/// clear of every other's, there is none.
+/// their radii — the one quartic pose two fillets make — or between a
+/// corner's sphere and a blend cylinder whose axis misses its centre, a
+/// pair S5 has no closed form for whether the two meet or lie apart, which
+/// world-aligned boxes grown by the pose bring together; never one of a
+/// chamfer's, of parallel blends, of a miter's crossing pair or of a
+/// sphere and its own cylinders; at the identity
+/// pose, where every face box of a blend away from a corner is clear of
+/// every other's, there is none.
 fn assert_checked(
     m: &Model,
     report: &Report,
@@ -383,8 +401,37 @@ fn assert_checked(
             }
             _ => false,
         };
+        let sphere = |f: FaceId| match m.face(f).ok().and_then(|x| m.surface(x.surface()).ok()) {
+            Some(Surface::Sphere { frame, .. }) => Some(frame.origin()),
+            _ => None,
+        };
+        let off_axis_sphere = match row {
+            Unchecked::FacePair {
+                face_a,
+                face_b,
+                kinds:
+                    (SurfaceKind::Sphere, SurfaceKind::Cylinder)
+                    | (SurfaceKind::Cylinder, SurfaceKind::Sphere),
+                ..
+            } if blends.contains(face_a) && blends.contains(face_b) => {
+                let (s, c) = if sphere(*face_a).is_some() {
+                    (*face_a, *face_b)
+                } else {
+                    (*face_b, *face_a)
+                };
+                match (sphere(s), cylinder(c)) {
+                    (Some(centre), Some((axis, _))) => {
+                        let w = centre - axis.origin();
+                        let z = axis.z().into_inner();
+                        (w - w.dot(&z) * z).norm() > tol.linear
+                    }
+                    _ => false,
+                }
+            }
+            _ => false,
+        };
         prop_assert!(
-            kind == Blend::Fillet && skew_blends,
+            kind == Blend::Fillet && (skew_blends || off_axis_sphere),
             "{} (blend faces {:?})\n{}",
             row,
             blends,

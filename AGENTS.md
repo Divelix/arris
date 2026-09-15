@@ -32,11 +32,12 @@ for its fix lives under `tests/fixtures/regression/`. ADR-0001 to 0005.
 **C2 under way: the application gate.** Multi-shell results are lumps of
 one `Solid` (ADR-0006): cavities, split cuts, disjoint fuses, full revolves
 with holes. A revolve profile may touch its axis. Fillet and chamfer on
-plane–plane and plane–cylinder-ruling edges, miters included (ADR-0007).
+plane–plane and plane–cylinder edges, miters and sphere corners included
+(ADR-0007).
 Cylinder–cylinder booleans: parallel, tangent and equal-radius crossing
 axes. Cone, sphere and torus faces check at `Full` wherever they share an
 axis (ADR-0008); the frustum, barrel and ring are corpus fixtures.
-**Next:** `/work fillet-and-chamfer` step 8.
+**Next:** `/retire-plan fillet-and-chamfer`, after the acceptance run.
 
 ## Rules that are not derivable from the code
 

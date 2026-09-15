@@ -1,0 +1,24 @@
+{
+  "description": "the 2-cube's three edges at the corner (2, 2, 2) chamfered in one call at d 0.2: three chamfer planes meeting in the triangle x + y + z = 6 - 2d, its corners where the two contacts on each of the corner's faces cross, (2 - d, 2 - d, 2) and its turns; no corner edge is cut, and each chamfer ends on one side of the triangle; each edge loses d^2 / 2 along its length, and the corner cube gives back the 2 d^3 / 3 the three prisms overcount",
+  "params": {"d": 0.2},
+  "steps": [
+    {"name": "cube", "op": "box", "min": [0, 0, 0], "max": [2, 2, 2]},
+    {"name": "result", "op": "chamfer", "of": "cube", "edges": [[2, 2, 1], [1, 2, 2], [2, 1, 2]], "distance": "d"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [1, 1, 1], "expect": "in"},
+    {"label": "corner_gone", "point": [1.95, 1.95, 1.95], "expect": "out"},
+    {"label": "cut_by_vertical", "point": [1.99, 1.95, 1.5], "expect": "out"},
+    {"label": "on_triangle", "point": ["2 - 2 * d / 3", "2 - 2 * d / 3", "2 - 2 * d / 3"], "expect": "on"},
+    {"label": "on_vertical_chamfer", "point": ["2 - d / 2", "2 - d / 2", 1], "expect": "on"},
+    {"label": "on_cap_chamfer", "point": [1, "2 - d / 2", "2 - d / 2"], "expect": "on"},
+    {"label": "far_vertex", "point": [0, 0, 0], "expect": "on"}
+  ],
+  "analytic": {
+    "volume": "8 - 3 * d^2 + 2 * d^3 / 3",
+    "area": "24 - 12 * d + 6 * sqrt(2) * d + 3 * d^2 / 2 - 3 * sqrt(2) * d^2 + sqrt(3) / 2 * d^2",
+    "counts": {"vertices": 13, "edges": 21, "faces": 10, "loops": 10, "shells": 1},
+    "genus": 0
+  }
+}

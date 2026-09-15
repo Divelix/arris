@@ -1,0 +1,29 @@
+{
+  "description": "the consumer's 2-cube with all twelve edges filleted in one call at r 0.2: twelve blend cylinders, each 2 - 2r long, and at each of the eight corners a sphere octant through the ball's centre, tangent to the corner's three cylinders along great circles, its pole where two contacts cross on one face; each edge loses (1 - pi/4) r^2 along 2 - 2r and each corner cube r^3 (1 - pi/6)",
+  "params": {"r": 0.2},
+  "steps": [
+    {"name": "cube", "op": "box", "min": [0, 0, 0], "max": [2, 2, 2]},
+    {"name": "result", "op": "fillet", "of": "cube", "edges": [
+      [1, 0, 0], [1, 2, 0], [1, 0, 2], [1, 2, 2],
+      [0, 1, 0], [2, 1, 0], [0, 1, 2], [2, 1, 2],
+      [0, 0, 1], [2, 0, 1], [0, 2, 1], [2, 2, 1]
+    ], "radius": "r"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [1, 1, 1], "expect": "in"},
+    {"label": "corner_gone", "point": [1.95, 1.95, 1.95], "expect": "out"},
+    {"label": "origin_corner_gone", "point": [0.05, 0.05, 0.05], "expect": "out"},
+    {"label": "edge_gone", "point": [1.99, 1.99, 1], "expect": "out"},
+    {"label": "on_sphere", "point": ["2 - r + r / sqrt(3)", "2 - r + r / sqrt(3)", "2 - r + r / sqrt(3)"], "expect": "on"},
+    {"label": "on_origin_sphere", "point": ["r - r / sqrt(3)", "r - r / sqrt(3)", "r - r / sqrt(3)"], "expect": "on"},
+    {"label": "on_vertical_blend", "point": ["2 - r + r / sqrt(2)", "2 - r + r / sqrt(2)", 1], "expect": "on"},
+    {"label": "on_face", "point": [2, 1, 1], "expect": "on"}
+  ],
+  "analytic": {
+    "volume": "8 - 12 * (1 - pi / 4) * r^2 * (2 - 2 * r) - 8 * (1 - pi / 6) * r^3",
+    "area": "24 - 48 * r + 24 * r^2 + 12 * pi * r - 8 * pi * r^2",
+    "counts": {"vertices": 24, "edges": 48, "faces": 26, "loops": 26, "shells": 1},
+    "genus": 0
+  }
+}

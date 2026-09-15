@@ -1184,8 +1184,13 @@ chamfers at a corner meet in a line recorded as a miter's ellipse is. A
 closed edge's blend has no ends: its torus or cone face, its two contact
 circles, its seam and the seam's two vertices are `Generated` from the
 edge; the edge's two faces and the cylinder's seam, shortened to the
-contact, are `Modified`; the edge and its one vertex are `Deleted`. A sphere corner
-face is `Generated` from its three edges. `audit` holds on every
+contact, are `Modified`; the edge and its one vertex are `Deleted`. At a
+corner of three blends each side of the corner face — a great circle of
+the sphere, a side of the triangle — is its blend's end arc, `Generated`
+from that blend's edge, and each corner point from the two edges whose
+contacts cross there; the sphere or the triangle face, and a sphere's
+pole, a degenerate edge, are `Generated` from all three edges; no corner
+edge is cut and the vertex is `Deleted`. `audit` holds on every
 result. A second blend on a blended body is rooted at an edge the first
 kept or modified, so the records composed with `then` name each blend
 face from the role its edge came from (`blend/second-fillet`: both blend

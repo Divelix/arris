@@ -11,7 +11,7 @@ use arris_ops::arris_check::arris_topo::provenance::audit;
 use arris_ops::arris_check::arris_topo::{Body, Edge, EntityId, Model, Orientation, Shape};
 use arris_ops::arris_check::{Level, check};
 use arris_ops::measure::mass_properties;
-use arris_ops::{OpError, Reason, chamfer, extrude, primitive_box, revolve};
+use arris_ops::{OpError, Reason, chamfer, cut, extrude, primitive_box, revolve};
 
 /// The edge of `body` whose curve's midpoint is `at`.
 fn edge_at(m: &Model, body: Body, at: Point3) -> Edge {
@@ -376,4 +376,109 @@ fn a_corner_of_unequal_angles_is_a_vertex_blend() {
     assert_eq!(dump_text(&m, body).unwrap(), before);
     chamfer(&mut m, body, &[vertical], D).unwrap();
     chamfer(&mut m, body, &[cap], D).unwrap();
+}
+
+/// Three chamfers at a box corner meet in the triangle of the points
+/// where each corner face's two contacts cross (ADR-0007): clean at `Full`
+/// with nothing unchecked, at `8 − 3d² + 2d³/3` and its closed-form area,
+/// the triangle generated from each of the three edges, the record
+/// audited.
+#[test]
+fn three_chamfers_at_a_box_corner_meet_in_a_triangle() {
+    let mut m = Model::default();
+    let body = cube(&mut m);
+    let edges = [
+        edge_at(&m, body, Point3::new(2.0, 2.0, 1.0)),
+        edge_at(&m, body, Point3::new(1.0, 2.0, 2.0)),
+        edge_at(&m, body, Point3::new(2.0, 1.0, 2.0)),
+    ];
+    let (chamfered, provenance) = chamfer(&mut m, body, &edges, D).unwrap();
+
+    let report = check(&m, chamfered, Level::Full);
+    assert!(report.is_ok(), "{report}");
+    assert!(report.unchecked().is_empty(), "{report}");
+    let line = report.euler().unwrap();
+    assert_eq!(
+        (
+            line.vertices,
+            line.edges,
+            line.faces,
+            line.loops,
+            line.genus
+        ),
+        (13, 21, 10, 10, 0)
+    );
+    audit(&m, &[body], chamfered, &provenance).unwrap();
+
+    let props = mass_properties(&m, chamfered).unwrap();
+    let volume = 8.0 - 3.0 * D * D + 2.0 * D.powi(3) / 3.0;
+    assert!(
+        (props.volume - volume).abs() <= 1e-9 * volume,
+        "{}",
+        props.volume
+    );
+    let (r2, r3) = (core::f64::consts::SQRT_2, 3.0_f64.sqrt());
+    let area = 24.0 - 12.0 * D + 6.0 * r2 * D + 1.5 * D * D - 3.0 * r2 * D * D + r3 / 2.0 * D * D;
+    assert!((props.area - area).abs() <= 1e-9 * area, "{}", props.area);
+
+    for edge in edges {
+        let generated = provenance.generated_from(Shape::new(edge.id, Orientation::Forward));
+        let faces = generated
+            .iter()
+            .filter(|s| matches!(s.id, EntityId::Face(_)))
+            .count();
+        assert_eq!(
+            (generated.len(), faces),
+            (10, 2),
+            "the chamfer and the triangle, two contacts, two segments and four vertices"
+        );
+    }
+}
+
+/// Three chamfers meet in a triangle at any convex corner of three planes:
+/// at the corner `(2, 2, 1.4)` of the cube cut by `x + y + z = 5.4`, where
+/// no face is square to the other two and three fillets are refused, they
+/// build clean at `Full` with nothing unchecked, audited.
+#[test]
+fn three_chamfers_at_an_oblique_corner_meet_in_a_triangle() {
+    let mut m = Model::default();
+    let body = cube(&mut m);
+    let n = Vec3::new(1.0, 1.0, 1.0).normalize();
+    let p = |u, v| Point2::new(u, v);
+    let profile = Profile {
+        plane: Frame::new(Point3::new(1.8, 1.8, 1.8), n, Vec3::new(1.0, -1.0, 0.0)).unwrap(),
+        outer: ProfileLoop::Path {
+            start: p(-3.0, -3.0),
+            segments: vec![
+                ProfileSegment::LineTo(p(3.0, -3.0)),
+                ProfileSegment::LineTo(p(3.0, 3.0)),
+                ProfileSegment::LineTo(p(-3.0, 3.0)),
+                ProfileSegment::LineTo(p(-3.0, -3.0)),
+            ],
+        },
+        holes: Vec::new(),
+    };
+    let tool = extrude(&mut m, &profile, n, 2.0).unwrap().0;
+    let cornered = cut(&mut m, body, tool).unwrap().0;
+    let edges = [
+        edge_at(&m, cornered, Point3::new(2.0, 2.0, 0.7)),
+        edge_at(&m, cornered, Point3::new(1.7, 2.0, 1.7)),
+        edge_at(&m, cornered, Point3::new(2.0, 1.7, 1.7)),
+    ];
+    let (chamfered, provenance) = chamfer(&mut m, cornered, &edges, 0.1).unwrap();
+    let report = check(&m, chamfered, Level::Full);
+    assert!(report.is_ok(), "{report}");
+    assert!(report.unchecked().is_empty(), "{report}");
+    let line = report.euler().unwrap();
+    assert_eq!(
+        (
+            line.vertices,
+            line.edges,
+            line.faces,
+            line.loops,
+            line.genus
+        ),
+        (15, 24, 11, 11, 0)
+    );
+    audit(&m, &[cornered], chamfered, &provenance).unwrap();
 }

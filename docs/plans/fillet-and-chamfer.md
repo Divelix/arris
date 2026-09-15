@@ -417,8 +417,33 @@ bound has to be established here.
     is a tube circle at `u = 0`.
   - Fixtures `blend/hole-rim-fillet`, `blend/hole-rim-chamfer`,
     `blend/boss-base-fillet`, the closed forms by Pappus.
-- [ ] Step 9 **[2]** — **The sphere corner** (S5 by ADR-0008's meridian
-  arm).
+- [x] Step 9 **[2]** — **The sphere corner** (S5 by ADR-0008's meridian
+  arm). Landed 2026-09-15. All three fixtures pass every stage against
+  Open CASCADE, counts included (13/21/10 at one corner, fillet or
+  chamfer; 24/48/26 for every edge), and match their closed forms:
+  7.94983479, 7.88533333, 7.80469611. Nothing is unchecked. Four
+  findings. First, a corner of three blends closes at any vertex of
+  three planes whose blends are all convex or all concave. Each face's
+  two contacts cross at the ball's foot there, and the three axes meet at
+  its centre. No equal-dihedral condition applies, as it does at a miter.
+  No corner edge is cut and no face takes an arc: the corner's three
+  sides are the blends' ends. Mixed blends are `VertexBlend`. Second, the
+  bullet's frame, with its equator and two meridians, exists only when one
+  face is square to the other two, as at every right prism's corner. `Z`
+  points toward that face's point, which is the pole: a real vertex where
+  its two contacts cross, and on a box the equator blend's axis. Without
+  such a face one side is a tilted great circle with a fitted pcurve, so
+  that fillet corner is `VertexBlend` (a cube cut obliquely, in an
+  `arris-ops` test; backlog line). Three chamfers build there, since their
+  triangle needs no frame. Third, S5 has no form for a sphere against a
+  cylinder off its centre. `blend_prop.rs` now fills corners (volume
+  `(2 − 7π/12) r³` and `2d³/3` per corner). In a pose, it leaves such rows
+  between a corner's sphere and another blend's cylinder, often farther
+  apart than the two radii, which world-aligned boxes bring together; at
+  rest there are none (backlog line). Fourth, `generated_from` must be
+  asked with the edge's `Forward` shape: `m.edges` hands some edges back
+  `Reversed`. The step-5 refusal `box-corner-three-fillets` is a passing
+  fixture with its expected values unchanged.
   - Three blended edges at a vertex of three planes: a sphere octant
     through the ball's centre, tangent to each cylinder along a great
     circle; its frame's `Z` along one cylinder's axis so the three
