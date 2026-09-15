@@ -297,7 +297,10 @@ with their `#[ignore]`d twins — green.*
   every face by the extrude's parts; the C6 cases Open CASCADE builds are
   refusals by fixture — a tangent chain (`tangent-chain-cap-edge`), a
   vertex of five edges (`five-edge-vertex`), three fillets at a corner
-  (`box-corner-three-fillets`). At random, a pick of a box's or an L's
+  (`box-corner-three-fillets`). A plane against a cylinder along a ruling
+  fillets to a cylinder, convex or concave (`d-chord-edge`,
+  `rib-root-edge`), S5 deciding the blend against the face it is tangent
+  to by the parallel-axis arm. At random, a pick of a box's or an L's
   edges in a random pose fillets and chamfers clean at `Full`, audited, at
   its closed-form volume miters included, the same moved before or after
   and deterministic (`crates/arris-ops/tests/blend_prop.rs`), nothing

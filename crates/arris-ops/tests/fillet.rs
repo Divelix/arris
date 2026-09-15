@@ -399,6 +399,158 @@ fn a_pair_outside_the_table_is_unsupported() {
     assert!(matches!(err, OpError::Unsupported { .. }), "{err}");
 }
 
+/// A loop of lines and three-point arcs from `start` in the world's XY
+/// plane, extruded 2 along +Z.
+fn extruded(m: &mut Model, start: (f64, f64), segments: Vec<ProfileSegment>) -> Body {
+    let profile = Profile {
+        plane: Frame::world(),
+        outer: ProfileLoop::Path {
+            start: Point2::new(start.0, start.1),
+            segments,
+        },
+        holes: Vec::new(),
+    };
+    extrude(m, &profile, Vec3::z(), 2.0).unwrap().0
+}
+
+fn line_to(u: f64, v: f64) -> ProfileSegment {
+    ProfileSegment::LineTo(Point2::new(u, v))
+}
+
+fn arc_to(u: f64, v: f64, via: (f64, f64)) -> ProfileSegment {
+    ProfileSegment::ArcTo {
+        to: Point2::new(u, v),
+        via: Point2::new(via.0, via.1),
+    }
+}
+
+/// The signed area Green's theorem gives the segment from `a` to `b`.
+fn segment_area(a: Point2, b: Point2) -> f64 {
+    (a.x * b.y - a.y * b.x) / 2.0
+}
+
+/// The signed area Green's theorem gives the short arc about `c` from `a`
+/// to `b`.
+fn arc_area(c: Point2, a: Point2, b: Point2) -> f64 {
+    let (u, v) = (a - c, b - c);
+    let sweep = (u.x * v.y - u.y * v.x).atan2(u.dot(&v));
+    let w = b - a;
+    (u.norm_squared() * sweep + c.x * w.y - c.y * w.x) / 2.0
+}
+
+/// A plane against a cylinder along a ruling (ADR-0007): the chord edge
+/// of a disc's segment at three chord heights — a right dihedral, an
+/// obtuse and an acute one — the rim of a half-round notch in a plate,
+/// convex on a concave cylinder, and the root of a half-round rib, concave
+/// on a convex one. Each is clean at `Full` with nothing unchecked and
+/// audited, and moves the volume by its cross-section's corner times the
+/// height: the region between the edge, the two contacts and the ball's
+/// arc by Green's theorem, the ball's centre found in the section's own
+/// terms — on the chord's offset line at `R ∓ r` from the axis.
+#[test]
+fn a_plane_against_a_cylinder_along_a_ruling_blends_to_a_cylinder() {
+    let r = 0.3;
+    let p = Point2::new;
+    // A name, the loop, the cylinder's radius, the edge and the ball's
+    // centre in the section, and whether the blend removes the corner.
+    let mut cases = Vec::new();
+    let big: f64 = 1.5;
+    for k in [0.0_f64, -0.6, 0.6] {
+        let xe = (big * big - k * k).sqrt();
+        cases.push((
+            format!("segment at y = {k}"),
+            (-xe, k),
+            vec![line_to(xe, k), arc_to(-xe, k, (0.0, big))],
+            big,
+            p(xe, k),
+            p(((big - r).powi(2) - (k + r).powi(2)).sqrt(), k + r),
+            true,
+        ));
+    }
+    let notch = 1.0;
+    cases.push((
+        "notch rim".into(),
+        (-2.0, -2.0),
+        vec![
+            line_to(2.0, -2.0),
+            line_to(2.0, 0.0),
+            line_to(notch, 0.0),
+            arc_to(-notch, 0.0, (0.0, -notch)),
+            line_to(-2.0, 0.0),
+            line_to(-2.0, -2.0),
+        ],
+        notch,
+        p(notch, 0.0),
+        p(((notch + r).powi(2) - r * r).sqrt(), -r),
+        true,
+    ));
+    let rib = 0.7;
+    cases.push((
+        "rib root".into(),
+        (-2.0, -1.0),
+        vec![
+            line_to(2.0, -1.0),
+            line_to(2.0, 0.0),
+            line_to(rib, 0.0),
+            arc_to(-rib, 0.0, (0.0, rib)),
+            line_to(-2.0, 0.0),
+            line_to(-2.0, -1.0),
+        ],
+        rib,
+        p(rib, 0.0),
+        p(((rib + r).powi(2) - r * r).sqrt(), r),
+        false,
+    ));
+    for (name, start, segments, big, e, centre, removes) in cases {
+        let mut m = Model::default();
+        let body = extruded(&mut m, start, segments);
+        let before = mass_properties(&m, body).unwrap().volume;
+        let edge = edge_at(&m, body, Point3::new(e.x, e.y, 1.0));
+        let (blended, provenance) =
+            fillet(&mut m, body, &[edge], r).unwrap_or_else(|err| panic!("{name}: {err}"));
+        let report = check(&m, blended, Level::Full);
+        assert!(report.is_ok(), "{name}: {report}");
+        assert!(report.unchecked().is_empty(), "{name}: {report}");
+        audit(&m, &[body], blended, &provenance).unwrap();
+        let on_plane = p(centre.x, e.y);
+        let on_cylinder = Point2::from(centre.coords * (big / centre.coords.norm()));
+        let corner = (segment_area(e, on_plane)
+            + arc_area(centre, on_plane, on_cylinder)
+            + arc_area(Point2::origin(), on_cylinder, e))
+        .abs();
+        let volume = if removes {
+            before - corner * 2.0
+        } else {
+            before + corner * 2.0
+        };
+        let got = mass_properties(&m, blended).unwrap().volume;
+        assert!(
+            (got - volume).abs() <= 1e-9 * volume,
+            "{name}: {got} against {volume}"
+        );
+    }
+}
+
+/// The ruling arm's refusals: a ruling blend meeting a plane–plane blend
+/// at a corner, whose contact on the cylinder misses the other's on the
+/// third edge — two arcs, a vertex blend — and a ball larger than the
+/// half disc it rolls in.
+#[test]
+fn a_ruling_blend_refuses_a_miter_and_a_ball_too_large() {
+    let mut m = Model::default();
+    let d = extruded(
+        &mut m,
+        (-1.5, 0.0),
+        vec![line_to(1.5, 0.0), arc_to(-1.5, 0.0, (0.0, 1.5))],
+    );
+    let ruling = edge_at(&m, d, Point3::new(1.5, 0.0, 1.0));
+    let cap = edge_at(&m, d, Point3::new(0.0, 0.0, 2.0));
+    let err = fillet(&mut m, d, &[ruling, cap], 0.2).unwrap_err();
+    assert_eq!(reason(&err), Some(Reason::VertexBlend), "{err}");
+    let err = fillet(&mut m, d, &[ruling], 1.6).unwrap_err();
+    assert_eq!(reason(&err), Some(Reason::BlendTooLarge), "{err}");
+}
+
 /// The miter (ADR-0007): the vertical and the cap edge at one corner of
 /// the 2-cube blended in one call, the fixture `blend/fillet-miter`
 /// held to the oracle's numbers here as well: `Full` is clean with nothing

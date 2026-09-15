@@ -1,0 +1,27 @@
+{
+  "description": "an extruded half disc, radius 1.5 about the origin, chord on y = 0, height 2, one chord edge filleted at r 0.5: a plane against a cylinder along a ruling at a right dihedral, convex, the blend a cylinder whose axis is at 1.5 - r from the D's and r from the chord, tangent to the arc face along a ruling. R = 3r puts the ball's centre at 30 degrees about the D's axis, so the closed forms need no inverse trigonometry; each end is a circle arc on a cap",
+  "params": {"r": 0.5},
+  "steps": [
+    {"name": "sketch", "op": "profile", "plane": {"origin": [0, 0, 0], "x": [1, 0, 0], "y": [0, 1, 0]},
+     "outer": {"start": [-1.5, 0], "segments": [{"line_to": [1.5, 0]}, {"arc_to": [-1.5, 0], "via": [0, 1.5]}]}},
+    {"name": "d", "op": "extrude", "profile": "sketch", "direction": [0, 0, 1], "length": 2},
+    {"name": "result", "op": "fillet", "of": "d", "edges": [[1.5, 0, 1]], "radius": "r"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [0, 0.5, 1], "expect": "in"},
+    {"label": "corner_gone", "point": ["sqrt(3) * r + (r + 0.05) * cos(radians(30))", "r - (r + 0.05) * sin(radians(30))", 1], "expect": "out"},
+    {"label": "on_blend", "point": ["sqrt(3) * r + r * cos(radians(30))", "r - r * sin(radians(30))", 1], "expect": "on"},
+    {"label": "on_chord_contact", "point": ["sqrt(3) * r", 0, 1], "expect": "on"},
+    {"label": "on_arc_contact", "point": ["1.5 * cos(radians(30))", "1.5 * sin(radians(30))", 1], "expect": "on"},
+    {"label": "on_end_arc", "point": ["sqrt(3) * r + r * cos(radians(30))", "r - r * sin(radians(30))", 0], "expect": "on"},
+    {"label": "on_round", "point": [0, 1.5, 1], "expect": "on"},
+    {"label": "other_chord_edge", "point": [-1.5, 0, 1], "expect": "on"}
+  ],
+  "analytic": {
+    "volume": "(pi * 1.5^2 / 2 - r^2 * (5 * pi / 12 - sqrt(3) / 2)) * 2",
+    "area": "2 * (pi * 1.5^2 / 2 - r^2 * (5 * pi / 12 - sqrt(3) / 2)) + 2 * (1.5 + sqrt(3) * r + 1.5 * pi - 1.5 * pi / 6 + r * 2 * pi / 3)",
+    "counts": {"vertices": 6, "edges": 9, "faces": 5, "loops": 5, "shells": 1},
+    "genus": 0
+  }
+}

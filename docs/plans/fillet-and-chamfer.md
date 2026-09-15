@@ -358,15 +358,38 @@ bound has to be established here.
     per concave one — `d²/2·L` for a chamfer — corrected for each miter
     by its closed form; blending then transforming equals transforming
     then blending by volume and counts; two runs dump identically.
-- [ ] Step 7 **[2]** — **The ruling arm, and the miter into the corpus**
-  (`cylinder-cylinder-booleans` retired 2026-09-15; ready).
+- [x] Step 7 **[2]** — **The ruling arm, and the miter into the corpus**
+  (`cylinder-cylinder-booleans` retired 2026-09-15; ready). Landed
+  2026-09-15. Both fixtures pass every stage against Open CASCADE and
+  match their closed forms: the D 6.84709770, the rib 8.82571178. S5
+  decides each blend against the face it is tangent to by the
+  parallel-axis arm, so nothing is unchecked. Four findings. First, the
+  concave case is not a C. Every plane–cylinder edge of a C is convex,
+  its material a right angle. A concave ruling edge needs material
+  wrapped round it, as at a half-round rib's root on a plate, so the
+  fixture is `blend/rib-root-edge`. Second, the ball's centre is where
+  the plane's offset meets the cylinder coaxial with the face at
+  `R − r` or `R + r`, taking the root on the edge's side of the axis.
+  The angle between the contacts is no longer `π − φ`, and the contact
+  on the cylinder face is placed in the translate of that face's loop.
+  An `arris-ops` test holds this at a generic `r`, with no fixture,
+  against Green's-theorem cross-sections. It covers a disc's segment at
+  a right, an obtuse and an acute dihedral, a notch rim (a convex edge
+  on a concave cylinder) and a rib root. Third, `face_end`, `contacts`
+  and the assembly took the cylinder face with no other change; the
+  corner edge on it is a circle, trimmed through its period. Fourth, two
+  cases outside the table are now refused by name, each a backlog line.
+  A ruling chamfer is `Unsupported`, since the table has no row for it.
+  A corner where a ruling blend meets another blend is `VertexBlend`:
+  the contact on the cylinder misses the other blend's on the third
+  edge, so the corner is two arcs, C6's.
   - Plane against cylinder along a ruling at a non-tangent dihedral: the
     chord edge of an extruded D, a cylinder blend tangent to the D's arc
-    face along a ruling and ending on the caps, convex; the same edge on
-    a C-shaped profile, concave.
+    face along a ruling and ending on the caps, convex; ~~the same edge
+    on a C-shaped profile, concave~~ a half-round rib's root, concave.
   - ~~`regression/fillet-miter` into `blend/fillet-miter` with its dump.~~
     Done by `plans/cylinder-cylinder-booleans` step 1, whose arm fixed it.
-  - Fixtures `blend/d-chord-edge`, `blend/c-chord-edge`.
+  - Fixtures `blend/d-chord-edge`, `blend/rib-root-edge`.
 - [ ] Step 8 **[2]** — **Closed edges** (waits on the quadric checker
   arms).
   - A hole's rim: plane against cylinder along a circle, a convex torus

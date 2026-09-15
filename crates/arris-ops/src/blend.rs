@@ -3,7 +3,9 @@
 //! is built directly from its edge's two faces in closed form — two
 //! planes blend to a cylinder on the line where their offset planes meet,
 //! and chamfer to the plane through the lines at the distance from the
-//! edge on each — with its contact curves read off the
+//! edge on each; a plane and a cylinder along a ruling blend to a cylinder
+//! on the line where the plane's offset meets the cylinder's — with its
+//! contact curves read off the
 //! construction, each end trimmed by the face across the corner, and the
 //! result assembled through `rebuild::rewrite` with every untouched
 //! entity kept by id (`docs/ARCHITECTURE.md` §Operations,
@@ -188,6 +190,9 @@ struct Stripe {
     end: VertexId,
     /// The edge's direction: the cylinder's `Z`, the plane's `Y`.
     d: Vec3,
+    /// `true` when one of the edge's faces is a cylinder the edge is a
+    /// ruling of, its contact there a ruling too.
+    ruling: bool,
     section: Section,
     frame: Frame,
     surface: Surface,
@@ -400,9 +405,56 @@ fn arc_between(t_a: f64, t_b: f64, t_mid: f64) -> Result<(Interval, bool), OpErr
         .map(|r| (r, a_first))
         .map_err(|_| invariant("an end arc of positive length"))
 }
-/// The stripe of one edge under the plane–plane arm: the blend surface —
-/// a fillet's cylinder or a chamfer's plane — and its two contact lines
-/// decided from the edge's two faces, its ends not yet.
+/// The ball of `radius` rolling along a line edge, through `origin` along
+/// `d`, between a plane of outward normal `n_plane` and a cylinder
+/// (`axis`, radius `big`) whose ruling the edge is, `n_cylinder` its
+/// outward normal at the edge and `s` `−1` on a convex edge, `1` on a
+/// concave one: the ball's centre level with `origin`, and the directions
+/// from it to its contact with the plane and with the cylinder. The
+/// centre is on the plane offset by `r` into the ball's side and on the
+/// cylinder coaxial with the face at `R ∓ r` — `R − r` when the ball is
+/// inside the cylinder, `R + r` when outside — the one of
+/// the two lines where they meet on the edge's side of the axis, the side
+/// the edge itself is on and the root follows from `r = 0`. `None` when
+/// no ball of `radius` touches both, the plane offset clear of the
+/// cylinder or the cylinder's offset at no radius.
+#[allow(clippy::too_many_arguments)]
+fn ruling_ball(
+    origin: Point3,
+    d: Vec3,
+    n_plane: Vec3,
+    n_cylinder: Vec3,
+    axis: &Frame,
+    big: f64,
+    radius: f64,
+    s: f64,
+    tol: Tolerance,
+) -> Option<(Point3, Vec3, Vec3)> {
+    // The axis's point level with the edge's origin, and the face's
+    // normal against the axis's outward direction there.
+    let axis_point = axis.origin() + (origin - axis.origin()).dot(&d) * d;
+    let radial = origin - axis_point;
+    let sigma = n_cylinder.dot(&radial).signum();
+    // The ball is on the side `s` times each face's outward normal points
+    // to: its centre at `s r` along the plane's normal from the plane, and
+    // `s r` along the cylinder's from the cylinder.
+    let rho = big + s * sigma * radius;
+    let h = (axis_point - origin).dot(&n_plane) - s * radius;
+    let across = rho * rho - h * h;
+    if rho <= tol.linear || across <= 0.0 || across.sqrt() <= tol.linear {
+        return None;
+    }
+    let w = d.cross(&n_plane);
+    let side = radial.dot(&w).signum();
+    let centre = axis_point - h * n_plane + side * across.sqrt() * w;
+    let out = (centre - axis_point) / rho;
+    Some((centre, -s * n_plane, -s * sigma * out))
+}
+
+/// The stripe of one edge: the blend surface — a fillet's cylinder or a
+/// chamfer's plane — and its two contact lines decided from the edge's two
+/// faces, two planes or a plane and a cylinder along a ruling, its ends
+/// not yet.
 fn stripe(
     m: &Model,
     view: &View,
@@ -448,9 +500,13 @@ fn stripe(
         a: (GeomKind::Surface(surfaces[0].kind()), forward(f1)),
         b: (GeomKind::Surface(surfaces[1].kind()), forward(f2)),
     };
-    // The table: plane–plane in this arm; every other pair is named.
-    match (surfaces[0], surfaces[1]) {
-        (Surface::Plane { .. }, Surface::Plane { .. }) => {}
+    // The table: two planes, or a plane and a cylinder along one of its
+    // rulings — the cylinder's index, frame and radius; every other pair
+    // is named.
+    let cylinder = match (surfaces[0], surfaces[1]) {
+        (Surface::Plane { .. }, Surface::Plane { .. }) => None,
+        (Surface::Plane { .. }, &Surface::Cylinder { frame, radius }) => Some((1, frame, radius)),
+        (&Surface::Cylinder { frame, radius }, Surface::Plane { .. }) => Some((0, frame, radius)),
         (
             Surface::Plane { .. }
             | Surface::Cylinder { .. }
@@ -465,7 +521,7 @@ fn stripe(
             | Surface::Torus { .. }
             | Surface::Nurbs(_),
         ) => return Err(unsupported()),
-    }
+    };
     let curve = m.curve(curve_id)?;
     let &Curve::Line { origin, direction } = curve else {
         return Err(OpError::Unsupported {
@@ -481,28 +537,53 @@ fn stripe(
     let s = if convex { -1.0 } else { 1.0 };
     let c = n1.dot(&n2);
     // A unit ball's centre against the edge, on both offset planes, and
-    // each of its contacts against the edge.
+    // each of its contacts against the edge: two planes' construction.
     let unit_offset: Vec3 = (n1 + n2) * (s / (1.0 + c));
     let unit_contact = [unit_offset - n1 * s, unit_offset - n2 * s];
     // `X` toward one contact, so `u` runs from `0` there to its value at
-    // the other, which a ball reaches turning by `β = π − φ` about the
-    // edge's direction.
-    let x = [-s * n1, -s * n2];
+    // the other, which a ball reaches turning by `β` about the edge's
+    // direction — `π − φ` between two planes. `x` is the direction from
+    // the ball's centre to each contact.
     let turn = |from: Vec3, to: Vec3| to.dot(&d.cross(&from)).atan2(to.dot(&from));
-    let (lo, beta) = if turn(x[0], x[1]) > 0.0 {
-        (0, turn(x[0], x[1]))
-    } else {
-        (1, turn(x[1], x[0]))
+    let order = |x: [Vec3; 2]| {
+        if turn(x[0], x[1]) > 0.0 {
+            (0, turn(x[0], x[1]))
+        } else {
+            (1, turn(x[1], x[0]))
+        }
     };
-    let hi = 1 - lo;
-    let (contact_offset, section, frame, surface, u1) = match kind {
-        Kind::Fillet { radius } => {
+    let (lo, beta, contact_offset, section, frame, surface, u1) = match (kind, cylinder) {
+        (Kind::Fillet { radius }, _) => {
+            let (axis_origin, x) = match cylinder {
+                None => (origin + unit_offset * radius, [-s * n1, -s * n2]),
+                Some((k, axis, big)) => {
+                    let (centre, on_plane, on_cylinder) = ruling_ball(
+                        origin,
+                        d,
+                        normals[1 - k],
+                        normals[k],
+                        &axis,
+                        big,
+                        radius,
+                        s,
+                        tol,
+                    )
+                    .ok_or_else(|| {
+                        degenerate(vec![e, forward(f1), forward(f2)], Reason::BlendTooLarge)
+                    })?;
+                    let mut x = [on_plane; 2];
+                    x[k] = on_cylinder;
+                    (centre, x)
+                }
+            };
+            let (lo, beta) = order(x);
             // The cylinder's `Z` is the edge's direction, so `v` is its
             // parameter.
-            let axis_origin = origin + unit_offset * radius;
             let frame = Frame::new(axis_origin, d, x[lo])?;
             (
-                unit_contact.map(|w| w * radius),
+                lo,
+                beta,
+                x.map(|w| axis_origin + w * radius - origin),
                 Section::Round {
                     axis_origin,
                     radius,
@@ -512,7 +593,10 @@ fn stripe(
                 beta,
             )
         }
-        Kind::Chamfer { distance } => {
+        (Kind::Chamfer { .. }, Some(_)) => return Err(unsupported()),
+        (Kind::Chamfer { distance }, None) => {
+            let (lo, beta) = order([-s * n1, -s * n2]);
+            let hi = 1 - lo;
             // Each contact at `distance` from the edge along its face, the
             // way the unit ball's contact lies from it.
             let mut contact_offset = [Vec3::zeros(); 2];
@@ -528,6 +612,8 @@ fn stripe(
             // so `v` is its parameter.
             let frame = Frame::new(origin + contact_offset[lo], across.cross(&d), across)?;
             (
+                lo,
+                beta,
                 contact_offset,
                 Section::Flat,
                 frame,
@@ -541,12 +627,13 @@ fn stripe(
         .default_tolerance
         .max(m.face(f1)?.tolerance())
         .max(m.face(f2)?.tolerance());
-    let by_u = [lo, hi];
+    let by_u = [lo, 1 - lo];
     Ok(Stripe {
         edge,
         start: entity.start(),
         end: entity.end(),
         d,
+        ruling: cylinder.is_some(),
         section,
         frame,
         surface,
@@ -814,10 +901,23 @@ fn contacts(
             return Err(too_large());
         }
         let range = Interval::new(lo, hi).map_err(|_| too_large())?;
-        let plane = m.surface(m.face(face)?.surface())?;
+        let surface = m.surface(m.face(face)?.surface())?;
         let line_tol = Tolerance::new(s.tolerance, tol.angular);
-        let on_face = pcurve_on(line, range, plane, line_tol)
+        let on_face = pcurve_on(line, range, surface, line_tol)
             .map_err(|g| OpError::Internal(Fault::Geometry(g)))?;
+        // On a cylinder, in the translate of the face's own loop: by whole
+        // turns to the `u` of the blended edge's pcurve there.
+        let on_face = match surface {
+            Surface::Cylinder { .. } => {
+                let edge_u = m.curve2(s.uses[k].pcurve)?.point(range.midpoint()).x;
+                placed(on_face, range.lo(), edge_u)
+            }
+            Surface::Plane { .. }
+            | Surface::Cone { .. }
+            | Surface::Sphere { .. }
+            | Surface::Torus { .. }
+            | Surface::Nurbs(_) => on_face,
+        };
         if !on_side_of_face(m, face, &on_face, range, Side::Inside, samples)? {
             return Err(too_large());
         }
@@ -863,6 +963,11 @@ fn miter(
     let v = forward(vertex);
     let (ea, eb) = (forward(a.edge), forward(b.edge));
     let vertex_blend = || degenerate(vec![ea, eb, v], Reason::VertexBlend);
+    // A ruling blend's contact on its cylinder meets no other blend's
+    // contact on the third edge: two arcs, C6's.
+    if a.ruling || b.ruling {
+        return Err(vertex_blend());
+    }
     // The shared face, and each stripe's contact on it.
     let mut shared: Option<(usize, usize, FaceId)> = None;
     for (ka, &fa) in a.faces.iter().enumerate() {
@@ -1568,7 +1673,14 @@ fn build(
 /// contact ruling and `Z` along the edge, so the contacts sit at `u = 0`
 /// and `u = π − φ` for the dihedral's normals `φ` apart and `v` is the
 /// edge's own parameter — with the contact lines at distance
-/// `r tan(φ/2)` from the edge on each face; the arc across an end is a
+/// `r tan(φ/2)` from the edge on each face. A plane and a cylinder of
+/// radius `R` along a ruling blend to a cylinder of `radius` on the line
+/// where the plane's offset by `radius` meets the cylinder coaxial with
+/// the face at `R − radius` or `R + radius` — the ball inside the face's
+/// cylinder or outside it — on the edge's side of the axis, the contact
+/// on the plane a line and on the cylinder the ruling toward the ball's
+/// centre, the contacts at `u = 0` and at the angle between them. The arc
+/// across an end is a
 /// circle when that face is perpendicular to the edge and an ellipse
 /// otherwise, exact on the plane and a `Line` or a fitted `Nurbs` on the
 /// cylinder. Two blends meeting at a vertex whose third edge stays sharp
@@ -1601,13 +1713,16 @@ fn build(
 /// [`Reason::VertexBlend`] at a corner the closed
 /// forms do not cover — a vertex of other than three edges, a miter
 /// whose two blends have unequal dihedrals or are not both convex or
-/// both concave, or three blended edges at one vertex until the sphere
+/// both concave, a miter with a blend along a ruling, whose contact on
+/// the cylinder misses the other's on the third edge, or three blended
+/// edges at one vertex until the sphere
 /// corner lands — and
 /// [`Reason::BlendTooLarge`] where a contact line or an end arc leaves
 /// its face through an edge that is not the corner's own or a corner
 /// edge is shorter than the trim; [`OpError::Unsupported`] naming the
-/// two faces for a pair outside the table (every pair but plane–plane
-/// today) and naming the face across an end that is not a plane;
+/// two faces for a pair outside the table (every pair but two planes and
+/// a plane and a cylinder along a ruling, today) and naming the face
+/// across an end that is not a plane;
 /// [`OpError::NotFound`] for an edge id that does not resolve.
 ///
 /// ```
@@ -1666,8 +1781,10 @@ pub fn fillet(
 ///
 /// Errors, the model untouched: a [`fillet`]'s, with
 /// [`Reason::NonFinite`] or [`Reason::NotPositive`] naming the distance,
-/// and [`Reason::VertexBlend`] for two chamfers at a corner whose edges
-/// make unequal angles with its third edge.
+/// [`Reason::VertexBlend`] for two chamfers at a corner whose edges
+/// make unequal angles with its third edge, and [`OpError::Unsupported`]
+/// for a plane and a cylinder along a ruling, which fillets but has no
+/// chamfer in the table.
 ///
 /// ```
 /// use arris_ops::measure::mass_properties;

@@ -514,6 +514,21 @@ fn blend_fillet_miter() {
     run("blend/fillet-miter");
 }
 
+/// A half disc's chord edge: a plane against a cylinder along a ruling,
+/// convex, the blend cylinder tangent to the arc face along a ruling —
+/// S5 decides the pair by the parallel-axis arm's inside tangency.
+#[test]
+fn blend_d_chord_edge() {
+    run("blend/d-chord-edge");
+}
+
+/// A half-round rib's root on a plate: the ruling arm concave, the blend
+/// adding material, tangent to the rib from outside.
+#[test]
+fn blend_rib_root_edge() {
+    run("blend/rib-root-edge");
+}
+
 /// The same recipe under three parameter sets, one test each so a
 /// variant that drifts says which: the eight bolt holes' chain is
 /// `crates/arris/tests/provenance.rs`'s subject, and these hold each

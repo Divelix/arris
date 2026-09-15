@@ -33,6 +33,31 @@ fn cube(m: &mut Model) -> Body {
         .0
 }
 
+/// A plane against a cylinder along a ruling — a half disc's chord edge —
+/// has a fillet in the table and no chamfer, and is named as such.
+#[test]
+fn a_ruling_edge_has_no_chamfer() {
+    let mut m = Model::default();
+    let profile = Profile {
+        plane: Frame::world(),
+        outer: ProfileLoop::Path {
+            start: Point2::new(-1.5, 0.0),
+            segments: vec![
+                ProfileSegment::LineTo(Point2::new(1.5, 0.0)),
+                ProfileSegment::ArcTo {
+                    to: Point2::new(-1.5, 0.0),
+                    via: Point2::new(0.0, 1.5),
+                },
+            ],
+        },
+        holes: Vec::new(),
+    };
+    let d = extrude(&mut m, &profile, Vec3::z(), 2.0).unwrap().0;
+    let edge = edge_at(&m, d, Point3::new(1.5, 0.0, 1.0));
+    let err = chamfer(&mut m, d, &[edge], 0.2).unwrap_err();
+    assert!(matches!(err, OpError::Unsupported { .. }), "{err}");
+}
+
 /// The polygon `points` in the world's XY plane extruded 2 along +Z.
 fn prism(m: &mut Model, points: &[(f64, f64)]) -> Body {
     let p = |(u, v): (f64, f64)| Point2::new(u, v);

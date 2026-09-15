@@ -399,8 +399,18 @@ frame's `X` at one contact ruling and `Z` along the edge, so the contacts
 sit at `u = 0` and `u = π − φ` for normals `φ` apart and `v` is the
 edge's own parameter — with the contact on each plane the line at
 `r tan(φ/2)` from the edge, a `Line` pcurve there and a ruling on the
-cylinder; a plane against a cylinder along a ruling or a circle follows
-in this cycle. `ops::chamfer(m, body, edges, distance)` is the same
+cylinder. A plane against a cylinder along a ruling blends to a cylinder
+too: the ball's centre is on the plane's offset by `r` and on the
+cylinder coaxial with the face at `R − r` or `R + r` — the ball inside
+the face's cylinder or outside it — the one of their two lines on the
+edge's side of the axis, and its contact with the face is the ruling
+through that centre, a `Line` pcurve at fixed `u` in the translate of
+the face's own loop; the contacts sit at `u = 0` and at the angle
+between them about the blend's axis, no longer `π − φ`. That pair has no
+chamfer in the table, and no miter: its contact on the cylinder misses
+the other blend's on the third edge, so a corner with a ruling blend is
+`VertexBlend`. A plane against a cylinder along a circle follows in this
+cycle. `ops::chamfer(m, body, edges, distance)` is the same
 operation cut flat: two planes chamfer to the plane through the lines at
 `distance` from the edge along each face — its frame's origin on one
 contact, `X` across to the other and `Y` along the edge — and every end
