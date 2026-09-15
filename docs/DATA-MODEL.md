@@ -284,9 +284,11 @@ with STEP export fitting a B-spline at write time) or the intersector fits
 ADR that lands the general quadric pairs (C3, `docs/ROADMAP.md`) — a
 blend's own surfaces meet only in conics, since the construction places
 them (ADR-0007) — and cycle 1's plane–cylinder pairs produce only lines,
-circles and ellipses. Until then S5 reports a cylinder–cylinder pair that
-is not coaxial as unchecked, which an extrude of two arcs whose
-cylinders' boxes overlap makes.
+circles and ellipses. Until then S5 reports a cylinder–cylinder pair in a
+quartic pose as unchecked — crossing axes of unequal radii, or skew axes
+closer than the sum of the radii — which two fillets on skew edges of a
+posed body can make; parallel pairs, which every extrude's walls are,
+and equal cylinders crossing, which a miter's are, are decided.
 
 ### Pcurves (`Curve2`)
 

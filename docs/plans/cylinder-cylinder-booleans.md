@@ -375,7 +375,7 @@ bound has to be established here.
     commutativity check reuses the checked `op(a, b)` result instead of
     checking it again. At 256 cases a parallel shard takes 8 s and a
     crossing shard 60 s.
-- [ ] Step 11 **[2]** — **The S5 rows gone.** (The miter's move into
+- [x] Step 11 **[2]** — **The S5 rows gone.** (The miter's move into
   `blend/`, `fillet.rs`'s two miter tests and "nothing unchecked at rest"
   landed with step 1.)
   - `extrude.rs` drops `non_coaxial_cylinders` and allows nothing

@@ -1,8 +1,8 @@
 //! `ops::extrude` (`docs/ARCHITECTURE.md` §Operations): a thousand general
 //! profiles — lines, outward and inward arcs, circular and polygonal
 //! holes, in random poses — extruded along their plane's normal and
-//! against it: the checker at `Full` with no violation and every
-//! unchecked row a pair of cylinders that are not coaxial, volume and
+//! against it: the checker at `Full` with no violation and nothing
+//! unchecked, volume and
 //! area to Pappus's `A·L` and `2A + P·L`, the mesh closed within its
 //! chord of the exact volume, one `Generated` per entity and every part
 //! of the sketch present, the profile face on the profile's own plane,
@@ -18,12 +18,12 @@ use arris_debug::testing::{close, fail};
 use arris_debug::{dump_text, prop, prop_shards};
 use arris_mesh::tessellate;
 use arris_ops::arris_check::arris_topo::arris_geom::{
-    Profile, ProfileError, ProfileLoop, ProfileSegment, Surface, SurfaceKind,
+    Profile, ProfileError, ProfileLoop, ProfileSegment, Surface,
 };
 use arris_ops::arris_check::arris_topo::arris_math::{Axis, Frame, Point2, Tolerance, Vec2, Vec3};
 use arris_ops::arris_check::arris_topo::provenance::SweepPart;
 use arris_ops::arris_check::arris_topo::{Body, EntityId, Model, Orientation, Provenance, Role};
-use arris_ops::arris_check::{Level, Unchecked, check};
+use arris_ops::arris_check::{Level, check};
 use arris_ops::measure::mass_properties;
 use arris_ops::{OpError, Reason, cut, extrude, primitive_cylinder};
 use core::f64::consts::TAU;
@@ -96,38 +96,6 @@ fn expected_parts(profile: &Profile, tol: Tolerance) -> BTreeSet<SweepPart> {
     parts
 }
 
-/// Whether an unchecked row is the one the plan admits on an extrude: an
-/// S5 pair of two cylinders that are not coaxial — two arcs whose boxes
-/// overlap, for which the intersector has no arm until cycle 2. A pair
-/// with a plane in it, or of coaxial cylinders, is decided and never
-/// admitted.
-fn non_coaxial_cylinders(m: &Model, row: &Unchecked) -> bool {
-    let Unchecked::FacePair {
-        face_a,
-        face_b,
-        kinds: (SurfaceKind::Cylinder, SurfaceKind::Cylinder),
-        ..
-    } = row
-    else {
-        return false;
-    };
-    let cylinder = |f| {
-        let surface = m.surface(m.face(f).ok()?.surface()).ok()?;
-        match surface {
-            Surface::Cylinder { frame, .. } => Some(*frame),
-            _ => None,
-        }
-    };
-    let (Some(a), Some(b)) = (cylinder(*face_a), cylinder(*face_b)) else {
-        return false;
-    };
-    let (za, zb) = (a.z().into_inner(), b.z().into_inner());
-    let offset = b.origin() - a.origin();
-    let scale = offset.norm().max(1.0);
-    let coaxial = za.cross(&zb).norm() <= REL && offset.cross(&za).norm() <= REL * scale;
-    !coaxial
-}
-
 /// The property every random profile is held to, extruded both ways.
 fn extrudes_to_pappus(sweep: &Sweep) -> Result<(), TestCaseError> {
     let profile = &sweep.profile;
@@ -140,12 +108,11 @@ fn extrudes_to_pappus(sweep: &Sweep) -> Result<(), TestCaseError> {
         let fast = check(&m, body, Level::Fast);
         prop_assert!(fast.is_ok(), "not clean at Fast\n{}", fast);
         let report = check(&m, body, Level::Full);
+        // Every wall of an extrude runs along the one direction, so two of
+        // them are parallel cylinders, a pair S5 decides: nothing is
+        // unchecked (plans/cylinder-cylinder-booleans step 11).
         prop_assert!(
-            report.is_ok()
-                && report
-                    .unchecked()
-                    .iter()
-                    .all(|u| non_coaxial_cylinders(&m, u)),
+            report.is_ok() && report.unchecked().is_empty(),
             "not clean at Full along {}·n\n{}\n{}",
             sign,
             report,
