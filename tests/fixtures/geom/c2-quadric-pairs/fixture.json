@@ -1,6 +1,6 @@
 {
   "kind": "geometry",
-  "description": "the coaxial pairs with a cone, a sphere or a torus in them, and the pairs any sphere makes, around one axis in the tilt pose: planes perpendicular to the axis crossing a cone, a sphere and a torus, touching the sphere at a pole and the torus at its tube's top, and through the cone's apex; cylinders on the axis through the cone, the sphere (its frame turned, which Open CASCADE leaves unsolved, and along the axis, which it answers) and the torus, clear of the torus, around it at its outer equator and at the sphere's equator; two cones on the axis at the same and at another angle; a sphere through the torus; a plane oblique to a sphere; two spheres crossing, touching outside and touching inside; planes through the cone's and the torus's axis, giving two rulings through the apex and two tube circles; two pairs swapped; written by generate.py",
+  "description": "the coaxial pairs with a cone, a sphere or a torus in them, and the pairs any sphere makes, around one axis in the tilt pose: planes perpendicular to the axis crossing a cone, a sphere and a torus, touching the sphere at a pole and the torus at its tube's top, and through the cone's apex; cylinders on the axis through the cone, the sphere (its frame turned, which Open CASCADE leaves unsolved, and along the axis, which it answers) and the torus, clear of the torus, around it at its outer equator and at the sphere's equator; two cones on the axis at the same and at another angle; a sphere through the torus; a plane oblique to a sphere; two spheres crossing, touching outside and touching inside; planes through the cone's and the torus's axis, giving two rulings through the apex and two tube circles; lines against the three: a chord and a graze of the sphere, the poles of the orb, a skewer, a ruling, a line through the apex, a tangent and a line parallel to a ruling of the cone, a diameter of the torus's equator, both equators grazed, a line down the tube and one along the axis; two pairs swapped; written by generate.py",
   "surfaces": {
     "cone": {
       "type": "cone",
@@ -416,7 +416,164 @@
       ]
     }
   },
-  "curves": {},
+  "curves": {
+    "chord_sphere": {
+      "type": "line",
+      "origin": [
+        -1.6376237111258432,
+        0.8803893583997713,
+        0.06401322450872854
+      ],
+      "direction": [
+        0.5279109199086363,
+        0.8125823379283768,
+        -0.24702227577299754
+      ]
+    },
+    "graze_sphere": {
+      "type": "line",
+      "origin": [
+        -0.5486208267502684,
+        0.17045402047571412,
+        0.05597993201223217
+      ],
+      "direction": [
+        0.4654408956104234,
+        0.7197894385985097,
+        -0.5150416845027294
+      ]
+    },
+    "pole_line": {
+      "type": "line",
+      "origin": [
+        -4.214285714285714,
+        -0.8214285714285721,
+        -4.642857142857144
+      ],
+      "direction": [
+        0.2857142857142857,
+        0.42857142857142855,
+        0.8571428571428571
+      ]
+    },
+    "skewer_cone": {
+      "type": "line",
+      "origin": [
+        -5.365888879460468,
+        6.486024254789939,
+        2.587284165758521
+      ],
+      "direction": [
+        0.8376945264427496,
+        -0.5461041060954285,
+        -0.006179455766535667
+      ]
+    },
+    "ruling": {
+      "type": "line",
+      "origin": [
+        -1.7286057042912153,
+        1.104445547803624,
+        0.29491985203156945
+      ],
+      "direction": [
+        0.6662830928740715,
+        0.09810169143133099,
+        0.7392177610748226
+      ]
+    },
+    "apex_line": {
+      "type": "line",
+      "origin": [
+        -3.0611718900393585,
+        0.908242164940962,
+        -1.183515670118076
+      ],
+      "direction": [
+        0.44445132029262624,
+        0.3131490343398661,
+        0.8392858310385983
+      ]
+    },
+    "tangent_cone": {
+      "type": "line",
+      "origin": [
+        -1.7286057042912153,
+        1.104445547803624,
+        0.29491985203156945
+      ],
+      "direction": [
+        0.8094466754204653,
+        0.5387333996826953,
+        0.2335859664386568
+      ]
+    },
+    "parallel_ruling": {
+      "type": "line",
+      "origin": [
+        -2.83260046146793,
+        1.251099307798105,
+        -0.49780138440379007
+      ],
+      "direction": [
+        0.6662830928740715,
+        0.09810169143133099,
+        0.7392177610748226
+      ]
+    },
+    "through_tube": {
+      "type": "line",
+      "origin": [
+        -1.6428571428571428,
+        3.035714285714286,
+        3.071428571428572
+      ],
+      "direction": [
+        0.8376945264427496,
+        -0.5461041060954285,
+        -0.006179455766535667
+      ]
+    },
+    "graze_outer": {
+      "type": "line",
+      "origin": [
+        0.9170677830001872,
+        6.994556198006091,
+        0.23869930666355943
+      ],
+      "direction": [
+        0.8376945264427496,
+        -0.5461041060954285,
+        -0.006179455766535667
+      ]
+    },
+    "graze_inner": {
+      "type": "line",
+      "origin": [
+        -0.4792549038310838,
+        4.835187882210561,
+        1.783824360171748
+      ],
+      "direction": [
+        0.8376945264427496,
+        -0.5461041060954285,
+        -0.006179455766535667
+      ]
+    },
+    "vertical_tube": {
+      "type": "line",
+      "origin": [
+        0.8507781057709991,
+        -0.43441642438171435,
+        0.4752821769338573
+      ],
+      "direction": [
+        0.2857142857142857,
+        0.42857142857142855,
+        0.8571428571428571
+      ]
+    }
+  },
   "samples": [],
   "pairs": [
     {
@@ -510,6 +667,58 @@
     {
       "a": "torus",
       "b": "meridian_torus"
+    },
+    {
+      "a": "chord_sphere",
+      "b": "sphere"
+    },
+    {
+      "a": "graze_sphere",
+      "b": "sphere"
+    },
+    {
+      "a": "pole_line",
+      "b": "orb"
+    },
+    {
+      "a": "pole_line",
+      "b": "torus"
+    },
+    {
+      "a": "skewer_cone",
+      "b": "cone"
+    },
+    {
+      "a": "ruling",
+      "b": "cone"
+    },
+    {
+      "a": "apex_line",
+      "b": "cone"
+    },
+    {
+      "a": "tangent_cone",
+      "b": "cone"
+    },
+    {
+      "a": "parallel_ruling",
+      "b": "cone"
+    },
+    {
+      "a": "through_tube",
+      "b": "torus"
+    },
+    {
+      "a": "graze_outer",
+      "b": "torus"
+    },
+    {
+      "a": "graze_inner",
+      "b": "torus"
+    },
+    {
+      "a": "vertical_tube",
+      "b": "torus"
     },
     {
       "a": "cone",

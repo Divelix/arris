@@ -4,7 +4,7 @@ use core::f64::consts::{PI, TAU};
 
 use arris_math::roots::{self, RootError};
 use arris_math::{
-    Frame, Interval, Point2, Point3, Tolerance, Vec2, is_negligible, wrap_angle as wrap_turn,
+    Frame, Interval, Point2, Point3, Tolerance, Vec2, Vec3, is_negligible, wrap_angle as wrap_turn,
 };
 
 use crate::{Curve, CurveKind, GeomError, GeomKind, Surface};
@@ -22,7 +22,8 @@ pub struct CurveSurfaceHit {
     /// The curve parameter.
     pub t: f64,
     /// The surface parameters of the nearest surface point, from
-    /// [`Surface::project`].
+    /// [`Surface::project`] — at a cone's apex, where that is ambiguous,
+    /// `u = 0` and the apex's `v`.
     pub uv: Point2,
     /// `curve.point(t)`.
     pub point: Point3,
@@ -49,7 +50,9 @@ pub enum CurveSurfaceIntersection {
 /// marcher.
 ///
 /// Guarantees: hits are sorted by `t`, each `t` is in the curve's domain,
-/// each hit's `uv` is the surface's own projection of the point, the
+/// each hit's `uv` is the surface's own projection of the point — but at
+/// a cone's apex, whose projection is ambiguous, `u = 0` and the apex's
+/// `v`, as a sphere's pole takes `u = 0` from its projection — the
 /// result is deterministic bit for bit, and a transversal hit lies on
 /// both operands to rounding. The decisions: a line is parallel to a
 /// plane or a cylinder's axis within `tol.angular`, and then coincident
@@ -69,9 +72,19 @@ pub enum CurveSurfaceIntersection {
 /// parallel of the cylinder. *Conic* is a circle or an ellipse: the two
 /// differ only in the reach along the frame's two axes, and neither
 /// closed form assumes they are equal, so an oblique section ellipse is
-/// tested against a third face by the same arms. Read
-/// `IntAna_IntConicQuad` in the reference tree for the case analysis,
-/// reimplemented on our frames.
+/// tested against a third face by the same arms. A line against a cone, a
+/// sphere or a torus is what a containment ray casts at their faces:
+/// line–sphere is two hits, one tangent hit or none, by the nearest
+/// approach to the centre; line–cone is up to two hits over both nappes,
+/// one tangent hit, or `Coincident` for a ruling — a line parallel to a
+/// ruling meets it once or not at all, and a line through the apex
+/// touches it there; line–torus is up to four hits. The cone and the
+/// torus are walked by the exact distance along the line, split at its
+/// extrema and kinks — for the torus the quartic of [`arris_math::roots`]
+/// — with a touch at an extremum within `tol.linear` and each crossing
+/// between them polished by bracketed Newton on the distance. Read
+/// `IntAna_IntConicQuad` and `IntAna_IntLinTorus` in the reference tree
+/// for the case analysis, reimplemented on our frames.
 ///
 /// ```
 /// use arris_geom::{Curve, CurveSurfaceIntersection, Surface, intersect_curve_surface};
@@ -144,8 +157,54 @@ pub fn intersect_curve_surface(
             *big,
             tol,
         ),
+        (Curve::Line { origin, direction }, Surface::Sphere { frame, radius }) => line_sphere(
+            curve,
+            surface,
+            *origin,
+            direction.into_inner(),
+            frame,
+            *radius,
+            tol,
+        ),
         (
-            Curve::Line { .. } | Curve::Circle { .. } | Curve::Ellipse { .. } | Curve::Nurbs(_),
+            Curve::Line { origin, direction },
+            Surface::Cone {
+                frame,
+                radius,
+                half_angle,
+            },
+        ) => line_cone(
+            curve,
+            surface,
+            *origin,
+            direction.into_inner(),
+            frame,
+            [*radius, *half_angle],
+            tol,
+        ),
+        (
+            Curve::Line { origin, direction },
+            Surface::Torus {
+                frame,
+                major_radius,
+                minor_radius,
+            },
+        ) => line_torus(
+            curve,
+            surface,
+            *origin,
+            direction.into_inner(),
+            frame,
+            [*major_radius, *minor_radius],
+            tol,
+        ),
+        (
+            Curve::Circle { .. } | Curve::Ellipse { .. },
+            Surface::Cone { .. } | Surface::Sphere { .. } | Surface::Torus { .. },
+        )
+        | (Curve::Line { .. } | Curve::Circle { .. } | Curve::Ellipse { .. }, Surface::Nurbs(_))
+        | (
+            Curve::Nurbs(_),
             Surface::Plane { .. }
             | Surface::Cylinder { .. }
             | Surface::Cone { .. }
@@ -160,7 +219,9 @@ pub fn intersect_curve_surface(
 }
 
 /// A hit at `t`: the curve's point there, projected onto the surface for
-/// its `uv`.
+/// its `uv` — except at a cone's apex, where the projection's `u` is
+/// ambiguous and the hit takes `u = 0` and the apex's `v`, `−R / sin α`,
+/// as a sphere's pole already takes `u = 0` from the projection.
 fn hit(
     curve: &Curve,
     surface: &Surface,
@@ -168,7 +229,20 @@ fn hit(
     tangent: bool,
 ) -> Result<CurveSurfaceHit, GeomError> {
     let point = curve.point(t);
-    let uv = surface.project(point)?.uv;
+    let uv = match surface.project(point) {
+        Ok(projection) => projection.uv,
+        Err(e @ GeomError::Ambiguous { .. }) => match *surface {
+            Surface::Cone {
+                radius, half_angle, ..
+            } => Point2::new(0.0, -radius / half_angle.sin()),
+            Surface::Plane { .. }
+            | Surface::Cylinder { .. }
+            | Surface::Sphere { .. }
+            | Surface::Torus { .. }
+            | Surface::Nurbs(_) => return Err(e),
+        },
+        Err(e) => return Err(e),
+    };
     Ok(CurveSurfaceHit {
         t,
         uv,
@@ -245,6 +319,330 @@ fn line_cylinder(
         hit(curve, surface, t0 - half, false)?,
         hit(curve, surface, t0 + half, false)?,
     ]))
+}
+
+/// A line against a sphere: in the sphere's frame the line passes nearest
+/// the centre at `t0`, at distance `dist`, and the chord inside the
+/// sphere is symmetric about it — the quadratic `|q + t·d|² = R²` in the
+/// form whose touch is decided in length, `dist` within `tol.linear` of
+/// `R`.
+fn line_sphere(
+    curve: &Curve,
+    surface: &Surface,
+    origin: Point3,
+    direction: Vec3,
+    frame: &Frame,
+    radius: f64,
+    tol: Tolerance,
+) -> Result<CurveSurfaceIntersection, GeomError> {
+    let q = frame.to_local(origin).coords;
+    let d = frame.vec_to_local(direction);
+    let t0 = -q.dot(&d);
+    let dist = (q + t0 * d).norm();
+    if (dist - radius).abs() <= tol.linear {
+        return Ok(points(vec![hit(curve, surface, t0, true)?]));
+    }
+    if dist >= radius {
+        return Ok(CurveSurfaceIntersection::Points(Vec::new()));
+    }
+    let half = (radius - dist).sqrt() * (radius + dist).sqrt();
+    Ok(points(vec![
+        hit(curve, surface, t0 - half, false)?,
+        hit(curve, surface, t0 + half, false)?,
+    ]))
+}
+
+/// A line against a cone, both nappes. In the cone's frame, with `p` the
+/// line's origin from the apex, `ρ(t)` its distance from the axis and
+/// `h(t)` its height above the apex, the signed distance to the cone is
+/// `g(t) = ρ cos α − |h| sin α` — the distance to the nearer ruling in the
+/// half-plane through the point, exact, negative inside a nappe. A line
+/// through the apex at the half-angle to the axis, within `tol.linear`
+/// and `tol.angular`, is a ruling: `Coincident`. Otherwise `g` is
+/// monotone between its extrema and kinks ([`line_by_distance`]): the
+/// point nearest the axis `tv`, where `ρ` has its kink when the line
+/// crosses the axis; the crossing of the plane through the apex, where
+/// `|h|` has one; and the two stationary points `tv ± |d_z| ρ_min sin α /
+/// √(a·k)` of the smooth pieces, with `a = d_x² + d_y²` and `k = a cos²α −
+/// d_z² sin²α`, which exist when `k > 0` — the line leaving the double
+/// cone. A line parallel to a ruling within `tol.angular` (`k = 0`)
+/// crosses the cone once, at the root of the implicit form's linear term,
+/// or not at all when it lies within `tol.linear` of the tangent plane
+/// along that ruling; a line through the apex touches it there, `g`
+/// having its extremum `0` at the apex.
+fn line_cone(
+    curve: &Curve,
+    surface: &Surface,
+    origin: Point3,
+    direction: Vec3,
+    frame: &Frame,
+    [radius, half_angle]: [f64; 2],
+    tol: Tolerance,
+) -> Result<CurveSurfaceIntersection, GeomError> {
+    let (sa, ca) = half_angle.sin_cos();
+    let q = frame.to_local(origin);
+    let p = Vec3::new(q.x, q.y, q.z + radius * ca / sa);
+    let d = frame.vec_to_local(direction);
+    let a = d.x * d.x + d.y * d.y;
+    let to_axis = a.sqrt().atan2(d.z.abs());
+    let off_apex = (p - p.dot(&d) * d).norm();
+    let parallel = (to_axis - half_angle).abs() <= tol.angular;
+    if parallel && off_apex <= tol.linear {
+        return Ok(CurveSurfaceIntersection::Coincident);
+    }
+    let rho = |t: f64| (p.x + t * d.x).hypot(p.y + t * d.y);
+    let g = |t: f64| ca * rho(t) - sa * (p.z + t * d.z).abs();
+    let dg = |t: f64| {
+        let r = rho(t);
+        let radial = if r > 0.0 {
+            ((p.x + t * d.x) * d.x + (p.y + t * d.y) * d.y) / r
+        } else {
+            0.0
+        };
+        ca * radial - sa * d.z * (p.z + t * d.z).signum()
+    };
+    if parallel {
+        // The implicit form `cos²α ρ² − sin²α h²` loses its square term,
+        // its other root gone past any length within the angular
+        // tolerance: out there `g` only tends to its asymptote, and
+        // rounding would flip its sign. The linear term is `2 sin α cos α`
+        // times the line's offset from the tangent plane along the parallel
+        // ruling, so a line within `tol.linear` of that plane approaches
+        // the cone without meeting it, and any other crosses it once, at
+        // the one root, polished by Newton on `g`.
+        let b = 2.0 * (ca * ca * (p.x * d.x + p.y * d.y) - sa * sa * p.z * d.z);
+        let c = ca * ca * (p.x * p.x + p.y * p.y) - sa * sa * p.z * p.z;
+        if (b / (2.0 * sa * ca)).abs() <= tol.linear {
+            return Ok(CurveSurfaceIntersection::Points(Vec::new()));
+        }
+        let mut t = -c / b;
+        for _ in 0..NEWTON_POLISH_STEPS {
+            let (gt, slope) = (g(t), dg(t));
+            if gt == 0.0 || slope == 0.0 {
+                break;
+            }
+            let next = t - gt / slope;
+            if g(next).abs() < gt.abs() {
+                t = next;
+            } else {
+                break;
+            }
+        }
+        return Ok(points(vec![hit(curve, surface, t, false)?]));
+    }
+    let mut splits = Vec::with_capacity(4);
+    if a > 0.0 {
+        let tv = -(p.x * d.x + p.y * d.y) / a;
+        splits.push(tv);
+        let k = a * ca * ca - d.z * d.z * sa * sa;
+        if k > 0.0 {
+            let delta = d.z.abs() * rho(tv) * sa / (a * k).sqrt();
+            splits.extend([tv - delta, tv + delta]);
+        }
+    }
+    if d.z != 0.0 {
+        splits.push(-p.z / d.z);
+    }
+    line_by_distance(curve, surface, splits, &g, &dg, tol)
+}
+
+/// A line against a torus. In the torus's frame, with the line's origin
+/// moved to its point nearest the centre (`p · d = 0`), `ρ(s)` its
+/// distance from the axis and `z(s)` its height, the signed distance to
+/// the torus is `g(s) = √((ρ − R)² + z²) − r`, exact, negative inside the
+/// tube. Its extrema are where `(ρ − R)ρ′ + z z′ = 0`, which squared
+/// against `ρ = √Q`, `Q = a s² + b s + c` is the quartic
+/// `4a s⁴ + 4b s³ + 4(c − R²a²) s² − 4R²ab s − R²b²` of
+/// [`arris_math::roots`] — the extrema of the distance to the tube's
+/// mirror circle among its roots, which only split a monotone stretch in
+/// two, and the kink where the line crosses the axis a double root. The
+/// crossings between them are [`line_by_distance`]'s, and a line along the
+/// axis, whose quartic vanishes, is clear of a torus with `R > r`.
+fn line_torus(
+    curve: &Curve,
+    surface: &Surface,
+    origin: Point3,
+    direction: Vec3,
+    frame: &Frame,
+    [major, minor]: [f64; 2],
+    tol: Tolerance,
+) -> Result<CurveSurfaceIntersection, GeomError> {
+    let q = frame.to_local(origin).coords;
+    let d = frame.vec_to_local(direction);
+    let shift = -q.dot(&d);
+    let p = q + shift * d;
+    let a = d.x * d.x + d.y * d.y;
+    let b = 2.0 * (p.x * d.x + p.y * d.y);
+    let c = p.x * p.x + p.y * p.y;
+    let r2 = major * major;
+    let found = match roots::quartic(
+        4.0 * a,
+        4.0 * b,
+        4.0 * (c - r2 * a * a),
+        -4.0 * r2 * a * b,
+        -r2 * b * b,
+    ) {
+        Ok(found) => found.iter().map(|r| r.value + shift).collect(),
+        Err(RootError::Zero) => Vec::new(),
+        Err(e) => {
+            return Err(GeomError::Degenerate {
+                kind: GeomKind::Curve(CurveKind::Line),
+                reason: format!("extrema of the distance to a torus: {e}"),
+            });
+        }
+    };
+    let rho = |t: f64| (p.x + (t - shift) * d.x).hypot(p.y + (t - shift) * d.y);
+    let z = |t: f64| p.z + (t - shift) * d.z;
+    let g = |t: f64| (rho(t) - major).hypot(z(t)) - minor;
+    let dg = |t: f64| {
+        let r = rho(t);
+        let tube = (r - major).hypot(z(t));
+        if tube == 0.0 {
+            return 0.0;
+        }
+        let radial = if r > 0.0 {
+            ((p.x + (t - shift) * d.x) * d.x + (p.y + (t - shift) * d.y) * d.y) / r
+        } else {
+            0.0
+        };
+        ((r - major) * radial + z(t) * d.z) / tube
+    };
+    let mut splits: Vec<f64> = found;
+    splits.push(shift);
+    if a > 0.0 {
+        splits.push(shift - b / (2.0 * a));
+    }
+    line_by_distance(curve, surface, splits, &g, &dg, tol)
+}
+
+/// How far past the first or the last split point a line's distance is
+/// first read, and the first step of the doubling search for a crossing
+/// in a tail: any positive length serves, since the distance is monotone
+/// there, and one length unit reads a unit line's parameter directly.
+const TAIL_STEP: f64 = 1.0;
+
+/// The hits of a line on a surface by the signed distance `g` along it
+/// (`dg` its derivative), given `splits`: parameters that include every
+/// extremum and every kink of `g`, so that it is monotone between two
+/// consecutive ones and in each tail beyond them; any others only split a
+/// monotone stretch. A split that is no extremum of `g` against its
+/// neighbours is dropped. An extremum within `tol.linear` of zero is a
+/// `tangent` hit that absorbs the crossings on the stretches beside it,
+/// and a run of such extrema with no other between them is one touch;
+/// every other stretch whose ends differ in sign holds one crossing, found
+/// by bracketed Newton on `g`, and so does a tail whose far side does —
+/// searched by doubling steps from its end until the sign turns or `g`
+/// stops being finite.
+fn line_by_distance(
+    curve: &Curve,
+    surface: &Surface,
+    mut splits: Vec<f64>,
+    g: &dyn Fn(f64) -> f64,
+    dg: &dyn Fn(f64) -> f64,
+    tol: Tolerance,
+) -> Result<CurveSurfaceIntersection, GeomError> {
+    splits.retain(|t| t.is_finite());
+    splits.sort_by(f64::total_cmp);
+    splits.dedup();
+    let (Some(&first), Some(&last)) = (splits.first(), splits.last()) else {
+        return Ok(CurveSurfaceIntersection::Points(Vec::new()));
+    };
+    let values: Vec<f64> = splits.iter().map(|&t| g(t)).collect();
+    let n = splits.len();
+    let before = |i: usize| {
+        if i == 0 {
+            g(first - TAIL_STEP)
+        } else {
+            values[i - 1]
+        }
+    };
+    let after = |i: usize| {
+        if i + 1 == n {
+            g(last + TAIL_STEP)
+        } else {
+            values[i + 1]
+        }
+    };
+    let extrema: Vec<(f64, f64)> = (0..n)
+        .filter(|&i| {
+            let (v, b, a) = (values[i], before(i), after(i));
+            (b >= v && a >= v) || (b <= v && a <= v)
+        })
+        .map(|i| (splits[i], values[i]))
+        .collect();
+    // With no extremum `g` is monotone along the whole line: one tail each
+    // way from any point holds its one crossing, if it has one.
+    let stops: Vec<(f64, f64, bool)> = if extrema.is_empty() {
+        vec![(first, values[0], false)]
+    } else {
+        // A run of adjacent touches is one touch: between two of them `g`
+        // is monotone from one value within `tol.linear` to another, so
+        // the whole stretch is within it — rounding makes a cluster of
+        // extrema of a flat graze. The touch is the one nearest zero.
+        let mut stops: Vec<(f64, f64, bool)> = Vec::with_capacity(extrema.len());
+        for (t, v) in extrema {
+            let stop = (t, v, v.abs() <= tol.linear);
+            match stops.last_mut() {
+                Some(last) if last.2 && stop.2 => {
+                    if stop.1.abs() < last.1.abs() {
+                        *last = stop;
+                    }
+                }
+                _ => stops.push(stop),
+            }
+        }
+        stops
+    };
+    let crossing = |lo: f64, hi: f64| -> Result<f64, GeomError> {
+        let bracket = Interval::new(lo, hi).map_err(|_| GeomError::Degenerate {
+            kind: GeomKind::Curve(curve.kind()),
+            reason: format!("crossing bracket [{lo}, {hi}]"),
+        })?;
+        roots::newton_in_interval(g, dg, bracket, 0.0).map_err(|e| GeomError::Degenerate {
+            kind: GeomKind::Curve(curve.kind()),
+            reason: format!("crossing in [{lo}, {hi}]: {e}"),
+        })
+    };
+    let tail = |from: f64, value: f64, sign: f64| -> Option<f64> {
+        let mut step = TAIL_STEP;
+        while step.is_finite() {
+            let t = from + sign * step;
+            let v = g(t);
+            if !v.is_finite() {
+                return None;
+            }
+            if (v < 0.0) != (value < 0.0) {
+                return Some(t);
+            }
+            step *= 2.0;
+        }
+        None
+    };
+    let mut hits = Vec::new();
+    let (t0, v0, touch0) = stops[0];
+    if !touch0 {
+        if let Some(far) = tail(t0, v0, -1.0) {
+            hits.push(hit(curve, surface, crossing(far, t0)?, false)?);
+        }
+    }
+    for (i, &(t, v, touch)) in stops.iter().enumerate() {
+        if touch {
+            hits.push(hit(curve, surface, t, true)?);
+        }
+        let Some(&(next, w, next_touch)) = stops.get(i + 1) else {
+            continue;
+        };
+        if !touch && !next_touch && (v < 0.0) != (w < 0.0) {
+            hits.push(hit(curve, surface, crossing(t, next)?, false)?);
+        }
+    }
+    let (tn, vn, touchn) = stops[stops.len() - 1];
+    if !touchn {
+        if let Some(far) = tail(tn, vn, 1.0) {
+            hits.push(hit(curve, surface, crossing(tn, far)?, false)?);
+        }
+    }
+    Ok(points(hits))
 }
 
 /// A circle or an ellipse against a plane. `radii` is `[a, b]`, the reach

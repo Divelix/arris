@@ -13,7 +13,7 @@ use arris_debug::fixtures::geom::{
 use arris_debug::fixtures::{Kind, corpus, kind_of};
 use arris_debug::testing::{REL, close, close_param};
 use arris_geom::{
-    Curve, CurveSurfaceIntersection, GeomError, Surface, SurfaceIntersection,
+    Curve, CurveSurfaceIntersection, GeomError, Surface, SurfaceIntersection, SurfaceKind,
     intersect_curve_surface, intersect_surfaces,
 };
 use arris_math::{Point3, Precision, Tolerance, Vec3};
@@ -344,6 +344,22 @@ fn check_curve_pair(c: &Curve, s: &Surface, res: &PairResult, errors: &mut Vec<S
     };
     let hits = match (&r, res.kind.as_str()) {
         (CurveSurfaceIntersection::Coincident, "coincident") => return,
+        // A ruling of a cone in a general pose: the oracle's quadratic has
+        // rounding for its coefficients where they vanish, and it reports
+        // points of the ruling rather than a line in the quadric. Each of
+        // them is held to the line, which Arris says lies on the cone.
+        (CurveSurfaceIntersection::Coincident, "points") if s.kind() == SurfaceKind::Cone => {
+            for h in &res.hits {
+                let p = p3(&h.point);
+                let off = c.project(p).map_or(f64::INFINITY, |proj| proj.distance);
+                if off > REL * p.coords.norm().max(1.0) {
+                    errors.push(format!(
+                        "{label}: coincident, but the oracle's point {p} is {off} off the line"
+                    ));
+                }
+            }
+            return;
+        }
         (CurveSurfaceIntersection::Points(h), "points") => h,
         _ => {
             errors.push(format!("{label}: {r:?} vs oracle {}", res.kind));
@@ -579,8 +595,10 @@ fn the_c2_cylinder_pairs_classify_as_built() {
 
 /// What Arris says about every pair of `geom/c2-quadric-pairs`, by name.
 /// A touch reads as a circle in the oracle, a plane on a sphere's pole as
-/// `empty`, and a sphere whose own frame is turned across a cylinder's
-/// axis as `unsolved`, so the case is pinned here.
+/// `empty`, a sphere whose own frame is turned across a cylinder's axis
+/// as `unsolved`, a cone's ruling as points on it and a line's touch as
+/// none, one or two hits, so the case is pinned here: a surface pair by
+/// its type and curve count, a line by its transversal and tangent hits.
 #[test]
 fn the_c2_quadric_pairs_classify_as_built() {
     let f = geometry_fixtures()
@@ -615,11 +633,39 @@ fn the_c2_quadric_pairs_classify_as_built() {
         ("cone", "cap_cone", "circle", 1),
         ("torus", "sleeve", "circle", 2),
     ];
+    type LineCase = (&'static str, &'static str, Option<(usize, usize)>);
+    let lines: &[LineCase] = &[
+        ("chord_sphere", "sphere", Some((2, 0))),
+        ("graze_sphere", "sphere", Some((0, 1))),
+        ("pole_line", "orb", Some((2, 0))),
+        ("pole_line", "torus", Some((0, 0))),
+        ("skewer_cone", "cone", Some((2, 0))),
+        ("ruling", "cone", None),
+        ("apex_line", "cone", Some((0, 1))),
+        ("tangent_cone", "cone", Some((0, 1))),
+        ("parallel_ruling", "cone", Some((1, 0))),
+        ("through_tube", "torus", Some((4, 0))),
+        ("graze_outer", "torus", Some((0, 1))),
+        ("graze_inner", "torus", Some((2, 1))),
+        ("vertical_tube", "torus", Some((2, 0))),
+    ];
     assert_eq!(
-        cases.len(),
+        cases.len() + lines.len(),
         f.recipe.pairs.len(),
         "every pair of the fixture is pinned here"
     );
+    for (a, b, expected) in lines {
+        let r = intersect_curve_surface(&built.curves[*a], &built.surfaces[*b], tol())
+            .unwrap_or_else(|e| panic!("{a} vs {b}: {e}"));
+        let got = match &r {
+            CurveSurfaceIntersection::Coincident => None,
+            CurveSurfaceIntersection::Points(h) => Some((
+                h.iter().filter(|h| !h.tangent).count(),
+                h.iter().filter(|h| h.tangent).count(),
+            )),
+        };
+        assert_eq!(got, *expected, "{a} vs {b}: {r:?}");
+    }
     for (a, b, kind, count) in cases {
         let r = intersect_surfaces(&built.surfaces[*a], &built.surfaces[*b], tol())
             .unwrap_or_else(|e| panic!("{a} vs {b}: {e}"));

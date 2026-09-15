@@ -198,7 +198,7 @@ bound has to be established here.
     Properties at random poses, and `c2-quadric-pairs` gains both pairs.
   - These are the caps of M5's partial revolves against their cone and
     torus faces.
-- [ ] Step 3 **[2]** — **Lines against the cone, sphere and torus.**
+- [x] Step 3 **[2]** — **Lines against the cone, sphere and torus.**
   - `intersect_curve_surface` as §Design deltas: the singular-point
     `uv`, and the torus quartic polished with a touch decided by the
     distance's extrema.
@@ -301,6 +301,17 @@ None for the human. The agent decides two, each at its step:
   (`unsolved` for a turned sphere) — both recorded in
   `tests/fixtures/README.md`, and the oracle test holds Arris's curves
   to the surfaces where the oracle is silent.
+- Findings of step 3: a line parallel to a cone's ruling is decided
+  within `tol.angular`, as a line parallel to a cylinder's axis is, since
+  out along the ruling the distance only tends to its asymptote and
+  rounding flips its sign (a false crossing at `t ≈ 1e16` without it).
+  At 2048 cases two older properties fail on the step-2 commit already,
+  both test-side: `random_plane_and_cylinder_agree_on_every_common_property`
+  holds an ellipse 4.5e5 from the origin to an absolute 1e-10, and
+  `coaxial_pairs_meet_where_their_meridians_meet` brackets a steep cone's
+  apex kink between two meridian samples. The line–quadric properties
+  scale their bound with the point's magnitude and pass at 4096; the two
+  older ones pass at the configured count and are a backlog line.
 - Whether any mixed-kind result is reached by a revolve or a blend in
   C2's positions (step 4). By construction a hole-rim torus touches its
   cylinder and plane without crossing either, and the random profiles

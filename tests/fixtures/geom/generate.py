@@ -540,14 +540,59 @@ def c2_quadric_pairs():
     plane("meridian_torus", add(on_axis(2.2), mul(-0.9, a)), mul(-1.0, across), z)
     pair("meridian_cone", "cone")
     pair("torus", "meridian_torus")
+    # Lines against the three: what B1's containment ray and a probe's
+    # classification cast. The sphere crossed on a chord, grazed at its
+    # radius, and the orb along its own axis through both poles; the cone
+    # skewered across one nappe, along a ruling, through its apex inside
+    # the nappes, across a ruling in the tangent plane there, and parallel
+    # to a ruling in a plane through the axis (one hit); the torus along a
+    # diameter of its equator (four hits), grazing the outer equator,
+    # grazing the inner one (a touch between two crossings), down through
+    # the tube, and along its axis (none).
+    curves = {}
+
+    def line(name, origin, direction):
+        curves[name] = {"type": "line", "origin": origin, "direction": unit(direction)}
+
+    alpha = math.radians(30.0)
+    ruling = add(mul(math.sin(alpha), a), mul(math.cos(alpha), z))
+    line("chord_sphere", add(on_axis(-0.5), mul(1.2, a)), add(across, mul(0.3, z)))
+    line("graze_sphere", add(on_axis(-0.5), mul(2.5, a)), across)
+    line("pole_line", on_axis(-6.0), z)
+    line("skewer_cone", add(on_axis(3.0), add(mul(1.0, across), mul(-5.0, a))), a)
+    line("ruling", add(apex, mul(2.0, ruling)), ruling)
+    line("apex_line", apex, add(z, mul(0.2, a)))
+    tilt = 0.7
+    line("tangent_cone", add(apex, mul(2.0, ruling)), add(mul(math.cos(tilt), ruling), mul(math.sin(tilt), across)))
+    line("parallel_ruling", add(apex, mul(0.8, z)), ruling)
+    line("through_tube", on_axis(3.0), a)
+    line("graze_outer", add(on_axis(3.0), mul(5.5, across)), a)
+    line("graze_inner", add(on_axis(3.0), mul(2.5, across)), a)
+    line("vertical_tube", add(on_axis(0.0), mul(4.0, a)), z)
+    for name, other in [
+        ("chord_sphere", "sphere"),
+        ("graze_sphere", "sphere"),
+        ("pole_line", "orb"),
+        ("pole_line", "torus"),
+        ("skewer_cone", "cone"),
+        ("ruling", "cone"),
+        ("apex_line", "cone"),
+        ("tangent_cone", "cone"),
+        ("parallel_ruling", "cone"),
+        ("through_tube", "torus"),
+        ("graze_outer", "torus"),
+        ("graze_inner", "torus"),
+        ("vertical_tube", "torus"),
+    ]:
+        pair(name, other)
     # Two pairs the other way round.
     pair("cone", "cap_cone")
     pair("torus", "sleeve")
     return {
         "kind": "geometry",
-        "description": "the coaxial pairs with a cone, a sphere or a torus in them, and the pairs any sphere makes, around one axis in the tilt pose: planes perpendicular to the axis crossing a cone, a sphere and a torus, touching the sphere at a pole and the torus at its tube's top, and through the cone's apex; cylinders on the axis through the cone, the sphere (its frame turned, which Open CASCADE leaves unsolved, and along the axis, which it answers) and the torus, clear of the torus, around it at its outer equator and at the sphere's equator; two cones on the axis at the same and at another angle; a sphere through the torus; a plane oblique to a sphere; two spheres crossing, touching outside and touching inside; planes through the cone's and the torus's axis, giving two rulings through the apex and two tube circles; two pairs swapped; written by generate.py",
+        "description": "the coaxial pairs with a cone, a sphere or a torus in them, and the pairs any sphere makes, around one axis in the tilt pose: planes perpendicular to the axis crossing a cone, a sphere and a torus, touching the sphere at a pole and the torus at its tube's top, and through the cone's apex; cylinders on the axis through the cone, the sphere (its frame turned, which Open CASCADE leaves unsolved, and along the axis, which it answers) and the torus, clear of the torus, around it at its outer equator and at the sphere's equator; two cones on the axis at the same and at another angle; a sphere through the torus; a plane oblique to a sphere; two spheres crossing, touching outside and touching inside; planes through the cone's and the torus's axis, giving two rulings through the apex and two tube circles; lines against the three: a chord and a graze of the sphere, the poles of the orb, a skewer, a ruling, a line through the apex, a tangent and a line parallel to a ruling of the cone, a diameter of the torus's equator, both equators grazed, a line down the tube and one along the axis; two pairs swapped; written by generate.py",
         "surfaces": surfaces,
-        "curves": {},
+        "curves": curves,
         "samples": [],
         "pairs": pairs,
     }

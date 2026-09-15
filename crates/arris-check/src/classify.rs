@@ -52,8 +52,8 @@ pub enum Classification {
 pub enum ClassifyError {
     /// An id the body reaches does not resolve.
     Unresolved(NotFound),
-    /// A ray against one of the body's surfaces has no closed form —
-    /// a cone, a sphere, a torus or a NURBS.
+    /// A ray against one of the body's surfaces has no closed form: a
+    /// NURBS. A line meets every analytic surface by closed form.
     Geometry(GeomError),
     /// Every one of the eight ray directions was abandoned: each grazed a
     /// face's boundary, touched a surface tangentially or lay in one.
@@ -107,7 +107,7 @@ impl From<GeomError> for ClassifyError {
 /// [`ClassifyError::Undecided`], never a guess.
 ///
 /// Errors: an id that does not resolve, a surface a ray has no closed
-/// form against (a cone, a sphere, a torus or a NURBS), or
+/// form against (a NURBS), or
 /// `Undecided`.
 ///
 /// ```

@@ -233,8 +233,10 @@ oracle's sampled points on Arris's curves to 1e-9.
   `c2-cylinder-pairs` (every pose of the cylinder–cylinder table) and
   `c2-quadric-pairs` (the coaxial pairs with a cone, a sphere or a torus
   in them, and the pairs any sphere makes: crossings, touches, a plane
-  through an apex, two spheres touching; and a plane through a cone's
-  and a torus's axis, two rulings and two tube circles).
+  through an apex, two spheres touching; a plane through a cone's and a
+  torus's axis, two rulings and two tube circles; and lines against the
+  three — chords, grazes, a ruling, a line through the apex, the poles,
+  a torus's four crossings and its inner and outer equators grazed).
 - A surface pair Open CASCADE finds no conic for is `"type": "unsolved"`
   (`IntAna_NoGeometricSolution`). The oracle test holds Arris to
   `Unsupported` or to a closed-form `Empty` against it — or, where Arris
@@ -268,7 +270,12 @@ oracle's sampled points on Arris's curves to 1e-9.
   the sphere's own axis on the cylinder's exactly, so `c2-quadric-pairs`
   has the same sphere twice — its frame turned across the axis, which
   comes back `unsolved` and holds Arris's circles to both surfaces, and
-  along the axis, which is answered.
+  along the axis, which is answered. A line against a torus is
+  `IntAna_IntLinTorus`, not `IntAna_IntConicQuad`, whose quadric has no
+  torus. A ruling of a cone in the `tilt` pose comes back as two points
+  of the ruling rather than in the quadric, the quadratic's vanishing
+  coefficients being rounding there, so the oracle test holds those
+  points to the line Arris calls `Coincident`.
 
 ## `expected.json`
 

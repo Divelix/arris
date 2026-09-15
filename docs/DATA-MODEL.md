@@ -304,12 +304,16 @@ operand order.
 
 `intersect_curve_surface(c, s, tol)` returns `CurveSurfaceIntersection::{
 Points(Vec<CurveSurfaceHit>), Coincident}` for the pairs with a closed form
-— in cycle 1, line–plane, line–cylinder, conic–plane and conic–cylinder,
-*conic* being a circle or an ellipse — and `GeomError::Unsupported`
-naming the pair for every other. A hit is
+— line–plane, line–cylinder, conic–plane and conic–cylinder, *conic*
+being a circle or an ellipse, and a line against a cone, a sphere or a
+torus — and `GeomError::Unsupported` naming the pair for every other (a
+conic against a cone, a sphere or a torus among them: no containment ray
+casts one). A hit is
 `CurveSurfaceHit { t, uv, point, tangent }`: `point` is the curve's point
-at `t`, `uv` the surface's own projection of it, hits ascending by `t`
-with a periodic `t` in `[0, 2π)`. A line is parallel to a plane or to a
+at `t`, `uv` the surface's own projection of it — except at a cone's
+apex, whose projection is `Ambiguous`, where it is `u = 0` and the apex's
+`v = −R / sin α`, as a sphere's pole takes `u = 0` from the projection —
+hits ascending by `t` with a periodic `t` in `[0, 2π)`. A line is parallel to a plane or to a
 cylinder's axis within `tol.angular`, and then coincident or clear within
 `tol.linear`; a circle is `Coincident` when it lies within `tol.linear`
 of the surface everywhere, which the extrema of its distance decide. A
@@ -318,7 +322,22 @@ within `tol.linear` of zero — the two crossings such an extremum would
 split into are one touch — so a transversal hit is on both operands to
 rounding and a tangent one within `tol.linear`. Conic–cylinder finds the
 extrema of the radial distance through the quartic in `tan(t/2)` and the
-crossings between them by bracketed Newton; the others are closed forms.
+crossings between them by bracketed Newton. Line–sphere is the closed
+form of the nearest approach to the centre: two hits, one tangent where
+that approach is within `tol.linear` of the radius, or none. Line–cone
+and line–torus walk the exact signed distance along the line — to the
+cone `ρ cos α − |h| sin α`, `h` the height above the apex; to the torus
+`√((ρ − R)² + z²) − r` — which is monotone between its extrema and
+kinks: for the cone the point nearest the axis, the crossing of the
+plane through the apex and the two stationary points of its smooth
+pieces, in closed form; for the torus the roots of the quartic its
+squared stationary condition is, in `arris_math::roots`. An extremum
+within `tol.linear` of zero is a touch (a run of them with nothing
+between, one touch), and each other stretch or tail whose ends differ in
+sign holds one crossing, by bracketed Newton on the distance. A line
+through the apex at the half-angle within `tol.linear` and `tol.angular`
+is a ruling, `Coincident`; any other line through the apex touches the
+cone there. The rest are closed forms.
 An ellipse is not a separate case anywhere here: a conic reaches `a`
 along its frame's `X` and `b` along its `Y`, which is the radius twice
 for a circle, and neither closed form assumes the two are equal — so the

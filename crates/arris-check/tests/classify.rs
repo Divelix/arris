@@ -196,14 +196,26 @@ fn a_point_in_a_hole_of_the_frame_is_outside() {
 
 #[test]
 fn a_surface_a_ray_has_no_closed_form_against_is_a_typed_error() {
+    // A NURBS face: far from the box, so the boundary test says nothing
+    // and the ray cast is reached.
+    let mut n = Model::default();
+    let nurbs = sample::cuboid_nurbs(&mut n, Point3::origin(), Point3::new(2.0, 3.0, 4.0)).unwrap();
+    match classify(&n, nurbs, Point3::new(50.0, 1.0, 2.0)) {
+        Err(ClassifyError::Geometry(GeomError::Unsupported { .. })) => {}
+        other => panic!("expected an unsupported ray–NURBS pair, got {other:?}"),
+    }
+    // A sphere has a closed form against a ray: its inside and outside
+    // are cast for.
     let mut m = Model::default();
     let body = sample::sphere(&mut m, Point3::origin(), 3.0).unwrap();
-    // Far from the sphere, so the boundary test says nothing and the ray
-    // cast is reached.
-    match classify(&m, body, Point3::new(50.0, 0.0, 0.0)) {
-        Err(ClassifyError::Geometry(GeomError::Unsupported { .. })) => {}
-        other => panic!("expected an unsupported ray–sphere pair, got {other:?}"),
-    }
+    assert_eq!(
+        classify(&m, body, Point3::new(50.0, 0.0, 0.0)).unwrap(),
+        Classification::Outside
+    );
+    assert_eq!(
+        classify(&m, body, Point3::new(0.5, -0.25, 1.0)).unwrap(),
+        Classification::Inside
+    );
     // And a point on it is still `On`, since that test never casts: the
     // seam meridian runs through `(R, 0, 0)`, and the poles are the
     // sphere sample's two vertices.

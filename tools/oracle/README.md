@@ -56,8 +56,9 @@ commit that says so (`.agents/rules/git.md`).
   `IntAna_QuadQuadGeo` for surface pairs (`unsolved` where it reports
   `NoGeometricSolution`, `point` where it reports `IntAna_Point`, through
   the overload each kind pair has) and `IntAna_IntConicQuad` for a
-  curve against a surface, hits deduplicated within `Precision::Confusion`
-  and dropped (counted) when off either operand.
+  curve against a surface — `IntAna_IntLinTorus` for a line against a
+  torus — hits deduplicated within `Precision::Confusion` and dropped
+  (counted) when off either operand.
 - `oracle/step.py` — STEP AP214 write and read, with OCCT's transfer
   banner silenced.
 - `oracle/fixture.py` — fixture directories, `expected.json` layout,

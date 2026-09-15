@@ -30,7 +30,8 @@ surfaces — the type (`empty`, `coincident`, `point`, `line`, `circle`,
 `ellipse`, or `unsolved` where it finds no conic,
 `IntAna_NoGeometricSolution`) and, for every curve it returns, its type
 and sampled points, or for a `point` result its points — or
-`IntAna_IntConicQuad` for a curve against a surface: `coincident`, or
+`IntAna_IntConicQuad` for a curve against a surface, or
+`IntAna_IntLinTorus` for a line against a torus: `coincident`, or
 `points` with every hit's point and conic parameter, duplicates within
 `Precision::Confusion` reported once (a tangent touch comes back twice).
 """
@@ -50,7 +51,7 @@ from OCP.Geom import (
 )
 from OCP.GeomAPI import GeomAPI_ProjectPointOnCurve, GeomAPI_ProjectPointOnSurf
 from OCP.gp import gp_Ax2, gp_Ax3, gp_Dir, gp_Pnt, gp_Vec
-from OCP.IntAna import IntAna_IntConicQuad, IntAna_QuadQuadGeo, IntAna_Quadric, IntAna_ResultType
+from OCP.IntAna import IntAna_IntConicQuad, IntAna_IntLinTorus, IntAna_QuadQuadGeo, IntAna_Quadric, IntAna_ResultType
 from OCP.Precision import Precision
 
 from . import OracleError
@@ -252,8 +253,17 @@ def intersect_surfaces(name_a: str, kind_a: str, a, name_b: str, kind_b: str, b)
 
 def intersect_curve_surface(name_c: str, kind_c: str, curve, name_s: str, kind_s: str, surface) -> dict:
     """`IntAna_IntConicQuad` of the `gp` conic against the plane or the
-    quadric."""
+    quadric, and `IntAna_IntLinTorus` of a line against a torus."""
     conic = {"line": lambda c: c.Lin(), "circle": lambda c: c.Circ(), "ellipse": lambda c: c.Elips()}[kind_c](curve)
+    out: dict[str, Any] = {"a": name_c, "b": name_s}
+    if kind_s == "torus":
+        if kind_c != "line":
+            raise OracleError(f"{name_c} vs {name_s}: no intersector for {kind_c}–torus")
+        r = IntAna_IntLinTorus(conic, surface.Torus())
+        if not r.IsDone():
+            raise OracleError(f"{name_c} vs {name_s}: IntAna_IntLinTorus not done")
+        out["type"] = "points"
+        return _hits(out, curve, surface, [(_xyz(r.Value(i + 1)), r.ParamOnLine(i + 1)) for i in range(r.NbPoints())])
     try:
         if kind_s == "plane":
             r = IntAna_IntConicQuad(conic, surface.Pln(), Precision.Angular_s(), Precision.Confusion_s())
@@ -263,34 +273,39 @@ def intersect_curve_surface(name_c: str, kind_c: str, curve, name_s: str, kind_s
         raise OracleError(f"{name_c} vs {name_s}: no IntAna_IntConicQuad for {kind_c}–{kind_s}: {e}") from e
     if not r.IsDone():
         raise OracleError(f"{name_c} vs {name_s}: IntAna_IntConicQuad not done")
-    out: dict[str, Any] = {"a": name_c, "b": name_s}
     if r.IsInQuadric():
         out["type"] = "coincident"
         return out
     out["type"] = "points"
+    found = [] if r.IsParallel() else [(_xyz(r.Point(i + 1)), r.ParamOnConic(i + 1)) for i in range(r.NbPoints())]
+    return _hits(out, curve, surface, found)
+
+
+def _hits(out: dict, curve, surface, found: list) -> dict:
+    """`found` as the pair's `hits`: each `(point, t)` on both operands
+    within `Precision::Confusion` and not a duplicate of one already kept,
+    ascending by `t`; the rest dropped and counted."""
     hits: list[dict] = []
     dropped = 0
-    if not r.IsParallel():
-        for i in range(r.NbPoints()):
-            p = _xyz(r.Point(i + 1))
-            # The line–quadric intersector has no angular tolerance: a
-            # line parallel to a cylinder's axis to rounding solves a
-            # quadratic with a vanishing leading coefficient and reports a
-            # root at 1e16. A hit that is not on both operands within
-            # Precision::Confusion is that artefact, dropped and counted.
-            on_curve = GeomAPI_ProjectPointOnCurve(_pnt(p), curve)
-            on_surface = GeomAPI_ProjectPointOnSurf(_pnt(p), surface)
-            if (
-                on_curve.NbPoints() == 0
-                or on_surface.NbPoints() == 0
-                or on_curve.LowerDistance() > Precision.Confusion_s()
-                or on_surface.LowerDistance() > Precision.Confusion_s()
-            ):
-                dropped += 1
-                continue
-            if any(math.dist(p, h["point"]) <= Precision.Confusion_s() for h in hits):
-                continue
-            hits.append({"point": p, "t": r.ParamOnConic(i + 1)})
+    for p, t in found:
+        # The line–quadric intersector has no angular tolerance: a line
+        # parallel to a cylinder's axis to rounding solves a quadratic with
+        # a vanishing leading coefficient and reports a root at 1e16. A hit
+        # that is not on both operands within Precision::Confusion is that
+        # artefact, dropped and counted.
+        on_curve = GeomAPI_ProjectPointOnCurve(_pnt(p), curve)
+        on_surface = GeomAPI_ProjectPointOnSurf(_pnt(p), surface)
+        if (
+            on_curve.NbPoints() == 0
+            or on_surface.NbPoints() == 0
+            or on_curve.LowerDistance() > Precision.Confusion_s()
+            or on_surface.LowerDistance() > Precision.Confusion_s()
+        ):
+            dropped += 1
+            continue
+        if any(math.dist(p, h["point"]) <= Precision.Confusion_s() for h in hits):
+            continue
+        hits.append({"point": p, "t": t})
     hits.sort(key=lambda h: h["t"])
     out["hits"] = hits
     if dropped:
