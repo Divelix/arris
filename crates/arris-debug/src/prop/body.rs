@@ -232,7 +232,7 @@ pub enum ParallelKind {
 }
 
 /// Two cylinders on parallel axes whose walls cross in two rulings, both
-/// under one motion (plans/cylinder-cylinder-booleans step 7): `a` on the
+/// under one motion: `a` on the
 /// `z` axis centred at the origin, `b`'s axis `distance` from it, strictly
 /// between the internal and external tangent distances `|R₁ − R₂|` and
 /// `R₁ + R₂`, so neither wall holds the other and neither touches it.
@@ -316,8 +316,8 @@ pub fn parallel_pair() -> impl Strategy<Value = ParallelPair> {
 }
 
 /// Two cylinders of one radius whose axes cross at their midpoints at an
-/// angle `psi`, each through the other, both under one motion
-/// (plans/cylinder-cylinder-booleans step 7): `a` on the `z` axis centred
+/// angle `psi`, each through the other, both under one motion: `a` on the
+/// `z` axis centred
 /// at the origin, `b` in the `xz` plane, turned about its own axis first.
 /// Their walls cross in two ellipses, which cross each other at
 /// `(0, ±R, 0)` before the motion.

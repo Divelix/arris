@@ -136,7 +136,7 @@ and each such case is C6's.
 
 Two plans this one does not contain, in the order the steps need them:
 
-1. **`cylinder-cylinder-booleans`** (idea open, recommendation B). Its
+1. **`cylinder-cylinder-booleans`** (option B, retired 2026-09-15). Its
    parallel-axis arm, `Tangent` at `d = |R₁ − R₂|`, is what S5 needs to
    check a blend cylinder against the cylinder face it is tangent to along
    a ruling (step 7); its equal-radius crossing arm, two ellipses, is what
@@ -359,7 +359,7 @@ bound has to be established here.
     by its closed form; blending then transforming equals transforming
     then blending by volume and counts; two runs dump identically.
 - [ ] Step 7 **[2]** — **The ruling arm, and the miter into the corpus**
-  (waits on `cylinder-cylinder-booleans`).
+  (`cylinder-cylinder-booleans` retired 2026-09-15; ready).
   - Plane against cylinder along a ruling at a non-tangent dihedral: the
     chord edge of an extruded D, a cylinder blend tangent to the D's arc
     face along a ruling and ending on the caps, convex; the same edge on

@@ -31,11 +31,11 @@ fixture passing every corpus stage against Open CASCADE; a failure waiting
 for its fix lives under `tests/fixtures/regression/`. ADR-0001 to 0005.
 **C2 under way: the application gate.** Multi-shell results are lumps of
 one `Solid` (ADR-0006): cavities, split cuts, disjoint fuses, full revolves
-with holes. A revolve profile may touch its axis: cones and spheres close
-on degenerate edges, notches to the axis are voids. `kernel-seams` (done
-2026-09-13) laid the shared seams — `FaceDomain`, `Classifier`, the Euler
-line, `AssemblySlots`, `Assembly::of_body`, `ops::rebuild` — a blend
-builds on. **Next:** `/plan fillet-and-chamfer`.
+with holes. A revolve profile may touch its axis. Fillet and chamfer on
+plane–plane edges, miters included (ADR-0007). Cylinder–cylinder booleans
+(done 2026-09-15): parallel, tangent and equal-radius crossing axes, one
+curvature rule for every tangent pair. **Next:** `/work fillet-and-chamfer`
+step 7.
 
 ## Rules that are not derivable from the code
 

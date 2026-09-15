@@ -110,7 +110,7 @@ fn extrudes_to_pappus(sweep: &Sweep) -> Result<(), TestCaseError> {
         let report = check(&m, body, Level::Full);
         // Every wall of an extrude runs along the one direction, so two of
         // them are parallel cylinders, a pair S5 decides: nothing is
-        // unchecked (plans/cylinder-cylinder-booleans step 11).
+        // unchecked (docs/DATA-MODEL.md §Curves).
         prop_assert!(
             report.is_ok() && report.unchecked().is_empty(),
             "not clean at Full along {}·n\n{}\n{}",

@@ -301,8 +301,8 @@ with their `#[ignore]`d twins — green.*
   edges in a random pose fillets and chamfers clean at `Full`, audited, at
   its closed-form volume miters included, the same moved before or after
   and deterministic (`crates/arris-ops/tests/blend_prop.rs`), nothing
-  unchecked at rest; in a pose, a fillet's S5 rows between two blend
-  cylinders wait on the cylinder–cylinder line.
+  unchecked at rest; in a pose, S5 leaves unchecked only two blend
+  cylinders on skew axes within `2r` of each other, the quartic and C3's.
 - Cone, sphere and torus in the intersector in the positions a blend and
   M5's revolves put them, every one a conic: a plane against a quadric
   with the plane perpendicular to the axis, a cylinder against a quadric
@@ -317,10 +317,20 @@ with their `#[ignore]`d twins — green.*
   scratch STEP.
 - Cylinder–cylinder booleans. Parallel axes (rulings, a tangent line)
   are what the transversal probe needs and what a blend along a ruling's
-  S5 row needs; coaxial already passes (`boolean/coaxial-cut`,
-  `coaxial-fuse`); equal radii with crossing axes, two ellipses, is the
-  miter's S5 row. Crossing axes of unequal radii, a quartic, close the
-  quadric-curve `⚠ OPEN` with an ADR and are C3's; no probe forces them.
+  S5 row needs; equal radii with crossing axes, two ellipses, is the
+  miter's S5 row. Crossing axes of unequal radii and skew axes within the
+  radii, a quartic, close the quadric-curve `⚠ OPEN` with an ADR and are
+  C3's; no probe forces them. **Done 2026-09-15**: coaxial
+  (`boolean/coaxial-cut`, `coaxial-fuse`); parallel
+  (`parallel-cylinders-cut`, the probe in its own units, `-common`,
+  `-fuse`, `-seam`); tangent outside and inside, by one curvature rule
+  for every tangent pair (`tangent-cylinders-fuse`, `-cut`,
+  `pin-in-bore-fuse`, `-cut`); equal radii crossing, the two ellipses
+  meeting at section crossings (`cross-cylinders-common`, `-fuse`, `-cut`
+  refused as non-manifold, `oblique-cross-common`,
+  `seam-through-crossing-common`, `short-cross-cylinders-fuse`,
+  `tee-fuse`); `geom/c2-cylinder-pairs` against the oracle; parallel and
+  crossing pairs at random poses (`boolean_prop.rs`).
 - Results of more than one shell — an enclosed cavity, a disjoint `fuse`,
   a `cut` that splits its target, a full revolve of a profile with holes —
   as lumps of one `Solid`, two lumps touching along an edge or at a vertex
@@ -346,7 +356,8 @@ cylinder − cylinder transversal (2.2079e-5), flush union (2.0), revolve
 touching the axis (2π), a fillet on a filleted body, a vertical and a cap
 edge filleted in one call — every twin un-ignored and every probe deleted
 (through hole, blind hole and flush union already pass as C1 fixtures at
-another scale, the enclosed cavity as `boolean/enclosed-cavity` in its own);
+another scale, the enclosed cavity as `boolean/enclosed-cavity` and the
+transversal as `boolean/parallel-cylinders-cut` in its own);
 `sweep/revolve-frustum`, `revolve-barrel` and `revolve-ring` passing every
 corpus stage with nothing left unchecked; the consumer's naming fixtures
 pass through provenance with no matcher; the consumer's facade compiles

@@ -529,7 +529,7 @@ fn cut_then_fuse_of_a_cylinder_across_a_small_box() {
     assert_same_properties_to(&prestored, &punion, "(a − b) ∪ b against a ∪ b", rel).unwrap();
 }
 
-// -- two cylinders (plans/cylinder-cylinder-booleans step 7) -----------
+// -- two cylinders on parallel or crossing axes ---------------------------
 
 /// `op` over the operands `build` makes, in two fresh models: the same
 /// dump, ids and all.

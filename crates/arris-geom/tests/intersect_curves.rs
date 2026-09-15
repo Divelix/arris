@@ -558,7 +558,7 @@ fn every_analytic_pair_passes_the_common_properties() {
 /// that answers, any pair; where it refuses — two conics in one plane with
 /// an ellipse among them — the conics are the same only as the closed
 /// form says: an ellipse's twins are, a circle or a second ellipse in its
-/// plane is not (plans/cylinder-cylinder-booleans step 7). A NURBS
+/// plane is not (docs/DATA-MODEL.md §Curves). A NURBS
 /// operand is `Unsupported` naming the pair.
 #[test]
 fn curves_coincide_is_the_coincident_verdict_without_the_quartic() {

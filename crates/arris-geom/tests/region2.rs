@@ -474,7 +474,7 @@ fn a_point_on_a_loop_is_on_the_boundary_and_a_hole_is_outside() {
 /// point: across and around a star with holes, and a fraction of the
 /// tolerance either side of each of its vertices and segment midpoints,
 /// at tolerances from far below a segment's length to far above it
-/// (plans/cylinder-cylinder-booleans step 9).
+/// (docs/ARCHITECTURE.md §The checker).
 #[test]
 fn the_side_index_answers_as_the_walk() {
     check(

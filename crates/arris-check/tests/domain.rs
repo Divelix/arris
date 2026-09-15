@@ -190,7 +190,7 @@ arris_debug::prop_shards! {
     /// `FaceDomain::side`, which reads an index, answers as the walk over
     /// every segment: a cylinder or torus patch written in any translate,
     /// at points across and around its (u, v) box and on its loops'
-    /// vertices (plans/cylinder-cylinder-booleans step 9).
+    /// vertices (docs/ARCHITECTURE.md §The checker).
     the_indexed_side_is_the_walk [shard_0 shard_1 shard_2 shard_3]
         ((torus, u0, du, v0, dv, k, spots)) = (
             any::<bool>(),

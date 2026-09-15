@@ -116,8 +116,9 @@ of `results`, one entry per recipe sample and pair:
 }
 ```
 
-A surface pair's `type` is `empty`, `coincident`, `line`, `circle` or
-`ellipse`, with every result curve sampled (five points along a line,
+A surface pair's `type` is `empty`, `coincident`, `line`, `circle`,
+`ellipse` or `unsolved` (no curves: `IntAna_NoGeometricSolution`), with
+every result curve sampled (five points along a line,
 eight around a closed curve); a curve–surface pair's is `coincident` or
 `points`, hits ascending by the conic parameter, plus `dropped` when the
 intersector reported a point that lies on neither operand.

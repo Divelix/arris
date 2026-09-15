@@ -255,11 +255,13 @@ piece of an operand edge of either face is that edge and not a section
 edge; whether an edge runs along the curve is `curves_coincide`, the
 verdict without the points, so a rim circle in the plane of the ellipse
 its own cap plane cuts from the other wall — two short cylinders crossing
-steeply — needs no closed form for where the two conics would meet. An edge that lies in a face of the other operand
+steeply — needs no closed form for where the two conics would meet. An
+edge that lies in a face of the other operand
 (`Interferences::coincident`) is paved and placed the same way whether
 or not a face of its own is coincident with that face: a seam on the
 ruling two parallel walls cross along splits the other wall as an image,
-since no coincident neighbour is there to place it. A `Tangent` pair — a plane and a cylinder touching along a ruling
+since no coincident neighbour is there to place it. A `Tangent` pair — a
+plane and a cylinder, or two parallel cylinders, touching along a ruling
 — contributes no section edge and no pave on any operand edge: the
 ruling is paved by the *touches*, the hits of either face's edges on the
 other face that lie on it (every curve in a face tangent to the other
@@ -277,7 +279,12 @@ the identities whose outcome has to be known in advance, its
 exactly two, two lumps of one solid that hold the identities like the
 rest. The other pairs — the wall crossing an edge, a corner sliced off —
 stay in `overlapping_pair`, where `cut` is held to the identity whatever
-number of lumps it makes.
+number of lumps it makes. Two cylinders come from `parallel_pair` — axes
+apart between the two tangent distances, some with a seam on a ruling or
+flush caps — and `crossing_pair` — equal radii crossing at 30° to 90°,
+each through the other, some with a seam through a crossing vertex, its
+`common` held to `16R³/(3 sin ψ)` and either `cut` to
+`Reason::NonManifold`.
 
 `ops::fuse(m, a, b)`, `ops::common(m, a, b)` and `ops::cut(m, target,
 tool)` are three selections over that decomposition (ADR-0004), one

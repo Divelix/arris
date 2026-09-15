@@ -2,7 +2,7 @@
 //! analytic kind and of a hand-built NURBS saddle, its refusals, and the
 //! fact the boolean's curvature rule leans on for two cylinders: a
 //! tangent pair never has equal curvatures across its ruling
-//! (plans/cylinder-cylinder-booleans step 5).
+//! (docs/ARCHITECTURE.md §Operations, the curvature rule).
 
 use core::f64::consts::{FRAC_PI_2, FRAC_PI_4, PI};
 
