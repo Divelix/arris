@@ -48,6 +48,9 @@ fn every_row_of_the_roadmap_table_has_a_fixture() {
         "sweep/revolve-tube",
         "sweep/revolve-quarter",
         "sweep/revolve-l-profile",
+        "sweep/revolve-frustum",
+        "sweep/revolve-barrel",
+        "sweep/revolve-ring",
         "provenance/bolt-pattern-rebuild",
     ] {
         assert!(

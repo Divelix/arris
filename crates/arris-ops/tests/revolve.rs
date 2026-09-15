@@ -7,7 +7,7 @@
 //! profiles whose segments sweep cones, spheres and tori — the same,
 //! nothing unchecked either, a ray through an apex or a pole abandoned on
 //! its degenerate edge; the closed forms of a frustum, a spherical zone
-//! and a ring, each read back from Arris's STEP by the oracle; the tube's
+//! and a ring, which the corpus reads back through the oracle; the tube's
 //! numbers equal to `boolean/coaxial-cut`'s; a profile given clockwise
 //! the same body as counter-clockwise; the angle's bounds; and every
 //! typed refusal with the model untouched.
@@ -867,12 +867,13 @@ fn profile_of(recipe: &Recipe) -> Profile {
 }
 
 /// The three quadric-faced revolves, held to the checker at `Full` with
-/// nothing unchecked, to their closed forms and to the oracle's reading
-/// of Arris's STEP through a scratch fixture: a trapezoid's frustum less
-/// its bore, an arc's spherical zone less its bore, and a circle's ring —
-/// the last with the counts and the Euler line of `sample::torus`.
+/// nothing unchecked and to their closed forms: a trapezoid's frustum less
+/// its bore, narrowing and widening, an arc's spherical zone less its
+/// bore, and a circle's ring — the last with the counts and the Euler line
+/// of `sample::torus`. The oracle reads them in the corpus, as
+/// `sweep/revolve-frustum`, `revolve-barrel` and `revolve-ring`.
 #[test]
-fn the_frustum_the_zone_and_the_ring_have_their_closed_forms_and_the_oracles_volume() {
+fn the_frustum_the_zone_and_the_ring_have_their_closed_forms() {
     let z = Axis::z_at(Point3::origin());
     // x ∈ [1, 4] at z = −1 narrowing to x ∈ [1, 2] at z = 1: the cone's
     // Z is −z; and the same widening, the cone's Z is +z.
@@ -982,8 +983,6 @@ fn the_frustum_the_zone_and_the_ring_have_their_closed_forms_and_the_oracles_vol
                 "{name}: {surfaces:?}"
             );
         }
-        let dir = oracle::scratch_fixture(name, &recipe).unwrap();
-        oracle::compare_dir(&dir, &step::write(&m, &[body]).unwrap(), None, name).unwrap();
     }
 
     // The ring is `sample::torus` as a revolve builds it: one face, two
@@ -1006,8 +1005,8 @@ fn the_frustum_the_zone_and_the_ring_have_their_closed_forms_and_the_oracles_vol
 /// as a revolve builds it; and a quarter turn of a kite touching the axis
 /// at one vertex into two cones closing there, each on a degenerate edge
 /// of its own. Each is clean at `Full` with nothing unchecked, closes its
-/// Euler line at genus 0 without the degenerate
-/// edges, has its closed-form volume and area, meshes closed with every
+/// Euler line at genus 0 without the degenerate edges, has its
+/// closed-form volume and area, meshes closed with every
 /// degenerate edge one index, accounts for every entity — a `Rise` naming
 /// the degenerate edge of each face closing there — and is read back from
 /// Arris's STEP by the oracle, whose reader rebuilds the degenerate edges

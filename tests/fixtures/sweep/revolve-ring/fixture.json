@@ -1,0 +1,31 @@
+{
+  "description": "a circle of radius 2 centred 5 from the axis revolved about z: a ring torus of one face, two seams and one vertex in a full turn; a quarter turn's flat ends are discs, each cutting the torus in a tube circle through the axis plane",
+  "params": {"angle": 360, "ends": 0},
+  "variants": {
+    "quarter": {"angle": 90, "ends": 2}
+  },
+  "steps": [
+    {
+      "name": "circle",
+      "op": "profile",
+      "plane": {"origin": [0, 0, 0], "x": [1, 0, 0], "y": [0, 0, 1]},
+      "outer": {"circle": {"center": [5, 0], "radius": 2}}
+    },
+    {"name": "result", "op": "revolve", "profile": "circle", "axis": {"origin": [0, 0, 0], "direction": [0, 0, 1]}, "angle_deg": "angle"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [3.5355339059327378, 3.5355339059327378, 0], "expect": "in"},
+    {"label": "inside_high", "point": [2.8284271247461903, 2.8284271247461903, 1.5], "expect": "in"},
+    {"label": "in_the_hole", "point": [1.4142135623730951, 1.4142135623730951, 0], "expect": "out"},
+    {"label": "past_the_tube", "point": [5.656854249492381, 5.656854249492381, 0], "expect": "out"},
+    {"label": "on_the_outer_equator", "point": [4.949747468305833, 4.949747468305833, 0], "expect": "on"},
+    {"label": "on_the_top", "point": [3.5355339059327378, 3.5355339059327378, 2], "expect": "on"},
+    {"label": "behind", "point": [-3.5355339059327378, -3.5355339059327378, 0], "expect": null},
+    {"label": "on_axis", "point": [0, 0, 0], "expect": "out"}
+  ],
+  "analytic": {
+    "volume": "2 * pi * pi * 5 * 4 * angle / 360",
+    "area": "4 * pi * pi * 5 * 2 * angle / 360 + ends * 4 * pi"
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "description": "a trapezoid x∈[1, lo] at z = −1 to x∈[1, hi] at z = 1 revolved about z: a frustum less its bore, the cone narrowing along the axis (its Z against it) by default and widening in `widening`; a quarter turn's flat ends cut the cone along a ruling through the axis plane",
+  "params": {"lo": 4, "hi": 2, "angle": 360, "caps": 0},
+  "variants": {
+    "widening": {"lo": 2, "hi": 4},
+    "quarter": {"angle": 90, "caps": 8}
+  },
+  "steps": [
+    {
+      "name": "trapezoid",
+      "op": "profile",
+      "plane": {"origin": [0, 0, 0], "x": [1, 0, 0], "y": [0, 0, 1]},
+      "outer": {"start": [1, -1], "segments": [{"line_to": ["lo", -1]}, {"line_to": ["hi", 1]}, {"line_to": [1, 1]}, {"line_to": [1, -1]}]}
+    },
+    {"name": "result", "op": "revolve", "profile": "trapezoid", "axis": {"origin": [0, 0, 0], "direction": [0, 0, 1]}, "angle_deg": "angle"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [1.4142135623730951, 1.4142135623730951, 0], "expect": "in"},
+    {"label": "past_the_cone", "point": [2.4748737341529163, 2.4748737341529163, 0], "expect": "out"},
+    {"label": "in_the_bore", "point": [0.35355339059327373, 0.35355339059327373, 0.5], "expect": "out"},
+    {"label": "on_the_cone", "point": [2.1213203435596424, 2.1213203435596424, 0], "expect": "on"},
+    {"label": "on_the_bore", "point": [0.7071067811865476, 0.7071067811865476, 0.5], "expect": "on"},
+    {"label": "on_the_bottom", "point": [1.0606601717798212, 1.0606601717798212, -1], "expect": "on"},
+    {"label": "behind", "point": [-1.4142135623730951, -1.4142135623730951, 0], "expect": null},
+    {"label": "on_axis", "point": [0, 0, 0], "expect": "out"}
+  ],
+  "analytic": {
+    "volume": "(2 * pi * (16 + 8 + 4) / 3 - 2 * pi) * angle / 360",
+    "area": "(15 * pi + 3 * pi + 6 * sqrt(8) * pi + 4 * pi) * angle / 360 + caps"
+  }
+}

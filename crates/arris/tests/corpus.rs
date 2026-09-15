@@ -408,6 +408,30 @@ fn sweep_revolve_notch_to_axis() {
     run("sweep/revolve-notch-to-axis");
 }
 
+/// A trapezoid revolved about z: a frustum less its bore, its cone
+/// narrowing along the axis and, in `widening`, widening; a quarter turn's
+/// flat ends meet the cone along a ruling (ADR-0008).
+#[test]
+fn sweep_revolve_frustum() {
+    run("sweep/revolve-frustum");
+}
+
+/// An arc about the origin revolved a full turn: a spherical zone less
+/// its bore, S5 deciding the sphere against the annuli and the bore by the
+/// meridian arm (ADR-0008).
+#[test]
+fn sweep_revolve_barrel() {
+    run("sweep/revolve-barrel");
+}
+
+/// A circle revolved about z: `sample::torus` as a revolve builds it, one
+/// face and one vertex; a quarter turn's discs cut the torus in its tube
+/// circles (ADR-0008).
+#[test]
+fn sweep_revolve_ring() {
+    run("sweep/revolve-ring");
+}
+
 /// The consumer's 2-cube with one vertical edge filleted: a plane–plane
 /// blend, a cylinder between two circle ends (ADR-0007), at `r = 0.2`
 /// and at `r = 0.5`.

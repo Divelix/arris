@@ -220,7 +220,7 @@ bound has to be established here.
   - A property failure is shrunk to a `regression/` fixture in this step.
     A mixed-kind result the shards reach is a finding: recorded in this
     plan, and returned to the human before the enum grows.
-- [ ] Step 5 **[1]** — **M5's quadric revolves into the corpus.**
+- [x] Step 5 **[1]** — **M5's quadric revolves into the corpus.**
   - Fixtures, their oracle values from `expected.py`, each blessed:
     - `sweep/revolve-frustum`, a trapezoid's frustum less its bore
       (`2π(16 + 8 + 4)/3 − 2π`), with variants for the widening cone and

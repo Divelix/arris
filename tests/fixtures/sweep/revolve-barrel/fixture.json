@@ -1,0 +1,30 @@
+{
+  "description": "an arc of radius 3 about the origin from z = −1 to z = 1 at x = √8, closed to the bore at x = 1, revolved a full turn about z: a spherical zone between two annuli, less its bore, the sphere's seam on the profile plane",
+  "steps": [
+    {
+      "name": "barrel",
+      "op": "profile",
+      "plane": {"origin": [0, 0, 0], "x": [1, 0, 0], "y": [0, 0, 1]},
+      "outer": {"start": [1, -1], "segments": [{"line_to": ["sqrt(8)", -1]}, {"arc_to": ["sqrt(8)", 1], "via": [3, 0]}, {"line_to": [1, 1]}, {"line_to": [1, -1]}]}
+    },
+    {"name": "result", "op": "revolve", "profile": "barrel", "axis": {"origin": [0, 0, 0], "direction": [0, 0, 1]}, "angle_deg": 360}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [1.4142135623730951, 1.4142135623730951, 0], "expect": "in"},
+    {"label": "inside_high", "point": [-1.7320508075688772, 1, 0.75], "expect": "in"},
+    {"label": "past_the_zone", "point": [2.4748737341529163, 2.4748737341529163, 0], "expect": "out"},
+    {"label": "above", "point": [1.4142135623730951, 1.4142135623730951, 1.5], "expect": "out"},
+    {"label": "in_the_bore", "point": [0.35355339059327373, 0.35355339059327373, 0.5], "expect": "out"},
+    {"label": "on_the_sphere", "point": [2.1213203435596424, 2.1213203435596424, 0], "expect": "on"},
+    {"label": "on_the_bore", "point": [0.7071067811865476, 0.7071067811865476, 0.5], "expect": "on"},
+    {"label": "on_the_top", "point": [1.0606601717798212, 1.0606601717798212, 1], "expect": "on"},
+    {"label": "on_axis", "point": [0, 0, 0], "expect": "out"}
+  ],
+  "analytic": {
+    "volume": "pi * 2 * (3 * 8 + 3 * 8 + 4) / 6 - 2 * pi",
+    "area": "12 * pi + 14 * pi + 4 * pi",
+    "centroid": [0, 0, 0],
+    "genus": 1
+  }
+}
