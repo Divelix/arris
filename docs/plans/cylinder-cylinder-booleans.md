@@ -321,7 +321,7 @@ bound has to be established here.
   - Fixture `boolean/short-cross-cylinders-fuse`, `R = 1`, `ψ = 30°`,
     `L = 4R / sin ψ`, the tool turned 40°: refused before, every stage
     after, Open CASCADE's ellipse-origin vertex in `counts_differ`.
-- [ ] Step 8 **[2]** — **Crossing ellipses independent of operand
+- [x] Step 8 **[2]** — **Crossing ellipses independent of operand
   order.** Swapping the operands negated each ellipse's `X` and `Z`, so
   the section curve ran the other way, its pcurve fits sampled it
   differently (37 knots against 38) and `fuse(a, b)` and `fuse(b, a)`

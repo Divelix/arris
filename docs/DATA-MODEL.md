@@ -218,11 +218,13 @@ cylinders of radius `R`, axes `a` and `b` with `b` flipped so that
 the midpoint of the axes' nearest points: the first with `Z` along
 `a − b`, `X` along `a + b` and major radius `R / sin(ψ/2)`, the second
 with `Z` along `a + b`, `X` along `a − b` and major radius `R / cos(ψ/2)`,
-both with minor radius `R` along `a × b` — each `X` toward increasing `v`
-on the first cylinder — and the two ellipses cross each other at `±R`
-along `a × b`, off the plane of the axes. Swapping the operands gives the
-same point sets, up to a line's orientation and the order of two
-rulings.
+both with minor radius `R` along `a × b`, each `Z` and `X` signed so its
+largest-magnitude component is positive (the lower index on a tie) —
+and the two ellipses cross each other at `±R` along `a × b`, off the
+plane of the axes. Swapping two crossing operands gives the same
+ellipses bit for bit, so a boolean's pcurve fits do not depend on the
+order; swapping two parallel ones gives the same point sets, up to a
+line's orientation and the order of two rulings.
 
 `intersect_curve_surface(c, s, tol)` returns `CurveSurfaceIntersection::{
 Points(Vec<CurveSurfaceHit>), Coincident}` for the pairs with a closed form

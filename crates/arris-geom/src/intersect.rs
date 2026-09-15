@@ -11,13 +11,15 @@ use crate::{Curve, GeomError, GeomKind, Surface};
 /// Every curve is an exact analytic curve lying on both surfaces to
 /// rounding, with a frame that is Arris's own deterministic choice
 /// (`docs/DATA-MODEL.md` §Curves): a circle on a cylinder takes the
-/// cylinder's `X`, an ellipse's `X` is its major axis in the direction of
-/// increasing `v` (on the first cylinder, for two), a ruling on a
-/// cylinder runs along its `Z` from the point nearest the cylinder's
-/// origin (the first cylinder's, for two), and the line of two planes
-/// starts at its point nearest the first plane's origin. Swapping the
-/// operands gives the same point sets, up to the orientation of a line and
-/// the order of two parallel cylinders' rulings.
+/// cylinder's `X`, a plane's ellipse on a cylinder has its `X` along its
+/// major axis in the direction of increasing `v`, two crossing cylinders'
+/// ellipses have each `Z` and `X` signed so the largest-magnitude
+/// component is positive, a ruling on a cylinder runs along its `Z` from
+/// the point nearest the cylinder's origin (the first cylinder's, for two
+/// parallel ones), and the line of two planes starts at its point nearest
+/// the first plane's origin. Swapping the operands gives the same point
+/// sets, up to the orientation of a line and the order of two parallel
+/// cylinders' rulings — and two crossing cylinders' ellipses bit for bit.
 #[derive(Debug, Clone, PartialEq)]
 pub enum SurfaceIntersection {
     /// The surfaces do not meet: parallel planes apart by more than the
@@ -240,10 +242,13 @@ fn parallel_cylinders(
 /// minor radius `R` along `a × b`. A point equidistant from both axes in
 /// a plane through the crossing is on one cylinder exactly when it is on
 /// the other, and those planes are the bisectors; each ellipse is then
-/// `ca`'s oblique section. Both `X`s point toward increasing `v` on `ca`.
-/// The crossing is the midpoint of the axes' nearest points, so swapping
-/// the operands gives the same ellipses; the two ellipses cross each other
-/// at `±R` along `a × b`.
+/// `ca`'s oblique section. Each `Z` and `X` takes the sign that makes its
+/// largest-magnitude component positive, the lower index on a tie, and
+/// the crossing is the midpoint of the axes' nearest points summed in
+/// either order: swapping the operands negates `a − b` exactly and leaves
+/// `a + b` and the midpoint as they were, so it gives the same ellipses bit
+/// for bit, the same way round — one parametrisation, and one fit of each
+/// pcurve. The two ellipses cross each other at `±R` along `a × b`.
 fn crossing_cylinders(
     ca: &Frame,
     cb: &Frame,
@@ -265,8 +270,13 @@ fn crossing_cylinders(
     let t = (c * on_a - on_b) / denom;
     let near_a = ca.origin() + s * a;
     let near_b = cb.origin() + t * b;
-    let centre = near_a + 0.5 * (near_b - near_a);
-    let (minus, plus) = (a - b, a + b);
+    let centre = Point3::from(0.5 * (near_a.coords + near_b.coords));
+    // Signed so that neither operand order is preferred: see the doc.
+    let canonical = |v: Vec3| {
+        let k = (0..3).fold(0, |k, i| if v[i].abs() > v[k].abs() { i } else { k });
+        if v[k] < 0.0 { -v } else { v }
+    };
+    let (minus, plus) = (canonical(a - b), canonical(a + b));
     // `|a − b| = 2 sin(ψ/2)` and `|a + b| = 2 cos(ψ/2)`, each measured
     // directly so a small angle keeps its digits.
     let ellipse = |z: Vec3, x: Vec3, half_chord: f64| {

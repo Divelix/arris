@@ -750,7 +750,11 @@ fn equal_cylinders_crossing_meet_in_the_two_bisecting_ellipses() {
                 (major_radius - major).abs() <= EXACT * scale,
                 "{major_radius} vs {major}"
             );
-            prop_assert!(frame.x().dot(&fa.z()) > 0.0, "X points down v");
+            // Z and X signed with their largest-magnitude component positive.
+            for v in [frame.z().into_inner(), frame.x().into_inner()] {
+                let k = (0..3).fold(0, |k, i| if v[i].abs() > v[k].abs() { i } else { k });
+                prop_assert!(v[k] > 0.0, "{v} is not canonically signed");
+            }
             for p in meets {
                 let d = ellipse
                     .project(p)
@@ -759,6 +763,11 @@ fn equal_cylinders_crossing_meet_in_the_two_bisecting_ellipses() {
                 prop_assert!(d <= EXACT * scale, "{p} is {d} off {ellipse:?}");
             }
         }
+        // Either operand order: the same two ellipses bit for bit, in the
+        // same order, so a boolean fits each pcurve once whichever it is.
+        let swapped = intersect_surfaces(&b, &a, Precision::DEFAULT.tolerance())
+            .map_err(|e| TestCaseError::fail(e.to_string()))?;
+        prop_assert_eq!(&swapped, &r, "swapping the operands");
         Ok(())
     });
 }
