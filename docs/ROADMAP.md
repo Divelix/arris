@@ -282,9 +282,9 @@ with their `#[ignore]`d twins — green.*
   A second fillet on an already-filleted body. Two blended edges meeting
   at a corner whose third edge stays sharp — a vertical and a cap edge, or
   two cap edges, the same solid rotated — meet in a miter, two cylinders
-  and one ellipse, not a vertex blend (Open CASCADE, checked). Blends are
-  rolling-ball stripes built in closed form on analytic face pairs,
-  ADR-0007: `ops::fillet` and `ops::chamfer` on a plane–plane edge with
+  and one ellipse, not a vertex blend (Open CASCADE, checked). **Done
+  2026-09-15**, ADR-0007: blends are rolling-ball stripes built in closed
+  form on analytic face pairs. `ops::fillet` and `ops::chamfer` on a plane–plane edge with
   its ends trimmed by the face across are in, convex or concave and
   several disjoint edges in one call (`blend/box-edge-fillet`,
   `box-cap-edge-fillet`, `box-posed-edge-fillet`, `box-oblique-end`,
