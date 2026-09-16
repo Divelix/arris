@@ -184,7 +184,7 @@ bound has to be established here.
       signed volume within the mesh's own bound of `measure`'s, over the
       cube, the cylinder (a seam), the sphere (poles), the torus (genus 1)
       and a filleted box.
-- [ ] Step 5 **[1]** — **`io::obj`**: `v`, `vt`, `vn`, `f` with face-local
+- [x] Step 5 **[1]** — **`io::obj`**: `v`, `vt`, `vn`, `f` with face-local
       indices, one `g` per face, positions shared and corners written when
       the mesh has them. Tests: a parser in the test reads the file back and
       reconstructs the corner block exactly; every `vt` evaluates on its

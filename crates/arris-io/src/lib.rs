@@ -14,6 +14,7 @@
 
 #[cfg(feature = "serde")]
 pub mod native;
+pub mod obj;
 pub mod step;
 pub mod stl;
 
@@ -21,7 +22,7 @@ pub use arris_check;
 pub use arris_mesh;
 
 /// Why a mesh format writer could not write an [`arris_mesh::TriMesh`]:
-/// shared by [`stl`] and, once it exists, `obj`.
+/// shared by [`stl`] and [`obj`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum MeshWriteError {
     /// Binary STL's triangle count is a `u32`; the mesh has more

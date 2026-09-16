@@ -968,6 +968,14 @@ B-Rep).
   the Rust seam to it, held to the mesh's own triangle count and area and
   to `measure::mass_properties`'s volume within the corpus's own
   `mesh_volume_rel`.
+- **OBJ** (`arris_io::obj::write`, ADR-0013): `v` and `f` always, one `g`
+  per `FaceRange` partitioning the triangles by face id in iteration
+  order; `vt` and `vn` only when the mesh carries a `Corners` block, one
+  of each per face-local vertex, `f` then `v/vt/vn` — the same index for
+  `vt` and `vn`, since a face-local vertex has exactly one of each and
+  OBJ has no way to name one without the other. Every real is the
+  shortest round-trip decimal, `f64` throughout, so two writes are
+  byte-identical; `write` never fails.
 - **Text dump** (`arris-debug::dump_text`): the deterministic, diffable
   rendering of a body that fixtures store and tests compare. Not a format:
   it has no reader.
