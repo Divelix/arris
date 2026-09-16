@@ -39,14 +39,15 @@ Cone, sphere and torus faces check at `Full` on a shared axis (ADR-0008).
 The three facade decisions are taken and
 `docs/ARCHITECTURE.md` has no `⚠ OPEN` left: no name grammar, an origin's
 pieces in a guaranteed **split order** (ADR-0009); `Model::retain` never
-renumbers a slot (ADR-0010); `TriMesh` stays `f64` (ADR-0011).
-**Next:** projection, face frames, mesh normals and (u, v), STL/OBJ,
-then the facade swap.
+renumbers a slot (ADR-0010); `TriMesh` stays `f64` (ADR-0011). Plane
+projection, face frames, a mesh corner block (ADR-0012), STL/OBJ export
+(ADR-0013) and inertia matched to an independent integrator are in
+(2026-09-16): C2's last non-facade line. **Next:** the facade swap.
 
 ## Rules that are not derivable from the code
 
 - Lower crates never name upper crates' types: `math` ← `geom` ← `topo` ←
-  `check` ← `ops`/`mesh`/`io` ← `debug` ← `arris`.
+  `check` ← `ops`/`mesh` ← `io` ← `debug` ← `arris` (ADR-0013).
 - No panics on geometry; typed errors naming entities. The checker runs
   after every operation in debug builds. Every operation returns
   provenance. Deterministic ids and iteration. Details:

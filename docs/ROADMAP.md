@@ -377,7 +377,19 @@ with their `#[ignore]`d twins — green.*
   properties with inertia matched to the consumer's integrator; STL and
   OBJ export from the tessellation, beside STEP; per-corner normals and
   (u, v) in `TriMesh` with face-local vertices, `f64` fields beside the
-  watertight buffer a renderer asks for them with (ADR-0011).
+  watertight buffer a renderer asks for them with (ADR-0011). **Done
+  2026-09-16**, ADR-0012 (the corner block: `MeshRequest`, `Corners`,
+  the singular rule) and ADR-0013 (mesh formats live in `arris-io`,
+  which depends on `arris-mesh`): `ops::query::project_to_plane` carries
+  an edge's range through its own projected curve's parameter, the
+  circle-to-ellipse phase shift its retiring case; `ops::query::face_frame`
+  and `frame_at` give a face's outward-oriented frame, on a plane or at a
+  `(u, v)`; `io::stl` (ASCII and binary) and `io::obj` read back clean
+  through Open CASCADE's `RWStl` (`tools/oracle/mesh.py`) and the test's
+  own OBJ parser; `measure::mass_properties`'s inertia tensor matches an
+  independent tetrahedra-with-the-origin integrator over the tessellation
+  as well as the oracle. Every corpus fixture's corner block satisfies
+  ADR-0012's invariants with no measurable timing cost.
 
 **Out:** NURBS–NURBS intersection, sweep along a path, loft, shell, healing,
 the STEP reader.

@@ -61,8 +61,9 @@ down. They apply to every crate; `SEED.md` §9 holds the reasons.
 - **`#![forbid(unsafe_code)]`** on every crate. A performance case that
   wants `unsafe` is an idea, not a step.
 - **Lower crates never name upper crates' types.** `math` ← `geom` ←
-  `topo` ← `check` ← `ops`/`mesh`/`io` ← `debug` ← `arris`. CI checks
-  `cargo tree` for the pairs most tempted to break it.
+  `topo` ← `check` ← `ops`/`mesh` ← `io` ← `debug` ← `arris` (ADR-0013:
+  `io` depends on `mesh`, so the two are no longer flat siblings). CI
+  checks `cargo tree` for the pairs most tempted to break it.
 - **Geometry enums are exhaustive on purpose.** A new surface or curve
   kind is a breaking change that makes every `match` fail to compile —
   that is the feature. Never add a wildcard arm to an intersection or
