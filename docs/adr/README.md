@@ -22,3 +22,4 @@ here; the first ADR is the first decision taken *after* the seed.
 | [0009](0009-no-name-grammar-a-guaranteed-split-order.md) | Arris owns no name grammar: a consumer names from `Provenance`, and the kernel guarantees the split order | accepted |
 | [0010](0010-retain-keeps-slots-sparse.md) | `Model::retain` keeps slots sparse: a live id never moves, a dead one never aliases | accepted |
 | [0011](0011-the-tessellation-boundary-is-f64.md) | The tessellation boundary is `f64`: the cast to `f32` is the consumer's, at its own boundary | accepted |
+| [0012](0012-the-render-buffer-beside-the-watertight-one.md) | The render buffer beside the watertight one: an optional face-local corner block on the same `TriMesh` | accepted |
