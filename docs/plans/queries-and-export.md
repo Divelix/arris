@@ -125,7 +125,9 @@ range carried into the projected curve's *own* parameter — a circle whose
 projection is an ellipse is shifted by that ellipse's phase, so the range
 must be shifted with it or the piece is the wrong arc. A degenerate edge,
 and a curve whose projection collapses, is a typed refusal naming the
-entity. `face_frame` is the face's surface frame with `Z` the **outward**
+entity: `OpError::Degenerate` with one of **three new `Reason`
+variants** (step 6's finding, below) — `NotProjectable` for a face,
+shell or body, `DegenerateEdge`, `ProjectionCollapses`. `face_frame` is the face's surface frame with `Z` the **outward**
 normal — flipped, right-handedness kept, when the face's use is `Reversed`
 — and is a plane's only; `frame_at` is any face at a (u, v) its domain
 contains (`check::domain::FaceDomain`), refused at a singular point where
@@ -192,7 +194,7 @@ bound has to be established here.
       there; the groups partition the triangles by face id in iteration
       order; a mesh without corners writes `v`/`f`/`g` and no `vt`/`vn`; two
       writes are byte-identical.
-- [ ] Step 6 **[2]** — **`query::project_to_plane`** over edges and
+- [x] Step 6 **[2]** — **`query::project_to_plane`** over edges and
       vertices, the range carried through the projected parameter. Tests: a
       property over every curve kind in a random pose against a random plane
       — the projected curve at `t` is the 3D curve at `t` projected, to
@@ -292,3 +294,12 @@ human, before step 1:
   honestly — `Internal` says "kernel bug", which a hand-built block is
   not. `MeshError::Corners(String)` is additive and pre-1.0; the design
   delta above now carries it.
+- **Step 6 needed three new `Reason` variants**, which the design delta
+  had not listed: the refusals it asks for name the shape through
+  `OpError::Degenerate`, and none of the existing reasons says why.
+  `Reason::{NotProjectable, DegenerateEdge, ProjectionCollapses}` are
+  additive and pre-1.0; the design delta above now carries them. The
+  range carry is computed in `ops` from the image's own frame, so
+  `geom::project_to_plane` is unchanged: its conic phase is read from the
+  projected point's and tangent's local `x`, both over the major radius,
+  and the property holds at 1e-12 relative over 40 000 cases.

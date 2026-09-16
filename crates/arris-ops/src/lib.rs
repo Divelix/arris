@@ -1,7 +1,8 @@
 //! Operations of the Arris kernel: primitives, planar profiles, extrude,
 //! revolve, transform, the booleans (and `boolean::interferences`, their
-//! decomposition as a value), the blends (`fillet`, `chamfer`), and `measure` for
-//! mass properties.
+//! decomposition as a value), the blends (`fillet`, `chamfer`), `measure` for
+//! mass properties, and `query` for the projection of edges and vertices
+//! onto a plane.
 //!
 //! Guarantees: every operation has the shape `op(&mut Model, inputs…) ->
 //! Result<(Body, Provenance), OpError>` (`docs/ARCHITECTURE.md`
@@ -22,6 +23,7 @@ pub mod boolean;
 mod error;
 pub mod measure;
 mod primitive;
+pub mod query;
 mod rebuild;
 mod sweep;
 mod transform;

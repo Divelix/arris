@@ -98,6 +98,16 @@ pub enum Reason {
     /// the other two. The error's entities are the blended edges and the
     /// vertex.
     VertexBlend,
+    /// A query that projects edges and vertices was handed a face, a
+    /// shell or a body; the error's entity is that shape.
+    NotProjectable,
+    /// A query that needs an edge's 3D curve was handed a degenerate edge,
+    /// which has none; the error's entity is the edge.
+    DegenerateEdge,
+    /// An edge's curve projects onto the plane as a point or a segment —
+    /// a line perpendicular to it, a conic whose plane is — which no
+    /// `Curve2` over a range represents; the error's entity is the edge.
+    ProjectionCollapses,
 }
 
 impl core::fmt::Display for Reason {
@@ -139,6 +149,11 @@ impl core::fmt::Display for Reason {
             Reason::VertexBlend => f.write_str(
                 "the corner at the edge's end is one the blend's closed forms do not cover",
             ),
+            Reason::NotProjectable => f.write_str("only an edge or a vertex projects onto a plane"),
+            Reason::DegenerateEdge => f.write_str("the edge is degenerate: it has no 3D curve"),
+            Reason::ProjectionCollapses => {
+                f.write_str("the curve projects onto the plane as a point or a segment")
+            }
         }
     }
 }

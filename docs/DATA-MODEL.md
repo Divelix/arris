@@ -547,7 +547,16 @@ becomes a `Circle` when parallel and an `Ellipse` otherwise (its
 semi-axes the singular values of the projected axes, its parameter the
 circle's shifted by a phase), an ellipse an `Ellipse`, a NURBS a `Nurbs`
 with its control points projected. A projection that collapses to a
-point or a segment is `Degenerate`.
+point or a segment is `Degenerate`. Every arm is affine in the
+parameter, which is how `ops::query::project_to_plane` carries an edge's
+range into the projected curve's: a line's `s = |D'| t` with `D'` the
+direction's in-plane part, a NURBS's `s = t`, and a conic's `s = t + φ`,
+the phase `φ` read off the image at `t = 0` in the image ellipse's own
+frame from the projected point's and tangent's local `x`
+(`a cos φ` and `−a sin φ`), which involve the major radius alone and so
+stay exact for a conic seen nearly edge-on. The carried conic range
+starts in `[0, 2π)` and keeps its length. A range copied unshifted would
+draw another arc of the same ellipse.
 
 **Fitting** is `fit_curve2(f, range, degree, deviation, tol)`: a global
 least-squares B-spline approximation of `f: t ↦ (u, v)` at the *given*
