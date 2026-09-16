@@ -5,6 +5,9 @@
 //! distinct ids; `retain` frees what is unreachable, the survivors are
 //! untouched and clean, freed slots are reused lowest-first at the next
 //! generation, and two models built by the same calls agree on every id.
+//!
+//! The last of those is ADR-0010's promise, read as a consumer's cycle:
+//! a live id never moves and a dead one never aliases.
 
 use arris_debug::{dump_text, sample};
 use arris_math::Point3;
@@ -252,4 +255,82 @@ fn a_failed_transaction_after_a_retain_empties_the_slots_it_filled() {
     });
     assert!(r.is_err());
     assert!(m.body(cube.id).is_err() && m.body(cylinder.id).is_err());
+}
+
+/// A consumer's cycle under ADR-0010: two bodies built, one retained,
+/// a third built into the slots the other left. **A live id never moves**
+/// — every handle to the kept body resolves to the same entity, before
+/// and after the body that refills the holes — and **a dead id never
+/// aliases**: every handle to the dropped body is `NotFound` once it is
+/// freed and still `NotFound` once its slots hold someone else, so a
+/// consumer that kept a stale id is told so instead of being handed the
+/// wrong entity. The third body's ids are a function of the calls, the
+/// same on a second run.
+#[test]
+fn a_consumers_cycle_moves_no_live_id_and_aliases_no_dead_one() {
+    let build = |m: &mut Model| {
+        let cube = sample::cuboid(m, Point3::origin(), Point3::new(40.0, 30.0, 10.0)).unwrap();
+        let cylinder = sample::cylinder(m, 4.0, 12.0).unwrap();
+        (cube, cylinder)
+    };
+    let mut m = Model::default();
+    let (cube, dropped) = build(&mut m);
+    // What the consumer stored before the compaction.
+    let kept = m.closure(cube).unwrap();
+    let kept_vertices: Vec<Vertex> = kept
+        .vertices
+        .iter()
+        .map(|&v| *m.vertex(v).unwrap())
+        .collect();
+    let stale = m.closure(dropped).unwrap();
+
+    m.retain(&[cube]).unwrap();
+    // The third body fills the freed slots.
+    let third = sample::cylinder(&mut m, 7.0, 3.0).unwrap();
+    let refilled = m.closure(third).unwrap();
+    assert!(
+        refilled
+            .vertices
+            .iter()
+            .any(|v| stale.vertices.iter().any(|s| s.index() == v.index())),
+        "the third body took the dropped one's slots"
+    );
+
+    // A live id never moves: same ids, same entities, same closure.
+    assert_eq!(m.closure(cube).unwrap(), kept);
+    for (&v, before) in kept.vertices.iter().zip(&kept_vertices) {
+        assert_eq!(m.vertex(v).unwrap(), before, "{v} moved");
+    }
+
+    // A dead id never aliases: not the freed entity, and not the one that
+    // took its slot.
+    for &v in &stale.vertices {
+        assert!(matches!(m.vertex(v), Err(NotFound { .. })), "{v} resolved");
+    }
+    for &e in &stale.edges {
+        assert!(m.edge(e).is_err(), "{e} resolved");
+    }
+    for &f in &stale.faces {
+        assert!(m.face(f).is_err(), "{f} resolved");
+    }
+    assert!(m.body(dropped.id).is_err());
+    assert!(
+        refilled
+            .vertices
+            .iter()
+            .all(|v| !stale.vertices.contains(v)),
+        "a refilled slot handed out an id the consumer already holds"
+    );
+
+    // The same calls in another model give the third body the same ids.
+    let mut n = Model::default();
+    let (cube2, _) = build(&mut n);
+    n.retain(&[cube2]).unwrap();
+    let third2 = sample::cylinder(&mut n, 7.0, 3.0).unwrap();
+    assert_eq!(third2, third);
+    assert_eq!(n.closure(third2).unwrap(), refilled);
+    assert_eq!(
+        dump_text(&n, third2).unwrap(),
+        dump_text(&m, third).unwrap()
+    );
 }

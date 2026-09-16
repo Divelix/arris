@@ -136,11 +136,13 @@ append, lowest index first, at the bumped generation (ids `v3g1`, then
 deterministic; a transaction that fails after filling freed slots empties
 them again, and one that fails after a `retain` does not undo it. It is
 the only operation that invalidates handles and it is never called by
-the kernel itself. `⚠ OPEN:` whether compaction also renumbers slots
-(denser arena, cheaper serialisation, but every surviving id changes and
-the returned `IdMap` becomes mandatory for the consumer) or keeps slots
-sparse, as it does now. Decided with the first consumer that outlives
-one evaluation, in cycle 2.
+the kernel itself. **Slots are never renumbered** (ADR-0010): every entity
+reachable from `keep` keeps its id, so a consumer's stored ids — a
+selection, an undo entry, a name derived from provenance — survive a
+compaction untouched, and a handle to a freed entity stays `NotFound` for
+ever rather than resolving to whatever refilled its slot. A *dense* copy
+is `Model::import` into a fresh model, which returns the `IdMap` with it,
+or the native format, which writes freed slots as freed.
 
 ## Operations
 
@@ -1040,7 +1042,7 @@ facade needs Arris types above it.
 | STEP export of several bodies | `io::step::write(&model, &[bodies])` |
 | Projecting an edge or vertex onto a sketch plane | `geom::project_to_plane` on the edge's `Curve` — a line stays a line, a circle becomes a circle or an ellipse, an ellipse stays an ellipse, a NURBS a `Curve2::Nurbs`; a point-set projection with the variant's own parameter (02 §Pcurves) |
 | Persistent topological names (origin-based) | Emitted by the consumer from `Provenance`: an output face is named after the input face it was `Modified` from, `Split(k)` when one input yields several outputs, and after the tool face when `Generated`; edges and vertices derive from their faces exactly as today. No centroid matching. Arris ships no name grammar (ADR-0009): the words are the application's. What the kernel guarantees is the **split order** — an origin's outputs in `generated_from` and `modified_from` are the pieces in an order that holds under every parameter edit keeping which entities bound which piece (a face's by the origins bounding each piece, an edge's along its curve; data-model §Provenance), so `Split(k)` means the same piece after the edit |
-| Memoising shapes by content, dropping unreferenced ones | Memoisation stays in the consumer (it is about features, not geometry); dropping is `Model::retain` (§The model, `⚠ OPEN`) |
+| Memoising shapes by content, dropping unreferenced ones | Memoisation stays in the consumer (it is about features, not geometry); dropping is `Model::retain`, which frees slots without moving a surviving id (§The model, ADR-0010) |
 | Units | Arris is unit-agnostic. The consumer sets `Precision` for its unit (metres: `default_tolerance` at the micrometre scale) when it creates the `Model` |
 
 What the facade has today that Arris will not have: a tolerance nudge
@@ -1051,5 +1053,4 @@ What the facade has today that Arris will not have: a tolerance nudge
 
 Collected from this document; each closes with an ADR.
 
-- `⚠ OPEN:` compaction renumbers slots or keeps them sparse (§The model).
 - `⚠ OPEN:` `f32` positions at the tessellation boundary (§Threading).

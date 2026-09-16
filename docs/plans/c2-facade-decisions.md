@@ -192,15 +192,23 @@ bound has to be established here.
     came from does. Each fails when its own rule is broken (the tie-break
     put on a world coordinate, `mapped` reversing a list, `then`
     composing its pieces backwards).
-- [ ] Step 4 **[1]** — **ADR-0010: compaction keeps slots sparse.**
-  - A test in `crates/arris-topo/tests/` of a consumer's cycle: build two
-    bodies, retain one, build a third. Every handle to the kept body
-    resolves to the same entity; every handle to the dropped one is
-    `NotFound`, never another entity; the third's ids are the same on two
-    runs.
-  - A doc test that `Model::import` into a fresh model returns a dense
-    copy and its `IdMap`.
-  - `Model::retain`'s rustdoc names ADR-0010 in place of the `⚠ OPEN`.
+- [x] Step 4 **[1]** — **ADR-0010: compaction keeps slots sparse.**
+  Done 2026-09-16. The decision reads as one promise with two halves: a
+  live id never moves, and a dead one never aliases.
+  - `a_consumers_cycle_moves_no_live_id_and_aliases_no_dead_one` in
+    `crates/arris-topo/tests/import_retain.rs`: two bodies built, one
+    retained, a third built into the slots the other left. Every handle
+    to the kept body resolves to the same entity after the refill; every
+    handle to the dropped one is `NotFound` both before and after it, and
+    the refilled ids are none of the ones the consumer holds; the third's
+    ids and dump are the same on a second run of the same calls.
+  - A doc test on `Model::import`: a model with holes imported into a
+    fresh one gives a dense copy — ids from zero, no gaps, no bumped
+    generations — with the `IdMap` from the old ones.
+  - `Model::retain`'s rustdoc states ADR-0010 in place of the `⚠ OPEN`
+    and points at `import` for a dense copy; `docs/ARCHITECTURE.md`
+    §The model and the memoising row of the facade table likewise, and
+    the §Open questions line is gone.
 - [ ] Step 5 **[1]** — **ADR-0011: the tessellation boundary is `f64`.**
   - `TriMesh`'s rustdoc names the decision and shows the one-line cast
     at a consumer's boundary as a doc test.

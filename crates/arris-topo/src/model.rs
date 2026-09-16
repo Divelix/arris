@@ -416,6 +416,34 @@ impl Model {
     /// assert_eq!(map.map(cylinder.into()), Some(copy.into()));
     /// assert_eq!(b.faces(copy).unwrap().len(), 3);
     /// ```
+    ///
+    /// Importing into a *fresh* model is how a consumer asks for a dense
+    /// copy, which [`Model::retain`] never makes (ADR-0010): the arena it
+    /// came from may be full of holes, and the copy's ids start at zero
+    /// and run without gaps, with the map from the old ones.
+    ///
+    /// ```
+    /// use arris_debug::sample;
+    /// use arris_topo::{Model, VertexId};
+    ///
+    /// let mut a = Model::default();
+    /// let cube = sample::unit_box(&mut a).unwrap();
+    /// let cylinder = sample::cylinder(&mut a, 4.0, 12.0).unwrap();
+    /// a.retain(&[cylinder]).unwrap();          // the cube's slots are holes
+    /// assert!(a.vertex(VertexId::new(0, 0)).is_err());
+    ///
+    /// let mut dense = Model::default();
+    /// let (copy, map) = dense.import(&a, cylinder).unwrap();
+    /// let closure = dense.closure(copy).unwrap();
+    /// for (k, v) in closure.vertices.iter().enumerate() {
+    ///     assert_eq!(*v, VertexId::new(k as u32, 0), "no holes, no bumped generations");
+    /// }
+    /// // Every id of the original reaches its copy through the map.
+    /// for v in a.closure(cylinder).unwrap().vertices {
+    ///     assert!(closure.vertices.contains(&map.vertices[&v]));
+    /// }
+    /// let _ = cube;
+    /// ```
     pub fn import(
         &mut self,
         other: &Model,
@@ -518,11 +546,19 @@ impl Model {
     /// handle to it stops resolving instead of aliasing, and the slot is
     /// filled by a later append, lowest index first, at the new
     /// generation — ids stay deterministic and a long-lived model does
-    /// not grow without bound. Slots are never renumbered (the `⚠ OPEN`
-    /// of `docs/ARCHITECTURE.md` §The model). The adjacency indices
-    /// are rebuilt. Returns how many slots were freed. Not undone by an
-    /// enclosing transaction that fails. Errors: a body in `keep` does
-    /// not resolve, and then nothing is freed.
+    /// not grow without bound. The adjacency indices are rebuilt. Returns
+    /// how many slots were freed. Not undone by an enclosing transaction
+    /// that fails. Errors: a body in `keep` does not resolve, and then
+    /// nothing is freed.
+    ///
+    /// **Slots are never renumbered** (ADR-0010): every entity reachable
+    /// from `keep` keeps its id, so a consumer's stored ids — a
+    /// selection, an undo entry, a name derived from
+    /// [`Provenance`](crate::Provenance) —
+    /// survive a compaction untouched, and a handle to a freed entity
+    /// stays [`NotFound`] for ever instead of resolving to whatever
+    /// refilled its slot. A *dense* copy is [`Model::import`] into a
+    /// fresh model, which hands back the [`IdMap`] with it.
     ///
     /// ```
     /// use arris_debug::sample;
