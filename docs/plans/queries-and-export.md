@@ -213,7 +213,7 @@ bound has to be established here.
       `frame_at` on a cylinder, a sphere and a torus agrees with
       `Surface::normal` composed with the use, is refused at a pole and off
       the domain.
-- [ ] Step 8 **[1]** — **Inertia against the consumer's integrator.** A test
+- [x] Step 8 **[1]** — **Inertia against the consumer's integrator.** A test
       that integrates `tessellate`'s `TriMesh` — volume, centroid and the
       full tensor over the tetrahedra of each triangle with the origin — and
       holds it to `measure::mass_properties` within the mesh's own error, in
@@ -319,3 +319,17 @@ human, before step 1:
   cannot fail on axes already orthonormal, so it is `?`-propagated
   rather than unwrapped, per the kernel rule against assuming
   geometry-derived data cannot fail).
+- **Step 8's property needed sharding**, against "the mesh's own error"
+  not naming a bound: it reuses `Tolerances::default()`'s `mesh_chord`
+  and `mesh_volume_rel` for the mesh integrator's volume, centroid *and*
+  inertia alike, rather than inventing a second bound the design delta
+  had not asked for. At the configured case count, tessellating five
+  bodies (one a filleted box) on every case is too slow for one nextest
+  binary — 256 cases serially ran 123 s — so the test is `prop_shards!`
+  over eight, each near 20 s in parallel, which is `kernel.md`'s own
+  escape hatch for an expensive property and changes no bound. The
+  integrator itself is the standard tetrahedron-with-the-origin result
+  (Mirtich 1996): signed by `a · (b × c)`, so it holds for any origin,
+  inside the body or not, which is why a random pose needs no special
+  case; verified by hand against the unit simplex's own textbook moments
+  before trusting it against `measure`.
