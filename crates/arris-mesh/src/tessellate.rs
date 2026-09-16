@@ -7,11 +7,12 @@ use std::collections::BTreeMap;
 use arris_check::domain::FaceDomain;
 use arris_topo::arris_geom::Surface;
 use arris_topo::arris_geom::region2::{MAX_SEGMENTS_PER_PIECE, Polygon2};
-use arris_topo::arris_math::{Interval, Point2};
+use arris_topo::arris_math::{Interval, Point2, UnitVec3, Vec3};
 use arris_topo::entity::EdgeGeometry;
 use arris_topo::{Body, EdgeId, FaceId, Model, NotFound, Orientation, VertexId};
 
 use crate::cdt::{self, VertexRef};
+use crate::corners::{CornerFace, Corners};
 use crate::{MeshError, TriMesh};
 
 /// A cap on a face's interior lattice, total points in both directions:
@@ -20,6 +21,45 @@ use crate::{MeshError, TriMesh};
 /// magnitude below its major one, at a fine chord — is
 /// [`MeshError::GridTooLarge`] instead of attempted.
 pub const MAX_INTERIOR_POINTS: usize = 1 << 20;
+
+/// What a caller asks [`tessellate_with`] for: the chord tolerance, and
+/// whether the mesh carries the render buffer beside the watertight one
+/// (ADR-0012).
+///
+/// ```
+/// use arris_mesh::MeshRequest;
+///
+/// let plain = MeshRequest::new(1e-3);
+/// assert!(!plain.corners);
+/// assert!(MeshRequest::new(1e-3).with_corners().corners);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MeshRequest {
+    /// How far a triangle may lie from the surface it stands on: the
+    /// consumer's request, a number like a render's resolution, not a
+    /// model tolerance. Finite and positive.
+    pub chord: f64,
+    /// Whether to build [`crate::Corners`]: face-local vertices with
+    /// per-corner outward normals and the surface's own (u, v), beside
+    /// the watertight buffer and changing nothing in it.
+    pub corners: bool,
+}
+
+impl MeshRequest {
+    /// A request for the watertight buffer alone, at `chord`.
+    pub const fn new(chord: f64) -> Self {
+        MeshRequest {
+            chord,
+            corners: false,
+        }
+    }
+
+    /// The same request, with the corner block.
+    pub const fn with_corners(mut self) -> Self {
+        self.corners = true;
+        self
+    }
+}
 
 /// The samples of one edge: `n + 1` parameters over its range and the
 /// mesh index of each, the first and last being the end vertices'.
@@ -90,6 +130,64 @@ struct EdgeSamples {
 /// assert!(volume > 0.0 && exact - volume <= exact * 4.0 * 1e-3 / (3.0 * 4.0));
 /// ```
 pub fn tessellate(m: &Model, body: Body, chord: f64) -> Result<TriMesh, MeshError> {
+    tessellate_with(m, body, &MeshRequest::new(chord))
+}
+
+/// [`tessellate`] of `request.chord`, with the render buffer beside the
+/// watertight one when `request.corners` asks for it (ADR-0012).
+///
+/// Everything [`tessellate`] guarantees holds unchanged, position for
+/// position and triangle for triangle: the corner block is an addition,
+/// never a different mesh. Asked for, [`TriMesh::corners`] is `Some` and
+/// carries one *face-local vertex* per face per triangulation input
+/// point — a loop sample or an interior lattice point — with
+///
+/// - the shared position index it stands on, so the watertight mesh is
+///   one lookup away;
+/// - the **outward** unit normal there: the surface's own, flipped where
+///   the face is used `Reversed`, never averaged with a neighbouring
+///   face's, so a sharp edge stays sharp;
+/// - the surface's **own** (u, v), never normalised, so a seam's two
+///   copies differ by exactly one period and a consumer that wants
+///   `[0, 1]` divides by [`crate::CornerFace::uv_box`].
+///
+/// Where the parametrisation is singular — a sphere's pole, a cone's
+/// apex — the normal is the limit approached along the parameter the
+/// surface still moves in, from inside the face's own (u, v) box: `±Z`
+/// at a sphere's pole for every corner of the fan, and at a cone's apex
+/// one normal per corner's own `u` (ADR-0012).
+///
+/// Errors: [`tessellate`]'s, and [`MeshError::Corners`] if the block
+/// could not be built — a face no point of which has a normal.
+///
+/// ```
+/// use arris_debug::sample;
+/// use arris_mesh::{MeshRequest, tessellate};
+/// use arris_topo::Model;
+/// use arris_topo::arris_math::Point3;
+///
+/// let mut m = Model::default();
+/// let ball = sample::sphere(&mut m, Point3::origin(), 3.0).unwrap();
+/// let request = MeshRequest::new(1e-2).with_corners();
+/// let mesh = arris_mesh::tessellate_with(&m, ball, &request).unwrap();
+///
+/// // The watertight buffer is the one `tessellate` gives.
+/// let plain = tessellate(&m, ball, 1e-2).unwrap();
+/// assert_eq!(mesh.positions(), plain.positions());
+/// assert_eq!(mesh.triangles(), plain.triangles());
+/// assert!(plain.corners().is_none());
+///
+/// let corners = mesh.corners().unwrap();
+/// assert_eq!(corners.triangles().len(), mesh.triangles().len());
+/// // Every corner normal is the outward radial direction of the ball.
+/// for (&position, normal) in corners.positions().iter().zip(corners.normals()) {
+///     let p = mesh.positions()[position as usize];
+///     let radial = p.map(|c| c / 3.0);
+///     assert!((0..3).all(|i| (radial[i] - normal[i]).abs() < 1e-9));
+/// }
+/// ```
+pub fn tessellate_with(m: &Model, body: Body, request: &MeshRequest) -> Result<TriMesh, MeshError> {
+    let chord = request.chord;
     if !(chord.is_finite() && chord > 0.0) {
         return Err(MeshError::Chord(chord));
     }
@@ -200,6 +298,7 @@ pub fn tessellate(m: &Model, body: Body, chord: f64) -> Result<TriMesh, MeshErro
     // on push order. What is left, [`triangulate_face`]'s CDT, touches
     // only its own face's data and runs in parallel behind `parallel`.
     let mut works: Vec<FaceWork> = Vec::with_capacity(faces.len());
+    let mut block = request.corners.then(CornerBlock::default);
     for (k, f) in faces.iter().enumerate() {
         let face = m.face(f.id)?;
         let mut polygons: Vec<Polygon2> = Vec::with_capacity(face.loops().len());
@@ -262,13 +361,32 @@ pub fn tessellate(m: &Model, body: Body, chord: f64) -> Result<TriMesh, MeshErro
             .collect();
         let scaled_interior: Vec<Point2> =
             interior.iter().map(|p| scaled_point(*p, scale)).collect();
+        let reversed = f.orientation == Orientation::Reversed;
+        // The face-local vertices this face contributes to the corner
+        // block: its loop samples in ring order, then its interior
+        // points, each with the (u, v) the CDT was given unscaled and
+        // the outward normal there (ADR-0012).
+        let corners = match block.as_mut() {
+            Some(block) => Some(block.push_face(
+                f.id,
+                surface,
+                bounds,
+                reversed,
+                &polygons,
+                &rings,
+                &interior,
+                &interior_indices,
+            )?),
+            None => None,
+        };
         works.push(FaceWork {
             face: f.id,
-            reversed: f.orientation == Orientation::Reversed,
+            reversed,
             polygons: scaled,
             interior: scaled_interior,
             rings,
             interior_indices,
+            corners,
         });
     }
 
@@ -278,9 +396,207 @@ pub fn tessellate(m: &Model, body: Body, chord: f64) -> Result<TriMesh, MeshErro
     // the results are collected in face order before they reach `mesh`,
     // so the mesh is identical with the feature on or off.
     for (w, triangles) in works.iter().zip(triangulate_faces(&works)?) {
-        mesh.push_face(w.face, triangles)?;
+        mesh.push_face(w.face, triangles.shared)?;
+        if let Some(block) = block.as_mut() {
+            block.triangles.extend(triangles.local);
+        }
     }
-    Ok(mesh)
+    match block {
+        Some(block) => mesh.with_corners(block.finish()?),
+        None => Ok(mesh),
+    }
+}
+
+/// The corner block under construction: the three vertex arrays, the
+/// triangles over them and one [`CornerFace`] per face, all in face
+/// iteration order (ADR-0012).
+#[derive(Default)]
+struct CornerBlock {
+    positions: Vec<u32>,
+    normals: Vec<[f64; 3]>,
+    uvs: Vec<[f64; 2]>,
+    triangles: Vec<[u32; 3]>,
+    faces: Vec<CornerFace>,
+}
+
+impl CornerBlock {
+    /// Appends one face's face-local vertices — its loop samples ring by
+    /// ring, then its interior points — and returns where they start and
+    /// how the CDT's input points map onto them.
+    #[allow(clippy::too_many_arguments)]
+    fn push_face(
+        &mut self,
+        face: FaceId,
+        surface: &Surface,
+        bounds: [Interval; 2],
+        reversed: bool,
+        polygons: &[Polygon2],
+        rings: &[Vec<u32>],
+        interior: &[Point2],
+        interior_indices: &[u32],
+    ) -> Result<CornerWork, MeshError> {
+        let base = self.uvs.len();
+        let mut ring_starts = Vec::with_capacity(polygons.len());
+        let mut uvs: Vec<[f64; 2]> = Vec::new();
+        for (polygon, ring) in polygons.iter().zip(rings) {
+            ring_starts.push(uvs.len());
+            for (uv, &index) in polygon.points().iter().zip(ring) {
+                uvs.push([uv.x, uv.y]);
+                self.positions.push(index);
+            }
+        }
+        let interior_start = uvs.len();
+        for (uv, &index) in interior.iter().zip(interior_indices) {
+            uvs.push([uv.x, uv.y]);
+            self.positions.push(index);
+        }
+        let mut normals: Vec<Option<[f64; 3]>> = uvs
+            .iter()
+            .map(|&[u, v]| corner_normal(surface, Point2::new(u, v), bounds, reversed))
+            .collect();
+        fill_missing_normals(face, &uvs, &mut normals)?;
+        let normals: Vec<[f64; 3]> =
+            normals
+                .into_iter()
+                .collect::<Option<_>>()
+                .ok_or(MeshError::Internal(
+                    "a face-local vertex is left without a normal",
+                ))?;
+        let mut uv_box = [[f64::INFINITY, f64::NEG_INFINITY]; 2];
+        for uv in &uvs {
+            for dir in 0..2 {
+                uv_box[dir][0] = uv_box[dir][0].min(uv[dir]);
+                uv_box[dir][1] = uv_box[dir][1].max(uv[dir]);
+            }
+        }
+        let uv_box = uv_box.map(|[lo, hi]| Interval::new(lo, hi));
+        let [u, v] = uv_box;
+        let uv_box = match (u, v) {
+            (Ok(u), Ok(v)) => [u, v],
+            _ => {
+                return Err(MeshError::Corners(format!(
+                    "{face}: a face-local vertex has a non-finite (u, v)"
+                )));
+            }
+        };
+        self.normals.extend(normals);
+        self.uvs.extend(uvs);
+        self.faces.push(CornerFace {
+            face,
+            vertices: base..self.uvs.len(),
+            uv_box,
+        });
+        Ok(CornerWork {
+            base,
+            ring_starts,
+            interior_start,
+        })
+    }
+
+    /// The finished, validated block.
+    fn finish(self) -> Result<Corners, MeshError> {
+        Corners::from_parts(
+            self.positions,
+            self.normals,
+            self.uvs,
+            self.triangles,
+            self.faces,
+        )
+    }
+}
+
+/// The outward unit normal of `surface` at `uv` for a face used forward
+/// or `reversed`, with ADR-0012's rule where the parametrisation is
+/// singular: the limit of the normal approached along the parameter the
+/// surface still moves in, from inside the face's own `bounds`. `None`
+/// where even that limit vanishes.
+fn corner_normal(
+    surface: &Surface,
+    uv: Point2,
+    bounds: [Interval; 2],
+    reversed: bool,
+) -> Option<[f64; 3]> {
+    let n = match surface.normal(uv.x, uv.y) {
+        Some(n) => n.into_inner(),
+        None => singular_normal(surface, uv, bounds)?,
+    };
+    let n = if reversed { -n } else { n };
+    Some([n.x, n.y, n.z])
+}
+
+/// The limit of `∂P/∂u × ∂P/∂v` at a singular `uv`, to first order.
+///
+/// Where `∂P/∂u` vanishes — a sphere's pole, a cone's apex — the
+/// parameter the surface still moves in is `v`, and
+/// `∂P/∂u(u, v + ε) ≈ ε ∂²P/∂u∂v`, so the cross product tends to
+/// `ε (∂²P/∂u∂v × ∂P/∂v)`; symmetrically where `∂P/∂v` vanishes. The
+/// sign of `ε` is which side of the singular parameter the face's own
+/// domain lies on, so the limit is taken from inside the face.
+///
+/// Whichever of the two candidates is longer is the live one — the other
+/// is a cross product with a vector that vanished — so no threshold and
+/// no match on the surface kind is needed, and neither is a division.
+/// A sphere's pole comes out `±Z` for every `u`, a cone's apex as the
+/// cone's own normal at the corner's `u`.
+fn singular_normal(surface: &Surface, uv: Point2, bounds: [Interval; 2]) -> Option<Vec3> {
+    let e = surface.eval(uv.x, uv.y);
+    // Which way the face's domain lies from `t`; outward-unbounded, or
+    // exactly at the middle, takes the forward side.
+    let inward = |b: Interval, t: f64| -> f64 {
+        let mid = b.midpoint();
+        if !mid.is_finite() || mid >= t {
+            1.0
+        } else {
+            -1.0
+        }
+    };
+    let along_v = e.duv.cross(&e.dv) * inward(bounds[1], uv.y);
+    let along_u = e.du.cross(&e.duv) * inward(bounds[0], uv.x);
+    let limit = if along_v.norm() >= along_u.norm() {
+        along_v
+    } else {
+        along_u
+    };
+    UnitVec3::try_new(limit, 0.0).map(UnitVec3::into_inner)
+}
+
+/// ADR-0012's fallback: a corner that even [`singular_normal`] leaves
+/// without one — a NURBS whose two derivatives stay parallel to second
+/// order — takes the normal of the nearest face-local vertex of the same
+/// face that has one, by (u, v) distance and then by index, so the
+/// result is deterministic and the block never carries an absent normal.
+fn fill_missing_normals(
+    face: FaceId,
+    uvs: &[[f64; 2]],
+    normals: &mut [Option<[f64; 3]>],
+) -> Result<(), MeshError> {
+    if normals.iter().all(Option::is_some) {
+        return Ok(());
+    }
+    let known: Vec<([f64; 2], [f64; 3])> = uvs
+        .iter()
+        .zip(normals.iter())
+        .filter_map(|(uv, n)| n.map(|n| (*uv, n)))
+        .collect();
+    if known.is_empty() {
+        return Err(MeshError::Corners(format!(
+            "{face}: no face-local vertex of the face has a surface normal"
+        )));
+    }
+    for (uv, normal) in uvs.iter().zip(normals.iter_mut()) {
+        if normal.is_some() {
+            continue;
+        }
+        let mut best: Option<(f64, [f64; 3])> = None;
+        for (at, n) in &known {
+            let d = (at[0] - uv[0]).powi(2) + (at[1] - uv[1]).powi(2);
+            if best.is_none_or(|(so_far, _)| d < so_far) {
+                best = Some((d, *n));
+            }
+        }
+        *normal = best.map(|(_, n)| n);
+    }
+    Ok(())
 }
 
 /// One face's inputs to its CDT, gathered while the shared position
@@ -297,56 +613,105 @@ struct FaceWork {
     rings: Vec<Vec<u32>>,
     /// Interior point `i`'s mesh index, indexed the same as `interior`.
     interior_indices: Vec<u32>,
+    /// Where this face's face-local vertices sit in the corner block,
+    /// `None` when none was asked for.
+    corners: Option<CornerWork>,
+}
+
+/// How one face's CDT input points map onto its face-local vertices in
+/// the corner block: the block is laid out ring by ring and then the
+/// interior points, exactly as [`CornerBlock::push_face`] appended them.
+struct CornerWork {
+    /// The block index of this face's first face-local vertex.
+    base: usize,
+    /// Where each loop ring starts, relative to `base`.
+    ring_starts: Vec<usize>,
+    /// Where the interior points start, relative to `base`.
+    interior_start: usize,
+}
+
+/// One face's triangles in both index spaces, the same triangles in the
+/// same order: `local` is empty when no corner block was asked for.
+struct FaceTriangles {
+    shared: Vec<[u32; 3]>,
+    local: Vec<[u32; 3]>,
 }
 
 /// One face's CDT and the triangle corners mapped back to the shared
-/// mesh indices, oriented by `reversed`, collapsed triangles dropped.
-fn triangulate_face(w: &FaceWork) -> Result<Vec<[u32; 3]>, MeshError> {
+/// mesh indices — and, where the face carries a [`CornerWork`], to its
+/// face-local ones as well — oriented by `reversed`, collapsed triangles
+/// dropped. The two lists are the same triangles in the same order.
+fn triangulate_face(w: &FaceWork) -> Result<FaceTriangles, MeshError> {
     let triangulation =
         cdt::triangulate(&w.polygons, &w.interior).map_err(|source| MeshError::Face {
             face: w.face,
             source,
         })?;
-    let index_of = |v: usize| -> Result<u32, MeshError> {
-        match triangulation.vertex_ref(v) {
-            Some(VertexRef::Polygon { polygon, vertex }) => w
-                .rings
-                .get(polygon)
-                .and_then(|r| r.get(vertex))
-                .copied()
-                .ok_or(MeshError::Internal("a triangle corner names no loop point")),
-            Some(VertexRef::Interior(i)) => {
-                w.interior_indices
-                    .get(i)
-                    .copied()
-                    .ok_or(MeshError::Internal(
-                        "a triangle corner names no interior point",
-                    ))
+    let index_of =
+        |v: usize| -> Result<(u32, u32), MeshError> {
+            match triangulation.vertex_ref(v) {
+                Some(VertexRef::Polygon { polygon, vertex }) => {
+                    let shared = w
+                        .rings
+                        .get(polygon)
+                        .and_then(|r| r.get(vertex))
+                        .copied()
+                        .ok_or(MeshError::Internal("a triangle corner names no loop point"))?;
+                    let local =
+                        match &w.corners {
+                            Some(c) => {
+                                c.base
+                                    + c.ring_starts.get(polygon).copied().ok_or(
+                                        MeshError::Internal("a triangle corner names no loop ring"),
+                                    )?
+                                    + vertex
+                            }
+                            None => 0,
+                        };
+                    Ok((shared, local as u32))
+                }
+                Some(VertexRef::Interior(i)) => {
+                    let shared = w
+                        .interior_indices
+                        .get(i)
+                        .copied()
+                        .ok_or(MeshError::Internal(
+                            "a triangle corner names no interior point",
+                        ))?;
+                    let local = match &w.corners {
+                        Some(c) => c.base + c.interior_start + i,
+                        None => 0,
+                    };
+                    Ok((shared, local as u32))
+                }
+                None => Err(MeshError::Internal(
+                    "a triangle corner is not an input point",
+                )),
             }
-            None => Err(MeshError::Internal(
-                "a triangle corner is not an input point",
-            )),
-        }
-    };
-    let mut triangles = Vec::with_capacity(triangulation.triangles().len());
+        };
+    let n = triangulation.triangles().len();
+    let mut shared = Vec::with_capacity(n);
+    let mut local = Vec::with_capacity(if w.corners.is_some() { n } else { 0 });
     for &[a, b, c] in triangulation.triangles() {
-        let (ia, ib, ic) = (index_of(a)?, index_of(b)?, index_of(c)?);
+        let (ia, la) = index_of(a)?;
+        let (ib, lb) = index_of(b)?;
+        let (ic, lc) = index_of(c)?;
         if ia == ib || ib == ic || ic == ia {
             continue;
         }
-        triangles.push(if w.reversed {
-            [ia, ic, ib]
-        } else {
-            [ia, ib, ic]
-        });
+        let wind = |[a, b, c]: [u32; 3]| if w.reversed { [a, c, b] } else { [a, b, c] };
+        shared.push(wind([ia, ib, ic]));
+        if w.corners.is_some() {
+            local.push(wind([la, lb, lc]));
+        }
     }
-    Ok(triangles)
+    Ok(FaceTriangles { shared, local })
 }
 
 /// [`triangulate_face`] over every face, in face order in the result
 /// regardless of how it was computed: over `rayon` behind `parallel`,
 /// a plain iterator otherwise.
-fn triangulate_faces(works: &[FaceWork]) -> Result<Vec<Vec<[u32; 3]>>, MeshError> {
+fn triangulate_faces(works: &[FaceWork]) -> Result<Vec<FaceTriangles>, MeshError> {
     #[cfg(feature = "parallel")]
     {
         use rayon::prelude::*;

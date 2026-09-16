@@ -835,7 +835,9 @@ depends on `check`. The mesh guarantees (ADR-0003):
   the ruling, and in an isometric domain Delaunay would join its boundary
   across the hole rather than column by column.
 - A face whose loops are not the simple nested polygons the checker
-  promises is `MeshError::Face` with the `CdtError` naming the segments.
+  promises is `MeshError::Face` with the `CdtError` naming the segments;
+  a corner block that does not fit the mesh it is offered to, and a face
+  no point of which has a surface normal, are `MeshError::Corners`.
 - The interior lattice is capped by its total point count, not per
   direction: a face whose curvature varies enormously over its domain — a
   torus with a minor radius far smaller than its major one, at a fine
@@ -846,13 +848,47 @@ depends on `check`. The mesh guarantees (ADR-0003):
   never a property of the body or the chord, and never the CDT's own
   fault, so never a `MeshError::Face`.
 
+`arris_mesh::tessellate_with(&Model, Body, &MeshRequest)` is the same
+mesh with the **corner block** beside it when `MeshRequest::corners`
+asks for one: the render buffer, and `tessellate(m, body, chord)` is
+`tessellate_with` of `MeshRequest::new(chord)` (ADR-0012). Asked for,
+`TriMesh::corners()` is `Some(&Corners)` and every position, triangle
+and range above is unchanged. A *face-local vertex* is one input point
+of one face's triangulation — a loop sample or an interior lattice point
+— shared within its face by every triangle that uses it and shared
+across faces by none:
+
+- `Corners::positions` gives the shared `TriMesh` position each one
+  stands on, `normals` the **outward** unit normal there — the surface's
+  own, flipped where the face is used `Reversed`, never averaged with a
+  neighbouring face's — and `uvs` the surface's *own* parameters, never
+  normalised. `Corners::triangles` is parallel to `TriMesh::triangles`
+  and `Corners::faces` to `TriMesh::faces`, one `CornerFace` per face
+  with its vertex run and the tightest `uv_box` over it, so a consumer
+  that wants `[0, 1]` normalises by that box itself.
+- A sharp edge keeps both faces' normals, a seam's two copies differ by
+  exactly one period in the parameter they straddle, and a pole or apex
+  carries one face-local vertex per triangle of its fan. Where the
+  parametrisation is singular the normal is the limit approached along
+  the parameter the surface still moves in, from inside the face's own
+  (u, v) box — `±Z` at a sphere's pole for every corner, and at a cone's
+  apex one normal per corner's own `u` (ADR-0012). The limit is the
+  first-order term of `∂P/∂u × ∂P/∂v` out of `Surface::eval`, so no
+  surface kind is matched on and nothing is divided by zero.
+- The corpus runner asks for the block on every fixture and holds every
+  face-local vertex to both invariants — `surface.point(u, v)` is the
+  position it stands on within the face's tolerance, and its normal is
+  the outward one there — so the whole corpus covers it, at no
+  measurable cost to the run.
+
 No adaptive refinement: interior points, where a face needs them, lie on
 a uniform (u, v) grid sized by the chord bound. No `f32` output
-(ADR-0011: positions are `f64` and the cast is the consumer's, one line
-over `TriMesh::positions` at its own boundary), no per-corner normals or
-(u, v) yet — those are C2's queries and export line, `f64` fields beside
-the watertight buffer — and no mesh-based mass properties
-(`ops::measure` integrates the B-Rep).
+(ADR-0011: positions are `f64`, the corner block is `f64`, and the cast
+is the consumer's, one line over `TriMesh::positions` at its own
+boundary), no smooth shading — a corner's normal is its own face's, and
+averaging across a tangent edge is a consumer's pass over this block —
+and no mesh-based mass properties (`ops::measure` integrates the
+B-Rep).
 
 ## Threading and wasm
 
@@ -877,7 +913,8 @@ the watertight buffer — and no mesh-based mass properties
   `TriMesh` positions are `f64` and there is no `f32` accessor, because
   the mesh is measured against the oracle as well as drawn, and a
   renderer's cast belongs where it knows its buffer layout and its local
-  origin.
+  origin. The corner block beside it is `f64` for the same reason
+  (ADR-0012): the corpus checks it on every fixture.
 
 ## Formats and tools
 
@@ -1045,7 +1082,7 @@ facade needs Arris types above it.
 | Boolean union / intersect / cut | `ops::fuse`, `ops::common`, `ops::cut` |
 | Transform (geometry only, topology and index order preserved) | `ops::transform` — new ids, provenance `Modified` one-to-one in iteration order |
 | Fillet / chamfer of named edges, one call for all edges | `ops::fillet`, `ops::chamfer` (ADR-0007) |
-| Tessellation into a render mesh with per-face and per-edge ranges | `arris_mesh::tessellate` → `TriMesh` with `FaceRange`/`EdgeRange` keyed by `FaceId`/`EdgeId` |
+| Tessellation into a render mesh with per-face and per-edge ranges | `arris_mesh::tessellate` → `TriMesh` with `FaceRange`/`EdgeRange` keyed by `FaceId`/`EdgeId`; `arris_mesh::tessellate_with` of a `MeshRequest::with_corners` adds the render buffer beside it — face-local vertices with outward normals and the surface's own (u, v), which a renderer uploads as they stand (ADR-0012) |
 | A planar face's frame | `model.surface(model.face(id)?.surface())` is `Surface::Plane { frame }`; the frame *is* the answer, and it is stable across re-evaluation because a primitive's frame, or a sweep's profile plane, is |
 | Mass properties (volume, area, centroid, inertia) | `ops::measure::mass_properties` → `MassProperties` (exact over the B-Rep, the tensor about the centroid); or the consumer's own integrator over `TriMesh` |
 | STEP export of several bodies | `io::step::write(&model, &[bodies])` |

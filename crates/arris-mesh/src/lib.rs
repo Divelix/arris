@@ -1,6 +1,7 @@
 //! Meshes of the Arris kernel: `TriMesh` and `Polyline`, with signed volume,
 //! area and closedness, and the tessellation of bodies into them with
-//! per-face and per-edge ranges.
+//! per-face and per-edge ranges, optionally carrying the render buffer
+//! of `Corners` beside the watertight one.
 //!
 //! Guarantees (`docs/ARCHITECTURE.md` §Tessellation, ADR-0003):
 //! positions are `f64` and exact evaluations of the geometry — a topo
@@ -21,13 +22,15 @@
 #![warn(missing_docs)]
 
 pub mod cdt;
+mod corners;
 mod polyline;
 mod tessellate;
 mod trimesh;
 
-// `Aabb` lives in `arris-math` (01 §Crates); re-exported so a mesh
-// caller reaches it through this crate as it always has.
-pub use arris_topo::arris_math::Aabb;
+// `Aabb` and `Interval` live in `arris-math` (01 §Crates); re-exported
+// so a mesh caller reaches them through this crate as it always has.
+pub use arris_topo::arris_math::{Aabb, Interval};
+pub use corners::{CornerFace, Corners, NORMAL_UNIT_SLACK};
 pub use polyline::Polyline;
-pub use tessellate::{MAX_INTERIOR_POINTS, tessellate};
+pub use tessellate::{MAX_INTERIOR_POINTS, MeshRequest, tessellate, tessellate_with};
 pub use trimesh::{EdgeRange, FaceRange, MeshError, TriMesh};

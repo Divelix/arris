@@ -61,6 +61,7 @@ impl TriMesh {
 
 pub struct Corners { /* face-local vertices, in face iteration order */ }
 impl Corners {
+    pub fn from_parts(positions, normals, uvs, triangles, faces) -> Result<Self, MeshError>;
     pub fn positions(&self) -> &[u32];        // shared position index per face-local vertex
     pub fn normals(&self) -> &[[f64; 3]];     // outward, f64
     pub fn uvs(&self) -> &[[f64; 2]];         // the surface's own parameters
@@ -69,11 +70,19 @@ impl Corners {
     pub fn face(&self, face: FaceId) -> Option<&CornerFace>;
 }
 pub struct CornerFace { pub face: FaceId, pub vertices: Range<usize>, pub uv_box: [Interval; 2] }
+pub const NORMAL_UNIT_SLACK: f64;             // how far from unit `from_parts` accepts a normal
 ```
 
 `FaceRange` and `EdgeRange` are untouched. `Interval` is re-exported from
-`arris-mesh` as `Aabb` already is. New `MeshError` variants: none expected;
-`MeshError::Internal` covers a corner that names no input point, as today.
+`arris-mesh` as `Aabb` already is. **One new `MeshError` variant after
+all** (step 2's finding, below): `MeshError::Corners(String)` — a block
+whose arrays are not parallel, whose faces are not the mesh's in order,
+whose triangles are not parallel to the mesh's, whose face-local vertex
+does not stand on the mesh vertex its triangle does, or a face no point
+of which has a surface normal. `MeshError::Internal` keeps covering a
+corner that names no input point, as today. `CornerFace::uv_box` is the
+tightest box over the face's own face-local vertices, not the face's
+domain box, so a consumer's `[0, 1]` normalisation uses the whole range.
 
 **`arris-io` — mesh formats, and the layer edge (ADR-0013, step 3).**
 `ops`/`mesh`/`io` stop being flat siblings: `io` gains a normal dependency
@@ -145,7 +154,7 @@ bound has to be established here.
       nearest point of the face's own domain in the degenerate direction,
       so a sphere's pole gives ±Z and a cone's apex a ring of normals, one
       per corner's `u`); why normals are `f64` (ADR-0011). Docs only.
-- [ ] Step 2 **[2]** — **The corner block.** `MeshRequest`,
+- [x] Step 2 **[2]** — **The corner block.** `MeshRequest`,
       `tessellate_with`, `Corners`/`CornerFace`, built from the (u, v) each
       face's CDT already has, oriented by the face use, the singular rule
       of ADR-0012 applied. Tests: for every face-local vertex,
@@ -270,3 +279,16 @@ human, before step 1:
   the corner block, not a second CDT. Step 2 checks that with
   `tools/test-timings.sh` and reports the number; a measurable slowdown is
   a finding for the backlog, not a reason to re-decide mid-plan.
+  **Measured (step 2): none.** `cargo nextest run -p arris --test corpus`
+  is 5.88 / 5.95 / 5.88 s with the block and 5.87 / 5.91 / 5.93 s without
+  it, over the 104 fixtures — the run is dominated by the oracle and STEP
+  stages, and the block is inside the noise. No backlog line.
+
+## Findings
+
+- **Step 2 needed one new `MeshError` variant**, against the design
+  delta's "none expected": a corner block that does not fit its mesh is a
+  caller's error, and neither `IndexOutOfRange` nor `Internal` names it
+  honestly — `Internal` says "kernel bug", which a hand-built block is
+  not. `MeshError::Corners(String)` is additive and pre-1.0; the design
+  delta above now carries it.

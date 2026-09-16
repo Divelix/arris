@@ -8,6 +8,7 @@ use arris_topo::{Body, EdgeId, FaceId, NotFound};
 
 use crate::Aabb;
 use crate::cdt::CdtError;
+use crate::corners::Corners;
 
 /// The triangles of one B-Rep face: a contiguous run of a
 /// [`TriMesh`]'s triangle list, in the body's face iteration order.
@@ -96,6 +97,13 @@ pub enum MeshError {
         /// How many points it would need.
         points: usize,
     },
+    /// A corner block does not fit together, or does not fit the mesh it
+    /// was offered to: parallel arrays of different lengths, a face list
+    /// that is not the mesh's faces in order, a triangle list that is not
+    /// parallel to the mesh's, or a face-local vertex that does not stand
+    /// on the mesh vertex its triangle does (ADR-0012).
+    #[error("corner block: {0}")]
+    Corners(String),
     /// Tessellation's own bookkeeping broke on validated input: never a
     /// property of the body or the chord tolerance, and never the CDT's
     /// own fault, so never a [`MeshError::Face`].
@@ -155,6 +163,7 @@ pub struct TriMesh {
     faces: Vec<FaceRange>,
     edge_indices: Vec<u32>,
     edges: Vec<EdgeRange>,
+    corners: Option<Corners>,
 }
 
 impl TriMesh {
@@ -194,6 +203,7 @@ impl TriMesh {
             faces,
             edge_indices,
             edges,
+            corners: None,
         })
     }
 
@@ -268,6 +278,87 @@ impl TriMesh {
     /// The per-edge ranges, in edge iteration order.
     pub fn edges(&self) -> &[EdgeRange] {
         &self.edges
+    }
+
+    /// The render buffer beside this one, or `None` when it was not
+    /// asked for (ADR-0012).
+    ///
+    /// It is present exactly when the mesh came from
+    /// [`crate::tessellate_with`] with [`crate::MeshRequest::corners`]
+    /// set, or from [`TriMesh::with_corners`]. It adds face-local
+    /// vertices with per-corner normals and (u, v) and changes nothing
+    /// here: the positions, the triangles and the ranges are the same
+    /// either way.
+    pub fn corners(&self) -> Option<&Corners> {
+        self.corners.as_ref()
+    }
+
+    /// This mesh carrying `corners`, validated against it once.
+    ///
+    /// The block must describe *these* triangles of *these* faces: its
+    /// face list is this mesh's faces in the same order, its triangle
+    /// list is parallel to this mesh's, and each corner triangle's three
+    /// face-local vertices belong to the face whose [`FaceRange`] holds
+    /// that triangle and stand on the very positions the mesh's triangle
+    /// names, in the same order. So the two index spaces can never drift
+    /// apart.
+    ///
+    /// Errors: [`MeshError::Corners`] naming what does not fit. Any
+    /// block already present is replaced.
+    pub fn with_corners(mut self, corners: Corners) -> Result<Self, MeshError> {
+        if corners.triangles().len() != self.triangles.len() {
+            return Err(MeshError::Corners(format!(
+                "{} corner triangles for {} mesh triangles",
+                corners.triangles().len(),
+                self.triangles.len()
+            )));
+        }
+        if corners.faces().len() != self.faces.len() {
+            return Err(MeshError::Corners(format!(
+                "{} corner faces for {} mesh faces",
+                corners.faces().len(),
+                self.faces.len()
+            )));
+        }
+        for (index, &shared) in corners.positions().iter().enumerate() {
+            if shared as usize >= self.positions.len() {
+                return Err(MeshError::Corners(format!(
+                    "face-local vertex {index} names position {shared} of {}",
+                    self.positions.len()
+                )));
+            }
+        }
+        for (cf, fr) in corners.faces().iter().zip(&self.faces) {
+            if cf.face != fr.face {
+                return Err(MeshError::Corners(format!(
+                    "corner face {} where the mesh has {}",
+                    cf.face, fr.face
+                )));
+            }
+            for i in fr.triangles.clone() {
+                let local = corners.triangles()[i];
+                let shared = self.triangles[i];
+                for corner in 0..3 {
+                    let v = local[corner] as usize;
+                    if !cf.vertices.contains(&v) {
+                        return Err(MeshError::Corners(format!(
+                            "{}: triangle {i}'s face-local vertex {v} is not one of its own",
+                            cf.face
+                        )));
+                    }
+                    if corners.positions()[v] != shared[corner] {
+                        return Err(MeshError::Corners(format!(
+                            "{}: triangle {i}'s face-local vertex {v} stands on position {}, not the {} the mesh triangle names",
+                            cf.face,
+                            corners.positions()[v],
+                            shared[corner]
+                        )));
+                    }
+                }
+            }
+        }
+        self.corners = Some(corners);
+        Ok(self)
     }
 
     /// The triangles of `face`, or `None` if the mesh has no range for it.

@@ -8,7 +8,9 @@
 //! volume, area, centroid and inertia to the oracle's within the
 //! fixture's tolerances, tessellates the result and holds the mesh
 //! closed with its signed volume within the fixture's `mesh_volume_rel`
-//! of the oracle's at `mesh_chord`, asserts the provenance accounting of
+//! of the oracle's at `mesh_chord` — asking for the corner block and
+//! holding every face-local vertex to ADR-0012's two invariants, so the
+//! whole corpus covers them — asserts the provenance accounting of
 //! every step, and diffs the text dump against the committed `dump.txt` —
 //! written only under `ARRIS_BLESS=1`. Every stage that fails is a typed
 //! [`CorpusError`] saying which fixture, which stage and what differed.
@@ -28,11 +30,11 @@ use arris_io::arris_check::arris_topo::arris_math::nalgebra::UnitQuaternion;
 use arris_io::arris_check::arris_topo::arris_math::{
     Axis, FrameError, Isometry, Point3, UnitVec3, Vec3,
 };
-use arris_io::arris_check::arris_topo::{Body, Edge, EntityId, Model, Provenance};
+use arris_io::arris_check::arris_topo::{Body, Edge, EntityId, Model, Orientation, Provenance};
 use arris_io::arris_check::classify::{Classification, classify_point};
 use arris_io::arris_check::{Level, LumpError, Report, check, lumps};
 use arris_io::step::{self, StepError};
-use arris_mesh::tessellate;
+use arris_mesh::{MeshRequest, TriMesh, tessellate_with};
 use arris_ops::measure::mass_properties;
 use arris_ops::{
     OpError, Reason, chamfer, common, cut, extrude, fillet, fuse, primitive_box,
@@ -596,8 +598,11 @@ pub fn run(dir: &Path, variant: &str) -> Result<(), CorpusError> {
         chord: tolerances.mesh_chord,
         what,
     };
-    let mesh =
-        tessellate(&m, body, tolerances.mesh_chord).map_err(|e| mesh_failure(e.to_string()))?;
+    // The corner block on every fixture (ADR-0012), so the whole corpus
+    // covers its invariants rather than one focused test.
+    let request = MeshRequest::new(tolerances.mesh_chord).with_corners();
+    let mesh = tessellate_with(&m, body, &request).map_err(|e| mesh_failure(e.to_string()))?;
+    corners_stage(&m, body, &mesh).map_err(&mesh_failure)?;
     let Some(mesh_volume) = mesh.signed_volume() else {
         return Err(mesh_failure("the mesh is not closed".into()));
     };
@@ -1100,6 +1105,85 @@ fn reference<'a>(
 /// not compared against itself. A quantity the oracle did not record is
 /// skipped. Errors: the first quantity that differs, named with both
 /// values.
+/// ADR-0012's invariants on every face-local vertex of the mesh: the
+/// face's surface at the corner's own (u, v) is the shared position it
+/// stands on, within the face's tolerance, and its normal is the
+/// surface's own in the face use's sense — outward — wherever the
+/// parametrisation is not singular, and a unit vector in the tangent
+/// plane where it is.
+fn corners_stage(m: &Model, body: Body, mesh: &TriMesh) -> Result<(), String> {
+    let corners = mesh
+        .corners()
+        .ok_or_else(|| "the corner block was asked for and is missing".to_string())?;
+    let faces = m.faces(body).map_err(|e| e.to_string())?;
+    if corners.faces().len() != faces.len() {
+        return Err(format!(
+            "{} corner faces for {} faces",
+            corners.faces().len(),
+            faces.len()
+        ));
+    }
+    for (used, cf) in faces.iter().zip(corners.faces()) {
+        if cf.face != used.id {
+            return Err(format!(
+                "corner face {} where the body has {}",
+                cf.face, used.id
+            ));
+        }
+        let face = m.face(used.id).map_err(|e| e.to_string())?;
+        let surface = m.surface(face.surface()).map_err(|e| e.to_string())?;
+        let reversed = used.orientation == Orientation::Reversed;
+        for i in cf.vertices.clone() {
+            let ([u, v], normal, shared) = (
+                corners.uvs()[i],
+                corners.normals()[i],
+                corners.positions()[i] as usize,
+            );
+            let at = Point3::from(mesh.positions()[shared]);
+            let on_surface = surface.point(u, v);
+            let off = (on_surface - at).norm();
+            if off.is_nan() || off > face.tolerance() {
+                return Err(format!(
+                    "{}: ({u}, {v}) evaluates to {on_surface}, {off:e} from the {at} it stands on, \
+                     above the face's tolerance {:e}",
+                    cf.face,
+                    face.tolerance()
+                ));
+            }
+            let n = Vec3::from(normal);
+            if let Some(own) = surface.normal(u, v) {
+                let outward = if reversed {
+                    -own.into_inner()
+                } else {
+                    own.into_inner()
+                };
+                if (n - outward).norm() > CORNER_NORMAL_SLACK {
+                    return Err(format!(
+                        "{}: the normal at ({u}, {v}) is {n}, not the outward {outward}",
+                        cf.face
+                    ));
+                }
+            } else {
+                let e = surface.eval(u, v);
+                for d in [e.du, e.dv] {
+                    if n.dot(&d).abs() > CORNER_NORMAL_SLACK * d.norm().max(1.0) {
+                        return Err(format!(
+                            "{}: the normal at the singular ({u}, {v}) leaves the tangent plane",
+                            cf.face
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// How far a corner normal may lie from the direction it should be: the
+/// two are the same computation, so this is rounding on a unit vector,
+/// not a geometric tolerance.
+const CORNER_NORMAL_SLACK: f64 = 1e-12;
+
 fn measure_stage(
     m: &Model,
     body: Body,
