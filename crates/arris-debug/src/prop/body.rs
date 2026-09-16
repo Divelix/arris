@@ -11,6 +11,8 @@ use arris_ops::{OpError, primitive_box, primitive_cylinder, transform};
 use arris_topo::{Body, Model};
 use proptest::prelude::*;
 
+use core::ops::RangeInclusive;
+
 use super::{DEFAULT_SCALE, finite_f64, pose_in, radius, unit_vec3};
 
 /// The smallest extent (a box side, a cylinder's diameter or height) the
@@ -121,6 +123,73 @@ impl OverlappingPair {
                 };
                 (a + b * s).norm() > self.cylinder.radius
             })
+    }
+}
+
+/// A box cut by one or two **bars**, and the same recipe with every bar
+/// moved and resized: the operands of the split-order property
+/// (ADR-0009, `docs/DATA-MODEL.md` §Provenance). A bar is a slab thin
+/// along one axis of the box's own frame and past the box in the other
+/// two, so cutting with it splits the box in two lumps and every face it
+/// crosses into two pieces, and no bar ever ends inside a face.
+///
+/// The two builds' bars are drawn from bands that keep them apart, off
+/// the box's own faces and in the same order — bar 0 inside the first
+/// half, bar 1 inside the second — and the second build's box is resized
+/// along each axis and posed for itself. So **which entities bound which
+/// piece is the same in both builds** however far the bars moved and
+/// however the box was resized or turned, which is the bound the split
+/// order is guaranteed under.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BarCut {
+    /// The box of the first build.
+    pub cuboid: Boxed,
+    /// The box of the second: the same box resized along each axis and
+    /// in a pose of its own, so nothing a world axis decides survives.
+    pub rebuilt: Boxed,
+    /// The axis the bars are thin along, in the box's own frame.
+    pub axis: usize,
+    /// Each bar's centre and half-width along that axis as fractions of
+    /// the box's extent there, in the first build.
+    pub bars: Vec<(f64, f64)>,
+    /// The same bars in the second build; the same length as `bars`.
+    pub moved: Vec<(f64, f64)>,
+}
+
+impl BarCut {
+    /// The box of build `which` (`0` or `1`).
+    pub fn cuboid_of(&self, which: usize) -> Boxed {
+        if which == 0 {
+            self.cuboid
+        } else {
+            self.rebuilt
+        }
+    }
+
+    /// The bars of build `which` as boxes in that build's own pose, in
+    /// the order they are cut with: along the axis they are thin on, so
+    /// the first cut splits the box and the second splits one of its
+    /// lumps.
+    pub fn slabs(&self, which: usize) -> Vec<Boxed> {
+        let cuboid = self.cuboid_of(which);
+        let e = cuboid.max - cuboid.min;
+        let bars = if which == 0 { &self.bars } else { &self.moved };
+        bars.iter()
+            .map(|&(centre, half)| {
+                // Past the box in the other two axes, by a quarter of the
+                // extent there: the bar's own faces never touch the box.
+                let pad = e / 4.0;
+                let mut min = cuboid.min - pad;
+                let mut max = cuboid.max + pad;
+                min[self.axis] = cuboid.min[self.axis] + (centre - half) * e[self.axis];
+                max[self.axis] = cuboid.min[self.axis] + (centre + half) * e[self.axis];
+                Boxed {
+                    min,
+                    max,
+                    pose: cuboid.pose,
+                }
+            })
+            .collect()
     }
 }
 
@@ -431,6 +500,48 @@ pub fn cylinder_in(scale: f64) -> impl Strategy<Value = Cylindrical> {
             height: h,
             pose,
         })
+}
+
+/// [`BarCut`]s: a box from [`box_in`], one or two bars thin along a
+/// random axis of its own frame, and a second set of bars drawn from the
+/// same bands — bar 0's centre in `[0.15, 0.40]` of the extent and bar
+/// 1's in `[0.60, 0.85]`, each half-width at most `0.10`, so every bar
+/// stays clear of the box's ends and of its neighbour in both builds.
+pub fn bar_cut() -> impl Strategy<Value = BarCut> {
+    let bar = |centre: RangeInclusive<f64>| (finite_f64(centre), finite_f64(0.02..=0.10));
+    let build = || (bar(0.15..=0.40), bar(0.60..=0.85));
+    let resize = || {
+        (
+            finite_f64(0.6..=1.6),
+            finite_f64(0.6..=1.6),
+            finite_f64(0.6..=1.6),
+        )
+    };
+    (
+        box_in(DEFAULT_SCALE),
+        0usize..3,
+        1usize..=2,
+        build(),
+        build(),
+        (resize(), pose_in(DEFAULT_SCALE)),
+    )
+        .prop_map(
+            |(cuboid, axis, count, (a0, a1), (b0, b1), ((sx, sy, sz), pose))| {
+                let e = cuboid.max - cuboid.min;
+                let scaled = Vec3::new(e.x * sx, e.y * sy, e.z * sz);
+                BarCut {
+                    cuboid,
+                    rebuilt: Boxed {
+                        min: Point3::from(-scaled / 2.0),
+                        max: Point3::from(scaled / 2.0),
+                        pose,
+                    },
+                    axis,
+                    bars: vec![a0, a1][..count].to_vec(),
+                    moved: vec![b0, b1][..count].to_vec(),
+                }
+            },
+        )
 }
 
 /// [`OverlappingPair`]s: a box from [`box_in`], a cylinder whose axis

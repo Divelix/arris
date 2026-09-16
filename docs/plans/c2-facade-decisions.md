@@ -166,16 +166,32 @@ bound has to be established here.
     the second cut made and comes last, because it lies last along the
     curve. So the geometric test, not the variant test, is what holds the
     rule.
-- [ ] Step 3 **[2]** — **Property test** (seeded, `prop_shards!`):
-  - **Operands:** a box cut by one or two bars in a random pose, the same
-    cut rebuilt with parameters perturbed within a bound that keeps the
-    combinatorics (no bar crosses a box edge or the other bar).
-  - **Order:** every origin's piece signatures are equal in order between
-    the two builds.
-  - **Composition:** `then` of a chain of two cuts nests the order.
-  - **Carried order:** `mapped` through `Model::import`, and a `retain`
-    between the builds that refills freed slots, leave the order
-    unchanged.
+- [x] Step 3 **[2]** — **Property test** (seeded, `prop_shards!`).
+  Done 2026-09-16. `crates/arris-ops/tests/provenance_prop.rs`, over
+  `prop::body::bar_cut()` — a box in a random pose cut by one or two
+  bars, each a slab thin along one axis of the box's own frame and past
+  it in the other two, drawn from bands that keep the bars apart and off
+  the box's ends.
+  - **The second build is a real parameter edit**, not only a nudge: the
+    bars moved and resized within their bands, *and* the box resized
+    along each axis and posed for itself. Nothing a world axis decides
+    survives that, which is what gives the property its teeth — ordering
+    the pieces by a world coordinate fails every shard, while reversing
+    the rule outright does not, since that is stable across builds.
+  - **No id reaches the comparison.** Every input entity is named by the
+    primitive it came from and its role, and a piece is described by its
+    neighbours' labelled origins — a face's by the faces it shares an
+    edge with, an edge's by its end vertices — so two builds in two
+    models compare directly.
+  - **Three properties:** the order equal between the builds and equal
+    again when the second is built in the *first* model after a
+    `Model::retain(&[])` that frees every slot it used; `then` nesting —
+    the composed list of an origin is the blocks its first-cut pieces
+    stand for, end to end, and nothing else; `mapped` through
+    `Model::import` describing every origin's pieces as the record it
+    came from does. Each fails when its own rule is broken (the tie-break
+    put on a world coordinate, `mapped` reversing a list, `then`
+    composing its pieces backwards).
 - [ ] Step 4 **[1]** — **ADR-0010: compaction keeps slots sparse.**
   - A test in `crates/arris-topo/tests/` of a consumer's cycle: build two
     bodies, retain one, build a third. Every handle to the kept body
