@@ -31,14 +31,17 @@ fixture passing every corpus stage against Open CASCADE; a failure waiting
 for its fix lives under `tests/fixtures/regression/`. ADR-0001 to 0005.
 **C2 under way: the application gate.** Multi-shell results are lumps of
 one `Solid` (ADR-0006): cavities, split cuts, disjoint fuses, full revolves
-with holes. A revolve profile may touch its axis. Fillet and chamfer done:
-plane–plane and plane–cylinder edges, miters, sphere and triangle corners,
-hole rims, every `blend/*` fixture passing against `BRepFilletAPI`
-(ADR-0007). Cylinder–cylinder booleans: parallel, tangent and equal-radius
-crossing axes. Cone, sphere and torus faces check at `Full` wherever they
-share an axis (ADR-0008); the frustum, barrel and ring are corpus fixtures.
-**Next:** C2's `⚠ OPEN` ADRs (`Model::retain`, `f32` boundary, origin
-names), projection, face frames and STL/OBJ, then the facade swap.
+with holes; a revolve profile may touch its axis. Fillet and chamfer on
+plane–plane and plane–cylinder edges, with miters, corners and hole rims,
+every `blend/*` fixture green against `BRepFilletAPI` (ADR-0007).
+Cylinder–cylinder booleans: parallel, tangent, equal-radius crossing.
+Cone, sphere and torus faces check at `Full` on a shared axis (ADR-0008).
+The three facade decisions are taken and
+`docs/ARCHITECTURE.md` has no `⚠ OPEN` left: no name grammar, an origin's
+pieces in a guaranteed **split order** (ADR-0009); `Model::retain` never
+renumbers a slot (ADR-0010); `TriMesh` stays `f64` (ADR-0011).
+**Next:** projection, face frames, mesh normals and (u, v), STL/OBJ,
+then the facade swap.
 
 ## Rules that are not derivable from the code
 

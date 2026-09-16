@@ -292,7 +292,11 @@ apart between the two tangent distances, some with a seam on a ruling or
 flush caps — and `crossing_pair` — equal radii crossing at 30° to 90°,
 each through the other, some with a seam through a crossing vertex, its
 `common` held to `16R³/(3 sin ψ)` and either `cut` to
-`Reason::NonManifold`.
+`Reason::NonManifold`. `bar_cut` is the split-order property's operand
+(ADR-0009): a box cut by one or two slabs that cross it, drawn together
+with a second set of slabs and a resized, re-posed box, so the same
+recipe is built twice under a parameter edit that never changes which
+entities bound which piece.
 
 `ops::fuse(m, a, b)`, `ops::common(m, a, b)` and `ops::cut(m, target,
 tool)` are three selections over that decomposition (ADR-0004), one
@@ -1061,6 +1065,6 @@ Collected from this document; each closes with an ADR.
 None. The three this document carried were C2's facade line, closed
 together: ADR-0009 (Arris owns no name grammar, and the split order is a
 contract), ADR-0010 (compaction keeps slots sparse) and ADR-0011 (the
-tessellation boundary is `f64`). The kernel's one remaining `⚠ OPEN` is
-the quadric-curve question in `docs/DATA-MODEL.md` §Open questions.
+tessellation boundary is `f64`). The kernel's one remaining open question
+is the quadric-curve one in `docs/DATA-MODEL.md` §Open questions.
 

@@ -942,7 +942,8 @@ resolve is skipped; only the body handle itself is `NotFound`.
 `closure(body)` is the same reach as sorted, duplicate-free id lists per
 kind, geometry included: what the checker, `import`, `retain` and the
 text dump walk. That order is the order tessellation numbers `FaceRange`s
-in and the order provenance lists entities in.
+in. Provenance does not follow it: an origin's outputs come in **split
+order** (§Provenance), the order the operation added them.
 
 ## Tolerances
 

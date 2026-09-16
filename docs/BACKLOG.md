@@ -6,6 +6,8 @@ has committed to, which now lives in `docs/ROADMAP.md` instead. Rejected
 ideas keep one line below with the reason, so the same idea is not
 re-brainstormed.
 
+- Attribute propagation through operations — attributes a consumer attaches to entities and every operation carries by declared rules, computed from the split order ADR-0009 fixes, for a consumer with no naming scheme of its own (Parasolid's attribute definitions); a cycle of its own
+- A typed lineage value (`Provenance::lineage(output)`, a tree down to `Role`s), if a second consumer asks for one rather than walking the record itself (ADR-0009 alternative)
 - `cargo-semver-checks` in CI once the first non-placeholder version is published
 - Benchmarks (`divan` or `criterion`) for tessellation and the boolean corpus, so a robustness fix that costs 10× shows up
 - `cargo-fuzz` targets for the STEP reader and the intersectors, seeded from the fixture corpus
