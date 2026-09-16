@@ -209,14 +209,21 @@ bound has to be established here.
     and points at `import` for a dense copy; `docs/ARCHITECTURE.md`
     §The model and the memoising row of the facade table likewise, and
     the §Open questions line is gone.
-- [ ] Step 5 **[1]** — **ADR-0011: the tessellation boundary is `f64`.**
-  - `TriMesh`'s rustdoc names the decision and shows the one-line cast
-    at a consumer's boundary as a doc test.
-  - The ARCHITECTURE §Threading and §Tessellation sentences.
-  - The ROADMAP §C2 queries and export line gains per-corner normals and
-    (u, v) with face-local vertices beside the watertight buffer. The
-    backlog line on normals, (u, v) and `f32` goes, now on the roadmap
-    and closed.
+- [x] Step 5 **[1]** — **ADR-0011: the tessellation boundary is `f64`.**
+  Done 2026-09-16. `TriMesh` stays `f64` and ships no `f32` accessor: the
+  mesh is measured against the oracle as well as drawn — the corpus holds
+  its signed volume at the chord tolerance asked for — and a renderer's
+  cast belongs where it knows its buffer layout and its local origin.
+  - `TriMesh`'s rustdoc states it and carries the one-line cast over
+    `TriMesh::positions` as a doc test.
+  - `docs/ARCHITECTURE.md` §Tessellation and §Threading; §Open questions
+    is now empty and says so, naming the three ADRs that emptied it.
+  - `docs/ROADMAP.md` §C2's queries and export line gains per-corner
+    normals and (u, v) with face-local vertices, `f64` fields beside the
+    watertight buffer; the backlog line on normals, (u, v) and `f32` is
+    gone, now on the roadmap and closed.
+  - `.agents/rules/kernel.md`'s `f32` rule keeps its shape and loses its
+    one anticipated case.
 
 ## Acceptance
 

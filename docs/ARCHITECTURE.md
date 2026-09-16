@@ -843,9 +843,12 @@ depends on `check`. The mesh guarantees (ADR-0003):
   fault, so never a `MeshError::Face`.
 
 No adaptive refinement: interior points, where a face needs them, lie on
-a uniform (u, v) grid sized by the chord bound. No `f32` output (the
-`⚠ OPEN` under §Threading), no per-vertex normals or (u, v), no
-mesh-based mass properties (`ops::measure` integrates the B-Rep).
+a uniform (u, v) grid sized by the chord bound. No `f32` output
+(ADR-0011: positions are `f64` and the cast is the consumer's, one line
+over `TriMesh::positions` at its own boundary), no per-corner normals or
+(u, v) yet — those are C2's queries and export line, `f64` fields beside
+the watertight buffer — and no mesh-based mass properties
+(`ops::measure` integrates the B-Rep).
 
 ## Threading and wasm
 
@@ -866,9 +869,11 @@ mesh-based mass properties (`ops::measure` integrates the B-Rep).
   checks it. No kernel crate touches the filesystem, the clock, threads or
   randomness; `arris-debug` is the only crate that writes files, and the
   oracle is not a crate at all.
-- `f64` everywhere inside. `⚠ OPEN:` whether `TriMesh` offers an `f32`
-  position buffer at the tessellation boundary or leaves the conversion to
-  the consumer. Decided when the first renderer consumes it, in cycle 2.
+- `f64` everywhere inside, the tessellation boundary included (ADR-0011):
+  `TriMesh` positions are `f64` and there is no `f32` accessor, because
+  the mesh is measured against the oracle as well as drawn, and a
+  renderer's cast belongs where it knows its buffer layout and its local
+  origin.
 
 ## Formats and tools
 
@@ -1053,4 +1058,9 @@ What the facade has today that Arris will not have: a tolerance nudge
 
 Collected from this document; each closes with an ADR.
 
-- `⚠ OPEN:` `f32` positions at the tessellation boundary (§Threading).
+None. The three this document carried were C2's facade line, closed
+together: ADR-0009 (Arris owns no name grammar, and the split order is a
+contract), ADR-0010 (compaction keeps slots sparse) and ADR-0011 (the
+tessellation boundary is `f64`). The kernel's one remaining `⚠ OPEN` is
+the quadric-curve question in `docs/DATA-MODEL.md` §Open questions.
+

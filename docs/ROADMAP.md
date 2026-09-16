@@ -362,10 +362,22 @@ with their `#[ignore]`d twins — green.*
   `Reason::NonManifold`.
 - `Model::retain` semantics (the compaction `⚠ OPEN`), the `f32`
   boundary `⚠ OPEN`, the origin-name helper `⚠ OPEN` — each an ADR with
-  the consumer's adapter as the test.
+  the consumer's adapter as the test. **Done 2026-09-16.** ADR-0009:
+  Arris ships no name grammar; a consumer names from `Provenance`, and
+  what only the kernel can give it — the **split order** of an origin's
+  pieces, a face's by the origins that bound them and an edge's along its
+  curve — is a contract that holds under every parameter edit keeping
+  which entities bound which piece, proven on five `provenance/split-*`
+  fixtures, a geometric test of the edge rule, and a property over a box
+  cut by bars rebuilt resized and re-posed. ADR-0010: `Model::retain`
+  never renumbers a slot — a live id never moves, a dead one never
+  aliases, and a dense copy is `Model::import`. ADR-0011: `TriMesh` stays
+  `f64`; the cast is the consumer's, one line at its own boundary.
 - Projection of edges and vertices to a plane; face frames; mass
   properties with inertia matched to the consumer's integrator; STL and
-  OBJ export from the tessellation, beside STEP.
+  OBJ export from the tessellation, beside STEP; per-corner normals and
+  (u, v) in `TriMesh` with face-local vertices, `f64` fields beside the
+  watertight buffer a renderer asks for them with (ADR-0011).
 
 **Out:** NURBS–NURBS intersection, sweep along a path, loft, shell, healing,
 the STEP reader.

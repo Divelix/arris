@@ -115,6 +115,25 @@ pub enum MeshError {
 /// Every index is validated when it enters, so the measurements below never
 /// panic; a mesh with no triangles is not closed and has no volume.
 ///
+/// **Positions are `f64` and the kernel ships no `f32` accessor**
+/// (ADR-0011). The mesh is measured as well as drawn — the fixture corpus
+/// holds its signed volume to the oracle at the chord tolerance asked for
+/// — so the narrowing belongs at the consumer's own boundary, where it
+/// knows its buffer layout and whether to subtract a local origin first.
+/// It is one line over [`TriMesh::positions`], which borrows:
+///
+/// ```
+/// # use arris_mesh::TriMesh;
+/// # let mut mesh = TriMesh::new();
+/// # mesh.push_position([1.0, 2.0, 3.0]).unwrap();
+/// let gpu: Vec<[f32; 3]> = mesh
+///     .positions()
+///     .iter()
+///     .map(|p| p.map(|c| c as f32))
+///     .collect();
+/// assert_eq!(gpu[0], [1.0f32, 2.0, 3.0]);
+/// ```
+///
 /// ```
 /// use arris_mesh::TriMesh;
 ///
