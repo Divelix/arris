@@ -175,7 +175,7 @@ bound has to be established here.
       `f32` line. Acceptance: `tools/check-layers.sh` and `--self-test`
       green, wasm build green, `cargo tree -p arris --no-default-features`
       still free of `serde`.
-- [ ] Step 4 **[1]** — **`io::stl`**, ASCII and binary, with
+- [x] Step 4 **[1]** — **`io::stl`**, ASCII and binary, with
       `MeshWriteError`. Per-facet normal from the triangle's own winding, not
       from the corner block, as the format means it. Tests: two writes are
       byte-identical; the oracle reads both back (`tools/oracle/mesh.py` over

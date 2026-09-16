@@ -27,6 +27,7 @@ commit that says so (`.agents/rules/git.md`).
 |---|---|
 | `expected.py <fixture-dir>...` | Builds each recipe (every variant), measures it, writes `expected.json`, prints one summary line per result; for a geometry fixture, evaluates, projects and intersects instead |
 | `compare.py <fixture-dir> <file.step> [--variant NAME]` | Reads a STEP file (Arris's output), measures it, compares against `expected.json` within the fixture's tolerances, prints a table; exit 1 on mismatch, 2 on a stale `expected.json` or an environment error. Solid fixtures only: a geometry fixture is compared by `crates/arris-geom/tests/oracle.rs`. `arris_debug::oracle::compare` is the Rust seam to it, and the corpus runner (`arris_debug::corpus::run`) calls it on every fixture |
+| `mesh.py <file.stl>` | Reads an STL file (Arris's output, ASCII or binary) through Open CASCADE's `RWStl` and prints its triangle count, area and signed volume as JSON — an independent reader of the bytes, not a fixture comparison; exit 2 on a read error. `arris_debug::oracle::compare_stl` is the Rust seam to it |
 | `selftest.py [fixture-dir...]` | `tests/fixtures/expr-cases.json`'s expression grammar cases (the same ones `arris_debug::fixtures::expr`'s own test evaluates); inline smoke recipes covering every op and the geometry kind against closed forms; then for each fixture: a fresh `expected` must equal the committed one, and for a solid OCCT's own STEP of the result must compare clean |
 
 ## Package
@@ -61,6 +62,8 @@ commit that says so (`.agents/rules/git.md`).
   (counted) when off either operand.
 - `oracle/step.py` — STEP AP214 write and read, with OCCT's transfer
   banner silenced.
+- `oracle/mesh.py` — STL read through `RWStl`, and its triangle count,
+  area and signed volume by the divergence theorem.
 - `oracle/fixture.py` — fixture directories, `expected.json` layout,
   the recipe hash.
 

@@ -1,18 +1,34 @@
-//! Formats of the Arris kernel: the STEP AP214 Part 21 writer (later reader)
-//! and the native format, which is `serde` of the model.
+//! Formats of the Arris kernel: the STEP AP214 Part 21 writer (later reader),
+//! the native format (`serde` of the model), and the mesh formats STL and
+//! OBJ (ADR-0013).
 //!
 //! Guarantees: the native format round-trips a model to an identical text
 //! dump; STEP carries the B-Rep entity subset with pcurves written out, so a
 //! reader does not recompute them (`docs/ARCHITECTURE.md` §Formats and
 //! tools). The `serde` feature (on by default) enables the native format.
-//! Depends on `arris-check` and below, re-exported here so a crate above
-//! reaches the checker and the representation through this one; never on
-//! `arris-ops` or `arris-mesh`.
+//! Depends on `arris-check` and `arris-mesh` and below, both re-exported
+//! here so a crate above reaches the checker, the representation and the
+//! mesh types through this one; never on `arris-ops`.
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
 #[cfg(feature = "serde")]
 pub mod native;
 pub mod step;
+pub mod stl;
 
 pub use arris_check;
+pub use arris_mesh;
+
+/// Why a mesh format writer could not write an [`arris_mesh::TriMesh`]:
+/// shared by [`stl`] and, once it exists, `obj`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum MeshWriteError {
+    /// Binary STL's triangle count is a `u32`; the mesh has more
+    /// triangles than that can hold.
+    #[error("{triangles} triangles do not fit binary STL's u32 count")]
+    TooManyTriangles {
+        /// How many triangles the mesh has.
+        triangles: usize,
+    },
+}

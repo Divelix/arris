@@ -1,8 +1,9 @@
-//! Running the Open CASCADE oracle on a STEP file Arris wrote
-//! (`tools/oracle/README.md`): the seam between a test and `compare.py`,
-//! and between a test's own recipe and `expected.py` for a body the
-//! corpus has no fixture for. A missing environment is a loud error
-//! naming the command that creates it, never a skip.
+//! Running the Open CASCADE oracle on a file Arris wrote
+//! (`tools/oracle/README.md`): the seam between a test and `compare.py`
+//! for a STEP file, `mesh.py` for an STL one, and between a test's own
+//! recipe and `expected.py` for a body the corpus has no fixture for. A
+//! missing environment is a loud error naming the command that creates
+//! it, never a skip.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -170,4 +171,58 @@ pub fn compare_dir(
             message: format!("{stdout}{stderr}"),
         }),
     }
+}
+
+/// Open CASCADE's `RWStl` reading of an STL file: how many facets it saw,
+/// their total area and their signed volume by the divergence theorem —
+/// the same formula `arris_mesh::TriMesh::signed_volume` and `area` use —
+/// so a test holds its own mesh's numbers to an independent reader of the
+/// bytes `arris_io::stl` wrote rather than to itself. `tools/oracle/mesh.py`
+/// is the script; unlike [`compare`], nothing here knows a fixture's
+/// expected numbers, so there is no [`OracleError::Mismatch`] — a test
+/// compares the fields itself.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize)]
+pub struct StlReading {
+    /// How many facets `RWStl` read.
+    pub triangles: usize,
+    /// The sum of the facets' areas.
+    pub area: f64,
+    /// `Σ a · (b × c) / 6` over the facets in file order.
+    pub volume: f64,
+}
+
+/// Writes `stl` (ASCII text or binary bytes) to
+/// `target/inspect/<tag>.stl` and has `tools/oracle/mesh.py` read it back
+/// through Open CASCADE's `RWStl`. Errors: [`OracleError::Write`];
+/// [`OracleError::Environment`] when `uv` could not run, the environment
+/// is missing, or the file did not parse as STL.
+pub fn compare_stl(stl: &[u8], tag: &str) -> Result<StlReading, OracleError> {
+    let scratch = scratch_dir();
+    let file = scratch.join(format!("{tag}.stl"));
+    std::fs::create_dir_all(&scratch)
+        .and_then(|()| std::fs::write(&file, stl))
+        .map_err(|e| OracleError::Write {
+            path: file.clone(),
+            message: e.to_string(),
+        })?;
+    let output = Command::new("uv")
+        .current_dir(workspace_root())
+        .args(["run", "--project", "tools/oracle", "tools/oracle/mesh.py"])
+        .arg(&file)
+        .output()
+        .map_err(|e| OracleError::Environment {
+            message: format!("could not run `uv`: {e}"),
+        })?;
+    if !output.status.success() {
+        return Err(OracleError::Environment {
+            message: format!(
+                "{}{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            ),
+        });
+    }
+    serde_json::from_slice(&output.stdout).map_err(|e| OracleError::Environment {
+        message: format!("mesh.py's output did not parse as JSON: {e}"),
+    })
 }

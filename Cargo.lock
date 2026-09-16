@@ -132,6 +132,7 @@ dependencies = [
  "arris-check",
  "arris-debug",
  "arris-mesh",
+ "arris-ops",
  "postcard",
  "serde",
  "serde_json",

@@ -954,6 +954,20 @@ B-Rep).
 - **Native format** (`arris_io::native::{to_json, from_json, to_bytes,
   from_bytes}`): `serde` of the model under a version header, JSON for
   diffs and `postcard` bytes for storage; data-model §Native format.
+- **STL** (`arris_io::stl::{write_ascii, write_binary}`, ADR-0013): a
+  `TriMesh` in, `MeshWriteError` the only failure — binary's `u32`
+  triangle count. A facet's normal is the triangle's own winding, never
+  the corner block's — never the point of asking `RWStl` to compute
+  normals a flat facet does not have a use for; ASCII writes every real
+  as the shortest round-trip decimal so two writes are byte-identical,
+  binary writes IEEE 754 little-endian `f32`, the one narrowing the
+  kernel ships (`.agents/rules/kernel.md`), computed in `f64` and cast
+  only at the writer. `tools/oracle/mesh.py` reads both forms back
+  through Open CASCADE's `RWStl` — an independent reader of the bytes,
+  not a fixture comparison — and `arris_debug::oracle::compare_stl` is
+  the Rust seam to it, held to the mesh's own triangle count and area and
+  to `measure::mass_properties`'s volume within the corpus's own
+  `mesh_volume_rel`.
 - **Text dump** (`arris-debug::dump_text`): the deterministic, diffable
   rendering of a body that fixtures store and tests compare. Not a format:
   it has no reader.

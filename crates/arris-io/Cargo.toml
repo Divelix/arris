@@ -1,6 +1,6 @@
 [package]
 name = "arris-io"
-description = "Arris kernel: STEP AP214 and the native format"
+description = "Arris kernel: STEP AP214, the native format, and the mesh formats"
 publish = false
 version.workspace = true
 edition.workspace = true
@@ -25,9 +25,11 @@ serde_json = { workspace = true, optional = true }
 postcard = { workspace = true, optional = true }
 
 # The sample bodies the writer is tried on and the oracle comparison live in
-# `arris-debug`; a dev-dependency is exempt from the layer rule.
+# `arris-debug`; a dev-dependency is exempt from the layer rule. `arris-ops`
+# builds the filleted box the mesh formats' tests hold to the oracle too.
 [dev-dependencies]
 arris-debug.workspace = true
+arris-ops.workspace = true
 
 [lints]
 workspace = true
