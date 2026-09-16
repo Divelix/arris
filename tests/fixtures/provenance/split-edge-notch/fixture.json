@@ -1,0 +1,36 @@
+{
+  "description": "an edge's split order across variants (ADR-0009): two notches cut one after the other into the top-front edge of a box [0,0,0]-[40,30,10], the first splitting that edge into two pieces and the second splitting the right-hand piece into two, so the composed record lists the edge's three pieces along its curve. The variants slide the notches along the edge without swapping them and narrow them; which entities bound which piece never changes, so piece k of the edge must keep its end vertices in every variant",
+  "params": {"a0": 10, "a1": 28, "w": 4},
+  "variants": {
+    "slid": {"a0": 8, "a1": 22},
+    "apart": {"a0": 6, "a1": 34},
+    "narrow": {"w": 2}
+  },
+  "steps": [
+    {"name": "block", "op": "box", "min": [0, 0, 0], "max": [40, 30, 10]},
+    {"name": "n0", "op": "box", "min": ["a0 - w / 2", -1, 8], "max": ["a0 + w / 2", 6, 11]},
+    {"name": "cut0", "op": "cut", "target": "block", "tool": "n0"},
+    {"name": "n1", "op": "box", "min": ["a1 - w / 2", -1, 8], "max": ["a1 + w / 2", 6, 11]},
+    {"name": "result", "op": "cut", "target": "cut0", "tool": "n1"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "deep_inside", "point": [20, 15, 5], "expect": "in"},
+    {"label": "in_first_notch", "point": ["a0", 3, 9], "expect": "out"},
+    {"label": "in_second_notch", "point": ["a1", 3, 9], "expect": "out"},
+    {"label": "under_first_notch", "point": ["a0", 3, 4], "expect": "in"},
+    {"label": "on_top_between", "point": ["(a0 + a1) / 2", 3, 10], "expect": "on"},
+    {"label": "on_notch_floor", "point": ["a0", 3, 8], "expect": "on"}
+  ],
+  "analytic": {
+    "volume": "12000 - 24 * w",
+    "area": 3848,
+    "centroid": [
+      "(240000 - 12 * w * (a0 + a1)) / (12000 - 24 * w)",
+      "(180000 - 72 * w) / (12000 - 24 * w)",
+      "(60000 - 216 * w) / (12000 - 24 * w)"
+    ],
+    "counts": {"vertices": 24, "edges": 36, "faces": 14, "loops": 14, "shells": 1, "solids": 1},
+    "genus": 0
+  }
+}

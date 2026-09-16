@@ -15,7 +15,11 @@
 //! kind of proof for the *order* of an origin's pieces: a recipe whose
 //! variants move, resize and turn a split without changing which
 //! entities bound which piece, and piece `k` of every split face has to
-//! keep its neighbours in every variant.
+//! keep its neighbours in every variant. `split-edge-notch` does it for
+//! **edges** — two notches cut one after the other into one box edge, so
+//! the cuts composed list three pieces of it — and the edge order is read
+//! geometrically too: edges of one origin on one curve ascend by their
+//! range on it, which is the rule itself rather than a consequence of it.
 
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
@@ -24,7 +28,7 @@ use arris::topo::entity::EdgeGeometry;
 use arris::topo::provenance::{
     BoxPart, Coord, CylinderPart, Origin, Provenance, Relation, Role, Side,
 };
-use arris::topo::{EntityId, FaceId, Orientation, Shape};
+use arris::topo::{EdgeId, EntityId, FaceId, Orientation, Shape};
 use arris_debug::corpus::Chain;
 use arris_debug::{corpus, fixtures};
 
@@ -333,6 +337,20 @@ fn step_names(fixture: &str) -> Vec<String> {
 /// world origin: [`side_of`] tells them apart.
 type Signature = BTreeSet<Vec<(Relation, Origin)>>;
 
+/// A signature as text: each origin list joined by `&`, the lists by `|`.
+fn describe(s: &Signature) -> String {
+    let parts: Vec<String> = s
+        .iter()
+        .map(|o| {
+            o.iter()
+                .map(|(r, o)| format!("{r} {o}"))
+                .collect::<Vec<_>>()
+                .join(" & ")
+        })
+        .collect();
+    format!("[{}]", parts.join(" | "))
+}
+
 /// Every face of `body` using each edge, from the faces' loops.
 fn faces_by_edge(chain: &Chain) -> BTreeMap<EntityId, Vec<FaceId>> {
     let body = chain.result().unwrap();
@@ -446,16 +464,7 @@ fn split_order(fixture: &str, variant: &str) -> BTreeMap<(Relation, Origin), Vec
                     } else {
                         String::new()
                     };
-                    let roles: Vec<String> = s
-                        .iter()
-                        .map(|o| {
-                            o.iter()
-                                .map(|(r, o)| format!("{r} {o}"))
-                                .collect::<Vec<_>>()
-                                .join(" & ")
-                        })
-                        .collect();
-                    format!("[{}]{sides}", roles.join(" | "))
+                    format!("{}{sides}", describe(s))
                 })
                 .collect();
             out.insert((relation, origin), described);
@@ -520,6 +529,226 @@ fn piece_k_of_every_split_origin_is_the_same_in_every_variant() {
                         failures.push(format!(
                             "{fixture} [{variant}]: piece {k} of {origin} ({relation}) is {got}, the default's is {want}"
                         ));
+                    }
+                }
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// The edge split-order fixture (ADR-0009, the edge rule): two notches
+/// cut one after the other into the top-front edge of a box, the first
+/// splitting that edge in two and the second splitting one of the halves,
+/// so the two cuts composed list three pieces of one edge — a list no
+/// single step makes, and the nesting [`Provenance::then`] guarantees.
+const NOTCH: &str = "provenance/split-edge-notch";
+
+/// Its parameter sets, `default` first: the notches slid along the edge
+/// without swapping, and narrowed.
+const NOTCH_VARIANTS: [&str; 4] = ["default", "slid", "apart", "narrow"];
+
+/// The notch recipe's two cuts, in order.
+const NOTCH_CUTS: [&str; 2] = ["cut0", "result"];
+
+/// Every fixture the edge order is read on: the notch recipe and the four
+/// face fixtures, whose tool faces generate section edges as well as
+/// pieces — a face pair that meets in a curve the other operand's edges
+/// cut generates several, and the frame cut has one.
+fn edge_fixtures() -> Vec<(&'static str, &'static [&'static str])> {
+    std::iter::once((NOTCH, &NOTCH_VARIANTS[..]))
+        .chain(SPLIT_FIXTURES)
+        .collect()
+}
+
+/// The edges among `shapes`, in order.
+fn edge_ids(shapes: &[Shape]) -> Vec<EdgeId> {
+    shapes
+        .iter()
+        .filter_map(|s| match s.id {
+            EntityId::Edge(e) => Some(e),
+            _ => None,
+        })
+        .collect()
+}
+
+/// An edge's signature: the origins, through the whole recipe, of its two
+/// end vertices — roles, which a parameter edit leaves alone — as a set,
+/// so an edge reads the same whichever way round it was built. A closed
+/// edge's two ends are one vertex, and its signature holds one entry.
+fn edge_signature(chain: &Chain, whole: &Provenance, edge: EdgeId) -> Signature {
+    let e = chain.model.edge(edge).unwrap();
+    [e.start(), e.end()]
+        .into_iter()
+        .map(|v| whole.origins(Shape::new(v, Orientation::Forward)))
+        .collect()
+}
+
+/// The ordered edge outputs of every origin `p` records two or more of,
+/// each as its signature: the order a consumer's `Split(k)` over edges
+/// relies on (ADR-0009). An origin with one edge output has nothing to
+/// order and is left out.
+fn edge_order(
+    chain: &Chain,
+    whole: &Provenance,
+    p: &Provenance,
+) -> BTreeMap<(Relation, Origin), Vec<String>> {
+    let mut out = BTreeMap::new();
+    for origin in p.origins_recorded() {
+        for (relation, list) in [
+            (Relation::Modified, p.modified_from(origin)),
+            (Relation::Generated, p.generated_from(origin)),
+        ] {
+            let edges = edge_ids(list);
+            if edges.len() < 2 {
+                continue;
+            }
+            let described: Vec<String> = edges
+                .iter()
+                .map(|&e| describe(&edge_signature(chain, whole, e)))
+                .collect();
+            out.insert((relation, origin), described);
+        }
+    }
+    out
+}
+
+/// The two readings of one variant of an edge fixture: the result step's
+/// own record, whose origins are the entities the last operation took,
+/// and — for the notch recipe alone — its two cuts composed, whose
+/// origins are the block's own edges.
+fn edge_orders(fixture: &str, variant: &str) -> Vec<BTreeMap<(Relation, Origin), Vec<String>>> {
+    let chain = chain_of_fixture(fixture, variant);
+    let names = step_names(fixture);
+    let names: Vec<&str> = names.iter().map(String::as_str).collect();
+    let whole = composed(&chain, &names);
+    let mut out = vec![edge_order(
+        &chain,
+        &whole,
+        &chain.steps[*names.last().unwrap()].provenance,
+    )];
+    if fixture == NOTCH {
+        out.push(edge_order(&chain, &whole, &composed(&chain, &NOTCH_CUTS)));
+    }
+    out
+}
+
+/// The two notches make one origin edge into three pieces, and no two of
+/// them read alike — so the order the record lists them in is a claim
+/// with content. The three come in split order, which here is not the id
+/// order: the piece the first cut left untouched was built before the
+/// two the second cut made from the other half, and it comes last
+/// because it lies last along the edge's curve.
+#[test]
+fn the_two_notches_make_one_edge_into_three_pieces_the_ids_do_not_order() {
+    let chain = chain_of_fixture(NOTCH, NOTCH_VARIANTS[0]);
+    let cuts = composed(&chain, &NOTCH_CUTS);
+    let split: Vec<(Origin, Vec<EdgeId>)> = cuts
+        .origins_recorded()
+        .map(|o| (o, edge_ids(cuts.modified_from(o))))
+        .filter(|(_, pieces)| pieces.len() > 2)
+        .collect();
+    assert_eq!(split.len(), 1, "one origin edge in three pieces: {split:?}");
+    let (origin, pieces) = &split[0];
+    assert_eq!(pieces.len(), 3, "{origin}: {pieces:?}");
+    let names = step_names(NOTCH);
+    let names: Vec<&str> = names.iter().map(String::as_str).collect();
+    let whole = composed(&chain, &names);
+    let signatures: BTreeSet<Signature> = pieces
+        .iter()
+        .map(|&e| edge_signature(&chain, &whole, e))
+        .collect();
+    assert_eq!(signatures.len(), 3, "{origin}: two pieces read alike");
+    let mut by_id = pieces.clone();
+    by_id.sort();
+    assert_ne!(
+        &by_id, pieces,
+        "the fixture no longer proves the split order is not the id order; \
+         find a recipe that does before trusting it"
+    );
+}
+
+/// Edge outputs of one origin that lie on the same curve ascend by their
+/// range on it (ADR-0009): an operand edge's pieces along the edge's own
+/// curve, a closed edge's from its range's start, and the section edges
+/// one face pair generates along the section curve. Outputs on different
+/// curves are not compared — a face origin pairs with several faces of
+/// the other operand, and the pairs' own order is what separates them.
+#[test]
+fn an_origins_edges_ascend_along_each_curve_they_lie_on() {
+    let mut failures = Vec::new();
+    for (fixture, variants) in edge_fixtures() {
+        for variant in variants {
+            let chain = chain_of_fixture(fixture, variant);
+            let names = step_names(fixture);
+            let names: Vec<&str> = names.iter().map(String::as_str).collect();
+            let mut records = vec![chain.steps[*names.last().unwrap()].provenance.clone()];
+            if fixture == NOTCH {
+                records.push(composed(&chain, &NOTCH_CUTS));
+            }
+            for p in &records {
+                for origin in p.origins_recorded() {
+                    for (relation, list) in [
+                        (Relation::Modified, p.modified_from(origin)),
+                        (Relation::Generated, p.generated_from(origin)),
+                    ] {
+                        let mut last: BTreeMap<_, f64> = BTreeMap::new();
+                        for e in edge_ids(list) {
+                            let EdgeGeometry::Curve { curve, range } =
+                                chain.model.edge(e).unwrap().geometry()
+                            else {
+                                continue;
+                            };
+                            if let Some(&before) = last.get(&curve)
+                                && range.lo() <= before
+                            {
+                                failures.push(format!(
+                                    "{fixture} [{variant}]: {relation} {origin} lists {e:?} \
+                                     at {} on {curve:?} after a piece at {before}",
+                                    range.lo()
+                                ));
+                            }
+                            last.insert(curve, range.lo());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// Piece `k` of every origin an operation records two or more edges for
+/// has the same signature — the same end vertices by role — in every
+/// variant: the order a consumer's `Split(k)` over edges relies on
+/// (ADR-0009), through one step and through the two cuts composed.
+#[test]
+fn edge_k_of_every_origin_is_the_same_in_every_variant() {
+    let mut failures = Vec::new();
+    for (fixture, variants) in edge_fixtures() {
+        let first = edge_orders(fixture, variants[0]);
+        assert!(
+            first.iter().any(|reading| !reading.is_empty()),
+            "{fixture} records no origin with two edges"
+        );
+        for variant in &variants[1..] {
+            let orders = edge_orders(fixture, variant);
+            for (reading, expected) in orders.iter().zip(&first) {
+                assert_eq!(
+                    reading.keys().collect::<Vec<_>>(),
+                    expected.keys().collect::<Vec<_>>(),
+                    "{fixture} [{variant}] records different origins"
+                );
+                for ((relation, origin), edges) in reading {
+                    let want = &expected[&(*relation, *origin)];
+                    assert_eq!(edges.len(), want.len(), "{fixture} [{variant}]: {origin}");
+                    for (k, (got, want)) in edges.iter().zip(want).enumerate() {
+                        if got != want {
+                            failures.push(format!(
+                                "{fixture} [{variant}]: edge {k} of {origin} ({relation}) is \
+                                 {got}, the default's is {want}"
+                            ));
+                        }
                     }
                 }
             }

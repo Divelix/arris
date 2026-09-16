@@ -347,7 +347,9 @@ pub struct Interferences {
     pub paves: BTreeMap<EdgeId, Vec<Pave>>,
     /// The section curves of every `Transversal` pair, in pair order.
     pub curves: Vec<SectionCurve>,
-    /// The section edges, in curve order and then along each curve.
+    /// The section edges, in curve order and then along each curve —
+    /// the split order a pair's section edges reach the record in
+    /// (ADR-0009, `docs/DATA-MODEL.md` §Provenance).
     pub sections: Vec<SectionEdge>,
     /// The contacts of every `Tangent` pair, in pair order and then along
     /// each ruling.

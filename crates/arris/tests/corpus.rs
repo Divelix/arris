@@ -692,6 +692,28 @@ fn provenance_split_cross_common_turned() {
     run_variant("provenance/split-cross-common", "turned");
 }
 
+/// The edge split-order fixture (ADR-0009, step 2): two notches into one
+/// box edge, the second splitting the piece the first left.
+#[test]
+fn provenance_split_edge_notch() {
+    run_variant("provenance/split-edge-notch", "default");
+}
+
+#[test]
+fn provenance_split_edge_notch_slid() {
+    run_variant("provenance/split-edge-notch", "slid");
+}
+
+#[test]
+fn provenance_split_edge_notch_apart() {
+    run_variant("provenance/split-edge-notch", "apart");
+}
+
+#[test]
+fn provenance_split_edge_notch_narrow() {
+    run_variant("provenance/split-edge-notch", "narrow");
+}
+
 /// A variant the recipe does not have fails naming it.
 #[test]
 fn an_unknown_variant_fails_with_its_name() {

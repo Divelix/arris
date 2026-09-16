@@ -1,9 +1,8 @@
 # ADR-0009 — Arris owns no name grammar: a consumer names from `Provenance`, and the kernel guarantees the split order
 
 - Status: accepted (2026-09-15)
-- Plan: `c2-facade-decisions` step 1 (the face rule and its proof); the
-  edge rule and the property test land in its steps 2 and 3 under this
-  decision
+- Plan: `c2-facade-decisions` steps 1 and 2 (the face rule, the edge rule
+  and their proofs); the property test lands in step 3 under this decision
 - Closes: the kickoff `⚠ OPEN` on the origin-name helper (`SEED.md`
   §10.7, `docs/ARCHITECTURE.md` §How a consumer's kernel facade maps on,
   `docs/DATA-MODEL.md` §Provenance)
@@ -72,8 +71,10 @@ tool's face surviving in several pieces) follows the same order as a
 `Modified` one; a consumer names both.
 
 **An edge's pieces ascend along its curve**, a closed edge's from its
-range's start; a section edge generated from a face pair is ordered along
-its own curve. This is step 2 of the plan.
+range's start; the section edges one face pair generates are ordered
+along their own curve. Edges of one origin on different curves are not
+compared: a face origin pairs with several faces of the other operand,
+and the pairs' own order separates them.
 
 **Attribute propagation is deferred**, as a backlog line: a kernel
 serving consumers with no naming scheme of their own does it with
@@ -99,7 +100,30 @@ same signature in every variant:
 - `split-cross-common`: the Steinmetz solid at three radii and lengths and
   two turns of the tool about its axis.
 
-Two findings shaped the fixtures. **A piece never contains a seam.** The
+`split-edge-notch` (the plan's step 2) proves the edge rule: two notches
+cut one after the other into one box edge, the first splitting it in two
+and the second splitting one of the halves, so the two cuts composed list
+three pieces of one edge — a list no single step makes and the nesting of
+`then` produces. Its variants slide the notches along the edge without
+swapping them and narrow them. Beside the signature test, which for an
+edge reads its two end vertices' origins, the edge order is read
+geometrically: edges of one origin that lie on one curve ascend by their
+range on it, on this fixture and on the four face fixtures, whose tool
+faces also generate section edges — the frame cut's pair of faces meeting
+in a line the window's edges cut generates two.
+
+A finding for the edge rule, the counterpart of step 1's. **Within one
+operation the id order and the curve order coincide today**, over the
+whole corpus: the boolean cuts an operand edge at its paves, which are
+ascending by parameter, and assembles the pieces in an order that has so
+far agreed. They part under composition, which is where the notch fixture
+separates them — the piece the first cut left untouched has a lower id
+than the two the second cut made from the other half and comes last,
+because it lies last along the edge's curve. So no record and no dump
+moved when the rule was stated; what moved is that it is now stated,
+tested against the geometry, and free of the assembly.
+
+Two findings shaped the face fixtures. **A piece never contains a seam.** The
 split's arrangement keeps a periodic face's seam as a boundary, so a wall
 cut into two regions with the seam inside one of them is three faces on
 both sides of the oracle, and an edit that moves the split across the

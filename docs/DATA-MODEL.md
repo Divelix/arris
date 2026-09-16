@@ -1247,12 +1247,17 @@ either side of a seam are bounded by the same origins, since a piece
 never contains a seam — the split keeps a periodic face's seam as a
 boundary, so a wall cut with the seam inside one region is three faces,
 as Open CASCADE builds it too. A `Generated` list of pieces (a cut tool's
-face surviving in several) follows the same order. An edge's pieces
-ascend along its curve, a closed edge's from its range's start, and a
-section edge generated from a face pair is ordered along its own curve
-(`c2-facade-decisions` step 2). The `provenance/split-*` fixtures hold
+face surviving in several) follows the same order. **An edge's pieces
+ascend along its curve**, a closed edge's from its range's start — the
+boolean cuts an operand edge at its paves, which come ascending by
+parameter, and a closed edge's range is one interval across the seam —
+and the section edges one face pair generates are ordered along their
+own curve. Edges of one origin on *different* curves are not compared:
+a face origin pairs with several faces of the other operand, and the
+pairs' own order separates them. The `provenance/split-*` fixtures hold
 piece `k` of every split origin to the same neighbours, by role, in
-every variant of their recipes.
+every variant of their recipes — a face's by the faces it shares an edge
+with, an edge's by its two end vertices.
 
 ## Native format
 

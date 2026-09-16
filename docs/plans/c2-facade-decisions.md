@@ -133,17 +133,39 @@ bound has to be established here.
     (`split-cut`, the frame) came in lump order, and the Steinmetz walls.
     No id and no dump changed.
   - **Gate:** did not fire; the key holds on every non-tied variant.
-- [ ] Step 2 **[2]** — **An edge's split order, and section edges.**
-  - An operand edge's pieces are added ascending along its curve; a closed
-    edge's from its range start, across the seam.
-  - A section edge generated from a face pair is ordered along its own
-    curve.
-  - Fixture `provenance/split-edge-notch`: a notch cut splitting a box
-    edge into two pieces, and a second notch into three. Variants slide
-    the notches without swapping them.
-  - A test beside step 1's: piece `k`'s signature, from its end vertices'
-    origins, is equal across variants.
-  - Every blessed dump the order changes is restaged, as `fixtures:`.
+- [x] Step 2 **[2]** — **An edge's split order, and section edges.**
+  Done 2026-09-16, under ADR-0009.
+  - **Already true, now stated and tested.** An operand edge's pieces are
+    cut at its paves, which come ascending by parameter, so the sub-edge
+    index ascends along the edge's own curve from its range's start, and
+    a closed edge's range is one interval across the seam;
+    `Interferences::sections` is curve order and then along each curve.
+    The three places that establish it (`Build::sub_edges`,
+    `rebuild::write_provenance`'s edge loop, the section-edge loop) now
+    say so and name the ADR. No code changed, so no dump moved and none
+    was restaged.
+  - **Fixture `provenance/split-edge-notch`**: two notches cut one after
+    the other into the top-front edge of a box, the first splitting it in
+    two and the second splitting one half — so the two cuts composed list
+    three pieces of one edge, a list no single step makes. Variants slide
+    the notches along the edge without swapping them, and narrow them.
+    Four variants, every corpus stage green against Open CASCADE.
+  - **The tests** (`crates/arris/tests/provenance.rs`): edge `k`'s
+    signature — its two end vertices' origins through the whole recipe —
+    equal across variants, on the notch recipe (the result step and the
+    two cuts composed) and on step 1's four face fixtures; and a
+    geometric one, the rule itself: edges of one origin that lie on one
+    curve ascend by their range on it. Outputs on different curves are
+    not compared — a face origin pairs with several faces of the other
+    operand, and the pairs' own order separates them.
+  - **Finding, the counterpart of step 1's:** within one operation the id
+    order and the curve order coincide over the whole corpus today —
+    ordering an edge's images by id leaves every fixture and every dump
+    green. They part under composition, and the notch fixture separates
+    them there: the piece the first cut left has a lower id than the two
+    the second cut made and comes last, because it lies last along the
+    curve. So the geometric test, not the variant test, is what holds the
+    rule.
 - [ ] Step 3 **[2]** — **Property test** (seeded, `prop_shards!`):
   - **Operands:** a box cut by one or two bars in a random pose, the same
     cut rebuilt with parameters perturbed within a bound that keeps the

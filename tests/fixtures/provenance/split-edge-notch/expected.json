@@ -1,0 +1,378 @@
+{
+  "occt": "8.0.1.0.0",
+  "recipe_sha256": "c8a8cd808f827b363450873d36210785deb5caf6f9aef942ba30755edc2c2639",
+  "results": {
+    "apart": {
+      "area": 3847.999999999999,
+      "centroid": [
+        20.000000000000007,
+        15.096774193548384,
+        4.96774193548387
+      ],
+      "counts": {
+        "edges": 36,
+        "faces": 14,
+        "loops": 14,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 24
+      },
+      "degenerate": false,
+      "euler_characteristic": 2,
+      "genus": 0,
+      "inertia": [
+        [
+          984196.1290322593,
+          4.656612873077393e-10,
+          0.0
+        ],
+        [
+          4.656612873077393e-10,
+          1679475.6129032243,
+          -4645.161290322896
+        ],
+        [
+          0.0,
+          -4645.161290322896,
+          2466832.516129032
+        ]
+      ],
+      "probes": [
+        {
+          "class": "in",
+          "label": "deep_inside",
+          "point": [
+            20.0,
+            15.0,
+            5.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "in_first_notch",
+          "point": [
+            6.0,
+            3.0,
+            9.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "in_second_notch",
+          "point": [
+            34.0,
+            3.0,
+            9.0
+          ]
+        },
+        {
+          "class": "in",
+          "label": "under_first_notch",
+          "point": [
+            6.0,
+            3.0,
+            4.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_top_between",
+          "point": [
+            20.0,
+            3.0,
+            10.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_notch_floor",
+          "point": [
+            6.0,
+            3.0,
+            8.0
+          ]
+        }
+      ],
+      "volume": 11903.999999999996
+    },
+    "default": {
+      "area": 3847.999999999999,
+      "centroid": [
+        20.00806451612903,
+        15.096774193548386,
+        4.967741935483871
+      ],
+      "counts": {
+        "edges": 36,
+        "faces": 14,
+        "loops": 14,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 24
+      },
+      "degenerate": false,
+      "euler_characteristic": 2,
+      "genus": 0,
+      "inertia": [
+        [
+          984196.1290322589,
+          1161.2903225789778,
+          -387.0967741939239
+        ],
+        [
+          1161.2903225789778,
+          1690418.8387096804,
+          -4645.161290322663
+        ],
+        [
+          -387.0967741939239,
+          -4645.161290322663,
+          2477775.741935489
+        ]
+      ],
+      "probes": [
+        {
+          "class": "in",
+          "label": "deep_inside",
+          "point": [
+            20.0,
+            15.0,
+            5.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "in_first_notch",
+          "point": [
+            10.0,
+            3.0,
+            9.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "in_second_notch",
+          "point": [
+            28.0,
+            3.0,
+            9.0
+          ]
+        },
+        {
+          "class": "in",
+          "label": "under_first_notch",
+          "point": [
+            10.0,
+            3.0,
+            4.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_top_between",
+          "point": [
+            19.0,
+            3.0,
+            10.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_notch_floor",
+          "point": [
+            10.0,
+            3.0,
+            8.0
+          ]
+        }
+      ],
+      "volume": 11903.999999999996
+    },
+    "narrow": {
+      "area": 3847.999999999999,
+      "centroid": [
+        20.004016064257026,
+        15.048192771084338,
+        4.983935742971887
+      ],
+      "counts": {
+        "edges": 36,
+        "faces": 14,
+        "loops": 14,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 24
+      },
+      "degenerate": false,
+      "euler_characteristic": 2,
+      "genus": 0,
+      "inertia": [
+        [
+          992129.1566265058,
+          578.3132530120201,
+          -192.77108433726244
+        ],
+        [
+          578.3132530120201,
+          1695260.7228915663,
+          -2313.25301204843
+        ],
+        [
+          -192.77108433726244,
+          -2313.25301204843,
+          2488964.048192772
+        ]
+      ],
+      "probes": [
+        {
+          "class": "in",
+          "label": "deep_inside",
+          "point": [
+            20.0,
+            15.0,
+            5.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "in_first_notch",
+          "point": [
+            10.0,
+            3.0,
+            9.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "in_second_notch",
+          "point": [
+            28.0,
+            3.0,
+            9.0
+          ]
+        },
+        {
+          "class": "in",
+          "label": "under_first_notch",
+          "point": [
+            10.0,
+            3.0,
+            4.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_top_between",
+          "point": [
+            19.0,
+            3.0,
+            10.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_notch_floor",
+          "point": [
+            10.0,
+            3.0,
+            8.0
+          ]
+        }
+      ],
+      "volume": 11952.0
+    },
+    "slid": {
+      "area": 3847.999999999999,
+      "centroid": [
+        20.04032258064517,
+        15.096774193548386,
+        4.967741935483871
+      ],
+      "counts": {
+        "edges": 36,
+        "faces": 14,
+        "loops": 14,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 24
+      },
+      "degenerate": false,
+      "euler_characteristic": 2,
+      "genus": 0,
+      "inertia": [
+        [
+          984196.1290322593,
+          5806.4516129037365,
+          -1935.4838709675241
+        ],
+        [
+          5806.4516129037365,
+          1691168.258064513,
+          -4645.161290322663
+        ],
+        [
+          -1935.4838709675241,
+          -4645.161290322663,
+          2478525.1612903215
+        ]
+      ],
+      "probes": [
+        {
+          "class": "in",
+          "label": "deep_inside",
+          "point": [
+            20.0,
+            15.0,
+            5.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "in_first_notch",
+          "point": [
+            8.0,
+            3.0,
+            9.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "in_second_notch",
+          "point": [
+            22.0,
+            3.0,
+            9.0
+          ]
+        },
+        {
+          "class": "in",
+          "label": "under_first_notch",
+          "point": [
+            8.0,
+            3.0,
+            4.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_top_between",
+          "point": [
+            15.0,
+            3.0,
+            10.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_notch_floor",
+          "point": [
+            8.0,
+            3.0,
+            8.0
+          ]
+        }
+      ],
+      "volume": 11903.999999999996
+    }
+  }
+}

@@ -196,6 +196,13 @@ impl<'m> Build<'m> {
     /// Every operand edge cut at its paves, its ends the vertices they
     /// are realised as; an edge with a pave, a re-tolerated end or an end
     /// merged into another operand's vertex is touched.
+    ///
+    /// The pieces are made **in split order** (ADR-0009,
+    /// `docs/DATA-MODEL.md` §Provenance): ascending along the edge's own
+    /// curve from its range's start — the paves come ascending by `t`
+    /// ([`Interferences::paves`]) and a closed edge's range is one
+    /// interval across the seam — and `index` is that order, which
+    /// [`rebuild::write_provenance`] lists the images in.
     fn sub_edges(&mut self) -> Result<(), OpError> {
         for side in 0..2 {
             for &e in &self.edges[side] {
@@ -1108,6 +1115,9 @@ pub(super) fn boolean(
                 }
             }
         }
+        // `i.sections` is curve order and then along each curve, so the
+        // section edges one pair generates reach the record in split
+        // order: along their own curve (ADR-0009).
         for (k, s) in i.sections.iter().enumerate() {
             let Some(&id) = out_edge.get(&ERef::Section(k)) else {
                 continue;

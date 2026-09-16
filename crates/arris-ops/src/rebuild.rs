@@ -339,6 +339,9 @@ pub(crate) fn write_provenance(
             };
             record(&mut p, forward(v), image.into_iter().map(forward).collect());
         }
+        // An edge's pieces are recorded in split order (ADR-0009): the
+        // sub-edge index ascends along the edge's own curve from its
+        // range's start, so `0..n` is that order and the record keeps it.
         for &e in operand.edges {
             let n = sub_edges.get(&e).map_or(0, Vec::len);
             let mut images: Vec<Shape> = Vec::new();
