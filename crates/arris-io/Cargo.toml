@@ -17,6 +17,8 @@ serde = ["dep:serde", "dep:serde_json", "dep:postcard", "arris-check/serde"]
 
 [dependencies]
 arris-check.workspace = true
+# Mesh formats: STL and OBJ write an `arris_mesh::TriMesh` (ADR-0013).
+arris-mesh.workspace = true
 thiserror.workspace = true
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }

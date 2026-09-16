@@ -20,10 +20,11 @@ down. They apply to every crate; `SEED.md` §9 holds the reasons.
   platform. No iteration over `HashMap`/`HashSet` where the order reaches a
   geometric decision or an id — use `BTreeMap`, a `Vec`, or sort first. No
   randomness outside property tests, and those are seeded.
-- **f64 everywhere inside; f32 only where a consumer asks for it.**
-  Nothing in the kernel is `f32` today: the tessellation boundary is
-  `f64` too (ADR-0011), and a renderer's cast belongs at its own
-  boundary.
+- **f64 everywhere inside; f32 only where a consumer asks for it, or a
+  format requires it.** The tessellation boundary is `f64` too
+  (ADR-0011), and a renderer's cast belongs at its own boundary. Binary
+  STL's facets are `f32` because the format says so, at the writer, not
+  because anything the kernel computes with is.
 - **Tolerances are the model's, never a literal.** A `1e-6` in an algorithm
   is a bug; the entity's tolerance, or a named constant in `arris-math`
   with a comment saying why, is the fix.

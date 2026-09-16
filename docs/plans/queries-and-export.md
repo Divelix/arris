@@ -167,7 +167,7 @@ bound has to be established here.
       The corpus runner asks for corners and asserts the (u, v)-evaluates-to-
       position and outward-normal invariants on every fixture, so the whole
       corpus covers it.
-- [ ] Step 3 **[1]** — **ADR-0013: mesh formats live in `arris-io`**, which
+- [x] Step 3 **[1]** — **ADR-0013: mesh formats live in `arris-io`**, which
       therefore depends on `arris-mesh`; the sibling rule becomes a chain,
       and a format's own narrowing (binary STL's `f32`) is the format's, not
       the kernel's. The ADR, the dependency edge, the layer table in

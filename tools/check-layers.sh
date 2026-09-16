@@ -19,9 +19,10 @@ layer() {
     arris-geom) echo 1 ;;
     arris-topo) echo 2 ;;
     arris-check) echo 3 ;;
-    arris-ops | arris-mesh | arris-io) echo 4 ;; # siblings: none depends on another
-    arris-debug) echo 5 ;;
-    arris) echo 6 ;;
+    arris-ops | arris-mesh) echo 4 ;; # siblings: neither depends on the other
+    arris-io) echo 5 ;; # depends on arris-mesh for the mesh formats (ADR-0013)
+    arris-debug) echo 6 ;;
+    arris) echo 7 ;;
     *)
       echo "check-layers: '$1' is not in the layer table; add it to docs/ARCHITECTURE.md and to $0" >&2
       exit 2

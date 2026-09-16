@@ -23,22 +23,25 @@ re-exports the public API. Lower crates never name types from upper ones.
 | `arris-check` | The invariant checker: `check(&Model, Body, Level) -> Report` and the `Violation` list of data-model §Invariants; the shared face domain (`domain::FaceDomain`), point classifier (`classify::Classifier`, `classify_point`) and region flux (`flux::face_flux`) every `Full` row, the boolean and tessellation read a face through; re-exports `arris-topo` | `arris-topo`, `serde` (feature, forwarded to `arris-topo`) | 1 |
 | `arris-ops` | Primitives, extrude and revolve of a `Profile`, transform, booleans, the blends; `measure` (mass properties); each returns `Provenance` | `arris-check`, `thiserror`, `rayon` (feature) | 2 — algorithms |
 | `arris-mesh` | `TriMesh`, `Polyline`, the constrained Delaunay triangulation in (u, v) (`cdt`, ADR-0003), tessellation of faces and edges with shared edge discretisation; re-exports `arris-math`'s `Aabb` | `arris-check`, `arris-topo`, `thiserror`, `rayon` (feature) | 2 — algorithms |
-| `arris-io` | STEP AP214 Part 21 writer (later reader), the native format (`native`); re-exports `arris-check` | `arris-check`, `thiserror`, `serde`, `serde_json`, `postcard` (the last three behind the `serde` feature) | 2 — algorithms |
+| `arris-io` | STEP AP214 Part 21 writer (later reader), the native format (`native`); re-exports `arris-check` | `arris-check`, `arris-mesh`, `thiserror`, `serde`, `serde_json`, `postcard` (the last three behind the `serde` feature) | 2 — algorithms |
 | `arris-debug` | Text dump, the hand-built sample bodies (`sample`), PNG render (own software rasteriser over `image`), Rerun stream (feature), the fixture loader and corpus lint, the corpus runner (`corpus`) and the oracle seam (`oracle`), the seeded property-test runner and strategies | `arris-ops`, `arris-mesh`, `arris-io`, `arris-topo`, `arris-geom`, `arris-math`, `image`, `serde`, `serde_json`, `sha2`, `thiserror`, `proptest` (not on `wasm32`), `rerun` (feature) | 3 — dev-facing |
 | `arris` | Facade: re-exports | `math` through `io`; `debug` as a dev-dependency only | 4 |
 
 `math`, `geom` and `topo` are the representation: they change rarely and a
 change there is a design delta named in a plan. Everything from `check` up
 is an algorithm crate that can be rewritten without touching its
-neighbours. `ops`, `mesh` and `io` are siblings: none depends on another.
-Mass properties live in `ops::measure` because they integrate over the
-B-Rep, not over a mesh; a consumer that wants mesh-based inertia integrates
-`arris-mesh`'s output itself.
+neighbours. `ops` and `mesh` are siblings: neither depends on the other.
+`io` depends on `mesh` — STL and OBJ each write a `TriMesh`, and every
+format a consumer looks for lives under the one name `io` (ADR-0013) —
+but not on `ops`, which no format needs. Mass properties live in
+`ops::measure` because they integrate over the B-Rep, not over a mesh; a
+consumer that wants mesh-based inertia integrates `arris-mesh`'s output
+itself.
 
 The rule is enforced, not remembered: `tools/check-layers.sh` walks the
 declared edges of `cargo metadata` with a layer number per crate — its
 place in the chain `math` ← `geom` ← `topo` ← `check` ←
-`ops`/`mesh`/`io` ← `debug` ← `arris`, finer than the table's tiers — and
+`ops`/`mesh` ← `io` ← `debug` ← `arris`, finer than the table's tiers — and
 fails on any edge that does not go strictly downward; dev-dependencies
 are exempt so a lower crate's tests may use `arris-debug`, which is itself a
 dev-dependency of the facade and never reaches a consumer. CI runs the

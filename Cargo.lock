@@ -131,6 +131,7 @@ version = "0.0.1"
 dependencies = [
  "arris-check",
  "arris-debug",
+ "arris-mesh",
  "postcard",
  "serde",
  "serde_json",
