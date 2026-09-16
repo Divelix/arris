@@ -129,9 +129,10 @@ entity: `OpError::Degenerate` with one of **three new `Reason`
 variants** (step 6's finding, below) — `NotProjectable` for a face,
 shell or body, `DegenerateEdge`, `ProjectionCollapses`. `face_frame` is the face's surface frame with `Z` the **outward**
 normal — flipped, right-handedness kept, when the face's use is `Reversed`
-— and is a plane's only; `frame_at` is any face at a (u, v) its domain
-contains (`check::domain::FaceDomain`), refused at a singular point where
-there is no normal.
+— and is a plane's only, refused otherwise (`Reason::NotPlanar`, step 7's
+finding, below); `frame_at` is any face at a (u, v) its domain contains
+(`check::domain::FaceDomain`), refused off it (`Reason::OutOfDomain`) or
+at a singular point where there is no normal (`Reason::Singular`).
 
 **`.agents/rules/kernel.md`** loses "nothing in the kernel is `f32`
 today": binary STL's facets are `f32` because the format says so, at the
@@ -203,7 +204,7 @@ bound has to be established here.
       circle-to-ellipse phase shift is the case this retires); a degenerate
       edge, a circle projecting onto a line and a `Shape` of the wrong kind
       are each a typed refusal naming the entity.
-- [ ] Step 7 **[1]** — **`query::face_frame` and `query::frame_at`**. Tests:
+- [x] Step 7 **[1]** — **`query::face_frame` and `query::frame_at`**. Tests:
       over the sample bodies and a boolean result, the frame's `Z` at a
       planar face agrees with the face use's outward normal — a point
       offset along it by a multiple of the face's tolerance classifies
@@ -303,3 +304,18 @@ human, before step 1:
   `geom::project_to_plane` is unchanged: its conic phase is read from the
   projected point's and tangent's local `x`, both over the major radius,
   and the property holds at 1e-12 relative over 40 000 cases.
+- **Step 7 needed three more `Reason` variants**, again against a design
+  delta that named the refusals in prose but not their type:
+  `Reason::NotPlanar` (`face_frame` on a curved face), `OutOfDomain` and
+  `Singular` (`frame_at` off the face's domain, or at a pole or apex
+  `Surface::normal` has none for). All three are additive and pre-1.0;
+  the design delta above now carries them. `frame_at`'s frame is built
+  from `Surface::eval`'s own `∂P/∂u` as the `X` hint and
+  `Surface::normal` (composed with the face's use) as `Z`
+  (`Frame::new`), never `Frame::from_z`, so its axes agree with
+  `face_frame`'s on a plane at every `(u, v)` rather than only its `Z`;
+  `face_frame`'s `Reversed` flip negates `X` and `Z`, keeping `Y`, which
+  stays right-handed by construction (`Frame::from_orthonormal`, which
+  cannot fail on axes already orthonormal, so it is `?`-propagated
+  rather than unwrapped, per the kernel rule against assuming
+  geometry-derived data cannot fail).

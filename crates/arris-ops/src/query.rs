@@ -3,9 +3,13 @@
 //! [`crate::measure`], of the same shape: it takes `&Model`, makes no
 //! body, records no provenance and opens no transaction.
 
-use arris_check::arris_topo::arris_geom::{Curve, Curve2, GeomError, project_to_plane as project};
+use arris_check::arris_topo::arris_geom::region2::Side;
+use arris_check::arris_topo::arris_geom::{
+    Curve, Curve2, GeomError, Surface, project_to_plane as project,
+};
 use arris_check::arris_topo::arris_math::{Frame, Interval, Point2, Vec2, wrap_angle};
-use arris_check::arris_topo::{EdgeId, EntityId, Model, Shape, VertexId};
+use arris_check::arris_topo::{EdgeId, EntityId, Face, Model, Orientation, Shape, VertexId};
+use arris_check::domain::FaceDomain;
 
 use crate::error::{Fault, OpError, Reason};
 
@@ -193,4 +197,114 @@ fn carried_range(
         }
     };
     Interval::new(lo, hi).map_err(|_| invariant("a carried range that is an interval"))
+}
+
+/// `face`'s surface frame, `Z` the outward normal: the surface's own
+/// frame, `Z` (and, to keep it right-handed, `X`) negated when `face`'s
+/// use is [`Orientation::Reversed`]. Only a plane has one frame for its
+/// whole domain — a curved surface's normal, and so its frame, varies
+/// with `(u, v)`, which [`frame_at`] answers.
+///
+/// Errors: [`OpError::NotFound`] for an id that does not resolve;
+/// [`OpError::Degenerate`] with [`Reason::NotPlanar`], naming the face,
+/// when its surface is not a plane.
+///
+/// ```
+/// use arris_ops::primitive_box;
+/// use arris_ops::query::face_frame;
+/// use arris_ops::arris_check::arris_topo::Model;
+/// use arris_ops::arris_check::arris_topo::arris_geom::Surface;
+/// use arris_ops::arris_check::arris_topo::arris_math::Point3;
+///
+/// let mut m = Model::default();
+/// let (body, _) =
+///     primitive_box(&mut m, Point3::new(-1.0, -1.0, -1.0), Point3::new(1.0, 1.0, 1.0)).unwrap();
+/// let top = m
+///     .faces(body)
+///     .unwrap()
+///     .into_iter()
+///     .find(|f| {
+///         let Surface::Plane { frame } = m.surface(m.face(f.id).unwrap().surface()).unwrap()
+///         else {
+///             return false;
+///         };
+///         frame.z().z > 0.5
+///     })
+///     .unwrap();
+/// let frame = face_frame(&m, top).unwrap();
+/// assert!((frame.z().z - 1.0).abs() < 1e-12);
+/// ```
+pub fn face_frame(m: &Model, face: Face) -> Result<Frame, OpError> {
+    let entity = m.face(face.id)?;
+    let surface = m.surface(entity.surface())?;
+    let Surface::Plane { frame } = surface else {
+        return Err(degenerate(face.shape(), Reason::NotPlanar));
+    };
+    Ok(if face.orientation == Orientation::Reversed {
+        Frame::from_orthonormal(
+            frame.origin(),
+            -frame.x().into_inner(),
+            frame.y().into_inner(),
+            -frame.z().into_inner(),
+        )?
+    } else {
+        *frame
+    })
+}
+
+/// The outward-oriented frame of `face`'s surface at `(u, v)`: `Z` is
+/// [`Surface::normal`] there, composed with `face`'s use as
+/// [`face_frame`]'s is; `X` is the projection of `∂P/∂u` onto the
+/// tangent plane, `Y = Z × X`. Over a planar face `frame_at`'s `Z`
+/// agrees with [`face_frame`]'s at every `(u, v)`, since a plane's
+/// normal does not depend on the parameter.
+///
+/// Errors: [`OpError::NotFound`] for an id that does not resolve;
+/// [`OpError::Degenerate`], naming the face, with [`Reason::OutOfDomain`]
+/// when `(u, v)` lies outside the face's own domain
+/// ([`arris_check::domain::FaceDomain`]) and [`Reason::Singular`] when
+/// the surface's parametrisation is singular there — a sphere's pole, a
+/// cone's apex — so it has no normal to compose.
+///
+/// ```
+/// use arris_ops::primitive_cylinder;
+/// use arris_ops::query::frame_at;
+/// use arris_ops::arris_check::arris_topo::Model;
+/// use arris_ops::arris_check::arris_topo::arris_geom::Surface;
+/// use arris_ops::arris_check::arris_topo::arris_math::{Axis, Point2, Point3};
+/// use core::f64::consts::FRAC_PI_2;
+///
+/// let mut m = Model::default();
+/// let (body, _) = primitive_cylinder(&mut m, Axis::z_at(Point3::origin()), 1.0, 2.0).unwrap();
+/// let wall = m
+///     .faces(body)
+///     .unwrap()
+///     .into_iter()
+///     .find(|f| {
+///         matches!(
+///             m.surface(m.face(f.id).unwrap().surface()).unwrap(),
+///             Surface::Cylinder { .. }
+///         )
+///     })
+///     .unwrap();
+/// let frame = frame_at(&m, wall, Point2::new(FRAC_PI_2, 1.0)).unwrap();
+/// assert!((frame.z().y - 1.0).abs() < 1e-12);
+/// ```
+pub fn frame_at(m: &Model, face: Face, uv: Point2) -> Result<Frame, OpError> {
+    let entity = m.face(face.id)?;
+    let domain = FaceDomain::of(m, face.id, entity.tolerance())?;
+    if domain.side(uv).0 == Side::Outside {
+        return Err(degenerate(face.shape(), Reason::OutOfDomain));
+    }
+    let surface = m.surface(entity.surface())?;
+    let Some(normal) = surface.normal(uv.x, uv.y) else {
+        return Err(degenerate(face.shape(), Reason::Singular));
+    };
+    let normal = if face.orientation == Orientation::Reversed {
+        -normal.into_inner()
+    } else {
+        normal.into_inner()
+    };
+    let e = surface.eval(uv.x, uv.y);
+    Ok(Frame::new(e.point, normal, e.du)?)
 }

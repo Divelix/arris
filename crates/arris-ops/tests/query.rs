@@ -9,13 +9,19 @@
 use core::f64::consts::{FRAC_PI_2, FRAC_PI_3, TAU};
 
 use arris_debug::prop::geom::{circle, ellipse, line, nurbs_curve};
+use arris_debug::sample;
 use arris_debug::{prop, prop_shards};
-use arris_ops::arris_check::arris_topo::arris_geom::{Curve, Curve2};
+use arris_ops::arris_check::arris_topo::arris_geom::region2::Side;
+use arris_ops::arris_check::arris_topo::arris_geom::{Curve, Curve2, Surface};
 use arris_ops::arris_check::arris_topo::arris_math::{Frame, Interval, Point2, Point3, Vec3};
 use arris_ops::arris_check::arris_topo::entity::{Edge, EdgeGeometry, Vertex};
-use arris_ops::arris_check::arris_topo::{AnyId, EdgeId, Model, Orientation, Shape, VertexId};
-use arris_ops::query::{Projection, project_to_plane};
-use arris_ops::{OpError, Reason, primitive_box};
+use arris_ops::arris_check::arris_topo::{
+    AnyId, EdgeId, Face, Model, Orientation, Shape, VertexId,
+};
+use arris_ops::arris_check::classify::{Classification, classify_point};
+use arris_ops::arris_check::domain::FaceDomain;
+use arris_ops::query::{Projection, face_frame, frame_at, project_to_plane};
+use arris_ops::{OpError, Reason, cut, primitive_box};
 use proptest::prelude::*;
 
 /// How far a projected point may be from the projection of the 3D point,
@@ -277,4 +283,189 @@ fn refusals_name_the_shape() {
             ..
         })
     ));
+}
+
+/// The outward normal `face_frame` and `frame_at` must agree on: the
+/// surface's own normal there, negated when `use_` is `Reversed`.
+fn outward(surface: &Surface, u: f64, v: f64, use_: Orientation) -> Vec3 {
+    let n = surface.normal(u, v).unwrap().into_inner();
+    if use_ == Orientation::Reversed { -n } else { n }
+}
+
+/// `face_frame`'s `Z` is the outward normal of every planar face of the
+/// cuboid and of a boolean result — a plate with a through hole, whose
+/// cut faces are plane, cylinder and plane again — and its axes are
+/// right-handed by construction.
+#[test]
+fn face_frame_z_is_the_outward_normal() {
+    let mut m = Model::default();
+    let cuboid = primitive_box(&mut m, Point3::origin(), Point3::new(4.0, 3.0, 2.0))
+        .unwrap()
+        .0;
+    let plate = primitive_box(&mut m, Point3::origin(), Point3::new(4.0, 4.0, 1.0))
+        .unwrap()
+        .0;
+    let punch = primitive_box(
+        &mut m,
+        Point3::new(1.0, 1.0, -1.0),
+        Point3::new(2.0, 2.0, 2.0),
+    )
+    .unwrap()
+    .0;
+    let plate = cut(&mut m, plate, punch).unwrap().0;
+
+    for body in [cuboid, plate] {
+        for f in m.faces(body).unwrap() {
+            let entity = m.face(f.id).unwrap();
+            let Surface::Plane { frame: raw } = m.surface(entity.surface()).unwrap() else {
+                continue;
+            };
+            let expected = outward(&Surface::Plane { frame: *raw }, 0.0, 0.0, f.orientation);
+            let frame = face_frame(&m, f).unwrap();
+            assert!(
+                (frame.z().into_inner() - expected).norm() < EXACT,
+                "{}",
+                f.shape()
+            );
+            assert!(
+                (frame.x().cross(&frame.y()) - frame.z().into_inner()).norm() < EXACT,
+                "{}: not right-handed",
+                f.shape()
+            );
+        }
+    }
+}
+
+/// `face_frame`'s frame agrees with `frame_at`'s at another `(u, v)` of
+/// the same planar face, and a point offset along its `Z` by a few
+/// multiples of the face's tolerance classifies `Outside`, the opposite
+/// offset `Inside` (`classify_point`).
+#[test]
+fn face_frame_agrees_with_frame_at_and_classifies_either_side() {
+    let mut m = Model::default();
+    let (body, _) = primitive_box(&mut m, Point3::origin(), Point3::new(4.0, 3.0, 2.0)).unwrap();
+    let top: Face = m
+        .faces(body)
+        .unwrap()
+        .into_iter()
+        .find(|f| {
+            let entity = m.face(f.id).unwrap();
+            matches!(
+                m.surface(entity.surface()).unwrap(),
+                Surface::Plane { frame } if frame.z().z.abs() > 0.5
+            )
+        })
+        .unwrap();
+    let frame = face_frame(&m, top).unwrap();
+
+    let tolerance = m.face(top.id).unwrap().tolerance();
+    let domain = FaceDomain::of(&m, top.id, tolerance).unwrap();
+    let [du, dv] = domain.uv_box().unwrap();
+    let uv = Point2::new(du.midpoint(), dv.midpoint());
+    assert_eq!(domain.side(uv).0, Side::Inside);
+    let at = frame_at(&m, top, uv).unwrap();
+    assert!((at.x().into_inner() - frame.x().into_inner()).norm() < EXACT);
+    assert!((at.y().into_inner() - frame.y().into_inner()).norm() < EXACT);
+    assert!((at.z().into_inner() - frame.z().into_inner()).norm() < EXACT);
+
+    let point = at.origin();
+    let step = frame.z().into_inner() * (4.0 * tolerance);
+    assert_eq!(
+        classify_point(&m, body, point + step).unwrap(),
+        Classification::Outside
+    );
+    assert_eq!(
+        classify_point(&m, body, point - step).unwrap(),
+        Classification::Inside
+    );
+}
+
+/// `face_frame` refuses a face whose surface is not a plane.
+#[test]
+fn face_frame_refuses_a_curved_face() {
+    let mut m = Model::default();
+    let body = sample::cylinder(&mut m, 4.0, 12.0).unwrap();
+    let wall = m
+        .faces(body)
+        .unwrap()
+        .into_iter()
+        .find(|f| {
+            matches!(
+                m.surface(m.face(f.id).unwrap().surface()).unwrap(),
+                Surface::Cylinder { .. }
+            )
+        })
+        .unwrap();
+    assert_eq!(
+        face_frame(&m, wall),
+        Err(OpError::Degenerate {
+            entities: vec![wall.shape()],
+            reason: Reason::NotPlanar,
+        })
+    );
+}
+
+/// `frame_at`'s `Z` agrees with `Surface::normal` composed with the
+/// face's use, over a cylinder, a sphere and a torus.
+#[test]
+fn frame_at_agrees_with_surface_normal() {
+    let mut m = Model::default();
+    let cylinder = sample::cylinder(&mut m, 4.0, 12.0).unwrap();
+    let wall = m
+        .faces(cylinder)
+        .unwrap()
+        .into_iter()
+        .find(|f| {
+            matches!(
+                m.surface(m.face(f.id).unwrap().surface()).unwrap(),
+                Surface::Cylinder { .. }
+            )
+        })
+        .unwrap();
+    let sphere = sample::sphere(&mut m, Point3::new(1.0, -2.0, 0.5), 3.0).unwrap();
+    let sphere_face = m.faces(sphere).unwrap()[0];
+    let torus = sample::torus(&mut m, Point3::origin(), 5.0, 2.0).unwrap();
+    let torus_face = m.faces(torus).unwrap()[0];
+
+    for (face, u, v) in [
+        (wall, 1.0, 6.0),
+        (sphere_face, 0.3, 0.2),
+        (torus_face, 0.5, 0.5),
+    ] {
+        let entity = m.face(face.id).unwrap();
+        let surface = m.surface(entity.surface()).unwrap();
+        let expected = outward(surface, u, v, face.orientation);
+        let frame = frame_at(&m, face, Point2::new(u, v)).unwrap();
+        assert!(
+            (frame.z().into_inner() - expected).norm() < EXACT,
+            "{}",
+            face.shape()
+        );
+    }
+}
+
+/// `frame_at` is refused at a pole, where the sphere's parametrisation
+/// is singular, and off a face's own domain.
+#[test]
+fn frame_at_refuses_a_pole_and_off_domain() {
+    use core::f64::consts::FRAC_PI_2;
+
+    let mut m = Model::default();
+    let body = sample::sphere(&mut m, Point3::origin(), 3.0).unwrap();
+    let face = m.faces(body).unwrap()[0];
+
+    assert_eq!(
+        frame_at(&m, face, Point2::new(0.0, FRAC_PI_2)),
+        Err(OpError::Degenerate {
+            entities: vec![face.shape()],
+            reason: Reason::Singular,
+        })
+    );
+    assert_eq!(
+        frame_at(&m, face, Point2::new(0.0, 10.0)),
+        Err(OpError::Degenerate {
+            entities: vec![face.shape()],
+            reason: Reason::OutOfDomain,
+        })
+    );
 }

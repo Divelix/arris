@@ -108,6 +108,20 @@ pub enum Reason {
     /// a line perpendicular to it, a conic whose plane is — which no
     /// `Curve2` over a range represents; the error's entity is the edge.
     ProjectionCollapses,
+    /// `face_frame` was asked for a face whose surface is not a plane: a
+    /// plane's own frame stands for the whole face, a curved surface's
+    /// varies with `(u, v)` and is `frame_at`'s to answer. The error's
+    /// entity is the face.
+    NotPlanar,
+    /// `frame_at` was asked for a `(u, v)` outside the face's own domain
+    /// (`arris_check::domain::FaceDomain`); the error's entity is the
+    /// face.
+    OutOfDomain,
+    /// `frame_at` was asked for a `(u, v)` where the surface's
+    /// parametrisation is singular — a sphere's pole, a cone's apex —
+    /// so `Surface::normal` has none to give; the error's entity is the
+    /// face.
+    Singular,
 }
 
 impl core::fmt::Display for Reason {
@@ -153,6 +167,11 @@ impl core::fmt::Display for Reason {
             Reason::DegenerateEdge => f.write_str("the edge is degenerate: it has no 3D curve"),
             Reason::ProjectionCollapses => {
                 f.write_str("the curve projects onto the plane as a point or a segment")
+            }
+            Reason::NotPlanar => f.write_str("the face's surface is not a plane"),
+            Reason::OutOfDomain => f.write_str("the point is outside the face's own domain"),
+            Reason::Singular => {
+                f.write_str("the surface's parametrisation is singular there: it has no normal")
             }
         }
     }
