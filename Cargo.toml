@@ -6,7 +6,7 @@ resolver = "3"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.0.1"
+version = "0.1.0-dev"
 edition = "2024"
 rust-version = "1.85"
 license = "MIT OR Apache-2.0"
@@ -24,20 +24,23 @@ readme = "README.md"
 # own `serde` feature, `cargo check -p arris --no-default-features`).
 #
 # The `version` beside each path is what makes the crates publishable: it
-# is the requirement the registry copy carries. A *dev*-dependency on a
+# is the requirement the registry copy carries. It is pinned with `=` to
+# the workspace version, `-dev` and all: the crates are published in
+# lockstep and only make sense as a set, and the pin is what fails the
+# build if a version bump misses one of them (.agents/rules/git.md §Tags). A *dev*-dependency on a
 # sibling is therefore never inherited from here — it is written path-only
 # at its use site, and `cargo publish` strips it from the packaged
 # manifest. A version there would demand the sibling on crates.io first,
 # and the dev edges run in every direction (arris-geom tests against
 # arris-topo, arris-ops against arris-io), so no publish order could
 # satisfy them.
-arris-math = { path = "crates/arris-math", version = "0.0.1", default-features = false }
-arris-geom = { path = "crates/arris-geom", version = "0.0.1", default-features = false }
-arris-topo = { path = "crates/arris-topo", version = "0.0.1", default-features = false }
-arris-check = { path = "crates/arris-check", version = "0.0.1", default-features = false }
-arris-ops = { path = "crates/arris-ops", version = "0.0.1", default-features = false }
-arris-mesh = { path = "crates/arris-mesh", version = "0.0.1", default-features = false }
-arris-io = { path = "crates/arris-io", version = "0.0.1", default-features = false }
+arris-math = { path = "crates/arris-math", version = "=0.1.0-dev", default-features = false }
+arris-geom = { path = "crates/arris-geom", version = "=0.1.0-dev", default-features = false }
+arris-topo = { path = "crates/arris-topo", version = "=0.1.0-dev", default-features = false }
+arris-check = { path = "crates/arris-check", version = "=0.1.0-dev", default-features = false }
+arris-ops = { path = "crates/arris-ops", version = "=0.1.0-dev", default-features = false }
+arris-mesh = { path = "crates/arris-mesh", version = "=0.1.0-dev", default-features = false }
+arris-io = { path = "crates/arris-io", version = "=0.1.0-dev", default-features = false }
 # `arris-debug` is only ever a dev-dependency, so its path-only form lives
 # here rather than at eight use sites. It is also the one crate that stays
 # unpublished (`publish = false`): dev-facing tooling — dump, rasteriser,

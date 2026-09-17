@@ -42,8 +42,12 @@ second roadmap file would only ever raise "which one is current?".
 6. **`AGENTS.md` "Current state"**: one sentence for the closed cycle, a
    new `**Next:**`, block still under ~15 lines.
 7. Commit as `docs: close <cycle>` with a body listing the docs updated and
-   the drift fixed. Then **tell the human to tag** `vN.N.0` — tags and
-   pushes are theirs (`.agents/rules/git.md`), never yours.
+   the drift fixed.
+8. **Run `/release`.** A closed cycle is a release: it bumps the minor
+   (`.agents/rules/git.md` §Tags), and that skill picks the number, writes
+   the release notes, bumps the version and its pins, proves the workspace
+   still packages, and hands the human the tag. Tags and pushes are theirs
+   (`.agents/rules/git.md`), never yours.
 
 ## Don't
 
@@ -56,5 +60,8 @@ second roadmap file would only ever raise "which one is current?".
   the human makes, not one the agent proposes into existence.
 - Don't tag, push, or open plans for the new cycle here. `/idea` and
   `/plan` come after, one line at a time.
+- Don't bump the version by hand or skip `/release` "because it is only a
+  version number": it is nine places in `Cargo.toml`, a derivation from the
+  log, and the release notes.
 
 `$ARGUMENTS`

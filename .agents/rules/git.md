@@ -43,17 +43,41 @@ updated by it. A change to a public type or signature names it here.
 
 - Milestones: `m0`, `m1`, … on the commit that retires the milestone's last
   plan and passes its acceptance corpus.
-- Releases: `v0.1.0` SemVer, on `main`, created by the human. Pre-1.0 a
-  minor bump may break the public API; the tag's commit body lists what.
-  Pushing the tag is what publishes: `.github/workflows/release.yml` runs
-  `cargo publish --workspace` and opens a GitHub Release. So the version in
-  `[workspace.package]` is bumped and committed *before* the tag, and the
-  tag is `v` + exactly that version — the workflow refuses the pair if they
-  disagree, and refuses a pre-release version, because a crates.io version
-  can be yanked but never replaced. Every crate but `arris-debug` goes up;
-  that one is `publish = false`. CI runs on the tag as well, and the
-  publish waits for the `crates-io` environment's reviewer, so the human
-  approves it with that run's result in front of them.
+- Releases: `vX.Y.Z` SemVer, on `main`, created by the human. Pushing the
+  tag is what publishes: `.github/workflows/release.yml` runs `cargo
+  publish --workspace` and opens a GitHub Release. CI runs on the tag as
+  well, and the publish waits for the `crates-io` environment's reviewer,
+  so the human approves it with that run's result in front of them. Every
+  crate but `arris-debug` goes up; that one is `publish = false`.
+
+### The version
+
+- **`main` between releases carries the next version with `-dev`**:
+  `[workspace.package].version = "0.2.0-dev"`, and each internal crate in
+  `[workspace.dependencies]` pinned to exactly it, `version =
+  "=0.2.0-dev"`. The eight crates are published in lockstep and only ever
+  make sense as a set, so the pin is exact — and it is also the guard: a
+  `[workspace.package]` bump that misses the requirements fails the next
+  `cargo check`, and `release.yml` refuses to publish a pre-release
+  version at all. A release is therefore impossible without the deliberate
+  commit that drops `-dev` from all nine places at once.
+- **Pre-1.0, Cargo reads `0.y.z` as `y` breaking, `z` compatible**, so:
+  - **closing a roadmap cycle bumps the minor.** A cycle here always
+    breaks the API — a new surface or curve kind makes every exhaustive
+    `match` fail to compile, which is the point (`.agents/rules/kernel.md`
+    §API). Cycle Cn releases `0.n.0` as long as that lines up; it is a
+    convention, not a law, and the cycle's status line names the tag it
+    actually got.
+  - **a release between cycles bumps the patch** — the case that exists
+    because a consumer is waiting on a fix. Unless a commit body since the
+    last tag names a changed public type or signature: then it is a minor.
+    That is a lookup, not a judgement, because every such change is named
+    in its commit body by the rule above.
+- The version lives in `Cargo.toml` and nowhere else. No doc, no README and
+  no rustdoc line states it, so nothing can go stale.
+- `/release` cuts one: it picks the number from the log, writes the release
+  notes, bumps, proves the workspace still packages, and hands the human
+  the exact tag command. `/close-cycle` ends by calling it.
 
 ## What the agent does without asking
 

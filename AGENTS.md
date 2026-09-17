@@ -11,8 +11,8 @@ taken at kickoff), `docs/ARCHITECTURE.md`, `docs/DATA-MODEL.md`,
 `docs/ROADMAP.md`, `docs/adr/`, then the rules in `.agents/rules/*.md`
 (git, docs lifecycle, kernel) — Claude Code loads them automatically via
 `.claude/rules`; any other agent reads them here. Skills for the idea →
-plan → work → retire → close-cycle pipeline, and `inspect` for seeing
-geometry, live in `.agents/skills/` (same symlink arrangement).
+plan → work → retire → close-cycle → release pipeline, and `inspect` for
+seeing geometry, live in `.agents/skills/` (same symlink arrangement).
 
 ## Setup (once per clone)
 
@@ -61,10 +61,13 @@ projection, face frames, a mesh corner block (ADR-0012), STL/OBJ export
   ~15 lines — the roadmap holds the detail.
 - Backlog line → `/idea` (brainstorm, `docs/ideas/`) → `/plan` (todo,
   `docs/plans/`) → `/work` (one step, one commit) → `/retire-plan` (docs
-  updated, plan deleted); `/close-cycle` at a roadmap boundary. Not every
-  idea becomes a plan. Details: `.agents/rules/docs-lifecycle.md`.
+  updated, plan deleted); `/close-cycle` at a roadmap boundary, ending in
+  `/release`. Not every idea becomes a plan. Details:
+  `.agents/rules/docs-lifecycle.md`.
 - Trunk-based git, `main` always green, commit per plan step, never push
-  or publish unasked: `.agents/rules/git.md`.
+  or publish unasked: `.agents/rules/git.md`. `main` carries the next
+  version with `-dev`; a `v*` tag the human pushes is what publishes the
+  workspace to crates.io.
 - Reference trees (truck, monstertruck, Fornjot, Open CASCADE, FreeCAD,
   Rerun, and the application-side projects the requirements come from) are
   read-only and never copied, never `path =` deps. Where they live on this
