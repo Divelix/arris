@@ -462,6 +462,10 @@ pub enum ExpectError {
     /// `OpError::Degenerate` with `Reason::VertexBlend`: a corner the
     /// blend's closed forms do not cover (ADR-0007).
     VertexBlend,
+    /// `OpError::Degenerate` with `Reason::EllipticRevolve`: a revolve of
+    /// a profile with an elliptic segment, whose swept surface has no
+    /// variant (ADR-0014).
+    EllipticRevolve,
 }
 
 /// The closed forms a fixture's author states, cross-checking the oracle.

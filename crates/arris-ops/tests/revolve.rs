@@ -1230,3 +1230,131 @@ fn an_arc_whose_circle_crosses_the_axis_is_a_spindle_torus() {
         "the model is as it was"
     );
 }
+
+/// A revolve refuses an elliptic segment by name (ADR-0014): the surface
+/// it would sweep has no variant. The reason names the first such segment
+/// in the *consumer's* order whichever way the loop had to be walked, and
+/// an ellipse whose radii agree within the tolerance is a circle edge and
+/// revolves.
+#[test]
+fn an_elliptic_segment_is_refused_naming_the_sketch() {
+    let z = Axis::z_at(Point3::origin());
+    let p = |u, v| Point2::new(u, v);
+    let mut m = Model::default();
+    let elliptic_revolve = |profile: &Profile, m: &mut Model| match revolve(m, profile, z, TAU) {
+        Err(OpError::Degenerate {
+            reason:
+                Reason::EllipticRevolve {
+                    loop_index,
+                    segment,
+                },
+            ..
+        }) => (loop_index, segment),
+        other => panic!("expected an elliptic refusal, got {other:?}"),
+    };
+
+    // A full ellipse 5 from the axis: the one segment of loop 0.
+    let ring = Profile {
+        plane: xz_plane(),
+        outer: ProfileLoop::Ellipse {
+            center: p(5.0, 0.0),
+            major: Vec2::new(1.6, 1.2),
+            minor_radius: 1.0,
+        },
+        holes: Vec::new(),
+    };
+    assert_eq!(elliptic_revolve(&ring, &mut m), (0, 0));
+
+    // A bulged rectangle: lines but for segment 2, the ellipse over the
+    // top. An elliptic hole is named only if nothing earlier is.
+    let bulge = |ccw: bool| ProfileSegment::EllipseTo {
+        to: p(2.0, 1.0),
+        center: p(3.0, 1.0),
+        major: Vec2::new(1.0, 0.0),
+        minor_radius: 0.5,
+        ccw,
+    };
+    let hole = ProfileLoop::Ellipse {
+        center: p(3.0, -0.5),
+        major: Vec2::new(0.5, 0.0),
+        minor_radius: 0.25,
+    };
+    let bulged = Profile {
+        plane: xz_plane(),
+        outer: ProfileLoop::Path {
+            start: p(2.0, -1.0),
+            segments: vec![
+                ProfileSegment::LineTo(p(4.0, -1.0)),
+                ProfileSegment::LineTo(p(4.0, 1.0)),
+                bulge(true),
+                ProfileSegment::LineTo(p(2.0, -1.0)),
+            ],
+        },
+        holes: vec![hole.clone()],
+    };
+    assert_eq!(elliptic_revolve(&bulged, &mut m), (0, 2));
+    let holed = Profile {
+        outer: ProfileLoop::Path {
+            start: p(2.0, -1.0),
+            segments: vec![
+                ProfileSegment::LineTo(p(4.0, -1.0)),
+                ProfileSegment::LineTo(p(4.0, 1.0)),
+                ProfileSegment::LineTo(p(2.0, 1.0)),
+                ProfileSegment::LineTo(p(2.0, -1.0)),
+            ],
+        },
+        holes: vec![hole],
+        ..bulged.clone()
+    };
+    assert_eq!(elliptic_revolve(&holed, &mut m), (1, 0));
+
+    // An oval of two half-ellipses, written clockwise so the walk turns
+    // it round: the segment named is the consumer's first, not the
+    // walk's, which would be segment 1.
+    let half = |to, ccw| ProfileSegment::EllipseTo {
+        to,
+        center: p(3.0, 0.0),
+        major: Vec2::new(1.0, 0.0),
+        minor_radius: 0.5,
+        ccw,
+    };
+    let clockwise = Profile {
+        outer: ProfileLoop::Path {
+            start: p(2.0, 0.0),
+            segments: vec![half(p(4.0, 0.0), false), half(p(2.0, 0.0), false)],
+        },
+        holes: Vec::new(),
+        ..bulged
+    };
+    assert_eq!(elliptic_revolve(&clockwise, &mut m), (0, 0));
+
+    // Nothing of any of the refusals stayed behind: the same revolve in
+    // a fresh model dumps the same.
+    let mut fresh = Model::default();
+
+    // Radii that agree within the linear tolerance are a circle edge
+    // (ADR-0014), which sweeps the ring torus every arm already has.
+    let round = Profile {
+        plane: xz_plane(),
+        outer: ProfileLoop::Ellipse {
+            center: p(5.0, 0.0),
+            major: Vec2::new(2.0, 0.0),
+            minor_radius: 2.0 - 1e-9,
+        },
+        holes: Vec::new(),
+    };
+    let (body, _) = revolve(&mut m, &round, z, TAU).unwrap();
+    let report = check(&m, body, Level::Full);
+    assert!(
+        report.is_ok() && report.unchecked().is_empty(),
+        "not clean at Full\n{report}"
+    );
+    assert_eq!(m.faces(body).unwrap().len(), 1, "the torus");
+    assert_eq!(m.edges(body).unwrap().len(), 2, "its two seams");
+    let (again, _) = revolve(&mut fresh, &round, z, TAU).unwrap();
+    assert_eq!(
+        dump_text(&m, body).unwrap(),
+        dump_text(&fresh, again).unwrap(),
+        "the model is as it was"
+    );
+}

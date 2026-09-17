@@ -112,7 +112,7 @@ bound has to be established here.
 
   Plus a property: random ellipses in random poses extrude clean at
   `Full`, with volume πab·h. The API change is named in the commit body.
-- [ ] Step 3 **[2]** — A revolve with an elliptic segment, as step 1
+- [x] Step 3 **[2]** — A revolve with an elliptic segment, as step 1
   decided. If refused, a refusal-by-fixture (`sweep/revolve-ellipse`)
   with its typed `Reason`, and a backlog line for the build. If built,
   a fixture against the oracle.

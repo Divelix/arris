@@ -305,6 +305,9 @@ impl Refusal {
             Refusal::Error(ExpectError::VertexBlend) => {
                 "OpError::Degenerate with Reason::VertexBlend".into()
             }
+            Refusal::Error(ExpectError::EllipticRevolve) => {
+                "OpError::Degenerate with Reason::EllipticRevolve".into()
+            }
         }
     }
 
@@ -328,6 +331,9 @@ impl Refusal {
                     Refusal::Error(ExpectError::BlendTooLarge) => reason == Reason::BlendTooLarge,
                     Refusal::Error(ExpectError::TangentChain) => reason == Reason::TangentChain,
                     Refusal::Error(ExpectError::VertexBlend) => reason == Reason::VertexBlend,
+                    Refusal::Error(ExpectError::EllipticRevolve) => {
+                        matches!(reason, Reason::EllipticRevolve { .. })
+                    }
                 };
                 if matches {
                     return Ok(());

@@ -42,6 +42,19 @@ pub enum Reason {
     /// would be a self-intersecting torus, which the data model does not
     /// hold (`docs/DATA-MODEL.md` §Surfaces: `R > r`).
     SpindleTorus,
+    /// A revolve profile has an elliptic segment or a full-ellipse loop
+    /// (ADR-0014): the surface it would sweep — a spheroid, an elliptic
+    /// torus — has no variant in the data model, and the meridian
+    /// intersections it would need have no arm. The reason names the
+    /// first such segment in the consumer's own order, `0` the outer
+    /// loop and `0` an ellipse loop's one segment. Radii that agree
+    /// within the linear tolerance are a circle edge and revolve.
+    EllipticRevolve {
+        /// The loop: `0` the outer, the holes from `1`.
+        loop_index: usize,
+        /// The segment of that loop, as the consumer wrote it.
+        segment: usize,
+    },
     /// An extrude direction is off the profile plane's normal by more than
     /// the angular tolerance; an oblique extrusion is a sweep along a path
     /// (cycle 5).
@@ -140,6 +153,13 @@ impl core::fmt::Display for Reason {
             Reason::SpindleTorus => {
                 f.write_str("an arc's circle crosses the revolve axis: a spindle torus")
             }
+            Reason::EllipticRevolve {
+                loop_index,
+                segment,
+            } => write!(
+                f,
+                "loop {loop_index}, segment {segment} is elliptic, which a revolve does not sweep"
+            ),
             Reason::DirectionNotNormal => {
                 f.write_str("the extrude direction is not the profile plane's normal")
             }

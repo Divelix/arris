@@ -136,6 +136,20 @@ fn axis_in_plane(
     ))
 }
 
+/// The first elliptic edge of a validated profile in the consumer's own
+/// order — the lowest `(loop_index, segment)`, which the walk may have
+/// reversed — or `None` when every edge is a line or a circle. The
+/// surface such a segment would sweep has no variant, so a revolve
+/// refuses it (ADR-0014); an ellipse whose radii agree within the linear
+/// tolerance is already a circle edge here and is not one of these.
+fn elliptic(loops: &[Vec<ProfileEdge>]) -> Option<&ProfileEdge> {
+    loops
+        .iter()
+        .flatten()
+        .filter(|e| matches!(e.curve, Curve::Ellipse { .. }))
+        .min_by_key(|e| (e.loop_index, e.segment))
+}
+
 /// The profile held to one side of the axis: `radial` turned to face the
 /// side every point of every edge lies on, reaching at worst within
 /// `tol.linear` of the axis — a point that near is *on* it —
@@ -277,7 +291,8 @@ fn swept_surface(
                 ))
             }
         }
-        // `Profile::edges` makes lines and circles and nothing else.
+        // `Profile::edges` makes lines, circles and ellipses, and
+        // `elliptic` refused the ellipses before anything was made.
         Curve::Ellipse { .. } | Curve::Nurbs(_) => Err(profile_curve_fault(edge)),
     }
 }
@@ -572,8 +587,9 @@ fn record(
 /// `default_tolerance` of the axis everywhere,
 /// [`Reason::NonManifold`] when a full turn's profile touches the axis at
 /// a vertex with no segment along it, where the swept surface would touch
-/// itself, and [`Reason::SpindleTorus`] when an arc's circle crosses it off
-/// its centre.
+/// itself, [`Reason::SpindleTorus`] when an arc's circle crosses it off
+/// its centre, and [`Reason::EllipticRevolve`] naming the first elliptic
+/// segment of the sketch, whose swept surface has no variant (ADR-0014).
 ///
 /// ```
 /// use arris_ops::revolve;
@@ -630,6 +646,12 @@ pub fn revolve(
     let angle = if full { TAU } else { angle };
     let (axis, in_plane) = axis_in_plane(profile, axis, tol)?;
     let loops = profile.edges(tol)?;
+    if let Some(edge) = elliptic(&loops) {
+        return Err(degenerate(Reason::EllipticRevolve {
+            loop_index: edge.loop_index,
+            segment: edge.segment,
+        }));
+    }
     let in_plane = orient(&loops, in_plane, tol)?;
 
     let plane = &profile.plane;

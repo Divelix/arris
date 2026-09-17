@@ -453,6 +453,14 @@ fn sweep_revolve_ring() {
     run("sweep/revolve-ring");
 }
 
+/// An ellipse revolved about z: Open CASCADE builds the elliptic torus
+/// and Arris refuses it, `Reason::EllipticRevolve` naming the segment,
+/// since the surface it would sweep has no variant (ADR-0014).
+#[test]
+fn sweep_revolve_ellipse() {
+    run("sweep/revolve-ellipse");
+}
+
 /// The consumer's 2-cube with one vertical edge filleted: a plane–plane
 /// blend, a cylinder between two circle ends (ADR-0007), at `r = 0.2`
 /// and at `r = 0.5`.

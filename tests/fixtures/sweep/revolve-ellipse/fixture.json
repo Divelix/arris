@@ -1,0 +1,23 @@
+{
+  "description": "an ellipse of major radius 2 along (0.8, 0.6) and minor radius 1, centred 5 from the axis in the xz plane, revolved a full turn about z: Open CASCADE builds the elliptic torus, Arris refuses it with OpError::Degenerate and Reason::EllipticRevolve naming loop 0, segment 0, since a surface of revolution with an elliptic meridian has no variant and the meridian arm has no ellipse section (ADR-0014). Volume 2*pi*R * pi*a*b by Pappus; the centroid sits above the section's centre by cu*cv*(a^2 - b^2)/(4R), the tilted section's second moments weighted by rho, and the area has no closed form",
+  "params": {"R": 5, "a": 2, "b": 1, "cu": 0.8, "cv": 0.6},
+  "steps": [
+    {
+      "name": "sketch",
+      "op": "profile",
+      "plane": {"origin": [0, 0, 0], "x": [1, 0, 0], "y": [0, 0, 1]},
+      "outer": {"ellipse": {"center": ["R", 0], "major": ["a * cu", "a * cv"], "minor_radius": "b"}},
+      "holes": []
+    },
+    {"name": "result", "op": "revolve", "profile": "sketch", "axis": {"origin": [0, 0, 0], "direction": [0, 0, 1]}, "angle_deg": 360}
+  ],
+  "result": "result",
+  "probes": [],
+  "analytic": {
+    "expect_error": "elliptic-revolve",
+    "volume": "2 * pi * R * pi * a * b",
+    "centroid": [0, 0, "cu * cv * (a^2 - b^2) / (4 * R)"],
+    "counts": {"vertices": 1, "edges": 2, "faces": 1, "loops": 1, "shells": 1},
+    "genus": 1
+  }
+}
