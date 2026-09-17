@@ -61,7 +61,7 @@ second roadmap file would only ever raise "which one is current?".
 - Don't tag, push, or open plans for the new cycle here. `/idea` and
   `/plan` come after, one line at a time.
 - Don't bump the version by hand or skip `/release` "because it is only a
-  version number": it is nine places in `Cargo.toml`, a derivation from the
-  log, and the release notes.
+  version number": it is eight places in `Cargo.toml`, a derivation from
+  the log, and the release notes.
 
 `$ARGUMENTS`

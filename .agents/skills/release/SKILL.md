@@ -52,9 +52,10 @@ The version scheme, the `-dev` convention and who does what are
    the GitHub Release, and a hand-maintained fifth place is the one with
    no owner.
 4. **Bump.** `[workspace.package].version` to the number, `-dev` dropped,
-   and the eight internal `version = "=X.Y.Z-dev"` requirements in
-   `[workspace.dependencies]` with it — nine places, one edit, and a
-   `cargo check` that fails if one was missed.
+   and the seven internal `version = "=X.Y.Z-dev"` requirements in
+   `[workspace.dependencies]` with it — eight places, one edit, and a
+   `cargo check` that fails if one was missed. `arris-debug` has no
+   version to bump: it is path-only and never published.
 5. **Prove it publishes.** `cargo package --workspace` on the clean tree:
    every crate packages and its verifying build passes. A crate that fails
    here fails in the workflow after some of the others are already on
@@ -64,7 +65,7 @@ The version scheme, the `-dev` convention and who does what are
    When `/close-cycle` called this skill, that skill's `docs: close
    <cycle>` commit comes first and this one after it.
 7. **Open the next `-dev` in its own commit**, right away: `chore(arris):
-   open X.(Y+1).0-dev`, same nine places. `main` never sits on a released
+   open X.(Y+1).0-dev`, same eight places. `main` never sits on a released
    version, and the human's tag goes on the commit from step 6, not this
    one. Tagging this one by mistake is safe — `release.yml` refuses a
    pre-release version before it uploads anything.

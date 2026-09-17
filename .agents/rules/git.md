@@ -60,7 +60,9 @@ updated by it. A change to a public type or signature names it here.
   `[workspace.package]` bump that misses the requirements fails the next
   `cargo check`, and `release.yml` refuses to publish a pre-release
   version at all. A release is therefore impossible without the deliberate
-  commit that drops `-dev` from all nine places at once.
+  commit that drops `-dev` from all eight places at once — the workspace
+  version and the seven requirements. `arris-debug` carries no version
+  because it is never published.
 - **Pre-1.0, Cargo reads `0.y.z` as `y` breaking, `z` compatible**, so:
   - **closing a roadmap cycle bumps the minor.** A cycle here always
     breaks the API — a new surface or curve kind makes every exhaustive
