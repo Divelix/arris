@@ -24,3 +24,4 @@ here; the first ADR is the first decision taken *after* the seed.
 | [0011](0011-the-tessellation-boundary-is-f64.md) | The tessellation boundary is `f64`: the cast to `f32` is the consumer's, at its own boundary | accepted |
 | [0012](0012-the-render-buffer-beside-the-watertight-one.md) | The render buffer beside the watertight one: an optional face-local corner block on the same `TriMesh` | accepted |
 | [0013](0013-mesh-formats-live-in-arris-io.md) | Mesh formats live in `arris-io`, which depends on `arris-mesh` | accepted |
+| [0014](0014-elliptic-profile-segments-sweep-an-elliptic-cylinder.md) | Elliptic profile segments sweep an elliptic cylinder; a revolve refuses them | accepted |
