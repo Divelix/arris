@@ -343,6 +343,14 @@ fn boolean_short_cross_cylinders_fuse() {
     run("boolean/short-cross-cylinders-fuse");
 }
 
+/// A box with an elliptic cylinder cut through it: the pave model's
+/// quadric guard refuses the elliptic-cylinder face before any
+/// intersector runs, `OpError::Unsupported` naming it (ADR-0014).
+#[test]
+fn boolean_elliptic_operand_cut() {
+    run("boolean/elliptic-operand-cut");
+}
+
 /// A rectangle with a circular hole extruded: `boolean/through-hole`'s
 /// solid and numbers by the other path.
 #[test]

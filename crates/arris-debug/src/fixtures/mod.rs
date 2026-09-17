@@ -466,6 +466,10 @@ pub enum ExpectError {
     /// a profile with an elliptic segment, whose swept surface has no
     /// variant (ADR-0014).
     EllipticRevolve,
+    /// `OpError::Unsupported` naming an elliptic-cylinder face: the pave
+    /// model's quadric guard refuses a boolean with an elliptic operand
+    /// before any intersector is asked (ADR-0014, `boolean::pave`).
+    EllipticOperand,
 }
 
 /// The closed forms a fixture's author states, cross-checking the oracle.

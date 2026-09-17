@@ -116,7 +116,7 @@ bound has to be established here.
   decided. If refused, a refusal-by-fixture (`sweep/revolve-ellipse`)
   with its typed `Reason`, and a backlog line for the build. If built,
   a fixture against the oracle.
-- [ ] Step 4 **[1]** — Booleans with an elliptic-faced operand are
+- [x] Step 4 **[1]** — Booleans with an elliptic-faced operand are
   refused by the pave guard with a typed error naming the face.
   Refusal-by-fixture: `boolean/elliptic-operand-cut`. A backlog line
   points to C3 or C4. The guard's arm landed with step 2 (the closed
