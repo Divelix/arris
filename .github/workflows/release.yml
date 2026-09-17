@@ -1,0 +1,75 @@
+# The release (.agents/rules/git.md §Tags): a `v*` tag push publishes the
+# eight library crates to crates.io and opens a GitHub Release. The gate is
+# CI, which runs on this tag too (`ci.yml`) — the publish waits on the
+# `crates-io` environment's reviewer, who has that run in front of them.
+# `cargo publish` then builds every packaged crate before uploading any, so
+# a crate that does not compile from its tarball uploads nothing.
+#
+# Publishing uses crates.io trusted publishing: no token in the repository's
+# secrets, crates.io trusts this workflow file, in this repository, in the
+# named environment.
+#
+# One-time setup, by the human:
+#   GitHub  › Settings › Environments: `crates-io`, with a required
+#     reviewer — a crates.io version can be yanked, never replaced.
+#   First release only: a crates.io API token (scopes publish-new and
+#     publish-update) as the secret CARGO_REGISTRY_TOKEN in `crates-io`;
+#     crates.io only lets a publisher be added to a crate that exists.
+#   After it: crates.io › each of arris, arris-math, arris-geom,
+#     arris-topo, arris-check, arris-ops, arris-mesh, arris-io › Settings ›
+#     Trusted Publishing › add: owner Divelix, repository arris, workflow
+#     release.yml, environment crates-io. Then delete the secret; the job
+#     falls back to it only while it exists.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  crates-io:
+    runs-on: ubuntu-latest
+    environment: crates-io
+    permissions:
+      id-token: write
+      contents: write
+    env:
+      # Mapped here because a step's `if:` cannot read a secret.
+      REGISTRY_TOKEN_SECRET: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      # A crates.io version cannot be replaced, so the tag must name the
+      # version the crates carry, and a pre-release version never goes up
+      # under a release tag.
+      - shell: bash
+        run: |
+          version=$(cargo metadata --no-deps --format-version 1 --locked \
+            | python3 -c 'import json, sys; print(next(p["version"] for p in json.load(sys.stdin)["packages"] if p["name"] == "arris"))')
+          echo "workspace version $version, tag $GITHUB_REF_NAME"
+          case "$version" in
+            *-*) echo "::error::refusing to publish the pre-release $version"; exit 1 ;;
+          esac
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not name version $version"; exit 1
+          fi
+
+      - if: env.REGISTRY_TOKEN_SECRET == ''
+        id: auth
+        uses: rust-lang/crates-io-auth-action@v1
+
+      # Resolves the publish order itself and waits for each crate to reach
+      # the index before the crate above it goes up — which is what the
+      # `version` on every internal edge is for. `arris-debug` is
+      # `publish = false` and stays off crates.io.
+      - run: cargo publish --workspace --locked
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token || env.REGISTRY_TOKEN_SECRET }}
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true

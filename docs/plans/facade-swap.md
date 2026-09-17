@@ -167,8 +167,9 @@ bound has to be established here.
   and symlinked into every crate directory, the internal dev-dependency
   edges become path-only, `README.md` stops calling itself a placeholder
   and says what the kernel does and does not do today, and
-  `.github/workflows/publish.yml` publishes from a `vX.Y.Z` tag after
-  running the whole gate on it. The test is `cargo package --workspace`:
+  `.github/workflows/release.yml` publishes from a `vX.Y.Z` tag — trusted
+  publishing, the tag checked against the workspace version, CI running on
+  the tag and a reviewer on the `crates-io` environment between the two. The test is `cargo package --workspace`:
   every crate packages and its verifying build passes, each published
   tarball carries the README and both licences, and no internal
   dev-dependency survives into a packaged manifest. The human then creates

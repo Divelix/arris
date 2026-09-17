@@ -44,9 +44,10 @@ checker runs after every operation in debug builds. Every fixture in the
 test corpus carries an oracle value — volume, area, centroid, counts, point
 classifications — computed by Open CASCADE, which Arris must match within
 the fixture's stated tolerance. Open CASCADE is run as the oracle through
-Python; it is never a build or runtime dependency. Properties (volume
-additivity, cut-then-fuse, commutativity, STEP round-trip) are tested over
-random operands in random poses from a fixed seed.
+Python; it is never a build or runtime dependency, and `PROVENANCE.md` says
+how it is used and read. Properties (volume additivity, cut-then-fuse,
+commutativity, STEP round-trip) are tested over random operands in random
+poses from a fixed seed.
 
 ## Workspace
 

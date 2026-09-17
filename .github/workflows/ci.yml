@@ -1,8 +1,12 @@
 name: CI
 
+# On a `v*` tag too: the release waits on the `crates-io` environment's
+# reviewer (`release.yml`), and this is the run they look at before
+# approving it — the gate on the exact commit being published.
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
 
 env:
