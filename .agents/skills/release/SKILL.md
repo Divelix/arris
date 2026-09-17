@@ -82,6 +82,25 @@ The version scheme, the `-dev` convention and who does what are
    the tag's CI run in front of them. Remind them of that — the approval
    is the last checkpoint before a version exists forever.
 
+## When a publish fails partway
+
+crates.io rate-limits **new** crates: a burst of five, then one per ten
+minutes. (A new version of a crate that already exists is one a minute,
+burst thirty — so only a release that introduces crates hits this.) The
+first release of a workspace this size therefore stops with a `429` after
+five of them, with some crates published and some not.
+
+That is recoverable and nothing is at risk: `cargo publish --workspace`
+warns `already exists on crates.io index` for each crate that went up and
+uploads only the rest. Wait for the window the error names, then re-run
+the failed job — `gh run rerun <id> --failed` — and repeat until it is
+through. Each re-run asks the environment's reviewer again.
+
+The workflow that runs is the one **at the tag**, so fixing `release.yml`
+on `main` does not change a re-run, and the tag never moves to pick it up.
+A release blocked by something the workflow itself gets wrong is a fix on
+`main` and a new version, never a moved tag.
+
 ## Don't
 
 - Don't tag, don't push, don't run `cargo publish`. All three are the
