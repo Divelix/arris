@@ -121,7 +121,7 @@ fn parse_obj(text: &str) -> Parsed {
 
 fn mesh_and_parsed(m: &Model, body: Body, chord: f64) -> (TriMesh, Parsed) {
     let mesh = tessellate_with(m, body, &MeshRequest::new(chord).with_corners()).unwrap();
-    let text = obj::write(&mesh).unwrap();
+    let text = obj::write(std::slice::from_ref(&mesh)).unwrap();
     let parsed = parse_obj(&text);
     (mesh, parsed)
 }
@@ -256,7 +256,7 @@ fn a_mesh_without_corners_writes_no_vt_or_vn() {
     let mut m = Model::default();
     let body = sample::cuboid(&mut m, Point3::origin(), Point3::new(1.0, 1.0, 1.0)).unwrap();
     let mesh = tessellate(&m, body, 1e-2).unwrap();
-    let text = obj::write(&mesh).unwrap();
+    let text = obj::write(std::slice::from_ref(&mesh)).unwrap();
     assert!(!text.contains("vt "));
     assert!(!text.contains("vn "));
     let groups = text.lines().filter(|l| l.starts_with("g ")).count();
@@ -272,5 +272,6 @@ fn two_writes_are_byte_identical() {
     let mut m = Model::default();
     let body = sample::cylinder(&mut m, 4.0, 12.0).unwrap();
     let mesh = tessellate_with(&m, body, &MeshRequest::new(1e-2).with_corners()).unwrap();
-    assert_eq!(obj::write(&mesh).unwrap(), obj::write(&mesh).unwrap());
+    let one = std::slice::from_ref(&mesh);
+    assert_eq!(obj::write(one).unwrap(), obj::write(one).unwrap());
 }

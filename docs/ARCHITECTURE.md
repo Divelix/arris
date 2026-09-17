@@ -31,9 +31,10 @@ re-exports the public API. Lower crates never name types from upper ones.
 change there is a design delta named in a plan. Everything from `check` up
 is an algorithm crate that can be rewritten without touching its
 neighbours. `ops` and `mesh` are siblings: neither depends on the other.
-`io` depends on `mesh` — STL and OBJ each write a `TriMesh`, and every
-format a consumer looks for lives under the one name `io` (ADR-0013) —
-but not on `ops`, which no format needs. Mass properties live in
+`io` depends on `mesh` — STL and OBJ each write one or several
+`TriMesh`es, and every format a consumer looks for lives under the one
+name `io` (ADR-0013) — but not on `ops`, which no format needs. Mass
+properties live in
 `ops::measure` because they integrate over the B-Rep, not over a mesh; a
 consumer that wants mesh-based inertia integrates `arris-mesh`'s output
 itself.
@@ -996,28 +997,38 @@ B-Rep).
 - **Native format** (`arris_io::native::{to_json, from_json, to_bytes,
   from_bytes}`): `serde` of the model under a version header, JSON for
   diffs and `postcard` bytes for storage; data-model §Native format.
-- **STL** (`arris_io::stl::{write_ascii, write_binary}`, ADR-0013): a
-  `TriMesh` in, `MeshWriteError` the only failure — binary's `u32`
-  triangle count. A facet's normal is the triangle's own winding, never
-  the corner block's — never the point of asking `RWStl` to compute
-  normals a flat facet does not have a use for; ASCII writes every real
-  as the shortest round-trip decimal so two writes are byte-identical,
-  binary writes IEEE 754 little-endian `f32`, the one narrowing the
-  kernel ships (`.agents/rules/kernel.md`), computed in `f64` and cast
-  only at the writer. `tools/oracle/mesh.py` reads both forms back
-  through Open CASCADE's `RWStl` — an independent reader of the bytes,
-  not a fixture comparison — and `arris_debug::oracle::compare_stl` is
-  the Rust seam to it, held to the mesh's own triangle count and area and
-  to `measure::mass_properties`'s volume within the corpus's own
+- **STL** (`arris_io::stl::{write_ascii, write_binary}`, ADR-0013): one
+  or several `TriMesh`es in — one per body, as `step::write` takes
+  several bodies of one `Model` — `MeshWriteError` the only failure —
+  binary's `u32` triangle count, summed over every mesh. STL has no
+  shared vertex index, so several meshes become one file by writing every
+  mesh's facets in argument order under a single `solid`/`endsolid`
+  (ASCII) or a single header and triangle count (binary); no
+  renumbering needed (facade-swap step 5). A facet's normal is the
+  triangle's own winding, never the corner block's — never the point of
+  asking `RWStl` to compute normals a flat facet does not have a use
+  for; ASCII writes every real as the shortest round-trip decimal so two
+  writes are byte-identical, binary writes IEEE 754 little-endian `f32`,
+  the one narrowing the kernel ships (`.agents/rules/kernel.md`),
+  computed in `f64` and cast only at the writer. `tools/oracle/mesh.py`
+  reads both forms back through Open CASCADE's `RWStl` — an independent
+  reader of the bytes, not a fixture comparison — and
+  `arris_debug::oracle::compare_stl` is the Rust seam to it, held to the
+  meshes' own summed triangle count and area and to
+  `measure::mass_properties`'s volume within the corpus's own
   `mesh_volume_rel`.
-- **OBJ** (`arris_io::obj::write`, ADR-0013): `v` and `f` always, one `g`
-  per `FaceRange` partitioning the triangles by face id in iteration
-  order; `vt` and `vn` only when the mesh carries a `Corners` block, one
-  of each per face-local vertex, `f` then `v/vt/vn` — the same index for
-  `vt` and `vn`, since a face-local vertex has exactly one of each and
-  OBJ has no way to name one without the other. Every real is the
-  shortest round-trip decimal, `f64` throughout, so two writes are
-  byte-identical; `write` never fails.
+- **OBJ** (`arris_io::obj::write`, ADR-0013): the same one-or-several
+  `TriMesh`es in. `v` and `f` always, one `g` per `FaceRange`
+  partitioning the triangles by face id in iteration order; `vt` and `vn`
+  only when a mesh carries a `Corners` block, one of each per face-local
+  vertex, `f` then `v/vt/vn` — the same index for `vt` and `vn`, since a
+  face-local vertex has exactly one of each and OBJ has no way to name
+  one without the other. Unlike STL, OBJ's `v`/`vt`/`vn` indices are
+  shared across the whole file, so several meshes are written one after
+  another, each mesh's own `f` indices offset by the running total of
+  the meshes before it (facade-swap step 5). Every real is the shortest
+  round-trip decimal, `f64` throughout, so two writes of the same meshes
+  are byte-identical; `write` never fails.
 - **Text dump** (`arris-debug::dump_text`): the deterministic, diffable
   rendering of a body that fixtures store and tests compare. Not a format:
   it has no reader.
@@ -1153,7 +1164,7 @@ facade needs Arris types above it.
 | A face's outward-oriented frame | `ops::query::face_frame(&model, face)` for a plane (stable across re-evaluation, since a primitive's frame or a sweep's profile plane is), `ops::query::frame_at(&model, face, uv)` for any face at a `(u, v)` its domain contains |
 | Mass properties (volume, area, centroid, inertia) | `ops::measure::mass_properties` → `MassProperties` (exact over the B-Rep, the tensor about the centroid); or the consumer's own integrator over `TriMesh` |
 | STEP export of several bodies | `io::step::write(&model, &[bodies])` |
-| A render mesh as STL or OBJ, beside STEP | `io::stl::write_ascii`/`write_binary(&mesh, name)`, `io::obj::write(&mesh)` — `vt`/`vn` written when the mesh carries the corner block (ADR-0012, ADR-0013) |
+| A render mesh as STL or OBJ of several bodies, beside STEP | `io::stl::write_ascii`/`write_binary(&meshes, name)`, `io::obj::write(&meshes)` — one `TriMesh` per body, `vt`/`vn` written when a mesh carries the corner block (ADR-0012, ADR-0013, facade-swap step 5) |
 | Projecting an edge or vertex onto a sketch plane | `ops::query::project_to_plane(&model, &[shapes], &plane)` → a `Projection` per shape: a vertex's `Point2`, an edge's `Curve2` (a line stays a line, a circle becomes a circle or an ellipse, an ellipse stays an ellipse, a NURBS a `Curve2::Nurbs`) with the edge's range carried into that curve's own parameter, so the piece is the edge's and no more (data-model §Pcurves) |
 | Persistent topological names (origin-based) | Emitted by the consumer from `Provenance`: an output face is named after the input face it was `Modified` from, `Split(k)` when one input yields several outputs, and after the tool face when `Generated`; edges and vertices derive from their faces exactly as today. No centroid matching. Arris ships no name grammar (ADR-0009): the words are the application's. What the kernel guarantees is the **split order** — an origin's outputs in `generated_from` and `modified_from` are the pieces in an order that holds under every parameter edit keeping which entities bound which piece (a face's by the origins bounding each piece, an edge's along its curve; data-model §Provenance), so `Split(k)` means the same piece after the edit |
 | Memoising shapes by content, dropping unreferenced ones | Memoisation stays in the consumer (it is about features, not geometry); dropping is `Model::retain`, which frees slots without moving a surviving id (§The model, ADR-0010) |

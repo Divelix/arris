@@ -122,7 +122,7 @@ bound has to be established here.
   points to C3 or C4. The guard's arm landed with step 2 (the closed
   forms it holds back went in there, and ADR-0014 wants the guard with
   them); this step is the fixture and the backlog line.
-- [ ] Step 5 **[1]** — Several bodies in one STL or OBJ file, per the
+- [x] Step 5 **[1]** — Several bodies in one STL or OBJ file, per the
   design delta. The test reads the file back with `RWStl` through
   `tools/oracle/mesh.py` and with the test's own OBJ parser: the triangle
   count is the sum, and each body's positions are unchanged.

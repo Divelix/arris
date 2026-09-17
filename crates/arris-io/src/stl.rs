@@ -1,6 +1,11 @@
 //! STL, ASCII and binary (`docs/ARCHITECTURE.md` §Formats and tools,
-//! ADR-0013): `write_ascii` and `write_binary` of an
-//! [`arris_mesh::TriMesh`].
+//! ADR-0013): `write_ascii` and `write_binary` of one or several
+//! [`arris_mesh::TriMesh`]es (one per body), as `step::write` takes
+//! several bodies of one `Model` — STL has no shared vertex index, so
+//! several meshes become one file by writing every mesh's facets in
+//! argument order under a single `solid`/`endsolid` (ASCII) or a single
+//! header and triangle count (binary), with no renumbering needed
+//! (facade-swap step 5).
 //!
 //! A facet's normal is the triangle's own winding — `(b − a) × (c − a)`,
 //! normalised, never the render buffer's corner normals, which are the
@@ -25,11 +30,11 @@ use arris_mesh::TriMesh;
 
 use crate::MeshWriteError;
 
-/// The ASCII STL text of `mesh`: `solid <name>`, one `facet` per
-/// triangle in the mesh's own order, `endsolid <name>`. Every real is
-/// Rust's shortest round-trip decimal, so two writes of one mesh are
-/// byte-identical. Never fails: ASCII STL has no bound on its facet
-/// count.
+/// The ASCII STL text of `meshes`: `solid <name>`, one `facet` per
+/// triangle of every mesh in argument order, `endsolid <name>`. Every
+/// real is Rust's shortest round-trip decimal, so two writes of the same
+/// meshes are byte-identical. Never fails: ASCII STL has no bound on its
+/// facet count.
 ///
 /// ```
 /// use arris_io::arris_mesh::TriMesh;
@@ -40,52 +45,59 @@ use crate::MeshWriteError;
 ///     mesh.push_position(p).unwrap();
 /// }
 /// mesh.push_triangle([0, 1, 2]).unwrap();
-/// let text = stl::write_ascii(&mesh, "triangle").unwrap();
+/// let text = stl::write_ascii(std::slice::from_ref(&mesh), "triangle").unwrap();
 /// assert!(text.starts_with("solid triangle\n"));
 /// assert!(text.trim_end().ends_with("endsolid triangle"));
 /// assert_eq!(text.matches("facet normal").count(), 1);
-/// assert_eq!(stl::write_ascii(&mesh, "triangle").unwrap(), text, "deterministic");
+/// assert_eq!(
+///     stl::write_ascii(std::slice::from_ref(&mesh), "triangle").unwrap(),
+///     text,
+///     "deterministic"
+/// );
 /// ```
-pub fn write_ascii(mesh: &TriMesh, name: &str) -> Result<String, MeshWriteError> {
+pub fn write_ascii(meshes: &[TriMesh], name: &str) -> Result<String, MeshWriteError> {
     let mut out = String::new();
     let _ = writeln!(out, "solid {name}");
-    for i in 0..mesh.triangles().len() {
-        let [a, b, c] = mesh
-            .triangle_positions(i)
-            .expect("i is one of this mesh's own triangle indices");
-        let n = facet_normal(a, b, c);
-        let _ = writeln!(
-            out,
-            "  facet normal {} {} {}",
-            real(n[0]),
-            real(n[1]),
-            real(n[2])
-        );
-        out.push_str("    outer loop\n");
-        for p in [a, b, c] {
+    for mesh in meshes {
+        for i in 0..mesh.triangles().len() {
+            let [a, b, c] = mesh
+                .triangle_positions(i)
+                .expect("i is one of this mesh's own triangle indices");
+            let n = facet_normal(a, b, c);
             let _ = writeln!(
                 out,
-                "      vertex {} {} {}",
-                real(p[0]),
-                real(p[1]),
-                real(p[2])
+                "  facet normal {} {} {}",
+                real(n[0]),
+                real(n[1]),
+                real(n[2])
             );
+            out.push_str("    outer loop\n");
+            for p in [a, b, c] {
+                let _ = writeln!(
+                    out,
+                    "      vertex {} {} {}",
+                    real(p[0]),
+                    real(p[1]),
+                    real(p[2])
+                );
+            }
+            out.push_str("    endloop\n");
+            out.push_str("  endfacet\n");
         }
-        out.push_str("    endloop\n");
-        out.push_str("  endfacet\n");
     }
     let _ = writeln!(out, "endsolid {name}");
     Ok(out)
 }
 
-/// The binary STL bytes of `mesh`: an 80-byte header holding `name`
-/// (truncated to fit, zero-padded), a little-endian `u32` triangle
-/// count, then per triangle a little-endian `f32` normal, three `f32`
-/// vertices and a `u16` attribute byte count of zero — the format's own
-/// 50-byte-per-facet layout.
+/// The binary STL bytes of `meshes`: an 80-byte header holding `name`
+/// (truncated to fit, zero-padded), a little-endian `u32` triangle count
+/// summed over every mesh, then per triangle of every mesh in argument
+/// order a little-endian `f32` normal, three `f32` vertices and a `u16`
+/// attribute byte count of zero — the format's own 50-byte-per-facet
+/// layout.
 ///
-/// Errors: [`MeshWriteError::TooManyTriangles`] when the mesh has more
-/// triangles than a `u32` count can hold.
+/// Errors: [`MeshWriteError::TooManyTriangles`] when the meshes together
+/// have more triangles than a `u32` count can hold.
 ///
 /// ```
 /// use arris_io::arris_mesh::TriMesh;
@@ -96,13 +108,13 @@ pub fn write_ascii(mesh: &TriMesh, name: &str) -> Result<String, MeshWriteError>
 ///     mesh.push_position(p).unwrap();
 /// }
 /// mesh.push_triangle([0, 1, 2]).unwrap();
-/// let bytes = stl::write_binary(&mesh, "triangle").unwrap();
+/// let bytes = stl::write_binary(std::slice::from_ref(&mesh), "triangle").unwrap();
 /// assert_eq!(bytes.len(), 80 + 4 + 50);
 /// assert!(bytes.starts_with(b"triangle"));
 /// assert_eq!(u32::from_le_bytes(bytes[80..84].try_into().unwrap()), 1);
 /// ```
-pub fn write_binary(mesh: &TriMesh, name: &str) -> Result<Vec<u8>, MeshWriteError> {
-    let triangles = mesh.triangles().len();
+pub fn write_binary(meshes: &[TriMesh], name: &str) -> Result<Vec<u8>, MeshWriteError> {
+    let triangles: usize = meshes.iter().map(|mesh| mesh.triangles().len()).sum();
     let count =
         u32::try_from(triangles).map_err(|_| MeshWriteError::TooManyTriangles { triangles })?;
     let mut out = Vec::with_capacity(80 + 4 + triangles * 50);
@@ -112,19 +124,21 @@ pub fn write_binary(mesh: &TriMesh, name: &str) -> Result<Vec<u8>, MeshWriteErro
     header[..fit].copy_from_slice(&name_bytes[..fit]);
     out.extend_from_slice(&header);
     out.extend_from_slice(&count.to_le_bytes());
-    for i in 0..triangles {
-        let [a, b, c] = mesh
-            .triangle_positions(i)
-            .expect("i is one of this mesh's own triangle indices");
-        for component in facet_normal(a, b, c) {
-            out.extend_from_slice(&(component as f32).to_le_bytes());
-        }
-        for p in [a, b, c] {
-            for component in p {
+    for mesh in meshes {
+        for i in 0..mesh.triangles().len() {
+            let [a, b, c] = mesh
+                .triangle_positions(i)
+                .expect("i is one of this mesh's own triangle indices");
+            for component in facet_normal(a, b, c) {
                 out.extend_from_slice(&(component as f32).to_le_bytes());
             }
+            for p in [a, b, c] {
+                for component in p {
+                    out.extend_from_slice(&(component as f32).to_le_bytes());
+                }
+            }
+            out.extend_from_slice(&0u16.to_le_bytes());
         }
-        out.extend_from_slice(&0u16.to_le_bytes());
     }
     Ok(out)
 }
@@ -181,13 +195,13 @@ mod tests {
 
     #[test]
     fn ascii_facet_normal_is_the_windings() {
-        let text = write_ascii(&triangle(), "t").unwrap();
+        let text = write_ascii(std::slice::from_ref(&triangle()), "t").unwrap();
         assert!(text.contains("facet normal 0. 0. 1."), "{text}");
     }
 
     #[test]
     fn binary_facet_normal_is_f32() {
-        let bytes = write_binary(&triangle(), "t").unwrap();
+        let bytes = write_binary(std::slice::from_ref(&triangle()), "t").unwrap();
         let facet = &bytes[84..134];
         let nx = f32::from_le_bytes(facet[0..4].try_into().unwrap());
         let ny = f32::from_le_bytes(facet[4..8].try_into().unwrap());
@@ -203,15 +217,28 @@ mod tests {
         m.push_position([0.0, 0.0, 0.0]).unwrap();
         m.push_position([1.0, 0.0, 0.0]).unwrap();
         m.push_triangle([0, 1, 0]).unwrap();
-        let text = write_ascii(&m, "t").unwrap();
+        let text = write_ascii(std::slice::from_ref(&m), "t").unwrap();
         assert!(text.contains("facet normal 0. 0. 0."), "{text}");
     }
 
     #[test]
     fn a_name_longer_than_the_header_is_truncated_not_an_error() {
         let name = "x".repeat(200);
-        let bytes = write_binary(&triangle(), &name).unwrap();
+        let bytes = write_binary(std::slice::from_ref(&triangle()), &name).unwrap();
         assert_eq!(&bytes[0..80], "x".repeat(80).as_bytes());
+    }
+
+    #[test]
+    fn several_meshes_write_as_one_solid_with_every_facet() {
+        let meshes = [triangle(), triangle()];
+        let text = write_ascii(&meshes, "pair").unwrap();
+        assert!(text.starts_with("solid pair\n"));
+        assert_eq!(text.matches("endsolid pair").count(), 1);
+        assert_eq!(text.matches("facet normal").count(), 2);
+
+        let bytes = write_binary(&meshes, "pair").unwrap();
+        assert_eq!(bytes.len(), 80 + 4 + 2 * 50);
+        assert_eq!(u32::from_le_bytes(bytes[80..84].try_into().unwrap()), 2);
     }
 
     #[test]

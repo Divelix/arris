@@ -42,9 +42,10 @@ fn assert_stl_matches_the_oracle(m: &Model, body: Body, name: &str) {
     let mesh = tessellate(m, body, tolerances.mesh_chord).unwrap();
     let mass = measure::mass_properties(m, body).unwrap();
 
+    let one = std::slice::from_ref(&mesh);
     for (variant, bytes) in [
-        ("ascii", stl::write_ascii(&mesh, name).unwrap().into_bytes()),
-        ("binary", stl::write_binary(&mesh, name).unwrap()),
+        ("ascii", stl::write_ascii(one, name).unwrap().into_bytes()),
+        ("binary", stl::write_binary(one, name).unwrap()),
     ] {
         let reading = compare_stl(&bytes, &format!("{name}-{variant}")).unwrap();
         assert_eq!(
@@ -99,12 +100,13 @@ fn two_writes_are_byte_identical() {
     let mut m = Model::default();
     let body = sample::cylinder(&mut m, 4.0, 12.0).unwrap();
     let mesh = tessellate(&m, body, 1e-2).unwrap();
+    let one = std::slice::from_ref(&mesh);
     assert_eq!(
-        stl::write_ascii(&mesh, "cylinder").unwrap(),
-        stl::write_ascii(&mesh, "cylinder").unwrap()
+        stl::write_ascii(one, "cylinder").unwrap(),
+        stl::write_ascii(one, "cylinder").unwrap()
     );
     assert_eq!(
-        stl::write_binary(&mesh, "cylinder").unwrap(),
-        stl::write_binary(&mesh, "cylinder").unwrap()
+        stl::write_binary(one, "cylinder").unwrap(),
+        stl::write_binary(one, "cylinder").unwrap()
     );
 }
