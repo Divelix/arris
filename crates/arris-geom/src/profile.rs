@@ -1,10 +1,11 @@
 //! Profiles: a consumer's sketch as a value — a plane and closed loops of
-//! lines and arcs in the plane's own (u, v) — validated once and turned
-//! into oriented edges carrying exact pcurves
-//! (`docs/DATA-MODEL.md` §Profiles).
+//! lines, arcs and elliptic arcs in the plane's own (u, v) — validated
+//! once and turned into oriented edges carrying exact pcurves
+//! (`docs/DATA-MODEL.md` §Profiles, ADR-0014).
 //!
 //! A profile is written the way it is drawn: an outer loop and holes, each
-//! a chain of segments or a full circle, in any orientation. What comes
+//! a chain of segments, a full circle or a full ellipse, in any
+//! orientation. What comes
 //! back from [`Profile::edges`] is the same loops oriented — the outer
 //! counter-clockwise about the plane's normal and every hole clockwise —
 //! with the consumer's own loop and segment indices still on every edge,
@@ -16,6 +17,7 @@ use arris_math::{
 };
 
 use crate::integrate::region_integral;
+use crate::project::{ellipse_distance, ellipse_nearest};
 use crate::region2::{Piece, Polygon2};
 use crate::{Curve, Curve2, GeomError, Surface, pcurve_on};
 
@@ -37,8 +39,9 @@ pub struct Profile {
     pub holes: Vec<ProfileLoop>,
 }
 
-/// One closed loop of a [`Profile`]: a full circle, or a chain of
-/// segments returning to where it started. Written in either orientation.
+/// One closed loop of a [`Profile`]: a full circle, a full ellipse, or a
+/// chain of segments returning to where it started. Written in either
+/// orientation.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ProfileLoop {
     /// A full circle in the profile's plane.
@@ -47,6 +50,19 @@ pub enum ProfileLoop {
         center: Point2,
         /// Its radius.
         radius: f64,
+    },
+    /// A full ellipse in the profile's plane (ADR-0014). A `minor_radius`
+    /// longer than `major` names the same point set, and the edge's axes
+    /// are swapped so `a ≥ b`; radii that agree within the linear
+    /// tolerance make a circle edge of their mean radius.
+    Ellipse {
+        /// Its centre in (u, v).
+        center: Point2,
+        /// From the centre to one end of the major axis: its length is the
+        /// major radius and its direction the axis.
+        major: Vec2,
+        /// The minor radius.
+        minor_radius: f64,
     },
     /// A chain of segments: the first starts at `start` and the last ends
     /// there.
@@ -72,6 +88,25 @@ pub enum ProfileSegment {
         /// centre, radius and which way round it goes.
         via: Point2,
     },
+    /// An arc of the ellipse of `center`, `major` and `minor_radius` to
+    /// `to`, turning counter-clockwise in (u, v) when `ccw` and clockwise
+    /// otherwise (ADR-0014). The ellipse's centre and axes are given, so
+    /// no `via` is needed: only the turn is left, and the flag states it.
+    /// Both ends must lie on the ellipse within the linear tolerance; the
+    /// normalisation of [`ProfileLoop::Ellipse`] applies.
+    EllipseTo {
+        /// Where the arc ends.
+        to: Point2,
+        /// The ellipse's centre in (u, v).
+        center: Point2,
+        /// From the centre to one end of the major axis.
+        major: Vec2,
+        /// The minor radius.
+        minor_radius: f64,
+        /// Counter-clockwise from the previous end to `to`, about the
+        /// plane's normal.
+        ccw: bool,
+    },
 }
 
 impl ProfileSegment {
@@ -79,17 +114,38 @@ impl ProfileSegment {
     pub fn end(&self) -> Point2 {
         match self {
             ProfileSegment::LineTo(p) => *p,
-            ProfileSegment::ArcTo { to, .. } => *to,
+            ProfileSegment::ArcTo { to, .. } | ProfileSegment::EllipseTo { to, .. } => *to,
         }
     }
 
-    /// The arc's `via` point, or `None` for a straight segment.
+    /// The arc's `via` point, or `None` for a straight or an elliptic
+    /// segment, which has none.
     pub fn via(&self) -> Option<Point2> {
         match self {
-            ProfileSegment::LineTo(_) => None,
+            ProfileSegment::LineTo(_) | ProfileSegment::EllipseTo { .. } => None,
             ProfileSegment::ArcTo { via, .. } => Some(*via),
         }
     }
+}
+
+/// An ellipse's axes normalised for an edge: `(X, Y, a, b)` with `X` the
+/// unit major axis, `Y` its quarter turn in (u, v), and `a ≥ b`; a
+/// `minor_radius` longer than `major` swaps the axes and turns the frame
+/// a quarter turn. `None` when either radius is not finite or is within
+/// `tol.linear` of zero.
+fn ellipse_axes(major: Vec2, minor_radius: f64, tol: Tolerance) -> Option<(Vec2, Vec2, f64, f64)> {
+    let a = major.norm();
+    if !(a.is_finite() && minor_radius.is_finite()) || a <= tol.linear || minor_radius <= tol.linear
+    {
+        return None;
+    }
+    let ex = major / a;
+    let ey = Vec2::new(-ex.y, ex.x);
+    Some(if minor_radius > a {
+        (ey, -ex, minor_radius, a)
+    } else {
+        (ex, ey, a, minor_radius)
+    })
 }
 
 /// One oriented edge of a validated profile: the 3D curve of one segment,
@@ -98,17 +154,23 @@ impl ProfileSegment {
 ///
 /// The curve runs along the walk: `curve.point(range.lo())` is [`start`]
 /// and `curve.point(range.hi())` is [`end`], whichever way the loop had to
-/// be turned. A circular edge's frame carries that direction in its `Z`,
+/// be turned — to rounding for a line or an arc, and within the linear
+/// tolerance for an elliptic arc, whose ends are the ellipse's nearest
+/// points to the consumer's. A circular or elliptic edge's frame carries
+/// that direction in its `Z`,
 /// which is the plane's normal for a counter-clockwise arc and its
 /// opposite for a clockwise one, so the parameter always runs from the
-/// segment's start through its `via`.
+/// segment's start through its `via`, or along its stated turn.
 ///
 /// [`start`]: ProfileEdge::start
 /// [`end`]: ProfileEdge::end
 #[derive(Debug, Clone, PartialEq)]
 pub struct ProfileEdge {
     /// The 3D curve: a [`Curve::Line`] for a straight segment, a
-    /// [`Curve::Circle`] for an arc or a circle loop.
+    /// [`Curve::Circle`] for an arc or a circle loop, a [`Curve::Ellipse`]
+    /// with `X` along the major axis for an elliptic arc or an ellipse
+    /// loop — or a [`Curve::Circle`] for one whose radii agree within the
+    /// tolerance.
     pub curve: Curve,
     /// The parameter range walked, along the parameter.
     pub range: Interval,
@@ -171,6 +233,26 @@ pub enum ProfileError {
         loop_index: usize,
         /// The segment.
         segment: usize,
+    },
+    /// An ellipse's major or minor radius is not finite or is within the
+    /// linear tolerance of zero, so it names no ellipse.
+    #[error("loop {loop_index}, segment {segment}: the ellipse has a degenerate radius")]
+    DegenerateEllipse {
+        /// The loop.
+        loop_index: usize,
+        /// The segment; `0` for an ellipse loop.
+        segment: usize,
+    },
+    /// An elliptic segment's start or end is farther than the linear
+    /// tolerance from its ellipse.
+    #[error("loop {loop_index}, segment {segment}: an end is {distance} off its ellipse")]
+    OffEllipse {
+        /// The loop.
+        loop_index: usize,
+        /// The segment.
+        segment: usize,
+        /// How far the end is from the ellipse.
+        distance: f64,
     },
     /// A loop encloses no area: its mean width — twice its area over its
     /// perimeter, which is the width of a long thin rectangle and the
@@ -254,8 +336,10 @@ impl Profile {
     /// What is checked, in this order — every loop before the next check,
     /// so the error reported is always the first fault in loop order:
     /// a path loop closes within `tol.linear` and has at least two
-    /// segments, no segment is shorter than `tol.linear` and no arc's
-    /// `via` is on its chord; each loop, discretised at `region2`'s
+    /// segments, no segment is shorter than `tol.linear`, no arc's
+    /// `via` is on its chord, every ellipse has radii above `tol.linear`
+    /// and every elliptic segment's ends are within `tol.linear` of its
+    /// ellipse; each loop, discretised at `region2`'s
     /// minimum segment counts, has a mean width above `tol.linear` and
     /// does not meet itself; no two loops meet; every hole is inside the
     /// outer loop and outside every other hole, by winding number. The
@@ -425,6 +509,53 @@ impl Profile {
                     reversed,
                 }])
             }
+            &ProfileLoop::Ellipse {
+                center,
+                major,
+                minor_radius,
+            } => {
+                let degenerate = || ProfileError::DegenerateEllipse {
+                    loop_index,
+                    segment: 0,
+                };
+                if !center.coords.iter().all(|c| c.is_finite()) {
+                    return Err(degenerate());
+                }
+                let (ex, _, a, b) =
+                    ellipse_axes(major, minor_radius, tol).ok_or_else(degenerate)?;
+                let normal = self.plane.z().into_inner();
+                let z = if reversed { -normal } else { normal };
+                let x = self.plane.vec_to_world(Vec3::new(ex.x, ex.y, 0.0));
+                let frame = Frame::new(self.to_world(center), z, x).map_err(|_| degenerate())?;
+                // Where the oracle's `gp_Elips` puts the seam: `t = 0`,
+                // at the end of the (normalised) major axis.
+                let (curve, reach) = if a - b <= tol.linear {
+                    let radius = 0.5 * (a + b);
+                    (Curve::Circle { frame, radius }, radius)
+                } else {
+                    (
+                        Curve::Ellipse {
+                            frame,
+                            major_radius: a,
+                            minor_radius: b,
+                        },
+                        a,
+                    )
+                };
+                let range = Interval::TURN;
+                let pcurve = pcurve_on(&curve, range, surface, tol)?;
+                let vertex = center + reach * ex;
+                Ok(vec![ProfileEdge {
+                    curve,
+                    range,
+                    pcurve,
+                    start: vertex,
+                    end: vertex,
+                    loop_index,
+                    segment: 0,
+                    reversed,
+                }])
+            }
             ProfileLoop::Path { start, segments } => {
                 let n = segments.len();
                 if n < 2 {
@@ -455,7 +586,7 @@ impl Profile {
                         reversed,
                         from,
                         to,
-                        segments[k].via(),
+                        &segments[k],
                     )?);
                 }
                 Ok(edges)
@@ -463,7 +594,37 @@ impl Profile {
         }
     }
 
-    /// One segment's edge, walked from `from` to `to`.
+    /// The circular arc from `from` to `to` about `centre`, of `radius`,
+    /// turning counter-clockwise in (u, v) or not: the frame's `X` is the
+    /// start's direction from the centre and its `Z` the plane's normal
+    /// or its opposite, so the parameter runs from `0` through a positive
+    /// sweep. `None` when the sweep is not positive.
+    fn arc_about(
+        &self,
+        centre: Point2,
+        radius: f64,
+        from: Point2,
+        to: Point2,
+        counter_clockwise: bool,
+    ) -> Option<(Curve, Interval)> {
+        let (vs, ve) = (from - centre, to - centre);
+        let sense = if counter_clockwise { 1.0 } else { -1.0 };
+        let sweep = wrap_angle(sense * (vs.x * ve.y - vs.y * ve.x).atan2(vs.dot(&ve)));
+        if sweep.is_nan() || sweep <= 0.0 {
+            return None;
+        }
+        let normal = self.plane.z().into_inner();
+        let z = if counter_clockwise { normal } else { -normal };
+        let x = self.plane.vec_to_world(Vec3::new(vs.x, vs.y, 0.0));
+        let frame = Frame::new(self.to_world(centre), z, x).ok()?;
+        Some((
+            Curve::Circle { frame, radius },
+            Interval::new(0.0, sweep).ok()?,
+        ))
+    }
+
+    /// One segment's edge, walked from `from` to `to`; `reversed` says
+    /// the walk runs the consumer's segment backwards.
     #[expect(
         clippy::too_many_arguments,
         reason = "the segment's place in the sketch is four of them"
@@ -477,7 +638,7 @@ impl Profile {
         reversed: bool,
         from: Point2,
         to: Point2,
-        via: Option<Point2>,
+        shape: &ProfileSegment,
     ) -> Result<ProfileEdge, ProfileError> {
         let short = || ProfileError::ShortSegment {
             loop_index,
@@ -488,8 +649,8 @@ impl Profile {
         if length.is_nan() || length <= tol.linear {
             return Err(short());
         }
-        let (curve, range) = match via {
-            None => {
+        let (curve, range) = match *shape {
+            ProfileSegment::LineTo(_) => {
                 let d = self.plane.vec_to_world(Vec3::new(chord.x, chord.y, 0.0));
                 let direction = UnitVec3::try_new(d, 0.0).ok_or_else(short)?;
                 let curve = Curve::Line {
@@ -498,7 +659,7 @@ impl Profile {
                 };
                 (curve, Interval::new(0.0, length).map_err(|_| short())?)
             }
-            Some(via) => {
+            ProfileSegment::ArcTo { via, .. } => {
                 let degenerate = || ProfileError::DegenerateArc {
                     loop_index,
                     segment,
@@ -515,26 +676,86 @@ impl Profile {
                 let d = 2.0 * turn;
                 let centre =
                     from + Vec2::new((bb * chord.y - cc * b.y) / d, (cc * b.x - bb * chord.x) / d);
-                let (vs, ve) = (from - centre, to - centre);
-                let radius = vs.norm();
+                let radius = (from - centre).norm();
                 if !radius.is_finite() || radius <= 0.0 {
                     return Err(degenerate());
                 }
                 // `turn > 0` is `from → via → to` counter-clockwise in
-                // (u, v), so the arc runs about the plane's normal; the
-                // frame's `Z` carries that and the sweep is positive.
-                let counter_clockwise = turn > 0.0;
-                let sense = if counter_clockwise { 1.0 } else { -1.0 };
-                let sweep = wrap_angle(sense * (vs.x * ve.y - vs.y * ve.x).atan2(vs.dot(&ve)));
-                if sweep.is_nan() || sweep <= 0.0 {
+                // (u, v), so the arc runs about the plane's normal.
+                self.arc_about(centre, radius, from, to, turn > 0.0)
+                    .ok_or_else(degenerate)?
+            }
+            ProfileSegment::EllipseTo {
+                center,
+                major,
+                minor_radius,
+                ccw,
+                ..
+            } => {
+                let degenerate = || ProfileError::DegenerateEllipse {
+                    loop_index,
+                    segment,
+                };
+                if !center.coords.iter().all(|c| c.is_finite()) {
                     return Err(degenerate());
                 }
-                let normal = self.plane.z().into_inner();
-                let z = if counter_clockwise { normal } else { -normal };
-                let x = self.plane.vec_to_world(Vec3::new(vs.x, vs.y, 0.0));
-                let frame = Frame::new(self.to_world(centre), z, x).map_err(|_| degenerate())?;
-                let curve = Curve::Circle { frame, radius };
-                (curve, Interval::new(0.0, sweep).map_err(|_| degenerate())?)
+                let (ex, ey, a, b) =
+                    ellipse_axes(major, minor_radius, tol).ok_or_else(degenerate)?;
+                // Walked backwards, the consumer's turn is the other way.
+                let ccw = ccw != reversed;
+                // Each end's parameter on the ellipse and distance from
+                // it, in the ellipse's own axes.
+                let mut ends = [0.0; 2];
+                for (p, t) in [from, to].into_iter().zip(&mut ends) {
+                    let d = p - center;
+                    let (lx, ly) = (d.dot(&ex), d.dot(&ey));
+                    let noise = p.coords.norm() + center.coords.norm();
+                    // An end with no unique nearest point is deep inside
+                    // the ellipse and refused by the distance's bound.
+                    let (nearest, distance) = match ellipse_nearest(a, b, lx, ly, noise) {
+                        Ok(found) => found,
+                        Err(_) => (
+                            (ly / b).atan2(lx / a),
+                            ellipse_distance(a, b, lx, ly, noise),
+                        ),
+                    };
+                    if distance.is_nan() || distance > tol.linear {
+                        return Err(ProfileError::OffEllipse {
+                            loop_index,
+                            segment,
+                            distance,
+                        });
+                    }
+                    *t = nearest;
+                }
+                if a - b <= tol.linear {
+                    // A near-circular section is a circle, through the
+                    // same ends (ADR-0014).
+                    self.arc_about(center, 0.5 * (a + b), from, to, ccw)
+                        .ok_or_else(short)?
+                } else {
+                    // The frame's `Z` is the normal for a counter-clockwise
+                    // turn; against it, `Y` is `−ey` and the parameter
+                    // runs the other way.
+                    let normal = self.plane.z().into_inner();
+                    let (z, sense) = if ccw { (normal, 1.0) } else { (-normal, -1.0) };
+                    let lo = wrap_angle(sense * ends[0]);
+                    let sweep = wrap_angle(sense * (ends[1] - ends[0]));
+                    if sweep.is_nan() || sweep <= 0.0 {
+                        return Err(short());
+                    }
+                    let x = self.plane.vec_to_world(Vec3::new(ex.x, ex.y, 0.0));
+                    let frame =
+                        Frame::new(self.to_world(center), z, x).map_err(|_| degenerate())?;
+                    (
+                        Curve::Ellipse {
+                            frame,
+                            major_radius: a,
+                            minor_radius: b,
+                        },
+                        Interval::new(lo, lo + sweep).map_err(|_| short())?,
+                    )
+                }
             }
         };
         let pcurve = pcurve_on(&curve, range, surface, tol)?;

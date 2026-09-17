@@ -1,0 +1,108 @@
+{
+  "occt": "8.0.1.0.0",
+  "recipe_sha256": "0a84c19d8d51cc0199fa8e1ae5f1b9809d2cce241e76dc6482b2c5a23a17c35b",
+  "results": {
+    "default": {
+      "area": 403.7507821456629,
+      "centroid": [
+        1.0000000000000007,
+        2.000000000000001,
+        5.000000000000001
+      ],
+      "counts": {
+        "edges": 3,
+        "faces": 3,
+        "loops": 3,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 2
+      },
+      "degenerate": false,
+      "euler_characteristic": 2,
+      "genus": 0,
+      "inertia": [
+        [
+          7358.86663176868,
+          -1832.1768355735578,
+          9.094947017729282e-13
+        ],
+        [
+          -1832.1768355735578,
+          8427.636452519988,
+          2.7284841053187847e-12
+        ],
+        [
+          9.094947017729282e-13,
+          2.7284841053187847e-12,
+          6361.725123519296
+        ]
+      ],
+      "probes": [
+        {
+          "class": "in",
+          "label": "inside",
+          "point": [
+            1.0,
+            2.0,
+            5.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "outside",
+          "point": [
+            1.0,
+            8.0,
+            5.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_side",
+          "point": [
+            -0.8,
+            4.4,
+            5.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_cap",
+          "point": [
+            1.0,
+            2.0,
+            10.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_cap_edge",
+          "point": [
+            -0.8,
+            4.4,
+            10.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_seam",
+          "point": [
+            5.8,
+            5.6,
+            4.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "beyond_minor",
+          "point": [
+            -1.0,
+            4.6,
+            5.0
+          ]
+        }
+      ],
+      "volume": 565.486677646163
+    }
+  }
+}

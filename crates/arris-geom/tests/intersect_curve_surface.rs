@@ -39,6 +39,16 @@ fn signed_distance(s: &Surface, p: Point3) -> f64 {
     match *s {
         Surface::Plane { .. } => q.z,
         Surface::Cylinder { radius, .. } => rho - radius,
+        Surface::EllipticCylinder {
+            major_radius: a,
+            minor_radius: b,
+            ..
+        } => {
+            // Exact through the projection, signed by the implicit form;
+            // a point the projection finds ambiguous is deep inside.
+            let sign = ((q.x / a).powi(2) + (q.y / b).powi(2) - 1.0).signum();
+            sign * s.project(p).map_or(f64::INFINITY, |pr| pr.distance)
+        }
         Surface::Cone {
             radius, half_angle, ..
         } => {

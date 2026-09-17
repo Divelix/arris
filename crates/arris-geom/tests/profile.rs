@@ -106,6 +106,214 @@ fn a_sketch_comes_back_oriented_with_its_indices_intact() {
     });
 }
 
+/// The elliptic grammar (ADR-0014): a full ellipse and elliptic arcs
+/// come back as exact `Curve::Ellipse` edges with `a ≥ b` whichever
+/// radius the consumer called major, the area is `π a b`, an arc's ends
+/// are the ellipse's nearest points and its turn is the flag's — flipped
+/// when the loop is turned round — radii that agree to the tolerance
+/// make a circle edge, and every fault names its segment.
+#[test]
+fn ellipses_come_back_exact_with_their_axes_normalised() {
+    let plane = Frame::new(
+        Point3::new(1.0, 2.0, 3.0),
+        Point3::new(1.0, 1.0, 1.0).coords,
+        Point3::new(1.0, -1.0, 0.0).coords,
+    )
+    .unwrap();
+    let major = arris_math::Vec2::new(4.8, 3.6);
+    // Written with the longer radius as the minor one: the axes swap.
+    let swapped = Profile {
+        plane,
+        outer: ProfileLoop::Ellipse {
+            center: p(1.0, 2.0),
+            major: arris_math::Vec2::new(2.4, 1.8),
+            minor_radius: 6.0,
+        },
+        holes: Vec::new(),
+    };
+    let loops = swapped.edges(tol()).unwrap();
+    let e = &loops[0][0];
+    let arris_geom::Curve::Ellipse {
+        frame,
+        major_radius,
+        minor_radius,
+    } = &e.curve
+    else {
+        panic!("{:?}", e.curve)
+    };
+    assert_eq!((*major_radius, *minor_radius), (6.0, 3.0));
+    // The major axis is the written minor one, a quarter turn on.
+    let x = plane.vec_to_local(frame.x().into_inner());
+    assert!(
+        (Point2::new(x.x, x.y) - p(-0.6, 0.8)).norm() <= EXACT,
+        "{x}"
+    );
+    assert!(
+        (e.start - p(1.0 - 3.6, 2.0 + 4.8)).norm() <= EXACT,
+        "{}",
+        e.start
+    );
+    let (area, centroid) = swapped.area_and_centroid(tol()).unwrap();
+    assert!((area - PI * 18.0).abs() <= EXACT, "{area}");
+    assert!((centroid - p(1.0, 2.0)).norm() <= EXACT);
+    // As a hole it is turned round and its `Z` opposes the normal.
+    let holed = Profile {
+        plane,
+        outer: ProfileLoop::Path {
+            start: p(-20.0, -20.0),
+            segments: vec![
+                ProfileSegment::LineTo(p(20.0, -20.0)),
+                ProfileSegment::LineTo(p(20.0, 20.0)),
+                ProfileSegment::LineTo(p(-20.0, 20.0)),
+                ProfileSegment::LineTo(p(-20.0, -20.0)),
+            ],
+        },
+        holes: vec![ProfileLoop::Ellipse {
+            center: p(1.0, 2.0),
+            major,
+            minor_radius: 3.0,
+        }],
+    };
+    let loops = holed.edges(tol()).unwrap();
+    assert!(loops[1][0].reversed);
+    let arris_geom::Curve::Ellipse { frame, .. } = &loops[1][0].curve else {
+        panic!()
+    };
+    assert!(frame.z().dot(&plane.z()) < 0.0);
+    let (area, _) = holed.area_and_centroid(tol()).unwrap();
+    assert!((area - (1600.0 - PI * 18.0)).abs() <= EXACT, "{area}");
+
+    // A slot of two half-ellipses: each arc's ends are its minor
+    // vertices, its range a half turn, and the walk keeps its turn.
+    let slot = |ccw: bool| Profile {
+        plane,
+        outer: ProfileLoop::Path {
+            start: p(-10.0, -3.0),
+            segments: vec![
+                ProfileSegment::LineTo(p(10.0, -3.0)),
+                ProfileSegment::EllipseTo {
+                    to: p(10.0, 3.0),
+                    center: p(10.0, 0.0),
+                    major: arris_math::Vec2::new(5.0, 0.0),
+                    minor_radius: 3.0,
+                    ccw,
+                },
+                ProfileSegment::LineTo(p(-10.0, 3.0)),
+                ProfileSegment::EllipseTo {
+                    to: p(-10.0, -3.0),
+                    center: p(-10.0, 0.0),
+                    major: arris_math::Vec2::new(5.0, 0.0),
+                    minor_radius: 3.0,
+                    ccw,
+                },
+            ],
+        },
+        holes: Vec::new(),
+    };
+    let loops = slot(true).edges(tol()).unwrap();
+    let arc = loops[0].iter().find(|e| e.segment == 1).unwrap();
+    assert!(!arc.reversed);
+    assert!((arc.range.length() - PI).abs() <= EXACT, "{:?}", arc.range);
+    let mid = arc.curve.point(arc.range.midpoint());
+    assert!(
+        (mid - slot(true).to_world(p(15.0, 0.0))).norm() <= EXACT,
+        "{mid}"
+    );
+    let (area, _) = slot(true).area_and_centroid(tol()).unwrap();
+    assert!((area - (120.0 + 15.0 * PI)).abs() <= EXACT, "{area}");
+    // The arcs turned the other way bulge inward: a concave slot, still
+    // counter-clockwise as written, with the area of the rectangle less
+    // the two half-ellipses.
+    let loops = slot(false).edges(tol()).unwrap();
+    let arc = loops[0].iter().find(|e| e.segment == 1).unwrap();
+    let mid = arc.curve.point(arc.range.midpoint());
+    assert!(
+        (mid - slot(false).to_world(p(5.0, 0.0))).norm() <= EXACT,
+        "{mid}"
+    );
+    let (area, _) = slot(false).area_and_centroid(tol()).unwrap();
+    assert!((area - (120.0 - 15.0 * PI)).abs() <= EXACT, "{area}");
+
+    // Radii within the tolerance of each other: a circle edge.
+    let round = Profile {
+        plane,
+        outer: ProfileLoop::Ellipse {
+            center: p(0.0, 0.0),
+            major: arris_math::Vec2::new(2.0, 0.0),
+            minor_radius: 2.0 + 1e-8,
+        },
+        holes: Vec::new(),
+    };
+    let loops = round.edges(tol()).unwrap();
+    assert!(matches!(
+        loops[0][0].curve,
+        arris_geom::Curve::Circle { .. }
+    ));
+
+    // Faults name the segment.
+    let bad = |segment: ProfileSegment| Profile {
+        plane,
+        outer: ProfileLoop::Path {
+            start: p(0.0, 0.0),
+            segments: vec![ProfileSegment::LineTo(p(10.0, 0.0)), segment],
+        },
+        holes: Vec::new(),
+    };
+    let off = bad(ProfileSegment::EllipseTo {
+        to: p(0.0, 0.0),
+        center: p(5.0, 0.0),
+        major: arris_math::Vec2::new(5.0, 0.0),
+        minor_radius: 2.0,
+        ccw: true,
+    });
+    assert!(off.edges(tol()).is_ok());
+    let off = bad(ProfileSegment::EllipseTo {
+        to: p(0.0, 0.0),
+        center: p(5.0, 1.0),
+        major: arris_math::Vec2::new(5.0, 0.0),
+        minor_radius: 2.0,
+        ccw: true,
+    });
+    assert!(matches!(
+        off.edges(tol()),
+        Err(arris_geom::ProfileError::OffEllipse {
+            loop_index: 0,
+            segment: 1,
+            ..
+        })
+    ));
+    let flat = bad(ProfileSegment::EllipseTo {
+        to: p(0.0, 0.0),
+        center: p(5.0, 0.0),
+        major: arris_math::Vec2::new(5.0, 0.0),
+        minor_radius: 0.0,
+        ccw: true,
+    });
+    assert!(matches!(
+        flat.edges(tol()),
+        Err(arris_geom::ProfileError::DegenerateEllipse {
+            loop_index: 0,
+            segment: 1
+        })
+    ));
+    let flat_loop = Profile {
+        plane,
+        outer: ProfileLoop::Ellipse {
+            center: p(0.0, 0.0),
+            major: arris_math::Vec2::new(0.0, 0.0),
+            minor_radius: 2.0,
+        },
+        holes: Vec::new(),
+    };
+    assert!(matches!(
+        flat_loop.edges(tol()),
+        Err(arris_geom::ProfileError::DegenerateEllipse {
+            loop_index: 0,
+            segment: 0
+        })
+    ));
+}
+
 #[test]
 fn the_closed_forms_of_four_regions_are_the_integrals_over_them() {
     let plane = Frame::new(

@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 
 use arris_geom::profile::{Profile, ProfileLoop, ProfileSegment};
 use arris_geom::{Curve, Surface};
-use arris_math::{Frame, FrameError, Point2, Point3, Precision, UnitVec3, Vec3};
+use arris_math::{Frame, FrameError, Point2, Point3, Precision, UnitVec3, Vec2, Vec3};
 use serde::{Deserialize, Serialize};
 
 use super::{ExprError, FixtureError, Loop, Num, Plane, Segment, read_json, recipe_hash};
@@ -263,6 +263,11 @@ fn build_loop(
             center: point2(name, &circle.center, params)?,
             radius: num(name, &circle.radius, params)?,
         },
+        Loop::Ellipse { ellipse } => ProfileLoop::Ellipse {
+            center: point2(name, &ellipse.center, params)?,
+            major: point2(name, &ellipse.major, params)?.coords,
+            minor_radius: num(name, &ellipse.minor_radius, params)?,
+        },
         Loop::Path { start, segments } => ProfileLoop::Path {
             start: point2(name, start, params)?,
             segments: segments
@@ -275,6 +280,19 @@ fn build_loop(
                         Segment::Arc { arc_to, via } => ProfileSegment::ArcTo {
                             to: point2(name, arc_to, params)?,
                             via: point2(name, via, params)?,
+                        },
+                        Segment::Ellipse {
+                            ellipse_to,
+                            center,
+                            major,
+                            minor_radius,
+                            ccw,
+                        } => ProfileSegment::EllipseTo {
+                            to: point2(name, ellipse_to, params)?,
+                            center: point2(name, center, params)?,
+                            major: Vec2::from(point2(name, major, params)?.coords),
+                            minor_radius: num(name, minor_radius, params)?,
+                            ccw: *ccw,
                         },
                     })
                 })

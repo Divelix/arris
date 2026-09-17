@@ -6,7 +6,7 @@
 //! supplies `f` — `|∂P/∂u × ∂P/∂v|` for an area, `P · (∂P/∂u × ∂P/∂v) / 3`
 //! for a volume — over the surface's own parametrisation.
 
-use core::f64::consts::{FRAC_PI_2, PI};
+use core::f64::consts::{FRAC_PI_2, FRAC_PI_8, PI};
 
 use crate::Surface;
 use crate::region2::Piece;
@@ -39,7 +39,14 @@ pub const MAX_INNER_INTERVALS: usize = 256;
 /// is affine in (u, v) and every integrand this module is used with is a
 /// low-degree polynomial along it, which the quadrature is exact for, so
 /// it asks for no split at all; a NURBS surface asks for its smallest
-/// knot span in `u`, the scale on which its polynomial pieces change.
+/// knot span in `u`, the scale on which its polynomial pieces change. An
+/// elliptic cylinder asks for a sixteenth of a turn: its area element
+/// `√(a² sin²u + b² cos²u)` is no trigonometric polynomial, and has
+/// complex singularities `atanh(b / a)` off the real axis at `u = 0` and
+/// `π`, which the quadrature resolves only when they sit at an interval's
+/// end (the grid [`region_integral`] aligns to) and the interval is short
+/// against that distance — at an aspect of eighteen, a quarter turn
+/// leaves `1e-7` of the area, a sixteenth `1e-11`.
 ///
 /// ```
 /// use arris_geom::Surface;
@@ -58,6 +65,7 @@ pub fn inner_step(surface: &Surface) -> f64 {
         | Surface::Cone { .. }
         | Surface::Sphere { .. }
         | Surface::Torus { .. } => FRAC_PI_2,
+        Surface::EllipticCylinder { .. } => FRAC_PI_8,
         Surface::Nurbs(s) => s.knots()[0]
             .windows(2)
             .map(|w| w[1] - w[0])
@@ -174,13 +182,16 @@ fn breaks_of(piece: &Piece<'_>) -> Vec<f64> {
 /// at its quarter turns or knots. `f` is evaluated across the strip
 /// between the region's least `u` and each boundary point, so it must be
 /// defined over the region's bounding box in `u`. The inner integral is
-/// itself split into equal sub-intervals no longer than `inner_step`, at
-/// most [`MAX_INNER_INTERVALS`] of them: `f64::INFINITY` takes it in one,
-/// which is exact for an `f` polynomial in `u` of degree below
-/// `2 · GAUSS_ORDER`, and [`inner_step`] of the surface `f` evaluates is
-/// what a caller integrating over a periodic surface passes, since a
-/// strip that spans a whole turn of `cos u` is not one interval's work.
-/// An empty `pieces` is zero.
+/// itself split at every whole multiple of `inner_step` it crosses — the
+/// grid the surface's own turns and quarter turns lie on, so an
+/// integrand's feature there is an interval's end and never its middle
+/// — at most [`MAX_INNER_INTERVALS`] intervals, beyond which it falls
+/// back to that many equal ones: `f64::INFINITY` takes it in one, which
+/// is exact for an `f` polynomial in `u` of degree below `2 ·
+/// GAUSS_ORDER`, and [`inner_step`] of the surface `f` evaluates is what
+/// a caller integrating over a periodic surface passes, since a strip
+/// that spans a whole turn of `cos u` is not one interval's work. An
+/// empty `pieces` is zero.
 ///
 /// ```
 /// use arris_geom::integrate::region_integral;
@@ -214,14 +225,36 @@ pub fn region_integral(pieces: &[Piece<'_>], inner_step: f64, f: impl Fn(f64, f6
         return 0.0;
     }
     let inner = |u: f64, v: f64| {
-        let n = intervals(u - u0, inner_step);
-        let step = (u - u0) / n as f64;
-        (0..n)
-            .map(|i| {
-                let a = u0 + i as f64 * step;
-                gauss(a, a + step, &table, |s| f(s, v))
-            })
-            .sum::<f64>()
+        let g = |s: f64| f(s, v);
+        let (lo, hi) = (u0.min(u), u0.max(u));
+        let sign = if u >= u0 { 1.0 } else { -1.0 };
+        // The grid multiples strictly inside `(lo, hi)`.
+        let (first, last) = (
+            (lo / inner_step).floor() + 1.0,
+            (hi / inner_step).ceil() - 1.0,
+        );
+        let count = last - first + 1.0;
+        if !(count.is_finite() && count >= 1.0) || count + 1.0 > MAX_INNER_INTERVALS as f64 {
+            let n = intervals(hi - lo, inner_step);
+            let step = (hi - lo) / n as f64;
+            return sign
+                * (0..n)
+                    .map(|i| {
+                        let a = lo + i as f64 * step;
+                        gauss(a, a + step, &table, g)
+                    })
+                    .sum::<f64>();
+        }
+        let mut total = 0.0;
+        let mut from = lo;
+        let mut k = first;
+        while k <= last {
+            let at = k * inner_step;
+            total += gauss(from, at, &table, g);
+            from = at;
+            k += 1.0;
+        }
+        sign * (total + gauss(from, hi, &table, g))
     };
     let mut total = 0.0;
     for piece in pieces {
@@ -240,7 +273,7 @@ mod tests {
     use super::*;
     use crate::Curve2;
     use arris_math::{Frame2, Interval, Point2, UnitVec2, Vec2};
-    use core::f64::consts::TAU;
+    use core::f64::consts::{FRAC_PI_8, TAU};
 
     #[test]
     fn nodes_are_symmetric_and_weights_sum_to_two() {
@@ -325,6 +358,53 @@ mod tests {
         let fine = region_integral(&pieces, FRAC_PI_2, f);
         assert!((coarse - exact).abs() > 1e-12, "{coarse}");
         assert!((fine - exact).abs() < 1e-14, "{fine}");
+    }
+
+    #[test]
+    fn the_inner_split_is_aligned_to_the_grid_and_resolves_an_ellipses_area_element() {
+        // The area element of an elliptic cylinder of aspect eighteen over
+        // `[0, 2π] × [0, 1]`: the perimeter of the ellipse, against a fine
+        // composite Simpson reference. Aligned sixteenth turns hold it to
+        // `1e-11`; a whole turn's worth of equal intervals one longer than
+        // the grid — what a span a rounding past `2π` used to get — does
+        // not.
+        let (a, b) = (9.0, 0.5);
+        let g = |u: f64| (a * a * u.sin().powi(2) + b * b * u.cos().powi(2)).sqrt();
+        let n = 400_000;
+        let h = TAU / n as f64;
+        let reference = (1..n)
+            .map(|i| if i % 2 == 1 { 4.0 } else { 2.0 } * g(i as f64 * h))
+            .sum::<f64>()
+            + g(0.0)
+            + g(TAU);
+        let reference = reference * h / 3.0;
+        let line = |ox: f64, oy: f64, dx: f64, dy: f64| Curve2::Line {
+            origin: Point2::new(ox, oy),
+            direction: UnitVec2::new_normalize(Vec2::new(dx, dy)),
+        };
+        // The strip's far side a rounding past the turn.
+        let w = TAU + 4.0 * f64::EPSILON;
+        let sides = [
+            line(0.0, 0.0, 1.0, 0.0),
+            line(w, 0.0, 0.0, 1.0),
+            line(w, 1.0, -1.0, 0.0),
+            line(0.0, 1.0, 0.0, -1.0),
+        ];
+        let ranges = [w, 1.0, w, 1.0].map(|l| Interval::new(0.0, l).unwrap());
+        let pieces: Vec<Piece<'_>> = sides
+            .iter()
+            .zip(ranges)
+            .map(|(c, r)| Piece::along(c, r))
+            .collect();
+        let area = region_integral(&pieces, FRAC_PI_8, |u, _| g(u));
+        assert!(
+            ((area - reference) / reference).abs() < 1e-11,
+            "{area} vs {reference}"
+        );
+        // The grid also leaves the trigonometric cases exact.
+        let exact = TAU * 3.0 / 8.0;
+        let fine = region_integral(&pieces, FRAC_PI_2, |u, _| u.cos().powi(4));
+        assert!((fine - exact).abs() < 1e-13, "{fine}");
     }
 
     #[test]

@@ -10,6 +10,7 @@ use arris_math::{
     wrap_angle as wrap_turn,
 };
 
+use crate::project::{ellipse_distance, ellipse_nearest};
 use crate::{Curve, Curve2, GeomError, GeomKind, NurbsCurve, NurbsCurve2, Surface, fit_curve2};
 
 /// How many parameters `pcurve_on` samples over the range to decide that
@@ -87,6 +88,19 @@ fn degenerate(kind: GeomKind, reason: impl Into<String>) -> GeomError {
 /// pair: there is no fitted fallback here, since the sweeps' curves are
 /// all exact. NURBS surfaces are an `Unsupported` arm.
 ///
+/// On an **elliptic cylinder** the exact arms are the two an extrude
+/// makes (ADR-0014), each a `Line`: a ruling — a line along the axis —
+/// at constant `u`, the parameter of its section point, `v` running with
+/// `t` or against it by the sign of the line's direction against `Z`;
+/// and the section ellipse — centred on the axis, its `Z` along the axis
+/// and its major axis along the surface's `X` either way, the radii
+/// agreeing within `tol.linear` — at constant `v`, `u` starting at `0` or
+/// `π` by the sign of its `X` against the surface's and running in the
+/// sense of its `Z` against the surface's, as a parallel does on a
+/// cylinder. Every other curve on it — a circle, an ellipse off the axis
+/// or of other radii, a NURBS — is `Unsupported`, with no fitted
+/// fallback.
+///
 /// Errors: [`GeomError::NotOnSurface`] when the curve is farther than
 /// `tol.linear` from the surface at any of [`PCURVE_SAMPLES`] + 1 parameters
 /// over the range; [`GeomError::Fit`] when the fitted arm cannot reach
@@ -136,6 +150,18 @@ pub fn pcurve_on(
                 (q.x.hypot(q.y) - radius).abs()
             })?;
             on_cylinder(curve, range, frame, radius, surface, tol)
+        }
+        &Surface::EllipticCylinder {
+            ref frame,
+            major_radius,
+            minor_radius,
+        } => {
+            check_on(curve, range, surface, tol, |p| {
+                let q = frame.to_local(p);
+                let noise = p.coords.norm() + frame.origin().coords.norm();
+                ellipse_distance(major_radius, minor_radius, q.x, q.y, noise)
+            })?;
+            on_elliptic_cylinder(curve, frame, [major_radius, minor_radius], surface, tol)
         }
         &Surface::Cone {
             ref frame,
@@ -308,6 +334,58 @@ fn on_cylinder(
         Curve::Ellipse { .. } | Curve::Nurbs(_) => {
             fitted_on_cylinder(curve, range, cyl, surface, tol)
         }
+    }
+}
+
+/// The exact pcurves on an elliptic cylinder: a ruling at constant `u`,
+/// the section ellipse at constant `v` (the table in [`pcurve_on`]).
+fn on_elliptic_cylinder(
+    curve: &Curve,
+    cyl: &Frame,
+    [a, b]: [f64; 2],
+    surface: &Surface,
+    tol: Tolerance,
+) -> Result<Curve2, GeomError> {
+    let kind = GeomKind::Curve(curve.kind());
+    match curve {
+        &Curve::Line { origin, direction } => {
+            let d = cyl.vec_to_local(direction.into_inner());
+            if d.x.hypot(d.y).atan2(d.z.abs()) > tol.angular {
+                return Err(unsupported(curve, surface));
+            }
+            // A ruling: constant `u` at its section point, which is on
+            // the ellipse (checked above) and so has a unique parameter
+            // unless the ellipse is degenerate to the tolerance.
+            let q = cyl.to_local(origin);
+            let noise = origin.coords.norm() + cyl.origin().coords.norm();
+            let (u, _) = ellipse_nearest(a, b, q.x, q.y, noise).map_err(|locus| {
+                degenerate(
+                    kind,
+                    format!("the ruling's section point is on {locus} of the ellipse"),
+                )
+            })?;
+            Ok(Curve2::Line {
+                origin: Point2::new(u, q.z),
+                direction: UnitVec2::new_unchecked(Vec2::new(0.0, d.z.signum())),
+            })
+        }
+        &Curve::Ellipse {
+            ref frame,
+            major_radius,
+            minor_radius,
+        } => {
+            let centre = cyl.to_local(frame.origin());
+            let section = centre.x.hypot(centre.y) <= tol.linear
+                && parallel_axes(&frame.z(), &cyl.z(), tol)
+                && parallel_axes(&frame.x(), &cyl.x(), tol)
+                && (major_radius - a).abs() <= tol.linear
+                && (minor_radius - b).abs() <= tol.linear;
+            if !section {
+                return Err(unsupported(curve, surface));
+            }
+            Ok(parallel_pcurve(cyl, frame, centre.z, false))
+        }
+        Curve::Circle { .. } | Curve::Nurbs(_) => Err(unsupported(curve, surface)),
     }
 }
 
@@ -670,19 +748,13 @@ fn projected_conic(
 ) -> Result<Curve2, GeomError> {
     let col1 = a * in_plane_vec(plane, frame.x().into_inner());
     let col2 = b * in_plane_vec(plane, frame.y().into_inner());
-    // M = [[p, q], [r, s]] by rows.
-    let (p, q, r, s) = (col1.x, col2.x, col1.y, col2.y);
-    let (e, f, g, h) = (0.5 * (p + s), 0.5 * (p - s), 0.5 * (r + q), 0.5 * (r - q));
-    let (big, small) = (e.hypot(h), f.hypot(g));
-    let major = big + small;
-    let minor_signed = big - small;
+    let (major, minor_signed, phi) = principal_axes(col1, col2);
     if is_negligible(minor_signed, major) {
         return Err(degenerate(
             kind,
             "the conic's plane is perpendicular to the target: its projection is a segment",
         ));
     }
-    let phi = 0.5 * (h.atan2(e) + g.atan2(f));
     let handedness = if minor_signed > 0.0 {
         Handedness::Right
     } else {
@@ -701,6 +773,22 @@ fn projected_conic(
     })
 }
 
+/// The principal axes of the ellipse `M (cos t, sin t)ᵀ`, `M = [col1 |
+/// col2]` two conjugate semi-diameters in a plane's (u, v): `(major,
+/// minor, φ)` with the semi-axes the singular values of `M`, `φ` the
+/// angle of the major axis from `u`, and `minor` signed — negative when
+/// `M` is a reflection, so the ellipse is traversed clockwise. A
+/// projected conic's, and an oblique plane section's of an elliptic
+/// cylinder.
+pub(crate) fn principal_axes(col1: Vec2, col2: Vec2) -> (f64, f64, f64) {
+    // M = [[p, q], [r, s]] by rows.
+    let (p, q, r, s) = (col1.x, col2.x, col1.y, col2.y);
+    let (e, f, g, h) = (0.5 * (p + s), 0.5 * (p - s), 0.5 * (r + q), 0.5 * (r - q));
+    let (big, small) = (e.hypot(h), f.hypot(g));
+    let phi = 0.5 * (h.atan2(e) + g.atan2(f));
+    (big + small, big - small, phi)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -708,6 +796,60 @@ mod tests {
 
     fn tol() -> Tolerance {
         Precision::DEFAULT.tolerance()
+    }
+
+    #[test]
+    fn an_elliptic_cylinder_carries_its_section_and_its_rulings_as_lines() {
+        let wall = Surface::EllipticCylinder {
+            frame: Frame::world(),
+            major_radius: 3.0,
+            minor_radius: 2.0,
+        };
+        // The section at height 4, traversed against the axis: `u` runs
+        // backwards from 0.
+        let section = Curve::Ellipse {
+            frame: Frame::new(Point3::new(0.0, 0.0, 4.0), -Vec3::z(), Vec3::x()).unwrap(),
+            major_radius: 3.0,
+            minor_radius: 2.0,
+        };
+        let pc = pcurve_on(&section, Interval::TURN, &wall, tol()).unwrap();
+        let Curve2::Line { origin, direction } = pc else {
+            panic!("{pc:?}")
+        };
+        assert_eq!(origin, Point2::new(0.0, 4.0));
+        assert_eq!(direction.into_inner(), Vec2::new(-1.0, 0.0));
+        // The ruling through the minor vertex, running down.
+        let ruling = Curve::Line {
+            origin: Point3::new(0.0, 2.0, 9.0),
+            direction: -Vec3::z_axis(),
+        };
+        let pc = pcurve_on(&ruling, Interval::new(0.0, 5.0).unwrap(), &wall, tol()).unwrap();
+        let Curve2::Line { origin, direction } = pc else {
+            panic!("{pc:?}")
+        };
+        assert!((origin.x - FRAC_PI_2).abs() < 1e-12 && origin.y == 9.0);
+        assert_eq!(direction.into_inner(), Vec2::new(0.0, -1.0));
+        // A circle of the minor radius touches the surface at two points
+        // and is off it elsewhere; a section of other radii is off it.
+        let circle = Curve::Circle {
+            frame: Frame::world(),
+            radius: 2.0,
+        };
+        assert!(matches!(
+            pcurve_on(&circle, Interval::TURN, &wall, tol()),
+            Err(GeomError::NotOnSurface { .. })
+        ));
+        // An ellipse *on* the surface that is not a section — none lies
+        // on it but the sections — so the unsupported arm is reached only
+        // through a ruling off the axis' direction: a chord.
+        let chord = Curve::Line {
+            origin: Point3::new(3.0, 0.0, 0.0),
+            direction: Vec3::y_axis(),
+        };
+        assert!(matches!(
+            pcurve_on(&chord, Interval::new(0.0, 1e-9).unwrap(), &wall, tol()),
+            Err(GeomError::Unsupported { .. })
+        ));
     }
 
     #[test]

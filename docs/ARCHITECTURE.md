@@ -18,7 +18,7 @@ re-exports the public API. Lower crates never name types from upper ones.
 | Crate | Owns | External deps | Layer |
 |---|---|---|---|
 | `arris-math` | `Point3`/`Vec3`/`UnitVec3` (over `nalgebra`, ADR-0001), `Frame`, `Frame2`, `Axis`, `Isometry`, `Interval`, `Aabb`, `wrap_angle`, exact orientation predicates (over `robust`), polynomial and interval-guarded Newton root finding, `Precision` and `Tolerance` | `nalgebra`, `robust`, `serde` (feature) | 0 — representation |
-| `arris-geom` | `Surface`, `Curve`, `Curve2` (analytic + NURBS): evaluation, derivatives, point projection, curve/curve, curve/surface and surface/surface intersection, bounding boxes over a parameter range, pcurves and the NURBS fit behind them; the (u, v) toolkit `region2` and `integrate` shared by the checker, tessellation, mass properties and classification; `Profile`, the planar sketch of lines and arcs a sweep takes, validated and oriented by `Profile::edges`; `GeomError` | `arris-math`, `thiserror`, `serde` (feature) | 0 — representation |
+| `arris-geom` | `Surface`, `Curve`, `Curve2` (analytic + NURBS): evaluation, derivatives, point projection, curve/curve, curve/surface and surface/surface intersection, bounding boxes over a parameter range, pcurves and the NURBS fit behind them; the (u, v) toolkit `region2` and `integrate` shared by the checker, tessellation, mass properties and classification; `Profile`, the planar sketch of lines, arcs and elliptic arcs a sweep takes, validated and oriented by `Profile::edges`; `GeomError` | `arris-math`, `thiserror`, `serde` (feature) | 0 — representation |
 | `arris-topo` | `Model` (the arena), typed ids, `Shape`/`Body`/`Face`/… handles, orientation, entities, pcurves, per-entity tolerances, Euler operators including the assembly seam (`Assembly::of_body`, `effective_uses`, `AssemblySlots`), the Euler line (`euler::EulerLine`), adjacency and iteration, `Provenance` and its audit; re-exports `arris-geom` and `arris-math` | `arris-geom`, `arris-math`, `thiserror`, `serde` (feature) | 0 — representation |
 | `arris-check` | The invariant checker: `check(&Model, Body, Level) -> Report` and the `Violation` list of data-model §Invariants; the shared face domain (`domain::FaceDomain`), point classifier (`classify::Classifier`, `classify_point`) and region flux (`flux::face_flux`) every `Full` row, the boolean and tessellation read a face through; re-exports `arris-topo` | `arris-topo`, `serde` (feature, forwarded to `arris-topo`) | 1 |
 | `arris-ops` | Primitives, extrude and revolve of a `Profile`, transform, booleans, the blends, each returning `Provenance`; the queries `measure` (mass properties) and `query` (projection onto a plane, a face's outward frame) | `arris-check`, `thiserror`, `rayon` (feature) | 2 — algorithms |
@@ -617,7 +617,8 @@ shell.
 along its plane's normal, either way: `direction` is the normal or its
 opposite within `angular_tolerance` (`Reason::DirectionNotNormal`
 otherwise — an oblique extrusion of an arc is a cylinder of elliptical
-section, a sweep along a path and cycle 5's), `length` finite and above
+section, which `Surface::EllipticCylinder` now has a variant for
+(ADR-0014) but a sweep along a path and cycle 5's), `length` finite and above
 `default_tolerance` (`NotPositive` at or below zero, `ZeroThickness`
 within the tolerance). The sweep is the plane's exact normal, never the
 caller's rounding of it. The profile face keeps its plane's frame
@@ -815,6 +816,13 @@ plane oblique to a cone's or a torus's axis or parallel to it and off
 it, two tori on different axes, a sphere off the axis — are
 `Unsupported` and C3's, as is a result that
 would mix a circle with a point, whose type is decided with C3's ADR. The
+elliptic cylinder an extruded elliptic segment sweeps (ADR-0014) is
+decided against a plane in every pose and against a cylinder or another
+elliptic cylinder with a parallel axis, through the two sections in the
+plane across the axes — the pairs an extrude's faces make — and is
+`Unsupported` against anything else; the pave model's quadric guard
+refuses a face on it as it refuses a cone, a sphere or a torus, so a
+boolean never widens onto it silently. The
 NURBS variant is one arm like the others; a NURBS–NURBS marcher, when it
 comes, is what that arm calls, and analytic pairs never route through
 it.

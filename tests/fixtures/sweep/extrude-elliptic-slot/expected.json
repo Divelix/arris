@@ -1,0 +1,108 @@
+{
+  "occt": "8.0.1.0.0",
+  "recipe_sha256": "a9eb5b5ad89e80469e3f8cfd15a4f66ff40cbf073b7b434cce2e05457b2c1ca2",
+  "results": {
+    "default": {
+      "area": 858.4637705148787,
+      "centroid": [
+        3.4012742838576254e-16,
+        4.591644071593361e-17,
+        4.0
+      ],
+      "counts": {
+        "edges": 12,
+        "faces": 6,
+        "loops": 6,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 8
+      },
+      "degenerate": false,
+      "euler_characteristic": 2,
+      "genus": 0,
+      "inertia": [
+        [
+          10858.84931476671,
+          6.583689636864433e-13,
+          1.8189894035458563e-12
+        ],
+        [
+          6.583689636864433e-13,
+          95185.92563156731,
+          3.008286579532433e-15
+        ],
+        [
+          1.8189894035458563e-12,
+          3.008286579532433e-15,
+          91783.53634973911
+        ]
+      ],
+      "probes": [
+        {
+          "class": "in",
+          "label": "inside",
+          "point": [
+            0.0,
+            0.0,
+            4.0
+          ]
+        },
+        {
+          "class": "in",
+          "label": "in_the_end",
+          "point": [
+            13.0,
+            0.0,
+            4.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "outside",
+          "point": [
+            0.0,
+            10.0,
+            4.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "beyond_the_end",
+          "point": [
+            16.0,
+            0.0,
+            4.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_end_face",
+          "point": [
+            15.0,
+            0.0,
+            4.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_end_edge",
+          "point": [
+            13.535533905932738,
+            2.1213203435596424,
+            8.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_junction_rise",
+          "point": [
+            10.0,
+            3.0,
+            4.0
+          ]
+        }
+      ],
+      "volume": 1336.9911184307753
+    }
+  }
+}

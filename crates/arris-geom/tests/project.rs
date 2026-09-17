@@ -6,7 +6,8 @@
 use core::f64::consts::{FRAC_PI_2, TAU};
 
 use arris_debug::prop::geom::{
-    RADIUS_RANGE, circle, cone, cylinder, ellipse, line, plane, sphere, surface, torus,
+    RADIUS_RANGE, circle, cone, cylinder, ellipse, elliptic_cylinder, line, plane, sphere, surface,
+    torus,
 };
 use arris_debug::prop::{DEFAULT_SCALE, check, finite_f64, point_in_box};
 use arris_geom::{AmbiguousLocus, Curve, GeomError, GeomKind, Surface, SurfaceProjection};
@@ -47,6 +48,11 @@ fn implicit_distance(s: &Surface, p: Point3) -> f64 {
     match s {
         Surface::Plane { .. } => q.z.abs(),
         &Surface::Cylinder { radius, .. } => (rho - radius).abs(),
+        &Surface::EllipticCylinder {
+            major_radius,
+            minor_radius,
+            ..
+        } => sampled_ellipse_distance(major_radius, minor_radius, q.x, q.y),
         &Surface::Cone {
             radius, half_angle, ..
         } => {
@@ -64,6 +70,39 @@ fn implicit_distance(s: &Surface, p: Point3) -> f64 {
         Surface::Nurbs(_) => unreachable!("the analytic strategies yield no NURBS"),
     }
 }
+
+/// The distance from `(x, y)` to the ellipse `(a cos t, b sin t)` in its
+/// plane, independently of the kernel's quartic: the nearest of
+/// [`DISTANCE_SAMPLES`] points, then Newton on the stationarity
+/// `(E − p) · E′ = 0` from it, which converges to rounding from a sample
+/// within half a degree.
+fn sampled_ellipse_distance(a: f64, b: f64, x: f64, y: f64) -> f64 {
+    let d = |t: f64| (a * t.cos() - x).hypot(b * t.sin() - y);
+    let mut best = (0..DISTANCE_SAMPLES)
+        .map(|i| TAU * i as f64 / DISTANCE_SAMPLES as f64)
+        .min_by(|&s, &t| d(s).total_cmp(&d(t)))
+        .unwrap_or(0.0);
+    let e = b * b - a * a;
+    for _ in 0..NEWTON_STEPS {
+        let (st, ct) = best.sin_cos();
+        let g = e * st * ct + a * x * st - b * y * ct;
+        let dg = e * (2.0 * best).cos() + a * x * ct + b * y * st;
+        if dg == 0.0 {
+            break;
+        }
+        let next = best - g / dg;
+        if d(next) > d(best) {
+            break;
+        }
+        best = next;
+    }
+    d(best)
+}
+
+/// Samples of [`sampled_ellipse_distance`]: half a degree apart.
+const DISTANCE_SAMPLES: usize = 720;
+/// Newton steps that polish the nearest sample to rounding.
+const NEWTON_STEPS: usize = 20;
 
 fn in_domain(s: &Surface, proj: &SurfaceProjection) -> bool {
     let [du, dv] = s.domain();
@@ -131,6 +170,11 @@ fn torus_projection_properties() {
     projection_properties(torus());
 }
 
+#[test]
+fn elliptic_cylinder_projection_properties() {
+    projection_properties(elliptic_cylinder());
+}
+
 /// How far a point at `(u, v)` may move along the normal and keep that
 /// point as its nearest: half the distance to the nearest ambiguous
 /// locus, scaled by `raw ∈ [−1, 1]`.
@@ -138,6 +182,13 @@ fn safe_offset(s: &Surface, v: f64, raw: f64) -> f64 {
     match s {
         Surface::Plane { .. } => raw * DEFAULT_SCALE,
         &Surface::Cylinder { radius, .. } | &Surface::Sphere { radius, .. } => raw * radius / 2.0,
+        // The evolute is nearest at the major vertices, a radius of
+        // curvature b²/a in.
+        &Surface::EllipticCylinder {
+            major_radius,
+            minor_radius,
+            ..
+        } => raw * minor_radius * minor_radius / major_radius / 2.0,
         &Surface::Cone {
             radius, half_angle, ..
         } => {
@@ -213,6 +264,11 @@ fn sphere_recovers_a_displaced_point() {
 #[test]
 fn torus_recovers_a_displaced_point() {
     displacement_properties(torus(), -1.0..=TAU + 1.0);
+}
+
+#[test]
+fn elliptic_cylinder_recovers_a_displaced_point() {
+    displacement_properties(elliptic_cylinder(), -DEFAULT_SCALE..=DEFAULT_SCALE);
 }
 
 fn assert_ambiguous(

@@ -57,8 +57,12 @@ impl Surface {
     /// Errors: [`GeomError::Ambiguous`] where the nearest point or its
     /// parameter is not unique, decided to rounding and never by a silent
     /// choice — a point on the axis of a cylinder, a cone or a torus, in
-    /// the plane through a cone's apex, at a sphere's centre, or on a
-    /// torus's centre circle. A point on a sphere's axis off its centre
+    /// the plane through a cone's apex, at a sphere's centre, on a
+    /// torus's centre circle, or on an elliptic cylinder's axis or the
+    /// strip over the segment of its section's major axis inside the
+    /// evolute (the section's own ambiguities, swept along the axis; the
+    /// section projects through the quartic of [`Curve::project`]). A
+    /// point on a sphere's axis off its centre
     /// projects to the pole, whose `u` is `0` by convention: the point is
     /// unique, only the degenerate parameter is not.
     /// [`GeomError::Unsupported`] for a NURBS surface, which has no closed
@@ -100,6 +104,20 @@ impl Surface {
                     return Err(ambiguous(AmbiguousLocus::Axis));
                 }
                 (wrap_turn(q.y.atan2(q.x)), q.z, (rho - radius).abs())
+            }
+            Surface::EllipticCylinder {
+                major_radius,
+                minor_radius,
+                ..
+            } => {
+                let (u, distance) = ellipse_nearest(major_radius, minor_radius, q.x, q.y, noise)
+                    .map_err(|locus| {
+                        ambiguous(match locus {
+                            AmbiguousLocus::Centre => AmbiguousLocus::Axis,
+                            other => other,
+                        })
+                    })?;
+                (u, q.z, distance)
             }
             Surface::Cone {
                 radius, half_angle, ..
@@ -360,6 +378,25 @@ pub(crate) fn ellipse_nearest(
     Ok((wrap_turn(t), d))
 }
 
+/// The distance from `(px, py)` to the ellipse `(a cos t, b sin t)` in
+/// its plane: [`ellipse_nearest`]'s, exact — or, for a point whose
+/// nearest point is not unique (the centre, the major axis inside the
+/// evolute), the distance to the ellipse's point at the query's own
+/// eccentric anomaly `atan2(py / b, px / a)`. That is an upper bound on
+/// the true distance, so a point clear of the ellipse is never taken for
+/// one on it; the bound overstates only inside the evolute, where the
+/// true distance is at least `b² / a`.
+pub(crate) fn ellipse_distance(a: f64, b: f64, px: f64, py: f64, noise: f64) -> f64 {
+    match ellipse_nearest(a, b, px, py, noise) {
+        Ok((_, d)) => d,
+        Err(_) => {
+            let t = (py / b).atan2(px / a);
+            let (st, ct) = t.sin_cos();
+            (a * ct - px).hypot(b * st - py)
+        }
+    }
+}
+
 /// Newton steps that polish a candidate parameter from the half-angle
 /// quartic: two suffice from a root accurate to rounding, and each is
 /// taken only while it reduces `|g|`.
@@ -368,6 +405,41 @@ const NEWTON_POLISH_STEPS: usize = 3;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_elliptic_cylinder_projects_through_its_section() {
+        let s = Surface::EllipticCylinder {
+            frame: Frame::world(),
+            major_radius: 3.0,
+            minor_radius: 2.0,
+        };
+        // Straight out along the minor axis: the nearest point is the
+        // section's minor vertex at this height.
+        let proj = s.project(Point3::new(0.0, 5.0, 4.0)).unwrap();
+        assert!((proj.uv.x - FRAC_PI_2).abs() < 1e-12, "{proj:?}");
+        assert_eq!(proj.uv.y, 4.0);
+        assert!((proj.distance - 3.0).abs() < 1e-12);
+        assert!((proj.point - Point3::new(0.0, 2.0, 4.0)).norm() < 1e-12);
+        // The axis, and the strip over the major axis inside the evolute
+        // (its cusps are at ±(a² − b²)/a = ±5/3), are ambiguous.
+        assert!(matches!(
+            s.project(Point3::new(0.0, 0.0, 7.0)),
+            Err(GeomError::Ambiguous {
+                locus: AmbiguousLocus::Axis,
+                ..
+            })
+        ));
+        assert!(matches!(
+            s.project(Point3::new(1.0, 0.0, 7.0)),
+            Err(GeomError::Ambiguous {
+                locus: AmbiguousLocus::MajorAxis,
+                ..
+            })
+        ));
+        // Past the cusp the major vertex is the unique nearest point.
+        let proj = s.project(Point3::new(2.0, 0.0, 1.0)).unwrap();
+        assert!(proj.uv.x.abs() < 1e-12 && (proj.distance - 1.0).abs() < 1e-12);
+    }
 
     #[test]
     fn a_plane_projects_by_local_coordinates() {

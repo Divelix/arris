@@ -17,6 +17,7 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+mod conic2;
 mod curve;
 mod curve2;
 mod error;

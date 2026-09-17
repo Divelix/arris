@@ -190,6 +190,74 @@ prop_shards! {
         }
 }
 
+/// A full ellipse in a random pose, its major axis at a random angle and
+/// written either way round, extruded both ways: clean at `Full` with
+/// nothing unchecked — its side is an elliptic cylinder against two
+/// planes across its axis, every pair a closed form (ADR-0014) — volume
+/// `π a b h` and area `2π a b + P h` by Pappus, a closed mesh, complete
+/// provenance, a deterministic dump, and the side face's surface an
+/// elliptic cylinder with `a ≥ b` whatever the consumer called major.
+#[test]
+fn ellipses_extrude_to_pi_a_b_h() {
+    prop::check(prop::profile::ellipse(), |(profile, length)| {
+        let ProfileLoop::Ellipse {
+            major,
+            minor_radius,
+            ..
+        } = &profile.outer
+        else {
+            return Err(fail("the strategy draws an ellipse loop"));
+        };
+        let (a, b) = (
+            major.norm().max(*minor_radius),
+            major.norm().min(*minor_radius),
+        );
+        let sweep = Sweep {
+            profile: profile.clone(),
+            axis: Axis::z_at(profile.plane.origin()),
+            angle: TAU,
+            length,
+        };
+        extrudes_to_pappus(&sweep)?;
+        let mut m = Model::default();
+        let (body, p) =
+            extrude(&mut m, &profile, profile.plane.z().into_inner(), length).map_err(fail)?;
+        let props = mass_properties(&m, body).map_err(fail)?;
+        let exact = core::f64::consts::PI * a * b * length;
+        prop_assert!(
+            close(props.volume, exact),
+            "volume {} vs πabh {exact}",
+            props.volume
+        );
+        let side = p.generated_from(Role::Extrude(SweepPart::Side {
+            loop_index: 0,
+            segment: 0,
+        }));
+        prop_assert_eq!(side.len(), 1);
+        let face = m
+            .faces(body)
+            .map_err(fail)?
+            .into_iter()
+            .find(|f| EntityId::from(f.id) == side[0].id)
+            .ok_or_else(|| fail("the side is not a face of the body"))?;
+        let surface = m
+            .surface(m.face(face.id).map_err(fail)?.surface())
+            .map_err(fail)?;
+        let Surface::EllipticCylinder {
+            major_radius,
+            minor_radius,
+            ..
+        } = surface
+        else {
+            return Err(fail(format!(
+                "the side is {surface:?}, no elliptic cylinder"
+            )));
+        };
+        prop_assert!((major_radius - a).abs() <= 1e-12 && (minor_radius - b).abs() <= 1e-12);
+        Ok(())
+    });
+}
+
 /// A star polygon of straight segments with one round hole inside the
 /// disc its chords leave free, in a random pose, and an extrude length.
 fn polygon_with_hole() -> impl Strategy<Value = (Profile, Point2, f64, f64)> {

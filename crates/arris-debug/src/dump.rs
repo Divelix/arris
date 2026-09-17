@@ -266,6 +266,16 @@ fn surface(s: &Surface) -> String {
             num(*major_radius),
             num(*minor_radius)
         ),
+        Surface::EllipticCylinder {
+            frame: f,
+            major_radius,
+            minor_radius,
+        } => format!(
+            "elliptic_cylinder {} major {} minor {}",
+            frame(f),
+            num(*major_radius),
+            num(*minor_radius)
+        ),
         Surface::Nurbs(n) => nurbs_surface(n),
     }
 }

@@ -37,6 +37,11 @@ fn local_surface(s: &Surface, u: f64, v: f64) -> Point3 {
     match s {
         Surface::Plane { .. } => Point3::new(u, v, 0.0),
         &Surface::Cylinder { radius: r, .. } => Point3::new(r * cu, r * su, v),
+        &Surface::EllipticCylinder {
+            major_radius: a,
+            minor_radius: b,
+            ..
+        } => Point3::new(a * cu, b * su, v),
         &Surface::Cone {
             radius: r,
             half_angle: a,
@@ -76,6 +81,15 @@ fn with_frame(s: &Surface, frame: Frame) -> Surface {
     match s {
         Surface::Plane { .. } => Surface::Plane { frame },
         &Surface::Cylinder { radius, .. } => Surface::Cylinder { frame, radius },
+        &Surface::EllipticCylinder {
+            major_radius,
+            minor_radius,
+            ..
+        } => Surface::EllipticCylinder {
+            frame,
+            major_radius,
+            minor_radius,
+        },
         &Surface::Cone {
             radius, half_angle, ..
         } => Surface::Cone {
@@ -200,12 +214,14 @@ fn normal_is_unit_and_orthogonal_to_both_derivatives() {
         let (du, dv) = (e.du.normalize(), e.dv.normalize());
         prop_assert!(n.dot(&du).abs() <= UNIT, "n·du = {}", n.dot(&du));
         prop_assert!(n.dot(&dv).abs() <= UNIT, "n·dv = {}", n.dot(&dv));
-        // Outward: away from the axis for the cylinder and cone, from the
+        // Outward: away from the axis for the cylinder, the elliptic
+        // cylinder (whose normal is never more than a right angle from
+        // the radial) and the cone, from the
         // centre for the sphere, from the tube's centre circle for the torus.
         let f = s.frame().unwrap();
         let outward = match s {
             Surface::Plane { .. } => f.z().into_inner(),
-            Surface::Cylinder { .. } | Surface::Cone { .. } => {
+            Surface::Cylinder { .. } | Surface::EllipticCylinder { .. } | Surface::Cone { .. } => {
                 let d = e.point - f.origin();
                 d - d.dot(&f.z()) * f.z().into_inner()
             }

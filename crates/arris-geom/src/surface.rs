@@ -46,6 +46,19 @@ pub enum Surface {
         /// `R`.
         radius: f64,
     },
+    /// `P(u, v) = O + a cos u·X + b sin u·Y + v·Z` with `a ≥ b`: an
+    /// ellipse swept along its normal, what an extruded elliptic profile
+    /// segment sweeps (ADR-0014); seam at `u = 0`, the ruling through
+    /// `O + a·X`.
+    EllipticCylinder {
+        /// `Z` is the axis; `X` is the section's major axis and points at
+        /// the seam.
+        frame: Frame,
+        /// `a`, along `X`.
+        major_radius: f64,
+        /// `b`, along `Y`.
+        minor_radius: f64,
+    },
     /// `P(u, v) = O + (R + v sin α)(cos u·X + sin u·Y) + v cos α·Z`; the
     /// apex is at `v = −R / sin α`.
     Cone {
@@ -84,6 +97,8 @@ pub enum SurfaceKind {
     Plane,
     /// [`Surface::Cylinder`].
     Cylinder,
+    /// [`Surface::EllipticCylinder`].
+    EllipticCylinder,
     /// [`Surface::Cone`].
     Cone,
     /// [`Surface::Sphere`].
@@ -99,6 +114,7 @@ impl fmt::Display for SurfaceKind {
         f.write_str(match self {
             SurfaceKind::Plane => "plane",
             SurfaceKind::Cylinder => "cylinder",
+            SurfaceKind::EllipticCylinder => "elliptic cylinder",
             SurfaceKind::Cone => "cone",
             SurfaceKind::Sphere => "sphere",
             SurfaceKind::Torus => "torus",
@@ -132,6 +148,7 @@ impl Surface {
         match self {
             Surface::Plane { .. } => SurfaceKind::Plane,
             Surface::Cylinder { .. } => SurfaceKind::Cylinder,
+            Surface::EllipticCylinder { .. } => SurfaceKind::EllipticCylinder,
             Surface::Cone { .. } => SurfaceKind::Cone,
             Surface::Sphere { .. } => SurfaceKind::Sphere,
             Surface::Torus { .. } => SurfaceKind::Torus,
@@ -145,6 +162,7 @@ impl Surface {
         match self {
             Surface::Plane { frame }
             | Surface::Cylinder { frame, .. }
+            | Surface::EllipticCylinder { frame, .. }
             | Surface::Cone { frame, .. }
             | Surface::Sphere { frame, .. }
             | Surface::Torus { frame, .. } => Some(frame),
@@ -181,6 +199,23 @@ impl Surface {
                     du: radius * tangential,
                     dv: z,
                     duu: -radius * radial,
+                    duv: zero,
+                    dvv: zero,
+                }
+            }
+            &Surface::EllipticCylinder {
+                ref frame,
+                major_radius,
+                minor_radius,
+            } => {
+                let (o, x, y, z) = axes(frame);
+                let (su, cu) = u.sin_cos();
+                let radial = (major_radius * cu) * x + (minor_radius * su) * y;
+                SurfaceEval {
+                    point: o + radial + v * z,
+                    du: (-major_radius * su) * x + (minor_radius * cu) * y,
+                    dv: z,
+                    duu: -radial,
                     duv: zero,
                     dvv: zero,
                 }
@@ -252,8 +287,9 @@ impl Surface {
     /// rectangle `uv`, or `None` when either range is not finite — a
     /// box has finite corners, and an unbounded plane has no box.
     ///
-    /// Exact for a plane (the rectangle's four corners) and a cylinder
-    /// (a sinusoid in `u` per axis, and `v` along the axis); an outer
+    /// Exact for a plane (the rectangle's four corners) and a cylinder or
+    /// an elliptic cylinder (a sinusoid in `u` per axis, and `v` along
+    /// the axis); an outer
     /// bound for the surfaces whose two parameters multiply — a cone, a
     /// sphere, a torus — where the box is the product of the two
     /// intervals rather than of the pairs that actually occur, and for a
@@ -305,6 +341,16 @@ impl Surface {
                 let along = linear_range(z, v);
                 [o + radial[0] + along[0], o + radial[1] + along[1]]
             })),
+            &Surface::EllipticCylinder {
+                ref frame,
+                major_radius,
+                minor_radius,
+            } => Some(axis_bounds(|k| {
+                let (o, x, y, z) = axes3(frame, k);
+                let radial = sinusoid_range(major_radius * x, minor_radius * y, u);
+                let along = linear_range(z, v);
+                [o + radial[0] + along[0], o + radial[1] + along[1]]
+            })),
             &Surface::Cone {
                 ref frame,
                 radius,
@@ -349,7 +395,9 @@ impl Surface {
     }
 
     /// The surface normal `∂P/∂u × ∂P/∂v` normalised (plane `Z`; cylinder,
-    /// cone and sphere radially outward; torus outward from the tube), or
+    /// cone and sphere radially outward; an elliptic cylinder outward
+    /// along the section's own normal `b cos u·X + a sin u·Y`; torus
+    /// outward from the tube), or
     /// `None` where the parametrisation is singular: a cone's apex, a
     /// sphere's poles, any surface whose radius is zero, and a NURBS point
     /// where the two derivatives are parallel or vanish. Singular means
@@ -362,6 +410,11 @@ impl Surface {
             Surface::Nurbs(ref s) => return s.normal(u, v),
             Surface::Plane { .. } => false,
             Surface::Cylinder { radius, .. } => radius == 0.0,
+            Surface::EllipticCylinder {
+                major_radius,
+                minor_radius,
+                ..
+            } => major_radius == 0.0 || minor_radius == 0.0,
             Surface::Cone {
                 radius, half_angle, ..
             } => {
@@ -446,7 +499,9 @@ impl Surface {
     pub fn domain(&self) -> [Interval; 2] {
         match self {
             Surface::Plane { .. } => [Interval::REAL, Interval::REAL],
-            Surface::Cylinder { .. } | Surface::Cone { .. } => [Interval::TURN, Interval::REAL],
+            Surface::Cylinder { .. } | Surface::EllipticCylinder { .. } | Surface::Cone { .. } => {
+                [Interval::TURN, Interval::REAL]
+            }
             Surface::Sphere { .. } => [Interval::TURN, latitude()],
             Surface::Torus { .. } => [Interval::TURN, Interval::TURN],
             Surface::Nurbs(s) => s.domain(),
@@ -457,9 +512,10 @@ impl Surface {
     pub fn period(&self) -> [Option<f64>; 2] {
         match self {
             Surface::Plane { .. } => [None, None],
-            Surface::Cylinder { .. } | Surface::Cone { .. } | Surface::Sphere { .. } => {
-                [Some(TAU), None]
-            }
+            Surface::Cylinder { .. }
+            | Surface::EllipticCylinder { .. }
+            | Surface::Cone { .. }
+            | Surface::Sphere { .. } => [Some(TAU), None],
             Surface::Torus { .. } => [Some(TAU), Some(TAU)],
             Surface::Nurbs(s) => s.period(),
         }
@@ -474,9 +530,11 @@ impl Surface {
     /// triangle by the sum over its two directions, so where both
     /// directions curve each gets half the chord. `f64::INFINITY` along a
     /// direction the surface is flat or ruled in — both on a plane, `v`
-    /// on a cylinder and a cone, whose triangles are then bounded by the
-    /// `u` step alone whatever their height; the cone's `u` curvature is
-    /// taken at the radius of the region's far `v` bound. A torus takes
+    /// on a cylinder, an elliptic cylinder and a cone, whose triangles
+    /// are then bounded by the `u` step alone whatever their height; the
+    /// cone's `u` curvature is taken at the radius of the region's far
+    /// `v` bound, and an elliptic cylinder's `u` step is bounded by its
+    /// major radius, the largest its second derivative gets. A torus takes
     /// `R + r` in `u` and `r` in `v`, a sphere its radius in both; a
     /// NURBS samples the form's three coefficients on a grid over
     /// `bounds` clipped to its domain and gives one step to both
@@ -506,6 +564,9 @@ impl Surface {
         match *self {
             Surface::Plane { .. } => [f64::INFINITY; 2],
             Surface::Cylinder { radius, .. } => [step(radius.abs(), chord), f64::INFINITY],
+            Surface::EllipticCylinder { major_radius, .. } => {
+                [step(major_radius.abs(), chord), f64::INFINITY]
+            }
             Surface::Cone {
                 radius, half_angle, ..
             } => {
@@ -565,6 +626,15 @@ impl Surface {
             &Surface::Cylinder { frame, radius } => Surface::Cylinder {
                 frame: frame.transformed(motion),
                 radius,
+            },
+            &Surface::EllipticCylinder {
+                frame,
+                major_radius,
+                minor_radius,
+            } => Surface::EllipticCylinder {
+                frame: frame.transformed(motion),
+                major_radius,
+                minor_radius,
             },
             &Surface::Cone {
                 frame,
@@ -646,6 +716,14 @@ mod tests {
         };
         assert_eq!(cyl.domain(), [Interval::TURN, Interval::REAL]);
         assert_eq!(cyl.period(), [Some(TAU), None]);
+        let elliptic = Surface::EllipticCylinder {
+            frame: f,
+            major_radius: 2.0,
+            minor_radius: 1.0,
+        };
+        assert_eq!(elliptic.domain(), [Interval::TURN, Interval::REAL]);
+        assert_eq!(elliptic.period(), [Some(TAU), None]);
+        assert_eq!(elliptic.kind().to_string(), "elliptic cylinder");
         let sphere = Surface::Sphere {
             frame: f,
             radius: 1.0,
@@ -692,5 +770,43 @@ mod tests {
             .is_none()
         );
         assert!(Surface::Plane { frame: f }.normal(1.0, 1.0).is_some());
+        assert!(
+            Surface::EllipticCylinder {
+                frame: f,
+                major_radius: 2.0,
+                minor_radius: 0.0
+            }
+            .normal(1.0, 1.0)
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn an_elliptic_cylinder_evaluates_its_section_along_its_axis() {
+        let s = Surface::EllipticCylinder {
+            frame: Frame::world(),
+            major_radius: 3.0,
+            minor_radius: 2.0,
+        };
+        let e = s.eval(FRAC_PI_2, 5.0);
+        assert!((e.point - Point3::new(0.0, 2.0, 5.0)).norm() < 1e-15);
+        assert!((e.du - Vec3::new(-3.0, 0.0, 0.0)).norm() < 1e-15);
+        assert_eq!(e.dv, Vec3::z());
+        assert!((e.duu - Vec3::new(0.0, -2.0, 0.0)).norm() < 1e-15);
+        // The normal is the section's own, not the radial direction: at
+        // u = π/4 the point is (3, 2)/√2 and the normal ∝ (2, 3).
+        let n = s.normal(core::f64::consts::FRAC_PI_4, 0.0).unwrap();
+        let expected = Vec3::new(2.0, 3.0, 0.0).normalize();
+        assert!((n.into_inner() - expected).norm() < 1e-15, "{n:?}");
+        // Bounds: the box of the section swept along z.
+        let b = s
+            .bounds([Interval::TURN, Interval::new(-1.0, 4.0).unwrap()])
+            .unwrap();
+        assert!((b.min[0] + 3.0).abs() < 1e-15 && (b.max[1] - 2.0).abs() < 1e-15);
+        assert_eq!((b.min[2], b.max[2]), (-1.0, 4.0));
+        // Ruled along v, bounded by the major radius in u.
+        let [hu, hv] = s.chord_steps(1e-3, s.domain());
+        assert!((hu - (8.0 * 1e-3 / 3.0f64).sqrt()).abs() < 1e-15);
+        assert_eq!(hv, f64::INFINITY);
     }
 }

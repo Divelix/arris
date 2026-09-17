@@ -232,6 +232,11 @@ fn surface_non_finite(s: &Surface) -> (bool, bool) {
             frame,
             major_radius,
             minor_radius,
+        }
+        | Surface::EllipticCylinder {
+            frame,
+            major_radius,
+            minor_radius,
         } => (
             !frame_finite(frame),
             !(major_radius.is_finite() && minor_radius.is_finite()),

@@ -365,7 +365,9 @@ fn patch_box(surface: &Surface) -> [Interval; 2] {
     let i = |lo: f64, hi: f64| Interval::new(lo, hi).unwrap();
     match surface {
         Surface::Plane { .. } => [i(-5.0, 5.0), i(-5.0, 5.0)],
-        Surface::Cylinder { .. } => [i(0.0, 0.9 * TAU), i(-5.0, 5.0)],
+        Surface::Cylinder { .. } | Surface::EllipticCylinder { .. } => {
+            [i(0.0, 0.9 * TAU), i(-5.0, 5.0)]
+        }
         Surface::Cone { .. } => [i(0.0, 0.9 * TAU), i(0.5, 5.0)],
         Surface::Sphere { .. } => [i(0.0, 0.9 * TAU), i(-1.4, 1.4)],
         Surface::Torus { .. } => [i(0.0, 0.9 * TAU), i(0.0, 0.9 * TAU)],
@@ -464,7 +466,10 @@ fn a_patch_of_every_surface_kind_meshes_onto_its_surface() {
             // cylinder are ruled in one, so their grids are empty.
             let interior = mesh.positions().len() - boundary_indices(&mesh).len();
             match surface {
-                Surface::Plane { .. } | Surface::Cylinder { .. } | Surface::Cone { .. } => {
+                Surface::Plane { .. }
+                | Surface::Cylinder { .. }
+                | Surface::EllipticCylinder { .. }
+                | Surface::Cone { .. } => {
                     prop_assert_eq!(interior, 0, "a ruled surface takes no interior point");
                 }
                 Surface::Sphere { .. } | Surface::Torus { .. } => {

@@ -128,6 +128,35 @@ fn the_seam_is_one_edge_with_two_pcurves_and_the_wall_one_face() {
     assert!(text.contains(",.F.);\n"), "the bottom cap is used reversed");
 }
 
+/// An extruded ellipse's side is written as the section ellipse
+/// extruded along its axis, once, with the seam's two pcurves on it
+/// (ADR-0014); the oracle reads it back in the corpus
+/// (`sweep/extrude-ellipse`).
+#[test]
+fn an_elliptic_cylinder_is_a_surface_of_linear_extrusion() {
+    use arris_io::arris_check::arris_topo::arris_geom::{Profile, ProfileLoop};
+    use arris_io::arris_check::arris_topo::arris_math::{Frame, Point2, Vec2, Vec3};
+    let mut m = Model::default();
+    let profile = Profile {
+        plane: Frame::world(),
+        outer: ProfileLoop::Ellipse {
+            center: Point2::new(1.0, 2.0),
+            major: Vec2::new(4.8, 3.6),
+            minor_radius: 3.0,
+        },
+        holes: Vec::new(),
+    };
+    let (body, _) = arris_ops::extrude(&mut m, &profile, Vec3::z(), 10.0).unwrap();
+    let text = step::write(&m, &[body]).unwrap();
+    assert_eq!(text.matches("SURFACE_OF_LINEAR_EXTRUSION(").count(), 1);
+    assert!(
+        text.contains("ELLIPSE('',#"),
+        "the section ellipse is written"
+    );
+    assert_eq!(text.matches("SEAM_CURVE(").count(), 1, "the seam, once");
+    assert_eq!(text.matches("ADVANCED_FACE(").count(), 3);
+}
+
 #[test]
 fn several_bodies_share_one_shape_representation() {
     let mut m = Model::default();

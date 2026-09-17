@@ -577,12 +577,14 @@ fn stripe(
         (
             Surface::Plane { .. }
             | Surface::Cylinder { .. }
+            | Surface::EllipticCylinder { .. }
             | Surface::Cone { .. }
             | Surface::Sphere { .. }
             | Surface::Torus { .. }
             | Surface::Nurbs(_),
             Surface::Plane { .. }
             | Surface::Cylinder { .. }
+            | Surface::EllipticCylinder { .. }
             | Surface::Cone { .. }
             | Surface::Sphere { .. }
             | Surface::Torus { .. }
@@ -981,6 +983,7 @@ fn contacts(
                 placed(on_face, range.lo(), edge_u)
             }
             Surface::Plane { .. }
+            | Surface::EllipticCylinder { .. }
             | Surface::Cone { .. }
             | Surface::Sphere { .. }
             | Surface::Torus { .. }
@@ -1716,12 +1719,14 @@ fn ring(
         (
             Surface::Plane { .. }
             | Surface::Cylinder { .. }
+            | Surface::EllipticCylinder { .. }
             | Surface::Cone { .. }
             | Surface::Sphere { .. }
             | Surface::Torus { .. }
             | Surface::Nurbs(_),
             Surface::Plane { .. }
             | Surface::Cylinder { .. }
+            | Surface::EllipticCylinder { .. }
             | Surface::Cone { .. }
             | Surface::Sphere { .. }
             | Surface::Torus { .. }
@@ -1919,6 +1924,7 @@ fn ring(
         ),
         Surface::Plane { .. }
         | Surface::Cylinder { .. }
+        | Surface::EllipticCylinder { .. }
         | Surface::Cone { .. }
         | Surface::Sphere { .. }
         | Surface::Nurbs(_) => chord(contacts[0].point, contacts[1].point, tol)?,

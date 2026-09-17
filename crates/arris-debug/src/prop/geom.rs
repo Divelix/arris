@@ -32,6 +32,28 @@ pub fn cylinder() -> impl Strategy<Value = Surface> {
     (frame(), radius(RADIUS_RANGE)).prop_map(|(frame, radius)| Surface::Cylinder { frame, radius })
 }
 
+/// Elliptic cylinders in a random pose with `minor_radius` in
+/// [`RADIUS_RANGE`] and `major_radius` larger by at least
+/// [`ELLIPTIC_GAP`], so the section is never a circle to the tolerance
+/// (that section is a cylinder's, by `Profile::edges`'s rule).
+pub fn elliptic_cylinder() -> impl Strategy<Value = Surface> {
+    (
+        frame(),
+        radius(RADIUS_RANGE),
+        finite_f64(ELLIPTIC_GAP..=*RADIUS_RANGE.end()),
+    )
+        .prop_map(|(frame, minor_radius, extra)| Surface::EllipticCylinder {
+            frame,
+            major_radius: minor_radius + extra,
+            minor_radius,
+        })
+}
+
+/// The least an [`elliptic_cylinder`]'s major radius exceeds its minor
+/// one by: well above any model tolerance, so the section is an ellipse
+/// and never a circle read as one.
+pub const ELLIPTIC_GAP: f64 = 0.1;
+
 /// Cones in a random pose with a radius in [`RADIUS_RANGE`] and a
 /// half-angle in [`HALF_ANGLE_RANGE`].
 pub fn cone() -> impl Strategy<Value = Surface> {
@@ -64,7 +86,14 @@ pub fn torus() -> impl Strategy<Value = Surface> {
 
 /// Any analytic surface, each variant equally likely.
 pub fn surface() -> impl Strategy<Value = Surface> {
-    prop_oneof![plane(), cylinder(), cone(), sphere(), torus()]
+    prop_oneof![
+        plane(),
+        cylinder(),
+        elliptic_cylinder(),
+        cone(),
+        sphere(),
+        torus()
+    ]
 }
 
 /// Lines through a random point in the default box in a random direction.

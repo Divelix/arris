@@ -23,7 +23,9 @@
 //! `SEAM_CURVE` with the `Forward` use's pcurve first when both uses are in
 //! one loop; `LINE`, `CIRCLE`, `ELLIPSE`, `PLANE`, `CYLINDRICAL_SURFACE`,
 //! `CONICAL_SURFACE`, `SPHERICAL_SURFACE`, `TOROIDAL_SURFACE` placed by
-//! `AXIS2_PLACEMENT_3D` (origin, `Z`, `X`), and the `B_SPLINE_*` entities —
+//! `AXIS2_PLACEMENT_3D` (origin, `Z`, `X`), a
+//! `SURFACE_OF_LINEAR_EXTRUSION` of an `ELLIPSE` along its `Z` for an
+//! elliptic cylinder (ADR-0014), and the `B_SPLINE_*` entities —
 //! as complex entities with `RATIONAL_B_SPLINE_*` when a weight is not
 //! one — so the writer is exhaustive over `Surface`, `Curve` and `Curve2`.
 //! Lengths are written as millimetres and angles as radians because the
@@ -683,6 +685,24 @@ impl<'m> Writer<'m> {
                     real(*major_radius, owner)?,
                     real(*minor_radius, owner)?
                 )
+            }
+            Surface::EllipticCylinder {
+                frame,
+                major_radius,
+                minor_radius,
+            } => {
+                // STEP has no elementary elliptic cylinder: the section
+                // ellipse extruded along the axis, which the reference
+                // tree reads back with the same (u, v) (ADR-0014).
+                let placement = self.placement_3d(frame, owner)?;
+                let ellipse = self.push(format!(
+                    "ELLIPSE('',#{placement},{},{})",
+                    real(*major_radius, owner)?,
+                    real(*minor_radius, owner)?
+                ));
+                let z = self.direction_3d(frame.z().into_inner(), owner)?;
+                let axis = self.push(format!("VECTOR('',#{z},1.)"));
+                format!("SURFACE_OF_LINEAR_EXTRUSION('',#{ellipse},#{axis})")
             }
             Surface::Nurbs(n) => self.nurbs_surface(n, owner)?,
         };

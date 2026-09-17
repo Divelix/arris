@@ -115,7 +115,7 @@ of the step that made the fixture pass, and a later change to it is a
 |---|---|
 | `box` | `min`, `max` |
 | `cylinder` | `base` (centre of the base cap), `axis`, `radius`, `height` |
-| `profile` | `plane` `{origin, x, y}`; `outer` and `holes` as loops: `{"circle": {"center": [u, v], "radius": r}}` or `{"start": [u, v], "segments": [{"line_to": [u, v]}, {"arc_to": [u, v], "via": [u, v]}, …]}` (the last segment ends at `start`; loop orientation is irrelevant) |
+| `profile` | `plane` `{origin, x, y}`; `outer` and `holes` as loops: `{"circle": {"center": [u, v], "radius": r}}`, `{"ellipse": {"center": [u, v], "major": [du, dv], "minor_radius": b}}` or `{"start": [u, v], "segments": [{"line_to": [u, v]}, {"arc_to": [u, v], "via": [u, v]}, {"ellipse_to": [u, v], "center": [u, v], "major": [du, dv], "minor_radius": b, "ccw": true}, …]}` (the last segment ends at `start`; loop orientation is irrelevant) |
 | `extrude` | `profile`, `direction`, `length` |
 | `revolve` | `profile`, `axis` `{origin, direction}`, `angle_deg` |
 | `transform` | `of`, optional `translate`, optional `rotate` `{axis, origin, angle_deg}`; rotation first |
@@ -130,6 +130,21 @@ of the step that made the fixture pass, and a later change to it is a
   nearest edge by `BRepExtrema`, and both refuse a point that is within
   `probe` of two edges or on none — a vertex, a face, the inside or the
   outside (`CorpusError::EdgePoint`).
+- **An ellipse** (ADR-0014) is its centre, `major` — from the centre to a
+  major vertex, so its length is the major radius and its direction the
+  axis — and `minor_radius`; an `ellipse_to` segment runs from the
+  previous point to `ellipse_to`, both on the ellipse, turning
+  counter-clockwise about the plane's normal when `ccw`. A `minor_radius`
+  longer than `major` names the same point set with the axes swapped, on
+  both sides (`gp_Elips` insists on `a ≥ b`); radii within the linear
+  tolerance of each other are a circle in Arris. The oracle's area of a
+  face on the `Geom_SurfaceOfLinearExtrusion` an ellipse extrudes into
+  is its basis arc's length (`GCPnts_AbscissaPoint`, to 1e-13) times its
+  height — its (u, v) region is a rectangle for every face an extrude
+  makes — since Open CASCADE's fixed-order integration is 2e-5 off there
+  and its adaptive one worse; a shape of elementary faces alone keeps
+  the fixed order over the whole shape and its committed numbers bit for
+  bit.
 - **A `profile` plane's `x` and `y`** must be orthogonal (each normalised
   first): refused on both sides, by the same named tolerance
   (`arris_math::Precision::DEFAULT.angular_tolerance`, Open CASCADE's

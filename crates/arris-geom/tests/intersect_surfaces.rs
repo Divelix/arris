@@ -40,6 +40,16 @@ fn signed_distance(s: &Surface, p: Point3) -> f64 {
     match *s {
         Surface::Plane { .. } => q.z,
         Surface::Cylinder { radius, .. } => rho - radius,
+        Surface::EllipticCylinder {
+            major_radius: a,
+            minor_radius: b,
+            ..
+        } => {
+            // Exact through the projection, signed by the implicit form;
+            // a point the projection finds ambiguous is deep inside.
+            let sign = ((q.x / a).powi(2) + (q.y / b).powi(2) - 1.0).signum();
+            sign * s.project(p).map_or(f64::INFINITY, |pr| pr.distance)
+        }
         Surface::Cone {
             radius, half_angle, ..
         } => {
@@ -496,11 +506,23 @@ fn every_other_pair_is_unsupported() {
     check((surface(), surface()), |(a, b)| {
         let closed_form = |k| matches!(k, SurfaceKind::Plane | SurfaceKind::Cylinder);
         let two_cylinders = a.kind() == SurfaceKind::Cylinder && b.kind() == SurfaceKind::Cylinder;
+        let elliptic = |k| k == SurfaceKind::EllipticCylinder;
+        let parallel =
+            |x: &UnitVec3, y: &UnitVec3| x.cross(y).norm().atan2(x.dot(y).abs()) <= tol().angular;
         // Two cylinders in random poses are almost always skew, apart or
         // within the radii, and a pair with a cone, a sphere or a torus
         // in it is almost never coaxial; the property decides the pose
-        // rather than relying on that.
-        let supported = if closed_form(a.kind()) && closed_form(b.kind()) {
+        // rather than relying on that. An elliptic cylinder is decided
+        // against a plane in every pose and against a cylinder or an
+        // elliptic cylinder when the axes are parallel (ADR-0014).
+        let supported = if elliptic(a.kind()) || elliptic(b.kind()) {
+            let cylindrical =
+                |k| matches!(k, SurfaceKind::Cylinder | SurfaceKind::EllipticCylinder);
+            let (fa, fb) = (a.frame().unwrap(), b.frame().unwrap());
+            a.kind() == SurfaceKind::Plane
+                || b.kind() == SurfaceKind::Plane
+                || (cylindrical(a.kind()) && cylindrical(b.kind()) && parallel(&fa.z(), &fb.z()))
+        } else if closed_form(a.kind()) && closed_form(b.kind()) {
             !two_cylinders || !pose(&a, &b).is_quartic()
         } else {
             coaxial(&a, &b)
@@ -1101,7 +1123,9 @@ fn meridian_at(s: &Surface, axis: &Frame, t: f64) -> Point3 {
             major_radius + minor_radius * t.cos(),
             height(frame.origin()) + minor_radius * t.sin(),
         ),
-        Surface::Nurbs(_) => unreachable!(),
+        Surface::EllipticCylinder { .. } | Surface::Nurbs(_) => {
+            unreachable!("not a surface of revolution: `coaxial_kind` never makes one")
+        }
     }
 }
 
@@ -1117,7 +1141,9 @@ fn meridian_range(s: &Surface) -> (f64, f64) {
         }
         Surface::Sphere { .. } => (-FRAC_PI_2, FRAC_PI_2),
         Surface::Torus { .. } => (0.0, TAU),
-        Surface::Nurbs(_) => unreachable!(),
+        Surface::EllipticCylinder { .. } | Surface::Nurbs(_) => {
+            unreachable!("not a surface of revolution: `coaxial_kind` never makes one")
+        }
     }
 }
 
@@ -1137,7 +1163,9 @@ fn meridian_param(s: &Surface, axis: &Frame, p: Point3) -> f64 {
             major_radius,
             ..
         } => (h - height(frame.origin())).atan2(rho - major_radius),
-        Surface::Nurbs(_) => unreachable!(),
+        Surface::EllipticCylinder { .. } | Surface::Nurbs(_) => {
+            unreachable!("not a surface of revolution: `coaxial_kind` never makes one")
+        }
     }
 }
 

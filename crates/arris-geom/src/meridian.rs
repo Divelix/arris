@@ -276,11 +276,15 @@ fn shared_axis(a: &Surface, b: &Surface, tol: Tolerance) -> Result<Shared, GeomE
                     reason: "non-finite frame".to_owned(),
                 });
         }
+        // An elliptic cylinder is no surface of revolution and never
+        // reaches this arm (`intersect_surfaces` decides its pairs); it
+        // is listed so the match stays exhaustive without a wildcard.
         (Surface::Plane { .. }, Surface::Plane { .. })
         | (
-            Surface::Nurbs(_),
+            Surface::Nurbs(_) | Surface::EllipticCylinder { .. },
             Surface::Plane { .. }
             | Surface::Cylinder { .. }
+            | Surface::EllipticCylinder { .. }
             | Surface::Cone { .. }
             | Surface::Sphere { .. }
             | Surface::Torus { .. }
@@ -292,7 +296,7 @@ fn shared_axis(a: &Surface, b: &Surface, tol: Tolerance) -> Result<Shared, GeomE
             | Surface::Cone { .. }
             | Surface::Sphere { .. }
             | Surface::Torus { .. },
-            Surface::Nurbs(_),
+            Surface::Nurbs(_) | Surface::EllipticCylinder { .. },
         ) => Shared::None,
     })
 }
@@ -348,6 +352,7 @@ fn through_the_axis(carrier: &Surface, n: UnitVec3) -> Option<SurfaceIntersectio
         }
         Surface::Plane { .. }
         | Surface::Cylinder { .. }
+        | Surface::EllipticCylinder { .. }
         | Surface::Sphere { .. }
         | Surface::Nurbs(_) => None,
     }
@@ -437,7 +442,8 @@ fn sections(s: &Surface, axis: &Frame) -> Vec<Section> {
                 },
             ]
         }
-        Surface::Nurbs(_) => Vec::new(),
+        // Not a surface of revolution: no meridian section.
+        Surface::EllipticCylinder { .. } | Surface::Nurbs(_) => Vec::new(),
     }
 }
 

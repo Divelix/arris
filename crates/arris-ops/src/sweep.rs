@@ -303,6 +303,7 @@ fn apex_pcurve(surface: &Surface, axis: &Axis, v: f64) -> Curve2 {
     let along = match surface {
         Surface::Plane { frame }
         | Surface::Cylinder { frame, .. }
+        | Surface::EllipticCylinder { frame, .. }
         | Surface::Cone { frame, .. }
         | Surface::Sphere { frame, .. }
         | Surface::Torus { frame, .. } => frame.z().dot(&axis.direction),
@@ -1177,7 +1178,10 @@ pub fn revolve(
 /// within `angular_tolerance`. Every segment of the profile sweeps one side
 /// face — a line a plane whose `X` is the segment and `Y` the sweep, an arc
 /// a cylinder whose frame is the arc's centre, `Z` the sweep and `X` the
-/// profile plane's, so a circle loop's seam stands at its vertex's rise —
+/// profile plane's, so a circle loop's seam stands at its vertex's rise,
+/// an elliptic arc an elliptic cylinder whose `X` is the arc's major
+/// axis, so an ellipse loop's seam stands at its vertex's rise too
+/// (ADR-0014) —
 /// and every vertex a straight *rise* along the sweep; every pcurve is
 /// exact through `pcurve_on`. The profile face keeps its plane's frame
 /// whichever way the sweep goes and is the cap whose outward normal opposes
@@ -1286,8 +1290,21 @@ pub fn extrude(
                     frame: Frame::new(frame.origin(), sweep.into_inner(), plane.x().into_inner())?,
                     radius,
                 },
-                // `Profile::edges` makes lines and circles and nothing else.
-                Curve::Ellipse { .. } | Curve::Nurbs(_) => return Err(profile_curve_fault(edge)),
+                // An elliptic cylinder placed as a cylinder is, but with
+                // `X` the edge's own major axis, so the cap ellipse is
+                // the section at constant `v` (ADR-0014).
+                &Curve::Ellipse {
+                    ref frame,
+                    major_radius,
+                    minor_radius,
+                } => Surface::EllipticCylinder {
+                    frame: Frame::new(frame.origin(), sweep.into_inner(), frame.x().into_inner())?,
+                    major_radius,
+                    minor_radius,
+                },
+                // `Profile::edges` makes lines, circles and ellipses and
+                // nothing else.
+                Curve::Nurbs(_) => return Err(profile_curve_fault(edge)),
             });
         }
         surfaces.push(row);

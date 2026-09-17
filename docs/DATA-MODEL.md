@@ -61,12 +61,13 @@ never modified.
 
 ```rust
 pub enum Surface {
-    Plane    { frame: Frame },
-    Cylinder { frame: Frame, radius: f64 },
-    Cone     { frame: Frame, radius: f64, half_angle: f64 },
-    Sphere   { frame: Frame, radius: f64 },
-    Torus    { frame: Frame, major_radius: f64, minor_radius: f64 },
-    Nurbs    (NurbsSurface),
+    Plane            { frame: Frame },
+    Cylinder         { frame: Frame, radius: f64 },
+    EllipticCylinder { frame: Frame, major_radius: f64, minor_radius: f64 },
+    Cone             { frame: Frame, radius: f64, half_angle: f64 },
+    Sphere           { frame: Frame, radius: f64 },
+    Torus            { frame: Frame, major_radius: f64, minor_radius: f64 },
+    Nurbs            (NurbsSurface),
 }
 ```
 
@@ -76,15 +77,18 @@ With `O, X, Y, Z` the frame and `c = cos`, `s = sin`:
 |---|---|---|---|---|
 | Plane | `O + u·X + v·Y` | ℝ² | — | none. Normal `Z` |
 | Cylinder | `O + R(c u·X + s u·Y) + v·Z` | u ∈ [0, 2π), v ∈ ℝ | u, period 2π | seam at u = 0, the line through `O + R·X` along `Z` |
+| EllipticCylinder | `O + a c u·X + b s u·Y + v·Z`, `a ≥ b > 0` | u ∈ [0, 2π), v ∈ ℝ | u, period 2π | seam at u = 0, the ruling through `O + a·X`; `X` is the section's major axis. What an extruded elliptic profile segment sweeps (ADR-0014) |
 | Cone | `O + (R + v·s α)(c u·X + s u·Y) + v·c α·Z` | u ∈ [0, 2π), v ∈ ℝ | u | seam at u = 0; apex at v = −R / s α, a degenerate edge. `α` ∈ (0, π/2) is the half-angle; `R` the radius at v = 0 |
 | Sphere | `O + R c v (c u·X + s u·Y) + R s v·Z` | u ∈ [0, 2π), v ∈ [−π/2, π/2] | u | seam at u = 0; poles at v = ±π/2, degenerate edges |
 | Torus | `O + (R + r c v)(c u·X + s u·Y) + r s v·Z` | u, v ∈ [0, 2π) | u and v | seams at u = 0 and v = 0; `R > r` in cycle 1 (no self-intersecting tori until an operation needs them) |
 | Nurbs | Piegl & Tiller, rational; clamped or not (§NURBS) | knot range | either, where the knots and net wrap | as the knots say |
 
 The surface normal is `∂P/∂u × ∂P/∂v`, normalised. For the analytic types
-that is: plane `Z`; cylinder, cone and sphere radially outward; torus
-outward from the tube. It is the *surface's* normal; a face's normal is the
-surface's composed with the face use's orientation (§Orientation).
+that is: plane `Z`; cylinder, cone and sphere radially outward; an
+elliptic cylinder outward along its section's own normal `b c u·X + a s
+u·Y`, which is never singular; torus outward from the tube. It is the
+*surface's* normal; a face's normal is the surface's composed with the
+face use's orientation (§Orientation).
 
 The cone's radius grows along `+Z` and nowhere else — `α` is never
 obtuse — so a sweep that needs a cone narrowing along its axis places
@@ -115,18 +119,22 @@ surface (both nappes of a cone) as `SurfaceProjection { uv, point,
 distance }` by the variant's closed form, with a periodic `u` in `[0, 2π)`
 and the sphere's `v` in `[−π/2, π/2]`. Where the nearest point or its
 parameter is not unique — the axis of a cylinder, cone or torus, the plane
-through a cone's apex, a sphere's centre, a torus's centre circle — the
+through a cone's apex, a sphere's centre, a torus's centre circle, an
+elliptic cylinder's axis or the strip over the segment of its section's
+major axis inside the evolute — the
 result is `GeomError::Ambiguous` naming the locus, decided to rounding and
 never resolved by a silent choice of parameter. A point on a sphere's axis
 off its centre projects to the pole with `u = 0`: the point is unique,
-only the degenerate parameter is not.
+only the degenerate parameter is not. An elliptic cylinder projects
+through its section's quartic (`Curve::project`'s), `v` being the height.
 
 `Surface::chord_steps(chord, bounds)` gives the largest parameter steps
 `[hu, hv]` for which a triangle whose corners lie on the surface within
 `bounds` deviates from it by at most `chord`, by the second fundamental
 form: `INFINITY` along a flat or ruled direction (both on a plane, `v` on
-a cylinder and a cone), the cone's `u` curvature read at the radius of
-the region's far `v` bound, a sphere its radius in both directions and a
+a cylinder, an elliptic cylinder and a cone), the cone's `u` curvature
+read at the radius of the region's far `v` bound, an elliptic cylinder's
+`u` step bounded by its major radius, a sphere its radius in both directions and a
 torus `R + r` in `u` and `r` in `v` with the chord shared between the
 two directions, a NURBS the form's three coefficients sampled over
 `bounds` and one step for both. What tessellation sizes an edge's samples
@@ -188,7 +196,8 @@ line), plane–cylinder (a circle, an ellipse, two rulings, one tangent
 ruling, or nothing), cylinder–cylinder wherever the curve is a line or a
 conic, by the first table below, and every pair with a cone, a sphere or
 a torus in it wherever the two share an axis, by the meridian arm of the
-second table (ADR-0008); every other pair, and every pair with a `Nurbs`
+second table (ADR-0008), and the elliptic cylinder's pairs by the third
+table (ADR-0014); every other pair, and every pair with a `Nurbs`
 operand, is an explicit `Unsupported` arm. `Points` are isolated
 meetings: a touch (a plane tangent to a sphere, two spheres touching) or
 a crossing through a singular point (a plane perpendicular to a cone
@@ -206,6 +215,28 @@ perpendicular, `tol.linear` decides coincident, tangent and empty.
 | Crossing axes, unequal radii | `Unsupported` (a quartic, C3) |
 | Skew axes, nearest approach over `R₁ + R₂ + tol.linear` | `Empty` (triangle inequality) |
 | Skew axes, nearest approach within that | `Unsupported` (a quartic, C3) |
+
+**The elliptic cylinder's arms** (ADR-0014). A plane is decided in every
+pose; a cylinder or another elliptic cylinder where the axes are
+parallel within `tol.angular`, by the two *sections* in the plane across
+the first operand's axis through its origin — two conics, `geom`'s
+`conic2` — where `F₂(E₁(t))`, the second's implicit form along the
+first's parametrisation, is a trigonometric polynomial of degree two:
+its extrema come from the quartic in `tan(t/2)` of `arris_math::roots`,
+an extremum where the first section is within `tol.linear` of the
+second is a touch, every extremum a touch is `Coincident`, and each arc
+between two extrema that are not touches whose ends differ in sign holds
+one crossing by bracketed Newton. Each meeting is a ruling along the
+first operand's `Z` from its section point, ascending by the first
+section's parameter — up to four.
+
+| Elliptic cylinder, radii `a ≥ b`, against | Result |
+|---|---|
+| A plane, normal parallel to the axis within `tol.angular` | `Transversal`, the section ellipse at the piercing point, the cylinder's own axes |
+| A plane parallel to the axis, offset `d` from the section's centre along its normal `n` against the section's reach `M = √((a n·X)² + (b n·Y)²)` | `\|d\|` within `tol.linear` of `M`: `Tangent`, one ruling; `\|d\| < M`: `Transversal`, two rulings ordered along `n × Z`, negative first; beyond: `Empty` |
+| A plane oblique to the axis | `Transversal`, one ellipse: the affine image of the section, its semi-axes the singular values of the section's semi-diameters slid along the axis into the plane, `Z` the plane's normal, `X` the major axis |
+| A cylinder or an elliptic cylinder with parallel axes | `Coincident`, `Empty`, `Tangent` rulings or `Transversal` rulings by the sections; sections that both touch and cross mix kinds and are `Unsupported` |
+| A cylinder or an elliptic cylinder with other axes; a cone, a sphere, a torus, a NURBS | `Unsupported` |
 
 **The meridian arm.** Two surfaces of revolution about one axis meet
 where their meridians meet in a plane through the axis. In that plane,
@@ -342,7 +373,18 @@ An ellipse is not a separate case anywhere here: a conic reaches `a`
 along its frame's `X` and `b` along its `Y`, which is the radius twice
 for a circle, and neither closed form assumes the two are equal — so the
 oblique section edge a boolean puts on a cylinder wall is tested against
-a third face by the same arms.
+a third face by the same arms. A line against an **elliptic cylinder**
+(ADR-0014) is the classifier's ray: a line along the axis within
+`tol.angular` is `Coincident` when its section point is within
+`tol.linear` of the section and clear otherwise; the section reaches `M
+= √((a n·X)² + (b n·Y)²)` along the line's normal `n` in the section, a
+line whose offset is within `tol.linear` of `M` touches there, one
+farther misses, and one nearer crosses twice at the roots of the
+quadratic in the frame that scales the section to the unit circle. A
+conic in a plane across the axis within `tol.angular` meets the surface
+where it meets the section — the two-conic form above, the conic's own
+parameter kept — as `Coincident` or the touches and crossings as hits;
+a conic in any other plane is `Unsupported`.
 
 `intersect_curves(a, b, tol)` returns `CurveIntersection::{
 Points(Vec<CurveCurveHit>), Coincident}`, a hit being `CurveCurveHit {
@@ -452,7 +494,17 @@ other pair on these three — an oblique section of a cone, a small circle
 of a sphere about no axis of it, a Villarceau circle, a NURBS — is
 `Unsupported` naming the pair, with no fitted fallback: the sweeps' curves
 are all exact there (a fallback is a backlog line, for the operation that
-first needs one). NURBS surfaces are an `Unsupported` arm.
+first needs one). NURBS surfaces are an `Unsupported` arm. On an
+**elliptic cylinder** (ADR-0014) the exact arms are the two an extrude
+makes, each a `Line`: a ruling at constant `u`, the parameter of its
+section point, `v` running with `t` or against it by the line's
+direction against `Z`; and the section ellipse — centred on the axis,
+its `Z` along the axis, its major axis along the surface's `X` either
+way, the radii agreeing within `tol.linear` — at constant `v`, `u`
+starting at `0` or `π` by its `X` against the surface's and running in
+the sense of its `Z` against the surface's, as a parallel does on a
+cylinder. Every other curve on it is `Unsupported`, with no fitted
+fallback.
 
 **The (u, v) toolkit** is what every algorithm that reasons about a
 face's domain shares — the checker's loop, face and body rows,
@@ -533,12 +585,18 @@ conic piece split at quarter turns and a NURBS at its knots, signed by
 the loop's turn so holes subtract themselves: `f = |∂P/∂u × ∂P/∂v|` is
 an area, `f = P · (∂P/∂u × ∂P/∂v) / 3` summed over a solid's faces with
 their use orientation is Gauss's volume (B2, `measure`). The *inner*
-integral is split the same way, into equal steps no longer than
-`inner_step` (at most `MAX_INNER_INTERVALS` of them): a strip that
-crosses a whole turn of `cos u` is not one interval's work, so a caller
-passes `integrate::inner_step(surface)` — a quarter period on the
-quadrics, a knot span on a NURBS, `f64::INFINITY` (one interval, exact
-for a polynomial `f`) on a plane.
+integral is split at every whole multiple of `inner_step` it crosses —
+the grid the surface's own turns and quarter turns lie on, so a feature
+of the integrand there is an interval's end and never its middle — at
+most `MAX_INNER_INTERVALS` intervals, beyond which it falls back to that
+many equal ones: a strip that crosses a whole turn of `cos u` is not one
+interval's work, so a caller passes `integrate::inner_step(surface)` — a
+quarter period on the quadrics, a sixteenth on an elliptic cylinder,
+whose area element `√(a² sin²u + b² cos²u)` is no trigonometric
+polynomial and has complex singularities `atanh(b / a)` off `u = 0` and
+`π` that a quarter turn resolves to `1e-7` at an aspect of eighteen and
+a sixteenth to `1e-11`, a knot span on a NURBS, `f64::INFINITY` (one
+interval, exact for a polynomial `f`) on a plane.
 
 `project_to_plane(curve, plane)` is the orthogonal projection onto a plane
 for a consumer's sketch (architecture §How a consumer's kernel facade maps on): a point-set projection
@@ -579,13 +637,15 @@ the sweeps of `arris-ops` read it (`docs/ARCHITECTURE.md` §Operations).
 pub struct Profile { plane: Frame, outer: ProfileLoop, holes: Vec<ProfileLoop> }
 
 pub enum ProfileLoop {
-    Circle { center: Point2, radius: f64 },
-    Path   { start: Point2, segments: Vec<ProfileSegment> },
+    Circle  { center: Point2, radius: f64 },
+    Ellipse { center: Point2, major: Vec2, minor_radius: f64 },
+    Path    { start: Point2, segments: Vec<ProfileSegment> },
 }
 
 pub enum ProfileSegment {
     LineTo(Point2),
-    ArcTo { to: Point2, via: Point2 },
+    ArcTo     { to: Point2, via: Point2 },
+    EllipseTo { to: Point2, center: Point2, major: Vec2, minor_radius: f64, ccw: bool },
 }
 ```
 
@@ -593,7 +653,12 @@ The loops are drawn in the plane's own (u, v) — `origin + u·X + v·Y` — and
 carry no orientation: the grammar is one-to-one with a recipe's `profile`
 step (`tests/fixtures/README.md`), the consumer's sketch as it is drawn.
 An arc is three points: `via` decides its centre, its radius and which way
-round it goes.
+round it goes. An elliptic arc (ADR-0014) is given its ellipse — `major`
+runs from the centre to a major vertex, so its length is the major radius
+and its direction the axis, and `minor_radius` the other — and its turn,
+`ccw` counter-clockwise about the plane's normal, since with the centre
+and axes given only the direction is left to state; a full ellipse is
+the loop variant, never a segment.
 
 `Profile::edges(tol)` is the validation and the orientation in one, and
 returns one `Vec<ProfileEdge>` per loop — index `0` the outer, the holes
@@ -605,6 +670,8 @@ from `1` — in walking order:
 | a path loop's last segment ends where the loop started, within `tol.linear` | `NotClosed { loop_index, gap }` |
 | a segment is longer than `tol.linear` — its length for a line, the distance between its ends for an arc, so an arc back to its own start is refused rather than taken for a full circle | `ShortSegment { loop_index, segment }` |
 | an arc's `via` is off its chord by more than `tol.linear` | `DegenerateArc` |
+| an ellipse's `major` and `minor_radius` are finite and each above `tol.linear` | `DegenerateEllipse { loop_index, segment }` |
+| an elliptic segment's start and `to` each lie within `tol.linear` of its ellipse | `OffEllipse { loop_index, segment, distance }` |
 | a loop's mean width — twice its area over its perimeter: the width of a long thin rectangle, the radius of a disc — is above `tol.linear` | `ZeroArea { loop_index }` |
 | a loop does not meet itself | `SelfIntersecting { loop_index, segments }` |
 | no two loops meet | `Crossing { loops }` |
@@ -623,15 +690,26 @@ own-plane case that cannot happen, carried rather than unwrapped.
 
 The outer loop comes back counter-clockwise about the plane's normal and
 every hole clockwise, reversed from the consumer's order where needed. A
-`ProfileEdge` is one segment's 3D `Curve` — a `Line`, or a `Circle` whose
+`ProfileEdge` is one segment's 3D `Curve` — a `Line`, a `Circle` whose
 `Z` is `±` the plane's normal so the parameter runs from the segment's
-start through its `via` — its `range`, its exact in-plane `Curve2` (by
+start through its `via`, or an `Ellipse` whose `Z` is `±` the normal so
+the parameter runs in the segment's turn and whose `X` is the major
+axis — its `range`, its exact in-plane `Curve2` (by
 `pcurve_on`, so same-parameter and checked), its two endpoints in (u, v),
 the `(loop_index, segment)` indices *as the consumer wrote them*, and
 `reversed`, which says whether orienting the loop turned it round. A
 circle loop is one closed edge over `[0, 2π]` whose one vertex sits at
 `center + radius · plane.x`, where the oracle's `gp_Circ` on the plane's
-`Ax2` puts it.
+`Ax2` puts it; an ellipse loop's sits at `center + a·X`, the end of the
+major axis, where `gp_Elips` puts it. An ellipse is normalised before it
+becomes an edge: a `minor_radius` longer than `major` names the same
+point set, and the edge's axes are swapped with the frame turned a
+quarter turn so `a ≥ b`; radii that agree within `tol.linear` give a
+`Circle` edge of their mean radius through the same ends, which deviates
+from the ellipse by at most half their difference, so a near-circular
+section is always a cylinder with every arm a cylinder has. An elliptic
+arc's ends are the ellipse's nearest points to the consumer's, within
+`tol.linear`, and a reversed walk turns its `ccw`.
 
 `Profile::area_and_centroid(tol)` is the region's area and (u, v) centroid
 by `integrate::region_integral` over those oriented edges, so the holes

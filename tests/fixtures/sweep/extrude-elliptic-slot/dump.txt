@@ -1,0 +1,80 @@
+precision default 0.0000001 min 0.000000000001 max 0.01 angular 0.000000000001 parametric 0.0000001 samples 23
+body +b0 solid
+  shell +s0
+    face -f0 S0 tol 0.0000001
+      surface plane origin (0, 0, 0) x (1, 0, 0) y (0, 1, 0) z (0, 0, 1)
+      loop 0
+        coedge -e1 p1 ellipse origin (10, 0) x (1, 0) y (0, 1) major 5 minor 3
+        coedge -e2 p2 line origin (10, 3) direction (-1, 0)
+        coedge -e3 p3 ellipse origin (-10, 0) x (1, 0) y (0, 1) major 5 minor 3
+        coedge -e0 p0 line origin (-10, -3) direction (1, 0)
+    face +f1 S1 tol 0.0000001
+      surface plane origin (0, 0, 8) x (1, 0, 0) y (0, 1, 0) z (0, 0, 1)
+      loop 0
+        coedge +e4 p4 line origin (-10, -3) direction (1, 0)
+        coedge +e5 p5 ellipse origin (10, 0) x (1, 0) y (0, 1) major 5 minor 3
+        coedge +e6 p6 line origin (10, 3) direction (-1, 0)
+        coedge +e7 p7 ellipse origin (-10, 0) x (1, 0) y (0, 1) major 5 minor 3
+    face +f2 S2 tol 0.0000001
+      surface plane origin (-10, -3, 0) x (1, 0, 0) y (0, 0, 1) z (0, -1, 0)
+      loop 0
+        coedge +e0 p8 line origin (0, 0) direction (1, 0)
+        coedge +e9 p9 line origin (20, 0) direction (0, 1)
+        coedge -e4 p10 line origin (0, 8) direction (1, 0)
+        coedge -e8 p11 line origin (0, 0) direction (0, 1)
+    face +f3 S3 tol 0.0000001
+      surface elliptic_cylinder origin (10, 0, 0) x (1, 0, 0) y (0, 1, 0) z (0, 0, 1) major 5 minor 3
+      loop 0
+        coedge +e1 p12 line origin (-6.28318530718, 0) direction (1, 0)
+        coedge +e10 p13 line origin (1.570796326795, 0) direction (0, 1)
+        coedge -e5 p14 line origin (-6.28318530718, 8) direction (1, 0)
+        coedge -e9 p15 line origin (-1.570796326795, 0) direction (0, 1)
+    face +f4 S4 tol 0.0000001
+      surface plane origin (10, 3, 0) x (-1, 0, 0) y (0, 0, 1) z (0, 1, 0)
+      loop 0
+        coedge +e2 p16 line origin (0, 0) direction (1, 0)
+        coedge +e11 p17 line origin (20, 0) direction (0, 1)
+        coedge -e6 p18 line origin (0, 8) direction (1, 0)
+        coedge -e10 p19 line origin (0, 0) direction (0, 1)
+    face +f5 S5 tol 0.0000001
+      surface elliptic_cylinder origin (-10, 0, 0) x (1, 0, 0) y (0, 1, 0) z (0, 0, 1) major 5 minor 3
+      loop 0
+        coedge +e3 p20 line origin (0, 0) direction (1, 0)
+        coedge +e8 p21 line origin (4.712388980385, 0) direction (0, 1)
+        coedge -e7 p22 line origin (0, 8) direction (1, 0)
+        coedge -e11 p23 line origin (1.570796326795, 0) direction (0, 1)
+edges
+  -e1 v1 -> v2 c1 [4.712388980385, 7.853981633974] tol 0.0000001
+    curve ellipse origin (10, 0, 0) x (1, 0, 0) y (0, 1, 0) z (0, 0, 1) major 5 minor 3
+  -e2 v2 -> v3 c2 [0, 20] tol 0.0000001
+    curve line origin (10, 3, 0) direction (-1, 0, 0)
+  -e3 v3 -> v0 c3 [1.570796326795, 4.712388980385] tol 0.0000001
+    curve ellipse origin (-10, 0, 0) x (1, 0, 0) y (0, 1, 0) z (0, 0, 1) major 5 minor 3
+  -e0 v0 -> v1 c0 [0, 20] tol 0.0000001
+    curve line origin (-10, -3, 0) direction (1, 0, 0)
+  +e4 v4 -> v5 c4 [0, 20] tol 0.0000001
+    curve line origin (-10, -3, 8) direction (1, 0, 0)
+  +e5 v5 -> v6 c5 [4.712388980385, 7.853981633974] tol 0.0000001
+    curve ellipse origin (10, 0, 8) x (1, 0, 0) y (0, 1, 0) z (0, 0, 1) major 5 minor 3
+  +e6 v6 -> v7 c6 [0, 20] tol 0.0000001
+    curve line origin (10, 3, 8) direction (-1, 0, 0)
+  +e7 v7 -> v4 c7 [1.570796326795, 4.712388980385] tol 0.0000001
+    curve ellipse origin (-10, 0, 8) x (1, 0, 0) y (0, 1, 0) z (0, 0, 1) major 5 minor 3
+  +e9 v1 -> v5 c9 [0, 8] tol 0.0000001
+    curve line origin (10, -3, 0) direction (0, 0, 1)
+  -e8 v0 -> v4 c8 [0, 8] tol 0.0000001
+    curve line origin (-10, -3, 0) direction (0, 0, 1)
+  +e10 v2 -> v6 c10 [0, 8] tol 0.0000001
+    curve line origin (10, 3, 0) direction (0, 0, 1)
+  +e11 v3 -> v7 c11 [0, 8] tol 0.0000001
+    curve line origin (-10, 3, 0) direction (0, 0, 1)
+vertices
+  v2 (10, 3, 0) tol 0.0000001
+  v1 (10, -3, 0) tol 0.0000001
+  v3 (-10, 3, 0) tol 0.0000001
+  v0 (-10, -3, 0) tol 0.0000001
+  v4 (-10, -3, 8) tol 0.0000001
+  v5 (10, -3, 8) tol 0.0000001
+  v6 (10, 3, 8) tol 0.0000001
+  v7 (-10, 3, 8) tol 0.0000001
+euler 8/12/6/6/1 g0 = 0

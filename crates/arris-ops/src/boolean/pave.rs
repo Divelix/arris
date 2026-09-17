@@ -177,16 +177,21 @@ fn shape_of(body: Body) -> Shape {
     Shape::new(body.id, body.orientation)
 }
 
-/// The quadric guard: a face on a cone, a sphere or a torus is refused
+/// The quadric guard: a face on a cone, a sphere, a torus or an elliptic
+/// cylinder is refused
 /// before any intersector is asked — as the same [`OpError::Unsupported`]
 /// naming the pair it got while the intersector had no arm for it — so
-/// the coaxial arm (ADR-0008) widens no boolean silently. Booleans with
-/// quadric operand faces are C3's, with their corpus
+/// the coaxial arm (ADR-0008) and the elliptic cylinder's closed forms
+/// (ADR-0014) widen no boolean silently. Booleans with
+/// quadric or elliptic operand faces are C3's, with their corpus
 /// (`docs/ARCHITECTURE.md` §Operations).
 fn quadric(s: &Surface) -> bool {
     matches!(
         s.kind(),
-        SurfaceKind::Cone | SurfaceKind::Sphere | SurfaceKind::Torus
+        SurfaceKind::Cone
+            | SurfaceKind::Sphere
+            | SurfaceKind::Torus
+            | SurfaceKind::EllipticCylinder
     )
 }
 

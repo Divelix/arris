@@ -142,6 +142,20 @@ pub enum Segment {
         /// A point on the arc between the ends.
         via: [Num; 2],
     },
+    /// An arc of the ellipse of `center`, `major` and `minor_radius` to a
+    /// point, counter-clockwise in (u, v) when `ccw` (ADR-0014).
+    Ellipse {
+        /// The end point in (u, v).
+        ellipse_to: [Num; 2],
+        /// The ellipse's centre in (u, v).
+        center: [Num; 2],
+        /// From the centre to one end of the major axis.
+        major: [Num; 2],
+        /// The minor radius.
+        minor_radius: Num,
+        /// Counter-clockwise from the previous point to `ellipse_to`.
+        ccw: bool,
+    },
 }
 
 /// A closed loop of a profile.
@@ -152,6 +166,11 @@ pub enum Loop {
     Circle {
         /// The circle.
         circle: Circle,
+    },
+    /// A full ellipse.
+    Ellipse {
+        /// The ellipse.
+        ellipse: Ellipse,
     },
     /// A chain of segments starting at `start` and returning to it.
     Path {
@@ -169,6 +188,17 @@ pub struct Circle {
     pub center: [Num; 2],
     /// Radius.
     pub radius: Num,
+}
+
+/// An ellipse in a profile plane (ADR-0014).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Ellipse {
+    /// Centre in (u, v).
+    pub center: [Num; 2],
+    /// From the centre to one end of the major axis.
+    pub major: [Num; 2],
+    /// The minor radius.
+    pub minor_radius: Num,
 }
 
 /// A revolve axis.

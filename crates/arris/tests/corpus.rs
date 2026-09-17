@@ -364,6 +364,27 @@ fn sweep_extrude_downward() {
     run("sweep/extrude-downward");
 }
 
+/// A full ellipse with a turned major axis extruded: one seamed elliptic
+/// cylinder between two planes, volume `π a b h` (ADR-0014).
+#[test]
+fn sweep_extrude_ellipse() {
+    run("sweep/extrude-ellipse");
+}
+
+/// Two half-ellipses joined by lines: two elliptic-cylinder faces with no
+/// seam, their full sections crossing off the faces.
+#[test]
+fn sweep_extrude_elliptic_slot() {
+    run("sweep/extrude-elliptic-slot");
+}
+
+/// A rectangle with an elliptic hole: the seamed elliptic bore inside
+/// four walls, `boolean/through-hole`'s counts.
+#[test]
+fn sweep_extrude_plate_elliptic_hole() {
+    run("sweep/extrude-plate-elliptic-hole");
+}
+
 /// A rectangle revolved a full turn about z: two seamed walls and two
 /// annuli of two closed rises each — `boolean/coaxial-cut`'s solid by the
 /// other path.

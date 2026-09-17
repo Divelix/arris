@@ -65,8 +65,9 @@ pub enum AmbiguousLocus {
     /// The plane through a cone's apex perpendicular to its axis: the two
     /// nappes are equally near.
     ApexPlane,
-    /// The segment of an ellipse's major axis inside its evolute: two
-    /// points, mirror images across the axis, are equally near.
+    /// The segment of an ellipse's major axis inside its evolute — or,
+    /// on an elliptic cylinder, the strip that segment sweeps along the
+    /// axis: two points, mirror images across the axis, are equally near.
     MajorAxis,
 }
 

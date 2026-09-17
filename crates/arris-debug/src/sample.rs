@@ -1036,6 +1036,15 @@ fn iso_u(surface: &Surface, v: f64) -> Result<Curve, SampleError> {
             frame: frame.with_origin(frame.to_world(Point3::new(0.0, 0.0, v))),
             radius,
         },
+        Surface::EllipticCylinder {
+            frame,
+            major_radius,
+            minor_radius,
+        } => Curve::Ellipse {
+            frame: frame.with_origin(frame.to_world(Point3::new(0.0, 0.0, v))),
+            major_radius,
+            minor_radius,
+        },
         Surface::Cone {
             frame,
             radius,
@@ -1083,6 +1092,14 @@ fn iso_v(surface: &Surface, u: f64) -> Result<Curve, SampleError> {
         },
         Surface::Cylinder { frame, radius } => Curve::Line {
             origin: frame.to_world(Point3::new(radius * cu, radius * su, 0.0)),
+            direction: frame.z(),
+        },
+        Surface::EllipticCylinder {
+            frame,
+            major_radius,
+            minor_radius,
+        } => Curve::Line {
+            origin: frame.to_world(Point3::new(major_radius * cu, minor_radius * su, 0.0)),
             direction: frame.z(),
         },
         Surface::Cone {

@@ -21,11 +21,20 @@ Operations, by `op`:
     cylinder   base [x,y,z], axis [x,y,z], radius, height
     profile    plane {origin, x, y}, outer <loop>, holes [<loop>, ...]
                <loop> = {"circle": {"center": [u,v], "radius": r}}
+                      | {"ellipse": {"center": [u,v], "major": [du,dv],
+                                     "minor_radius": b}}
                       | {"start": [u,v], "segments": [
                             {"line_to": [u,v]},
-                            {"arc_to": [u,v], "via": [u,v]}, ...]}
+                            {"arc_to": [u,v], "via": [u,v]},
+                            {"ellipse_to": [u,v], "center": [u,v],
+                             "major": [du,dv], "minor_radius": b,
+                             "ccw": true}, ...]}
                (the last segment ends at `start`; loop orientation is
-               irrelevant, holes are oriented by the interpreter)
+               irrelevant, holes are oriented by the interpreter; an
+               ellipse's `major` runs from the centre to a major vertex,
+               a `minor_radius` longer than it swaps the axes as
+               `gp_Elips` needs, and `ccw` is the turn about the plane's
+               normal — ADR-0014)
     extrude    profile <name>, direction [x,y,z], length
     revolve    profile <name>, axis {origin, direction}, angle_deg
     transform  of <name>, translate [x,y,z] (optional),
@@ -68,8 +77,8 @@ from OCP.BRepPrimAPI import (
     BRepPrimAPI_MakePrism,
     BRepPrimAPI_MakeRevol,
 )
-from OCP.GC import GC_MakeArcOfCircle
-from OCP.gp import gp_Ax1, gp_Ax2, gp_Ax3, gp_Circ, gp_Dir, gp_Pln, gp_Pnt, gp_Trsf, gp_Vec
+from OCP.GC import GC_MakeArcOfCircle, GC_MakeArcOfEllipse
+from OCP.gp import gp_Ax1, gp_Ax2, gp_Ax3, gp_Circ, gp_Dir, gp_Elips, gp_Pln, gp_Pnt, gp_Trsf, gp_Vec
 from OCP.ShapeFix import ShapeFix_Face
 from OCP.TopAbs import TopAbs_EDGE
 from OCP.TopExp import TopExp
@@ -274,7 +283,30 @@ class _Plane:
         return gp_Ax3(_pnt(self.origin), _dir(self.z), _dir(self.x))
 
 
+def _elips(spec: dict, plane: _Plane, params: dict[str, float], what: str) -> gp_Elips:
+    """The `gp_Elips` of an ellipse spec on the plane's normal: `major`
+    from the centre to a major vertex, and when `minor_radius` is the
+    longer one the axes swapped a quarter turn, as Arris's
+    `Profile::edges` normalises it (ADR-0014)."""
+    center = vector(spec["center"], params, 2)
+    major = vector(spec["major"], params, 2)
+    b = number(spec["minor_radius"], params)
+    a = math.hypot(*major)
+    if a <= 0.0 or b <= 0.0:
+        raise OracleError(f"{what}: ellipse radii must be positive")
+    ex = [major[0] / a, major[1] / a]
+    if b > a:
+        ex, a, b = [-ex[1], ex[0]], b, a
+    x3 = [ex[0] * plane.x[i] + ex[1] * plane.y[i] for i in range(3)]
+    return gp_Elips(gp_Ax2(plane.to3d(center), _dir(plane.z), _dir(x3)), a, b)
+
+
 def _wire(loop: dict, plane: _Plane, params: dict[str, float]):
+    if "ellipse" in loop:
+        elips = _elips(loop["ellipse"], plane, params, "ellipse loop")
+        edge = BRepBuilderAPI_MakeEdge(elips)
+        wire = BRepBuilderAPI_MakeWire(TopoDS.Edge(_checked(edge, "ellipse edge")))
+        return TopoDS.Wire(_checked(wire, "ellipse wire"))
     if "circle" in loop:
         c = loop["circle"]
         center = plane.to3d(vector(c["center"], params, 2))
@@ -302,8 +334,17 @@ def _wire(loop: dict, plane: _Plane, params: dict[str, float]):
             if not arc.IsDone():
                 raise OracleError(f"segment {i}: three-point arc is degenerate")
             edge = BRepBuilderAPI_MakeEdge(arc.Value())
+        elif "ellipse_to" in seg:
+            to = vector(seg["ellipse_to"], params, 2)
+            elips = _elips(seg, plane, params, f"segment {i}")
+            # `sense` true runs with the ellipse's parametrisation, which
+            # is counter-clockwise about the plane's normal.
+            arc = GC_MakeArcOfEllipse(elips, plane.to3d(current), plane.to3d(to), bool(seg["ccw"]))
+            if not arc.IsDone():
+                raise OracleError(f"segment {i}: elliptic arc is degenerate")
+            edge = BRepBuilderAPI_MakeEdge(arc.Value())
         else:
-            raise OracleError(f"segment {i}: expected line_to or arc_to")
+            raise OracleError(f"segment {i}: expected line_to, arc_to or ellipse_to")
         wire.Add(TopoDS.Edge(_checked(edge, f"segment {i}")))
         current = to
     if any(abs(a - b) > 1e-12 for a, b in zip(current, start)):

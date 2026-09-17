@@ -1,0 +1,29 @@
+{
+  "description": "a full ellipse, major radius 6 along (0.8, 0.6) and minor 3, centred at (1, 2), extruded 10: one seamed elliptic-cylinder face between two planes, volume pi*6*3*10 (ADR-0014); the area has no closed form",
+  "steps": [
+    {
+      "name": "sketch",
+      "op": "profile",
+      "plane": {"origin": [0, 0, 0], "x": [1, 0, 0], "y": [0, 1, 0]},
+      "outer": {"ellipse": {"center": [1, 2], "major": [4.8, 3.6], "minor_radius": 3}},
+      "holes": []
+    },
+    {"name": "result", "op": "extrude", "profile": "sketch", "direction": [0, 0, 1], "length": 10}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [1, 2, 5], "expect": "in"},
+    {"label": "outside", "point": [1, 8, 5], "expect": "out"},
+    {"label": "on_side", "point": [-0.8, 4.4, 5], "expect": "on"},
+    {"label": "on_cap", "point": [1, 2, 10], "expect": "on"},
+    {"label": "on_cap_edge", "point": [-0.8, 4.4, 10], "expect": "on"},
+    {"label": "on_seam", "point": [5.8, 5.6, 4], "expect": "on"},
+    {"label": "beyond_minor", "point": [-1, 4.6, 5], "expect": "out"}
+  ],
+  "analytic": {
+    "volume": "pi * 6 * 3 * 10",
+    "centroid": [1, 2, 5],
+    "counts": {"vertices": 2, "edges": 3, "faces": 3, "loops": 3, "shells": 1},
+    "genus": 0
+  }
+}

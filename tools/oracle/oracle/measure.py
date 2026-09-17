@@ -21,8 +21,12 @@
 import math
 
 from OCP.BRep import BRep_Tool
+from OCP.BRepAdaptor import BRepAdaptor_Surface
+from OCP.BRepTools import BRepTools
+from OCP.GCPnts import GCPnts_AbscissaPoint
 from OCP.BRepClass3d import BRepClass3d_SolidClassifier
 from OCP.BRepGProp import BRepGProp
+from OCP.GeomAbs import GeomAbs_SurfaceType
 from OCP.GProp import GProp_GProps
 from OCP.gp import gp_Pnt
 from OCP.TopAbs import (
@@ -43,6 +47,57 @@ from OCP.TopoDS import TopoDS, TopoDS_Shape
 from OCP.collections import IndexedMap_TopoDS_Shape_TopTools_ShapeMapHasher as IndexedMapOfShape
 
 from . import OracleError
+
+# The tolerance the length of an extrusion face's basis arc is asked to:
+# three orders below the corpus's `area_rel` (1e-9).
+LENGTH_TOL = 1e-13
+
+_ELEMENTARY = (
+    GeomAbs_SurfaceType.GeomAbs_Plane,
+    GeomAbs_SurfaceType.GeomAbs_Cylinder,
+    GeomAbs_SurfaceType.GeomAbs_Cone,
+    GeomAbs_SurfaceType.GeomAbs_Sphere,
+    GeomAbs_SurfaceType.GeomAbs_Torus,
+)
+
+
+def _faces(shape: TopoDS_Shape):
+    explorer = TopExp_Explorer(shape, TopAbs_FACE)
+    while explorer.More():
+        yield TopoDS.Face(explorer.Current())
+        explorer.Next()
+
+
+def _area(shape: TopoDS_Shape) -> float:
+    """The total face area. Every face on a plane, cylinder, cone, sphere
+    or torus: `BRepGProp::SurfaceProperties` over the whole shape, whose
+    fixed-order integration is exact there, so the committed numbers
+    stay bit for bit. A face on a `Geom_SurfaceOfLinearExtrusion` — an
+    extruded elliptic profile segment, ADR-0014 — has an area element no
+    polynomial in the parameters, which that integration is 2e-5 off on
+    and the adaptive overload worse; its (u, v) region is a rectangle
+    for every face an extrude makes, so its area is its basis arc's
+    length over the face's `u` bounds, by `GCPnts_AbscissaPoint` to
+    LENGTH_TOL, times its `v` extent. Any other face — a B-spline patch
+    of a sample — takes the fixed-order integration face by face, as the
+    whole-shape call gave it before."""
+    faces = list(_faces(shape))
+    if all(BRepAdaptor_Surface(f).GetType() in _ELEMENTARY for f in faces):
+        sp = GProp_GProps()
+        BRepGProp.SurfaceProperties_s(shape, sp)
+        return sp.Mass()
+    total = 0.0
+    for face in faces:
+        adaptor = BRepAdaptor_Surface(face)
+        if adaptor.GetType() == GeomAbs_SurfaceType.GeomAbs_SurfaceOfExtrusion:
+            u1, u2, v1, v2 = BRepTools.UVBounds_s(face)
+            length = GCPnts_AbscissaPoint.Length_s(adaptor.BasisCurve(), u1, u2, LENGTH_TOL)
+            total += length * (v2 - v1)
+        else:
+            sp = GProp_GProps()
+            BRepGProp.SurfaceProperties_s(face, sp)
+            total += sp.Mass()
+    return total
 
 DEFAULT_TOLERANCES = {
     "volume_rel": 1e-9,
@@ -148,8 +203,7 @@ def measure(shape: TopoDS_Shape, probes: list[dict], probe_tolerance: float, man
 
     vp = GProp_GProps()
     BRepGProp.VolumeProperties_s(shape, vp)
-    sp = GProp_GProps()
-    BRepGProp.SurfaceProperties_s(shape, sp)
+    area = _area(shape)
     c = vp.CentreOfMass()
     chi = counts["vertices"] - counts["edges"] + 2 * counts["faces"] - counts["loops"]
     if chi % 2 != 0 and manifold:
@@ -157,7 +211,7 @@ def measure(shape: TopoDS_Shape, probes: list[dict], probe_tolerance: float, man
     out.update(
         {
             "volume": vp.Mass(),
-            "area": sp.Mass(),
+            "area": area,
             "centroid": [c.X(), c.Y(), c.Z()],
             "inertia": inertia(vp),
             "euler_characteristic": chi,

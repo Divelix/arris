@@ -100,7 +100,7 @@ bound has to be established here.
   STEP entities, and the refusal in the pave model (design deltas above).
   Before deciding, read how the consumer's sketcher emits ellipses and
   whether its documents revolve them. Commit: `docs(adr)`.
-- [ ] Step 2 **[3]** — Extruding a profile with elliptic segments. Covers
+- [x] Step 2 **[3]** — Extruding a profile with elliptic segments. Covers
   the representation step 1 chose, both pcurves (cap plane and side
   face), tessellation, the checker's arms for the side against its caps
   and against its neighbours, `classify_point`, mass properties and the
@@ -119,7 +119,9 @@ bound has to be established here.
 - [ ] Step 4 **[1]** — Booleans with an elliptic-faced operand are
   refused by the pave guard with a typed error naming the face.
   Refusal-by-fixture: `boolean/elliptic-operand-cut`. A backlog line
-  points to C3 or C4.
+  points to C3 or C4. The guard's arm landed with step 2 (the closed
+  forms it holds back went in there, and ADR-0014 wants the guard with
+  them); this step is the fixture and the backlog line.
 - [ ] Step 5 **[1]** — Several bodies in one STL or OBJ file, per the
   design delta. The test reads the file back with `RWStl` through
   `tools/oracle/mesh.py` and with the test's own OBJ parser: the triangle
@@ -237,3 +239,29 @@ bound has to be established here.
   Its old backend builds every elliptic piece as a circular arc through
   three points of the ellipse. Arris builds the exact ellipse, so the
   consumer ADR in step 7 names this as a correction.
+- **Finding (step 2): the area of an elliptic cylinder is no polynomial
+  quadrature.** Its area element `√(a² sin²u + b² cos²u)` has complex
+  singularities `atanh(b/a)` off `u = 0` and `π`; the region integral's
+  inner split now aligns to the surface's own grid and the elliptic
+  cylinder's `inner_step` is a sixteenth of a turn (1e-11 at an aspect
+  of eighteen, where a quarter turn left 1e-7 and an unaligned split
+  1e-6). The oracle had the same problem: Open CASCADE's fixed-order
+  `SurfaceProperties` is 2e-5 off on a `Geom_SurfaceOfLinearExtrusion`
+  and its adaptive overload 3e-3 off, so `measure.py` takes such a
+  face's area as its basis arc's length (`GCPnts_AbscissaPoint`, to
+  1e-13) times its height — a rectangle in (u, v) for every face an
+  extrude makes — and keeps the fixed order over the whole shape, and
+  every committed number bit for bit, when every face is elementary.
+- **Finding (step 2): parallel-axis rulings are ordered by parameter.**
+  ADR-0014 says the elliptic pairs follow the parallel cylinders'
+  ordering rule (offset along `Z × ŵ`), but an elliptic section pair
+  has up to four rulings and a coaxial pair (four crossings of an
+  ellipse and a circle between its radii) has no `ŵ`. The rulings come
+  ascending by the first operand's section parameter instead, which is
+  deterministic in every case; `docs/DATA-MODEL.md` §Curves records it.
+- **Finding (step 2): a section pair that touches and crosses is
+  `Unsupported`.** `SurfaceIntersection` is `Tangent` or `Transversal`,
+  never both, and the meridian arm already refuses a mixed result; the
+  elliptic pair does the same. No extrude makes such a pair (its faces
+  share their rulings), and booleans on elliptic faces are refused by
+  the guard, so nothing reaches it at `Full`.

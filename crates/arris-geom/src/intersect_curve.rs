@@ -3,10 +3,11 @@
 use core::f64::consts::{PI, TAU};
 
 use arris_math::roots::{self, RootError};
-use arris_math::{
-    Frame, Interval, Point2, Point3, Tolerance, Vec2, Vec3, is_negligible, wrap_angle as wrap_turn,
-};
+use arris_math::{Frame, Interval, Point2, Point3, Tolerance, Vec2, Vec3, wrap_angle as wrap_turn};
 
+use crate::conic2::{Conic2, ConicMeet, conic_pair, trig2_roots};
+use crate::intersect::line_angle;
+use crate::project::ellipse_distance;
 use crate::{Curve, CurveKind, GeomError, GeomKind, Surface};
 
 /// One point where a curve meets a surface.
@@ -84,7 +85,17 @@ pub enum CurveSurfaceIntersection {
 /// — with a touch at an extremum within `tol.linear` and each crossing
 /// between them polished by bracketed Newton on the distance. Read
 /// `IntAna_IntConicQuad` and `IntAna_IntLinTorus` in the reference tree
-/// for the case analysis, reimplemented on our frames.
+/// for the case analysis, reimplemented on our frames. A line against an
+/// **elliptic cylinder** (ADR-0014) is the quadratic in the frame that
+/// scales the section to a circle: two hits, or `Coincident` for a
+/// ruling, with the touch decided in length — the section reaches
+/// `M = √((a n·X)² + (b n·Y)²)` along the line's normal `n` in the
+/// section, and a line whose offset from the centre is within
+/// `tol.linear` of `M` touches at that reach. A conic whose plane is
+/// across the axis within `tol.angular` meets the elliptic cylinder where
+/// it meets the section, two conics in one plane by the quartic
+/// (`crate::conic2`): `Coincident`, or the touches and crossings as
+/// hits; a conic in any other plane is `Unsupported`.
 ///
 /// ```
 /// use arris_geom::{Curve, CurveSurfaceIntersection, Surface, intersect_curve_surface};
@@ -199,6 +210,58 @@ pub fn intersect_curve_surface(
             tol,
         ),
         (
+            Curve::Line { origin, direction },
+            Surface::EllipticCylinder {
+                frame,
+                major_radius,
+                minor_radius,
+            },
+        ) => line_elliptic_cylinder(
+            curve,
+            surface,
+            *origin,
+            direction.into_inner(),
+            frame,
+            [*major_radius, *minor_radius],
+            tol,
+        ),
+        (
+            Curve::Circle { frame: cf, radius },
+            Surface::EllipticCylinder {
+                frame,
+                major_radius,
+                minor_radius,
+            },
+        ) => conic_elliptic_cylinder(
+            curve,
+            surface,
+            cf,
+            [*radius, *radius],
+            frame,
+            [*major_radius, *minor_radius],
+            tol,
+        ),
+        (
+            Curve::Ellipse {
+                frame: cf,
+                major_radius: ca,
+                minor_radius: cb,
+            },
+            Surface::EllipticCylinder {
+                frame,
+                major_radius,
+                minor_radius,
+            },
+        ) => conic_elliptic_cylinder(
+            curve,
+            surface,
+            cf,
+            [*ca, *cb],
+            frame,
+            [*major_radius, *minor_radius],
+            tol,
+        ),
+        (
             Curve::Circle { .. } | Curve::Ellipse { .. },
             Surface::Cone { .. } | Surface::Sphere { .. } | Surface::Torus { .. },
         )
@@ -207,6 +270,7 @@ pub fn intersect_curve_surface(
             Curve::Nurbs(_),
             Surface::Plane { .. }
             | Surface::Cylinder { .. }
+            | Surface::EllipticCylinder { .. }
             | Surface::Cone { .. }
             | Surface::Sphere { .. }
             | Surface::Torus { .. }
@@ -237,6 +301,7 @@ fn hit(
             } => Point2::new(0.0, -radius / half_angle.sin()),
             Surface::Plane { .. }
             | Surface::Cylinder { .. }
+            | Surface::EllipticCylinder { .. }
             | Surface::Sphere { .. }
             | Surface::Torus { .. }
             | Surface::Nurbs(_) => return Err(e),
@@ -319,6 +384,132 @@ fn line_cylinder(
         hit(curve, surface, t0 - half, false)?,
         hit(curve, surface, t0 + half, false)?,
     ]))
+}
+
+/// A line against an elliptic cylinder, `[a, b]` its radii. In the
+/// cylinder's frame the line's section direction `e` and normal `n` are
+/// read; a line along the axis within `tol.angular` is `Coincident` when
+/// its section point is within `tol.linear` of the ellipse and clear
+/// otherwise. The ellipse's offset along `n` is `M cos(s − φ)`, `M = √((a
+/// n·X)² + (b n·Y)²)`, against the line's own offset `h`: `|h|` within
+/// `tol.linear` of `M` is one tangent hit at the reach `s = φ` (or `φ +
+/// π`), at the foot of that point on the line; `|h| > M` misses; between,
+/// the two crossings of the quadratic `|q' + t d'|² = 1` in the frame
+/// scaled by `1 / a` and `1 / b`, where the section is the unit circle.
+fn line_elliptic_cylinder(
+    curve: &Curve,
+    surface: &Surface,
+    origin: Point3,
+    direction: Vec3,
+    cyl: &Frame,
+    [a, b]: [f64; 2],
+    tol: Tolerance,
+) -> Result<CurveSurfaceIntersection, GeomError> {
+    let q = cyl.to_local(origin);
+    let d = cyl.vec_to_local(direction);
+    let (q2, d2) = (Vec2::new(q.x, q.y), Vec2::new(d.x, d.y));
+    let across = d2.norm();
+    if across.atan2(d.z.abs()) <= tol.angular {
+        let noise = origin.coords.norm() + cyl.origin().coords.norm();
+        return Ok(if ellipse_distance(a, b, q.x, q.y, noise) <= tol.linear {
+            CurveSurfaceIntersection::Coincident
+        } else {
+            CurveSurfaceIntersection::Points(Vec::new())
+        });
+    }
+    let e = d2 / across;
+    let n = Vec2::new(-e.y, e.x);
+    let h = n.dot(&q2);
+    let reach = (a * n.x).hypot(b * n.y);
+    let phase = (b * n.y).atan2(a * n.x);
+    if (h.abs() - reach).abs() <= tol.linear {
+        let s = if h >= 0.0 { phase } else { phase + PI };
+        let (ss, cs) = s.sin_cos();
+        let touch = Vec2::new(a * cs, b * ss);
+        let t = (touch - q2).dot(&e) / across;
+        return Ok(points(vec![hit(curve, surface, t, true)?]));
+    }
+    if h.abs() >= reach {
+        return Ok(CurveSurfaceIntersection::Points(Vec::new()));
+    }
+    // In the scaled frame the section is the unit circle.
+    let qs = Vec2::new(q.x / a, q.y / b);
+    let ds = Vec2::new(d.x / a, d.y / b);
+    let (aa, bb, cc) = (ds.norm_squared(), qs.dot(&ds), qs.norm_squared() - 1.0);
+    let root = (bb * bb - aa * cc).max(0.0).sqrt();
+    // The stable pair: the root the subtraction cannot cancel, and the
+    // other from the product `t₁ t₂ = C / A`.
+    let r = -(bb + root.copysign(bb));
+    let (t1, t2) = if r == 0.0 {
+        (0.0, 0.0)
+    } else {
+        (r / aa, cc / r)
+    };
+    Ok(points(vec![
+        hit(curve, surface, t1, false)?,
+        hit(curve, surface, t2, false)?,
+    ]))
+}
+
+/// A circle or an ellipse against an elliptic cylinder, `radii` its
+/// `[a, b]` as in [`conic_plane`]: `Unsupported` unless the conic's plane
+/// is across the axis within `tol.angular`, and then the conic against
+/// the section in that plane (`crate::conic2::conic_pair`), the conic's
+/// own parameter kept through its axes projected into the section —
+/// `Coincident`, or each touch and crossing a hit.
+fn conic_elliptic_cylinder(
+    curve: &Curve,
+    surface: &Surface,
+    conic: &Frame,
+    radii: [f64; 2],
+    cyl: &Frame,
+    [a, b]: [f64; 2],
+    tol: Tolerance,
+) -> Result<CurveSurfaceIntersection, GeomError> {
+    if line_angle(&conic.z(), &cyl.z()) > tol.angular {
+        return Err(GeomError::Unsupported {
+            a: GeomKind::Curve(curve.kind()),
+            b: GeomKind::Surface(surface.kind()),
+        });
+    }
+    let degenerate = |reason: String| GeomError::Degenerate {
+        kind: GeomKind::Curve(curve.kind()),
+        reason,
+    };
+    let into_section = |v: Vec3| {
+        let w = cyl.vec_to_local(v);
+        Vec2::new(w.x, w.y)
+            .try_normalize(0.0)
+            .ok_or_else(|| degenerate("a conic axis has no part in the section".to_owned()))
+    };
+    let centre = cyl.to_local(conic.origin());
+    let first = Conic2 {
+        centre: Point2::new(centre.x, centre.y),
+        x: into_section(conic.x().into_inner())?,
+        y: into_section(conic.y().into_inner())?,
+        a: radii[0],
+        b: radii[1],
+    };
+    let second = Conic2 {
+        centre: Point2::origin(),
+        x: Vec2::x(),
+        y: Vec2::y(),
+        a,
+        b,
+    };
+    match conic_pair(&first, &second, tol)
+        .map_err(|e| degenerate(format!("the conic against the section: {e}")))?
+    {
+        ConicMeet::Coincident => Ok(CurveSurfaceIntersection::Coincident),
+        ConicMeet::Empty => Ok(CurveSurfaceIntersection::Points(Vec::new())),
+        ConicMeet::Meets(meets) => {
+            let mut hits = Vec::with_capacity(meets.len());
+            for (t, touch) in meets {
+                hits.push(hit(curve, surface, t, touch)?);
+            }
+            Ok(points(hits))
+        }
+    }
 }
 
 /// A line against a sphere: in the sphere's frame the line passes nearest
@@ -734,79 +925,18 @@ impl Radial {
 
     /// The critical parameters of `ρ²` in `[0, 2π)`, ascending: the roots
     /// of `P · P′ = a₁ cos t + b₁ sin t + a₂ cos 2t + b₂ sin 2t`, a
-    /// trigonometric polynomial of degree two, through the quartic in
-    /// `s = tan(t/2)` that `(1 + s²)²` times it is, plus `t = π` when the
-    /// leading coefficient vanishes and the root sits at `s = ∞`. Each
-    /// candidate is polished by Newton on the trigonometric form. `None`
-    /// when the polynomial vanishes identically: `ρ` is constant and the
-    /// circle is a parallel of the axis.
+    /// trigonometric polynomial of degree two, through
+    /// [`trig2_roots`]. `None` when the polynomial vanishes identically:
+    /// `ρ` is constant and the circle is a parallel of the axis.
     fn critical_parameters(&self) -> Result<Option<Vec<f64>>, GeomError> {
         let a1 = self.p.dot(&self.y);
         let b1 = -self.p.dot(&self.x);
         let a2 = self.x.dot(&self.y);
         let b2 = 0.5 * (self.y.norm_squared() - self.x.norm_squared());
-        let c4 = a2 - a1;
-        let c3 = 2.0 * b1 - 4.0 * b2;
-        let c2 = -6.0 * a2;
-        let c1 = 2.0 * b1 + 4.0 * b2;
-        let c0 = a1 + a2;
-        let scale = c3.abs().max(c2.abs()).max(c1.abs()).max(c0.abs());
-        let at_pi = is_negligible(c4, scale);
-        let found = if at_pi {
-            roots::cubic(c3, c2, c1, c0)
-        } else {
-            roots::quartic(c4, c3, c2, c1, c0)
-        };
-        let found = match found {
-            Ok(r) => r,
-            Err(RootError::Zero) => return Ok(None),
-            Err(e) => {
-                return Err(GeomError::Degenerate {
-                    kind: GeomKind::Curve(self.kind),
-                    reason: format!("radial extrema: {e}"),
-                });
-            }
-        };
-        let f = |t: f64| {
-            let (st, ct) = t.sin_cos();
-            let (s2, c2) = (2.0 * t).sin_cos();
-            a1 * ct + b1 * st + a2 * c2 + b2 * s2
-        };
-        let df = |t: f64| {
-            let (st, ct) = t.sin_cos();
-            let (s2, c2) = (2.0 * t).sin_cos();
-            -a1 * st + b1 * ct - 2.0 * a2 * s2 + 2.0 * b2 * c2
-        };
-        let mut out: Vec<f64> = found
-            .iter()
-            .map(|r| 2.0 * r.value.atan())
-            .chain(at_pi.then_some(PI))
-            .map(|t0| {
-                let mut t = t0;
-                for _ in 0..NEWTON_POLISH_STEPS {
-                    let (ft, dft) = (f(t), df(t));
-                    if ft == 0.0 || dft == 0.0 {
-                        break;
-                    }
-                    let next = t - ft / dft;
-                    if f(next).abs() < ft.abs() {
-                        t = next;
-                    } else {
-                        break;
-                    }
-                }
-                wrap_turn(t)
-            })
-            .collect();
-        out.sort_by(f64::total_cmp);
-        out.dedup();
-        if out.is_empty() {
-            // A trigonometric polynomial that is not identically zero has
-            // a maximum and a minimum; reaching here means its coefficients
-            // are rounding noise, which is the constant case.
-            return Ok(None);
-        }
-        Ok(Some(out))
+        trig2_roots(a1, b1, a2, b2, 0.0).map_err(|e| GeomError::Degenerate {
+            kind: GeomKind::Curve(self.kind),
+            reason: format!("radial extrema: {e}"),
+        })
     }
 }
 
@@ -968,6 +1098,123 @@ mod tests {
             assert!(!h.tangent);
         }
         assert!(hits.windows(2).all(|w| w[0].t < w[1].t));
+    }
+
+    #[test]
+    fn a_line_against_an_elliptic_cylinder_crosses_touches_or_misses() {
+        let wall = Surface::EllipticCylinder {
+            frame: Frame::world(),
+            major_radius: 3.0,
+            minor_radius: 2.0,
+        };
+        // Along x through the axis at height 1: ±3.
+        let ray = Curve::Line {
+            origin: Point3::new(0.0, 0.0, 1.0),
+            direction: Vec3::x_axis(),
+        };
+        let CurveSurfaceIntersection::Points(hits) =
+            intersect_curve_surface(&ray, &wall, tol()).unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!(hits.len(), 2);
+        assert!((hits[0].t + 3.0).abs() < 1e-14 && (hits[1].t - 3.0).abs() < 1e-14);
+        assert!(!hits[0].tangent && hits[1].uv.y == 1.0);
+        assert!((hits[1].uv.x).abs() < 1e-12 && (hits[0].uv.x - PI).abs() < 1e-12);
+        // Along x at y = 2: the minor vertex, a touch at x = 0.
+        let graze = Curve::Line {
+            origin: Point3::new(-5.0, 2.0, 0.0),
+            direction: Vec3::x_axis(),
+        };
+        let CurveSurfaceIntersection::Points(hits) =
+            intersect_curve_surface(&graze, &wall, tol()).unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!(hits.len(), 1);
+        assert!(
+            hits[0].tangent && (hits[0].t - 5.0).abs() < 1e-12,
+            "{hits:?}"
+        );
+        // Beyond, nothing; a ruling, coincident.
+        let miss = Curve::Line {
+            origin: Point3::new(-5.0, 2.5, 0.0),
+            direction: Vec3::x_axis(),
+        };
+        assert_eq!(
+            intersect_curve_surface(&miss, &wall, tol()).unwrap(),
+            CurveSurfaceIntersection::Points(Vec::new())
+        );
+        let ruling = Curve::Line {
+            origin: Point3::new(3.0, 0.0, 4.0),
+            direction: Vec3::z_axis(),
+        };
+        assert_eq!(
+            intersect_curve_surface(&ruling, &wall, tol()).unwrap(),
+            CurveSurfaceIntersection::Coincident
+        );
+        // A diagonal chord, both hits on the surface.
+        let chord = Curve::Line {
+            origin: Point3::new(1.0, 0.5, 0.0),
+            direction: arris_math::UnitVec3::new_normalize(Vec3::new(1.0, 1.0, 1.0)),
+        };
+        let CurveSurfaceIntersection::Points(hits) =
+            intersect_curve_surface(&chord, &wall, tol()).unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!(hits.len(), 2);
+        for h in &hits {
+            let p = h.point;
+            assert!(
+                ((p.x / 3.0).powi(2) + (p.y / 2.0).powi(2) - 1.0).abs() < 1e-12,
+                "{h:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_conic_across_the_axis_meets_the_section() {
+        let wall = Surface::EllipticCylinder {
+            frame: Frame::world(),
+            major_radius: 3.0,
+            minor_radius: 2.0,
+        };
+        // The section itself, at any height: coincident.
+        let section = Curve::Ellipse {
+            frame: Frame::from_z(Point3::new(0.0, 0.0, 2.0), Vec3::z()).unwrap(),
+            major_radius: 3.0,
+            minor_radius: 2.0,
+        };
+        assert_eq!(
+            intersect_curve_surface(&section, &wall, tol()).unwrap(),
+            CurveSurfaceIntersection::Coincident
+        );
+        // A circle of radius 2.5 about the axis: four crossings.
+        let ring = Curve::Circle {
+            frame: Frame::world(),
+            radius: 2.5,
+        };
+        let CurveSurfaceIntersection::Points(hits) =
+            intersect_curve_surface(&ring, &wall, tol()).unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!(hits.len(), 4);
+        assert!(hits.windows(2).all(|w| w[0].t < w[1].t));
+        for h in &hits {
+            assert!(!h.tangent);
+            assert!((h.point.coords.norm() - 2.5).abs() < 1e-12);
+        }
+        // A tilted circle has no closed form.
+        let tilted = Curve::Circle {
+            frame: Frame::from_z(Point3::origin(), Vec3::x()).unwrap(),
+            radius: 2.5,
+        };
+        assert!(matches!(
+            intersect_curve_surface(&tilted, &wall, tol()),
+            Err(GeomError::Unsupported { .. })
+        ));
     }
 
     #[test]

@@ -191,6 +191,49 @@ fn distance_to_segment(p: Point2, a: Point2, b: Point2) -> f64 {
     (p - (a + t * d)).norm()
 }
 
+/// The radii of an [`ellipse`] profile: far from zero and from each
+/// other, so the section is never a circle to the tolerance, and below
+/// [`PROFILE_RADIUS`] together.
+pub const ELLIPSE_MINOR: RangeInclusive<f64> = 0.5..=4.0;
+/// How much longer than its minor radius an [`ellipse`]'s major one is.
+pub const ELLIPSE_EXTRA: RangeInclusive<f64> = 0.2..=5.0;
+
+/// A full ellipse in a random plane pose with an extrude length: its
+/// centre within [`PROFILE_RADIUS`] of the plane's origin, its major
+/// axis at a random angle with the radii of [`ELLIPSE_MINOR`] and
+/// [`ELLIPSE_EXTRA`] — written the consumer's way, so half the time the
+/// `minor_radius` is the longer one and the edge's axes are swapped —
+/// and a length in `[1, 10]`. What the extrude property of ADR-0014's
+/// surface is held on: volume `π a b h`.
+pub fn ellipse() -> impl Strategy<Value = (Profile, f64)> {
+    (
+        frame(),
+        (finite_f64(-5.0..=5.0), finite_f64(-5.0..=5.0)),
+        finite_f64(0.0..=TAU),
+        finite_f64(ELLIPSE_MINOR),
+        finite_f64(ELLIPSE_EXTRA),
+        any::<bool>(),
+        finite_f64(1.0..=10.0),
+    )
+        .prop_map(|(plane, (cu, cv), angle, minor, extra, swapped, length)| {
+            let (along, across) = if swapped {
+                (minor, minor + extra)
+            } else {
+                (minor + extra, minor)
+            };
+            let profile = Profile {
+                plane,
+                outer: ProfileLoop::Ellipse {
+                    center: Point2::new(cu, cv),
+                    major: along * Vec2::new(angle.cos(), angle.sin()),
+                    minor_radius: across,
+                },
+                holes: Vec::new(),
+            };
+            (profile, length)
+        })
+}
+
 /// A profile with the parameters of the sweeps it is drawn for: an axis
 /// in its plane, clear of every loop or touching the outer one, a revolve
 /// angle in `(0, 2π]` and an extrude length. What [`rectilinear`] and

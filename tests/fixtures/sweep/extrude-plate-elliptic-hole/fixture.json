@@ -1,0 +1,30 @@
+{
+  "description": "rectangle 40x30 with an elliptic hole at (20, 15), major 5 along (0.6, 0.8) and minor 2, extruded 10: the seamed elliptic bore inside four walls, boolean/through-hole's counts, volume 12000 - pi*5*2*10 (ADR-0014); the area has no closed form",
+  "steps": [
+    {
+      "name": "sketch",
+      "op": "profile",
+      "plane": {"origin": [0, 0, 0], "x": [1, 0, 0], "y": [0, 1, 0]},
+      "outer": {"start": [0, 0], "segments": [{"line_to": [40, 0]}, {"line_to": [40, 30]}, {"line_to": [0, 30]}, {"line_to": [0, 0]}]},
+      "holes": [{"ellipse": {"center": [20, 15], "major": [3, 4], "minor_radius": 2}}]
+    },
+    {"name": "result", "op": "extrude", "profile": "sketch", "direction": [0, 0, 1], "length": 10}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [5, 5, 5], "expect": "in"},
+    {"label": "outside", "point": [50, 15, 5], "expect": "out"},
+    {"label": "on_face", "point": [5, 5, 10], "expect": "on"},
+    {"label": "on_hole_edge", "point": [23, 19, 10], "expect": "on"},
+    {"label": "on_bore", "point": [18.4, 16.2, 5], "expect": "on"},
+    {"label": "in_the_hole", "point": [20, 15, 5], "expect": "out"},
+    {"label": "beside_the_hole", "point": [23, 19, 5], "expect": "on"},
+    {"label": "past_the_minor", "point": [17.6, 16.8, 5], "expect": "in"}
+  ],
+  "analytic": {
+    "volume": "12000 - pi * 5 * 2 * 10",
+    "centroid": [20, 15, 5],
+    "counts": {"vertices": 10, "edges": 15, "faces": 7, "loops": 9, "shells": 1},
+    "genus": 1
+  }
+}

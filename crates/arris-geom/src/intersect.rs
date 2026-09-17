@@ -2,8 +2,10 @@
 
 use core::f64::consts::FRAC_PI_2;
 
-use arris_math::{Frame, Point3, Tolerance, UnitVec3, Vec3};
+use arris_math::{Frame, Point2, Point3, Tolerance, UnitVec3, Vec2, Vec3};
 
+use crate::conic2::{Conic2, ConicMeet, conic_pair};
+use crate::pcurve::principal_axes;
 use crate::{Curve, GeomError, GeomKind, Surface};
 
 /// What two surfaces have in common.
@@ -72,7 +74,22 @@ pub enum SurfaceIntersection {
 /// it is two `Transversal` ellipses in the planes bisecting the axes;
 /// with skew axes further apart than `ra + rb` it is `Empty`. Crossing
 /// axes of unequal radii and skew axes within `ra + rb` meet in a quartic
-/// space curve and are `Unsupported`, C3's. Every pair with a cone, a
+/// space curve and are `Unsupported`, C3's. A plane against an
+/// **elliptic cylinder** (ADR-0014) is decided in every pose: the section
+/// ellipse when the normal is parallel to the axis, and when
+/// perpendicular two `Transversal` rulings, one `Tangent` ruling or
+/// `Empty` by the plane's offset against the section's reach along its
+/// normal, and oblique an ellipse — the affine image of the section,
+/// its axes the singular values of the section's semi-diameters
+/// projected onto the plane. An elliptic cylinder against a cylinder or
+/// another elliptic cylinder with parallel axes meets where the two
+/// sections meet in the plane across the axes, through the quartic of
+/// [`arris_math::roots`]: `Coincident`, `Empty`, `Tangent` rulings at
+/// the touches or `Transversal` rulings at the crossings, ascending by
+/// the first operand's section parameter — up to four of them; a
+/// section pair that both touches and crosses mixes kinds and is
+/// `Unsupported`, as are crossing axes and every pair of the elliptic
+/// cylinder with a cone, a sphere, a torus or a NURBS. Every pair with a cone, a
 /// sphere or a torus in it is decided when the two share an axis — a
 /// plane perpendicular to it, a cylinder, cone or torus on it, a sphere
 /// centred on it, and every plane–sphere and sphere–sphere pair — by one
@@ -123,6 +140,85 @@ pub fn intersect_surfaces(
                 radius: rb,
             },
         ) => cylinder_cylinder(a, b, ca, *ra, cb, *rb, tol),
+        (
+            Surface::Plane { frame: plane },
+            Surface::EllipticCylinder {
+                frame,
+                major_radius,
+                minor_radius,
+            },
+        )
+        | (
+            Surface::EllipticCylinder {
+                frame,
+                major_radius,
+                minor_radius,
+            },
+            Surface::Plane { frame: plane },
+        ) => plane_elliptic_cylinder(plane, frame, [*major_radius, *minor_radius], tol),
+        (
+            Surface::Cylinder {
+                frame: ca,
+                radius: ra,
+            },
+            Surface::EllipticCylinder {
+                frame: cb,
+                major_radius,
+                minor_radius,
+            },
+        ) => elliptic_pair(
+            a,
+            b,
+            (ca, [*ra, *ra]),
+            (cb, [*major_radius, *minor_radius]),
+            tol,
+        ),
+        (
+            Surface::EllipticCylinder {
+                frame: ca,
+                major_radius,
+                minor_radius,
+            },
+            Surface::Cylinder {
+                frame: cb,
+                radius: rb,
+            },
+        ) => elliptic_pair(
+            a,
+            b,
+            (ca, [*major_radius, *minor_radius]),
+            (cb, [*rb, *rb]),
+            tol,
+        ),
+        (
+            Surface::EllipticCylinder {
+                frame: ca,
+                major_radius: aa,
+                minor_radius: ab,
+            },
+            Surface::EllipticCylinder {
+                frame: cb,
+                major_radius: ba,
+                minor_radius: bb,
+            },
+        ) => elliptic_pair(a, b, (ca, [*aa, *ab]), (cb, [*ba, *bb]), tol),
+        (
+            Surface::EllipticCylinder { .. },
+            Surface::Cone { .. }
+            | Surface::Sphere { .. }
+            | Surface::Torus { .. }
+            | Surface::Nurbs(_),
+        )
+        | (
+            Surface::Cone { .. }
+            | Surface::Sphere { .. }
+            | Surface::Torus { .. }
+            | Surface::Nurbs(_),
+            Surface::EllipticCylinder { .. },
+        ) => Err(GeomError::Unsupported {
+            a: GeomKind::Surface(a.kind()),
+            b: GeomKind::Surface(b.kind()),
+        }),
         (
             Surface::Plane { .. }
             | Surface::Cylinder { .. }
@@ -432,6 +528,188 @@ fn plane_cylinder(
     }]))
 }
 
+/// A plane against an elliptic cylinder, `[a, b]` its radii, in every
+/// pose (ADR-0014). Normal along the axis: the section ellipse at the
+/// piercing point, with the cylinder's own axes so the seam is shared.
+/// Normal across the axis: the plane cuts the section in the line at
+/// its signed offset `d` from the section's centre along the plane's
+/// normal, and the section reaches `±M` along that normal, `M = √((a
+/// n·X)² + (b n·Y)²)`; `|d|` within `tol.linear` of `M` is one `Tangent`
+/// ruling, `|d| < M` two `Transversal` rulings at `φ ± acos(d / M)`, `φ`
+/// the parameter of the farthest reach, ordered by their offset along
+/// `n × Z` (negative first, as plane–cylinder orders them), and beyond
+/// `Empty`. Oblique: an ellipse centred at the axis's piercing point,
+/// the affine image of the section — `cos u·A + sin u·B` with `A`, `B`
+/// the section's semi-diameters slid along the axis into the plane —
+/// whose axes are the singular values of `[A | B]` in the plane's own
+/// basis (`e₁` the axis projected onto the plane, `e₂ = n × e₁`); its
+/// `Z` is the plane's normal and its `X` the major axis.
+fn plane_elliptic_cylinder(
+    plane: &Frame,
+    cyl: &Frame,
+    [a, b]: [f64; 2],
+    tol: Tolerance,
+) -> Result<SurfaceIntersection, GeomError> {
+    let (n, axis) = (plane.z(), cyl.z());
+    let angle = line_angle(&n, &axis);
+    let kind = GeomKind::Surface(crate::SurfaceKind::EllipticCylinder);
+    if angle <= tol.angular {
+        let t = n.dot(&(plane.origin() - cyl.origin())) / n.dot(&axis);
+        let frame = cyl.with_origin(cyl.origin() + t * axis.into_inner());
+        return Ok(SurfaceIntersection::Transversal(vec![Curve::Ellipse {
+            frame,
+            major_radius: a,
+            minor_radius: b,
+        }]));
+    }
+    let ruling_at = |u: f64| Curve::Line {
+        origin: Surface::EllipticCylinder {
+            frame: *cyl,
+            major_radius: a,
+            minor_radius: b,
+        }
+        .point(u, 0.0),
+        direction: axis,
+    };
+    if FRAC_PI_2 - angle <= tol.angular {
+        // The plane's normal in the section, and the section line's
+        // offset from the centre along it.
+        let local = cyl.vec_to_local(n.into_inner());
+        let Some(m) = Vec2::new(local.x, local.y).try_normalize(0.0) else {
+            return Err(frame_degenerate(kind));
+        };
+        let o = cyl.to_local(plane.origin());
+        let d = m.dot(&Vec2::new(o.x, o.y));
+        let reach = (a * m.x).hypot(b * m.y);
+        let phase = (b * m.y).atan2(a * m.x);
+        if (d.abs() - reach).abs() <= tol.linear {
+            let u = if d >= 0.0 {
+                phase
+            } else {
+                phase + core::f64::consts::PI
+            };
+            return Ok(SurfaceIntersection::Tangent(vec![ruling_at(u)]));
+        }
+        if d.abs() >= reach {
+            return Ok(SurfaceIntersection::Empty);
+        }
+        let half = (d / reach).clamp(-1.0, 1.0).acos();
+        let Some(across) = UnitVec3::try_new(n.cross(&axis), 0.0) else {
+            return Err(frame_degenerate(kind));
+        };
+        let mut rulings = [ruling_at(phase - half), ruling_at(phase + half)];
+        let offset = |c: &Curve| match c {
+            Curve::Line { origin, .. } => (origin - cyl.origin()).dot(&across),
+            _ => 0.0,
+        };
+        if offset(&rulings[0]) > offset(&rulings[1]) {
+            rulings.swap(0, 1);
+        }
+        return Ok(SurfaceIntersection::Transversal(rulings.to_vec()));
+    }
+    // Oblique: the section's semi-diameters slid along the axis into the
+    // plane are conjugate semi-diameters of the section ellipse.
+    let nz = n.dot(&axis);
+    let t = n.dot(&(plane.origin() - cyl.origin())) / nz;
+    let centre: Point3 = cyl.origin() + t * axis.into_inner();
+    let z: Vec3 = axis.into_inner();
+    let slide = |w: Vec3| w - (n.dot(&w) / nz) * z;
+    let big = a * slide(cyl.x().into_inner());
+    let small = b * slide(cyl.y().into_inner());
+    let Some(e1) = UnitVec3::try_new(z - nz * n.into_inner(), 0.0) else {
+        return Err(frame_degenerate(kind));
+    };
+    let e2 = n.cross(&e1);
+    let (major, minor, phi) = principal_axes(
+        Vec2::new(big.dot(&e1), big.dot(&e2)),
+        Vec2::new(small.dot(&e1), small.dot(&e2)),
+    );
+    let x = phi.cos() * e1.into_inner() + phi.sin() * e2;
+    let frame = Frame::new(centre, n.into_inner(), x).map_err(|_| frame_degenerate(kind))?;
+    Ok(SurfaceIntersection::Transversal(vec![Curve::Ellipse {
+        frame,
+        major_radius: major,
+        minor_radius: minor.abs(),
+    }]))
+}
+
+/// An elliptic cylinder against a cylinder or another elliptic cylinder,
+/// each given as its frame and `[a, b]` (the radius twice for a
+/// cylinder). Axes parallel within `tol.angular`: the pair meets where
+/// the two sections meet in the plane across the first's axis through
+/// its origin (`crate::conic2`), each meeting a ruling along the first's
+/// `Z` from the section point — `Coincident`, `Empty`, `Tangent` rulings
+/// at the touches or `Transversal` rulings at the crossings, ascending by
+/// the first section's parameter; touches beside crossings would mix
+/// kinds and are `Unsupported`, as are axes that are not parallel (a
+/// quartic space curve, C3's).
+fn elliptic_pair(
+    a: &Surface,
+    b: &Surface,
+    (ca, [aa, ab]): (&Frame, [f64; 2]),
+    (cb, [ba, bb]): (&Frame, [f64; 2]),
+    tol: Tolerance,
+) -> Result<SurfaceIntersection, GeomError> {
+    let unsupported = || GeomError::Unsupported {
+        a: GeomKind::Surface(a.kind()),
+        b: GeomKind::Surface(b.kind()),
+    };
+    if line_angle(&ca.z(), &cb.z()) > tol.angular {
+        return Err(unsupported());
+    }
+    let first = Conic2 {
+        centre: Point2::origin(),
+        x: Vec2::x(),
+        y: Vec2::y(),
+        a: aa,
+        b: ab,
+    };
+    let centre = ca.to_local(cb.origin());
+    let xb = ca.vec_to_local(cb.x().into_inner());
+    // The second's major axis in the section; a circle takes the
+    // section's own `u` axis, its implicit form being the same either way.
+    let x = if (ba - bb).abs() <= tol.linear {
+        Vec2::x()
+    } else {
+        Vec2::new(xb.x, xb.y)
+            .try_normalize(0.0)
+            .ok_or_else(|| frame_degenerate(GeomKind::Surface(b.kind())))?
+    };
+    let second = Conic2 {
+        centre: Point2::new(centre.x, centre.y),
+        x,
+        y: Vec2::new(-x.y, x.x),
+        a: ba,
+        b: bb,
+    };
+    let meet = conic_pair(&first, &second, tol).map_err(|e| GeomError::Degenerate {
+        kind: GeomKind::Surface(a.kind()),
+        reason: format!("the sections' meeting: {e}"),
+    })?;
+    let ruling = |t: f64| {
+        let p = first.point(t);
+        Curve::Line {
+            origin: ca.to_world(Point3::new(p.x, p.y, 0.0)),
+            direction: ca.z(),
+        }
+    };
+    Ok(match meet {
+        ConicMeet::Coincident => SurfaceIntersection::Coincident,
+        ConicMeet::Empty => SurfaceIntersection::Empty,
+        ConicMeet::Meets(meets) => {
+            let touches = meets.iter().filter(|&&(_, touch)| touch).count();
+            let rulings: Vec<Curve> = meets.iter().map(|&(t, _)| ruling(t)).collect();
+            if touches == meets.len() {
+                SurfaceIntersection::Tangent(rulings)
+            } else if touches == 0 {
+                SurfaceIntersection::Transversal(rulings)
+            } else {
+                return Err(unsupported());
+            }
+        }
+    })
+}
+
 /// The error for a frame that could not be built from an operand's axes:
 /// only a non-finite frame reaches it, since the angular tests above rule
 /// out parallel axes.
@@ -499,6 +777,165 @@ mod tests {
         assert!(matches!(
             intersect_surfaces(&a, &a, Tolerance::new(0.0, 1e-12)),
             Err(GeomError::InvalidTolerance(_))
+        ));
+    }
+
+    fn elliptic(origin: Point3, a: f64, b: f64) -> Surface {
+        Surface::EllipticCylinder {
+            frame: Frame::from_z(origin, Vec3::z()).unwrap(),
+            major_radius: a,
+            minor_radius: b,
+        }
+    }
+
+    /// Every point of `curve` over a turn or a unit of parameter lies on
+    /// both surfaces to rounding, by their projections.
+    fn on_both(curve: &Curve, a: &Surface, b: &Surface) {
+        for i in 0..=32 {
+            let t = match curve {
+                Curve::Line { .. } => i as f64 / 32.0 * 4.0 - 2.0,
+                _ => i as f64 / 32.0 * core::f64::consts::TAU,
+            };
+            let p = curve.point(t);
+            for s in [a, b] {
+                let d = s.project(p).unwrap().distance;
+                assert!(d < 1e-12, "{p} is {d} off {:?}", s.kind());
+            }
+        }
+    }
+
+    #[test]
+    fn a_plane_cuts_an_elliptic_cylinder_in_every_pose() {
+        let wall = elliptic(Point3::origin(), 3.0, 2.0);
+        // Across the axis: the section.
+        let cap = Surface::Plane {
+            frame: Frame::from_z(Point3::new(1.0, 1.0, 5.0), Vec3::z()).unwrap(),
+        };
+        let SurfaceIntersection::Transversal(c) = intersect_surfaces(&cap, &wall, tol()).unwrap()
+        else {
+            panic!()
+        };
+        let Curve::Ellipse {
+            frame,
+            major_radius,
+            minor_radius,
+        } = &c[0]
+        else {
+            panic!("{c:?}")
+        };
+        assert_eq!(frame.origin(), Point3::new(0.0, 0.0, 5.0));
+        assert_eq!((*major_radius, *minor_radius), (3.0, 2.0));
+        assert_eq!(frame.x().into_inner(), Vec3::x());
+        // Along the axis: two rulings at x = 1 (y = ±2√(8/9)), a tangent
+        // one at x = 3, none at x = 4 — and the same by the reversed order.
+        let side = |x: f64| Surface::Plane {
+            frame: Frame::from_z(Point3::new(x, 0.0, 0.0), Vec3::x()).unwrap(),
+        };
+        let SurfaceIntersection::Transversal(c) =
+            intersect_surfaces(&wall, &side(1.0), tol()).unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!(c.len(), 2);
+        let y = 2.0 * (8.0f64 / 9.0).sqrt();
+        let (Curve::Line { origin: o0, .. }, Curve::Line { origin: o1, .. }) = (&c[0], &c[1])
+        else {
+            panic!("{c:?}")
+        };
+        // Ordered along `n × Z = −y`, negative first: the +y ruling leads.
+        assert!((o0 - Point3::new(1.0, y, 0.0)).norm() < 1e-12, "{c:?}");
+        assert!((o1 - Point3::new(1.0, -y, 0.0)).norm() < 1e-12, "{c:?}");
+        for r in &c {
+            on_both(r, &wall, &side(1.0));
+        }
+        let SurfaceIntersection::Tangent(c) = intersect_surfaces(&side(3.0), &wall, tol()).unwrap()
+        else {
+            panic!()
+        };
+        let Curve::Line { origin, .. } = &c[0] else {
+            panic!()
+        };
+        assert!((origin - Point3::new(3.0, 0.0, 0.0)).norm() < 1e-12);
+        assert_eq!(
+            intersect_surfaces(&side(4.0), &wall, tol()).unwrap(),
+            SurfaceIntersection::Empty
+        );
+        // Oblique: an ellipse on both surfaces.
+        let tilted = Surface::Plane {
+            frame: Frame::from_z(Point3::new(0.0, 0.0, 1.0), Vec3::new(1.0, 2.0, 3.0)).unwrap(),
+        };
+        let SurfaceIntersection::Transversal(c) =
+            intersect_surfaces(&tilted, &wall, tol()).unwrap()
+        else {
+            panic!()
+        };
+        assert!(matches!(c[0], Curve::Ellipse { .. }), "{c:?}");
+        on_both(&c[0], &tilted, &wall);
+        assert_eq!(
+            intersect_surfaces(&wall, &tilted, tol()).unwrap(),
+            SurfaceIntersection::Transversal(c)
+        );
+    }
+
+    #[test]
+    fn parallel_elliptic_cylinders_meet_along_rulings() {
+        let wall = elliptic(Point3::origin(), 3.0, 2.0);
+        // A coaxial cylinder between the radii crosses the section at
+        // four parameters; of the major radius it touches at two.
+        let bore = |r: f64| Surface::Cylinder {
+            frame: Frame::world(),
+            radius: r,
+        };
+        let SurfaceIntersection::Transversal(c) =
+            intersect_surfaces(&wall, &bore(2.5), tol()).unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!(c.len(), 4);
+        for r in &c {
+            on_both(r, &wall, &bore(2.5));
+        }
+        let SurfaceIntersection::Tangent(c) = intersect_surfaces(&bore(3.0), &wall, tol()).unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!(c.len(), 2);
+        assert_eq!(
+            intersect_surfaces(&bore(1.0), &wall, tol()).unwrap(),
+            SurfaceIntersection::Empty
+        );
+        assert_eq!(
+            intersect_surfaces(&wall, &wall, tol()).unwrap(),
+            SurfaceIntersection::Coincident
+        );
+        // Two equal elliptic cylinders offset along the major axis: two
+        // rulings at x = 1, y = ±2√(8/9), like the slot's two ends.
+        let other = elliptic(Point3::new(2.0, 0.0, 7.0), 3.0, 2.0);
+        let SurfaceIntersection::Transversal(c) = intersect_surfaces(&wall, &other, tol()).unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!(c.len(), 2);
+        for r in &c {
+            on_both(r, &wall, &other);
+        }
+        // A crossing axis has no closed form; a touch beside a crossing
+        // mixes kinds.
+        let crossing = Surface::Cylinder {
+            frame: Frame::from_z(Point3::origin(), Vec3::x()).unwrap(),
+            radius: 1.0,
+        };
+        assert!(matches!(
+            intersect_surfaces(&wall, &crossing, tol()),
+            Err(GeomError::Unsupported { .. })
+        ));
+        let mixed = Surface::Cylinder {
+            frame: Frame::from_z(Point3::new(1.0, 0.0, 0.0), Vec3::z()).unwrap(),
+            radius: 2.0,
+        };
+        assert!(matches!(
+            intersect_surfaces(&wall, &mixed, tol()),
+            Err(GeomError::Unsupported { .. })
         ));
     }
 }

@@ -13,10 +13,15 @@
 //! partial turn. `ρ̄ A` is `∬ ρ dA`, taken by `integrate::region_integral`
 //! over the profile's oriented edges; the boundary integral is
 //! Gauss–Legendre over each edge's pcurve in pieces of at most a quarter
-//! turn, exact for a line and to rounding for an arc.
+//! turn, exact for a line and to rounding for an arc — and of a
+//! sixteenth of a turn for an elliptic arc, whose speed `√(a² sin² +
+//! b² cos²)` the quadrature resolves to `1e-11` at that cadence
+//! (`integrate::inner_step`'s reason), where a quarter turn leaves
+//! `1e-7` at an aspect of eighteen.
 
-use core::f64::consts::{FRAC_PI_2, TAU};
+use core::f64::consts::{FRAC_PI_2, FRAC_PI_8, TAU};
 
+use arris_geom::Curve2;
 use arris_geom::integrate::{gauss_legendre, region_integral};
 use arris_geom::profile::{Profile, ProfileEdge, ProfileError};
 use arris_geom::region2::Piece;
@@ -123,14 +128,19 @@ pub fn extruded(profile: &Profile, length: f64, tol: Tolerance) -> Result<Pappus
 }
 
 /// `∮ w ds` over every edge's pcurve: Gauss–Legendre in pieces of at most
-/// a quarter turn of the parameter, exact for a line and to rounding for
-/// an arc.
+/// a quarter turn of the parameter — a sixteenth for an ellipse — exact
+/// for a line and to rounding for an arc.
 fn boundary_integral(loops: &[Vec<ProfileEdge>], w: impl Fn(Point2) -> f64) -> f64 {
     let nodes = gauss_legendre();
     let mut sum = 0.0;
     for e in loops.iter().flatten() {
         let (lo, hi) = (e.range.lo(), e.range.hi());
-        let steps = ((hi - lo) / FRAC_PI_2).ceil().max(1.0) as usize;
+        let piece = if matches!(e.pcurve, Curve2::Ellipse { .. }) {
+            FRAC_PI_8
+        } else {
+            FRAC_PI_2
+        };
+        let steps = ((hi - lo) / piece).ceil().max(1.0) as usize;
         let h = (hi - lo) / steps as f64;
         for i in 0..steps {
             let (a, b) = (lo + i as f64 * h, lo + (i + 1) as f64 * h);

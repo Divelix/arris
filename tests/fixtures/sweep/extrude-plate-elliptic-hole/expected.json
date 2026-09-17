@@ -1,0 +1,117 @@
+{
+  "occt": "8.0.1.0.0",
+  "recipe_sha256": "ed5adfe1049b2bb34a461087d962d8a5333c5b3600dcd9f53896434db9796edb",
+  "results": {
+    "default": {
+      "area": 3967.299272884852,
+      "centroid": [
+        20.0,
+        14.999999999999996,
+        4.999999999999998
+      ],
+      "counts": {
+        "edges": 15,
+        "faces": 7,
+        "loops": 9,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 10
+      },
+      "degenerate": false,
+      "euler_characteristic": 0,
+      "genus": 1,
+      "inertia": [
+        [
+          996012.2717250441,
+          791.6813487042673,
+          -4.656612873077393e-10
+        ],
+        [
+          791.6813487042673,
+          1696474.085845123,
+          -3.4924596548080444e-10
+        ],
+        [
+          -4.656612873077393e-10,
+          -3.4924596548080444e-10,
+          2497722.345326148
+        ]
+      ],
+      "probes": [
+        {
+          "class": "in",
+          "label": "inside",
+          "point": [
+            5.0,
+            5.0,
+            5.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "outside",
+          "point": [
+            50.0,
+            15.0,
+            5.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_face",
+          "point": [
+            5.0,
+            5.0,
+            10.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_hole_edge",
+          "point": [
+            23.0,
+            19.0,
+            10.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_bore",
+          "point": [
+            18.4,
+            16.2,
+            5.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "in_the_hole",
+          "point": [
+            20.0,
+            15.0,
+            5.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "beside_the_hole",
+          "point": [
+            23.0,
+            19.0,
+            5.0
+          ]
+        },
+        {
+          "class": "in",
+          "label": "past_the_minor",
+          "point": [
+            17.6,
+            16.8,
+            5.0
+          ]
+        }
+      ],
+      "volume": 11685.84073464102
+    }
+  }
+}
