@@ -1,11 +1,12 @@
 [package]
 name = "arris-math"
 description = "Arris kernel: points, vectors, frames, intervals, exact predicates, root finding and Precision"
-publish = false
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+readme.workspace = true
 
 [features]
 # `Precision` is part of the native format; `arris-topo/serde` turns this on.

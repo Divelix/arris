@@ -28,19 +28,20 @@ holds, and `/close-cycle` can run.
   other matrix.
 - Any consumer feature the facade does not reach (assemblies, robotics
   export, sketch UX), and the consumer's own roadmap.
-- Publishing to crates.io, creating a remote or pushing. Those belong to
-  the human (open question 1).
+- Creating the GitHub repository, pushing, tagging and the release itself.
+  Preparing the crates so a tag publishes them is step 7; the tag is the
+  human's (open question 1, answered).
 - Anything on the C2 **Out** list.
 
 ## Where the work lands
 
-Steps 1–6 are Arris commits, and they follow this repo's rules. Step 7 is
+Steps 1–7 are Arris commits, and they follow this repo's rules. Step 8 is
 the swap itself, which is code in the consumer's repository. That repo
 has rules of its own: it keeps a plan in its own `docs/plans/`, and it
 needs an ADR superseding its kernel-of-record decision before the work
 starts. The consumer's plan is written and executed there, and its
 commits carry its own plan-step suffix. Its outline is sketched under
-step 7 so this plan shows the whole gate. Step 7's box is ticked here
+step 8 so this plan shows the whole gate. Step 8's box is ticked here
 when the consumer's acceptance passes. Tracked Arris docs keep calling
 the application "the consumer" and never give its path.
 
@@ -78,7 +79,7 @@ the application "the consumer" and never give its path.
 - **docs/DATA-MODEL.md §Profiles, §Surfaces:** the new segment and
   surface.
 - **docs/ARCHITECTURE.md §How a consumer's kernel facade maps on:** the
-  rows get the facts step 7 proves:
+  rows get the facts step 8 proves:
   - the adapter's per-shape index table stands in for the backend's
     iteration order;
   - an elliptic profile maps onto the new segment;
@@ -92,6 +93,17 @@ the application "the consumer" and never give its path.
   outside the recipe hash, like `tolerances`. Public types:
   `arris_debug::fixtures::PrecisionSpec`, `Recipe::precision` and
   `CorpusError::Precision`.
+- **The workspace becomes publishable** (step 7, from open question 1's
+  answer): `publish = false` comes off the eight library crates,
+  `repository` and `readme` join `[workspace.package]`, the licence texts
+  the `MIT OR Apache-2.0` field already promised are added and symlinked
+  into every crate, and a tag-triggered workflow runs the gate and
+  `cargo publish --workspace`. The internal *dev*-dependency edges become
+  path-only so `cargo publish` strips them: versioned, they are a cycle no
+  publish order satisfies (`arris-geom` tests against `arris-topo`,
+  `arris-ops` against `arris-io`, and all eight against `arris-debug`).
+  `arris-debug` stays `publish = false`. No code changes, so this is not a
+  public-API delta.
 - **No new crate and no layer change.** The adapter lives in the
   consumer.
 
@@ -149,11 +161,26 @@ bound has to be established here.
   caveat in the **Accept** line. A fixture that fails is a regression
   fixture, and it is fixed within this step or split into a step of its
   own.
-- [ ] Step 7 **[2]** — The swap, in the consumer's repository, under its
+- [x] Step 7 **[1]** — The workspace publishes. Per the design delta: the
+  eight library crates lose `publish = false`, `[workspace.package]` gains
+  `repository` and `readme`, `LICENSE-MIT` and `LICENSE-APACHE` are added
+  and symlinked into every crate directory, the internal dev-dependency
+  edges become path-only, `README.md` stops calling itself a placeholder
+  and says what the kernel does and does not do today, and
+  `.github/workflows/publish.yml` publishes from a `vX.Y.Z` tag after
+  running the whole gate on it. The test is `cargo package --workspace`:
+  every crate packages and its verifying build passes, each published
+  tarball carries the README and both licences, and no internal
+  dev-dependency survives into a packaged manifest. The human then creates
+  the repository, pushes, and bumps and tags the release the consumer
+  depends on.
+- [ ] Step 8 **[2]** — The swap, in the consumer's repository, under its
   own ADR and plan; ticked here when that plan's acceptance passes. It
-  needs open questions 1 and 2 answered first. Its plan's outline:
+  needs step 7's release on crates.io first. Its plan's outline:
   1. The consumer ADR superseding its kernel-of-record decision and its
-     "no curved boolean operands" product constraint, then its plan.
+     "no curved boolean operands" product constraint, then its plan. The
+     agent drafts both and stops for the human to accept them (open
+     question 2, answered).
   2. An `ArrisKernel` beside the old backend behind the same trait:
      - cgmath ↔ nalgebra at the adapter;
      - its `Profile` → `geom::Profile` (arc → `ArcTo` with a computed
@@ -195,10 +222,12 @@ bound has to be established here.
   lint. Steps 2–4's and 6's fixtures pass every stage against the oracle
   with nothing unchecked, and step 2's property is green at its
   configured case count. `cargo build --workspace --target
-  wasm32-unknown-unknown` passes.
+  wasm32-unknown-unknown` passes, and `cargo package --workspace` packages
+  and verifies all nine crates.
 - In the consumer: its full gate (fmt, clippy `-D warnings`, its size and
   wasm lints, `cargo test --all`, `--all-features`, the `wasm32` build)
-  passes with no truck-lineage crate in `Cargo.lock`. There is no
+  passes on its own CI — so over `arris` from crates.io, not a path — with
+  no truck-lineage crate in `Cargo.lock`. There is no
   `#[ignore]` whose reason names the old backend, and its naming goldens
   pass with the matcher deleted.
 - Together, these are the C2 **Accept** line, item by item.
@@ -218,22 +247,25 @@ bound has to be established here.
   that ever comes up.
 - `AGENTS.md` current state: C2's gate passed, the facade swapped, next
   is `/close-cycle` into C3.
+- Done in step 7: `README.md` (the crates.io front page of every published
+  crate) and `.agents/rules/git.md` §Tags (a tag is what publishes).
 
 ## Open questions
 
-- `⚠ OPEN:` **How the consumer reaches Arris** (human, before step 7).
-  Arris has no git remote. The consumer has one and runs CI, so a sibling
-  `path =` dependency breaks its CI and every fresh clone. The options:
-  - push Arris to a remote and use a git dependency pinned to a revision
-    (recommended: no release needed, and the pin moves deliberately);
-  - publish a 0.1 over the crates.io reservation;
-  - a path dependency, accepting that the consumer's CI can't build it
-    until one of the above happens.
-- `⚠ OPEN:` **The consumer's kernel-of-record decision** (human, before
-  step 7). The consumer's recorded decision keeps its current backend and
-  parks an own kernel. The swap supersedes that in its repository, and
-  that ADR is the human's to accept there.
-- `⚠ OPEN:` **Naming goldens for full-circle holes** (agent, in step 7's
+- **How the consumer reaches Arris.** Answered by the human (2026-09-17):
+  Arris is FOSS. The human creates the GitHub repository, and releases go
+  to crates.io from its CI, over the 0.0.1 placeholder reserved on
+  2026-09-05. The consumer depends on a published version — so its own CI
+  and every fresh clone build without this machine. That made the
+  workspace's publishability this plan's work, which is step 7; the
+  repository, the push and the tag are the human's, and step 8 waits on
+  the release.
+- **The consumer's kernel-of-record decision.** Answered by the human
+  (2026-09-17): the agent drafts the superseding ADR and the plan in the
+  consumer's repository and stops for the human to accept them, before any
+  adapter code. It supersedes the consumer's kernel-of-record ADR and the
+  "no curved boolean operands" product constraint.
+- `⚠ OPEN:` **Naming goldens for full-circle holes** (agent, in step 8's
   consumer ADR). The old backend split a full circle into several side
   faces. Arris makes one. The consumer's `Side { instance }` names for a
   hole loop change unless the adapter pins them. The goldens move only by
@@ -246,7 +278,7 @@ bound has to be established here.
 - **Finding (step 1): the consumer's extruded ellipses change shape.**
   Its old backend builds every elliptic piece as a circular arc through
   three points of the ellipse. Arris builds the exact ellipse, so the
-  consumer ADR in step 7 names this as a correction.
+  consumer ADR in step 8 names this as a correction.
 - **Finding (step 2): the area of an elliptic cylinder is no polynomial
   quadrature.** Its area element `√(a² sin²u + b² cos²u)` has complex
   singularities `atanh(b/a)` off `u = 0` and `π`; the region integral's

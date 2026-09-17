@@ -1,11 +1,12 @@
 [package]
 name = "arris-ops"
 description = "Arris kernel: primitives, sweeps, transforms, booleans and mass properties"
-publish = false
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+readme.workspace = true
 
 [features]
 # The boolean's face-pair intersections and per-face splitting over
@@ -25,9 +26,12 @@ rayon = { workspace = true, optional = true }
 # the STEP writer in `arris-io`, the tessellator the sweeps' mesh check
 # runs in `arris-mesh`; dev-dependencies are exempt from the layer rule.
 [dev-dependencies]
+# No version on the internal dev-dependencies below: a version would put
+# them in the published manifest, and no publish order satisfies the cycle
+# they make (the workspace manifest says why).
 arris-debug.workspace = true
-arris-io.workspace = true
-arris-mesh.workspace = true
+arris-io = { path = "../arris-io" }
+arris-mesh = { path = "../arris-mesh" }
 proptest.workspace = true
 
 [lints]

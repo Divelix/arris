@@ -1,11 +1,12 @@
 [package]
 name = "arris-geom"
 description = "Arris kernel: analytic and NURBS surfaces and curves, evaluation, projection, intersection"
-publish = false
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+readme.workspace = true
 
 [features]
 # Derives on the geometry enums and the NURBS types, each validated on the
@@ -22,10 +23,13 @@ serde = { workspace = true, optional = true }
 # are integration tests under `tests/` (docs/ARCHITECTURE.md §Formats and
 # tools).
 [dev-dependencies]
+# No version on the internal dev-dependencies below: a version would put
+# them in the published manifest, and no publish order satisfies the cycle
+# they make (the workspace manifest says why).
 arris-debug.workspace = true
 # The region integral is proven on the sample cylinder's faces, read
 # through the topology crate; a dev-dependency is exempt from the layer rule.
-arris-topo.workspace = true
+arris-topo = { path = "../arris-topo" }
 proptest.workspace = true
 
 [lints]

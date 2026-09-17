@@ -1,11 +1,12 @@
 [package]
 name = "arris-topo"
 description = "Arris kernel: the model arena, typed ids, handles, orientation, entities and provenance"
-publish = false
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+readme.workspace = true
 
 [features]
 default = ["serde"]
@@ -23,13 +24,16 @@ serde = { workspace = true, optional = true }
 # cycle it makes is why the property tests are integration tests under
 # `tests/` (docs/ARCHITECTURE.md §Formats and tools).
 [dev-dependencies]
+# No version on the internal dev-dependencies below: a version would put
+# them in the published manifest, and no publish order satisfies the cycle
+# they make (the workspace manifest says why).
 arris-debug.workspace = true
 # `import` and `retain` prove their survivors with the checker, and so does
 # every body `assemble` puts back together.
-arris-check.workspace = true
+arris-check = { path = "../arris-check" }
 # The two primitives are the bodies the corpus's `primitive/*` fixtures
 # describe: `assemble` is run over them beside the samples.
-arris-ops.workspace = true
+arris-ops = { path = "../arris-ops" }
 proptest.workspace = true
 serde_json.workspace = true
 

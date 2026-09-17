@@ -1,11 +1,12 @@
 [package]
 name = "arris-io"
 description = "Arris kernel: STEP AP214, the native format, and the mesh formats"
-publish = false
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+readme.workspace = true
 
 [features]
 default = ["serde"]
@@ -28,8 +29,11 @@ postcard = { workspace = true, optional = true }
 # `arris-debug`; a dev-dependency is exempt from the layer rule. `arris-ops`
 # builds the filleted box the mesh formats' tests hold to the oracle too.
 [dev-dependencies]
+# No version on the internal dev-dependencies below: a version would put
+# them in the published manifest, and no publish order satisfies the cycle
+# they make (the workspace manifest says why).
 arris-debug.workspace = true
-arris-ops.workspace = true
+arris-ops = { path = "../arris-ops" }
 
 [lints]
 workspace = true

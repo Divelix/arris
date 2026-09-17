@@ -45,6 +45,13 @@ updated by it. A change to a public type or signature names it here.
   plan and passes its acceptance corpus.
 - Releases: `v0.1.0` SemVer, on `main`, created by the human. Pre-1.0 a
   minor bump may break the public API; the tag's commit body lists what.
+  Pushing the tag is what publishes: `.github/workflows/publish.yml` runs
+  the whole gate again on the tagged commit and then `cargo publish
+  --workspace`. So the version in `[workspace.package]` is bumped and
+  committed *before* the tag, and the tag is `v` + exactly that version —
+  the workflow refuses the pair if they disagree, because a version cannot
+  be taken back off crates.io. Every crate but `arris-debug` goes up;
+  that one is `publish = false`.
 
 ## What the agent does without asking
 

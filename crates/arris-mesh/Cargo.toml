@@ -1,11 +1,12 @@
 [package]
 name = "arris-mesh"
 description = "Arris kernel: triangle meshes, polylines and tessellation of bodies"
-publish = false
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+readme.workspace = true
 
 [features]
 # Faces triangulated in parallel after the sequential edge pass, results
@@ -22,9 +23,12 @@ rayon = { workspace = true, optional = true }
 # The seeded property-test runner and the sample bodies live in
 # `arris-debug`; a dev-dependency is exempt from the layer rule.
 [dev-dependencies]
+# No version on the internal dev-dependencies below: a version would put
+# them in the published manifest, and no publish order satisfies the cycle
+# they make (the workspace manifest says why).
 arris-debug.workspace = true
 # The primitives are what the random-pose tessellation tests mesh.
-arris-ops.workspace = true
+arris-ops = { path = "../arris-ops" }
 proptest.workspace = true
 
 [lints]

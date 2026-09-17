@@ -1,11 +1,12 @@
 [package]
 name = "arris-check"
 description = "Arris kernel: the invariant checker"
-publish = false
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+readme.workspace = true
 
 [features]
 # Forwarded, not used directly: a consumer that reaches `arris_topo`'s
