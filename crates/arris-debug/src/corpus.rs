@@ -30,7 +30,9 @@ use arris_io::arris_check::arris_topo::arris_math::nalgebra::UnitQuaternion;
 use arris_io::arris_check::arris_topo::arris_math::{
     Axis, FrameError, Isometry, Point3, UnitVec3, Vec3,
 };
-use arris_io::arris_check::arris_topo::{Body, Edge, EntityId, Model, Orientation, Provenance};
+use arris_io::arris_check::arris_topo::{
+    Body, Edge, EntityId, Model, Orientation, Provenance, TopoError,
+};
 use arris_io::arris_check::classify::{Classification, classify_point};
 use arris_io::arris_check::{Level, LumpError, Report, check, lumps};
 use arris_io::step::{self, StepError};
@@ -111,6 +113,15 @@ pub enum CorpusError {
         point: [f64; 3],
         /// What it names instead of one edge.
         what: String,
+    },
+    /// The recipe's `precision` is not a consistent
+    /// `arris_math::Precision`, so no model could be created for it.
+    #[error("{fixture}: precision: {source}")]
+    Precision {
+        /// The fixture.
+        fixture: String,
+        /// The cause.
+        source: TopoError,
     },
     /// A recipe axis is not one.
     #[error("{fixture}: step {step:?}: axis: {source}")]
@@ -407,6 +418,15 @@ impl Chain {
     }
 }
 
+/// The model a fixture's recipe builds in: empty, at the recipe's
+/// `precision` (`arris_math::Precision::DEFAULT` where it names none).
+fn model_for(fixture: &Fixture) -> Result<Model, CorpusError> {
+    Model::new(fixture.recipe.precision.precision()).map_err(|source| CorpusError::Precision {
+        fixture: fixture.name.clone(),
+        source,
+    })
+}
+
 /// Builds every step of `dir`'s recipe under `variant` in one model and
 /// returns them with their records. Errors: as [`run`]'s build stage.
 /// A recipe whose result Arris refuses by design (`expected.degenerate`
@@ -429,7 +449,7 @@ pub fn chain(dir: &Path, variant: &str) -> Result<Chain, CorpusError> {
             variant: variant.to_string(),
         });
     };
-    let mut model = Model::default();
+    let mut model = model_for(&fixture)?;
     let mut steps = BTreeMap::new();
     let mut profiles = BTreeMap::new();
     build_all(
@@ -534,7 +554,7 @@ pub fn run(dir: &Path, variant: &str) -> Result<(), CorpusError> {
     } else {
         fixture.recipe.analytic.expect_error.map(Refusal::Error)
     };
-    let mut m = Model::default();
+    let mut m = model_for(&fixture)?;
     let mut made: BTreeMap<String, Made> = BTreeMap::new();
     let mut profiles: BTreeMap<String, Profile> = BTreeMap::new();
     if !build_all(&mut m, &fixture, &params, refusal, &mut made, &mut profiles)? {
@@ -789,7 +809,7 @@ pub fn inputs(dir: &Path, variant: &str) -> Result<Inputs, CorpusError> {
             variant: variant.to_string(),
         });
     };
-    let mut model = Model::default();
+    let mut model = model_for(&fixture)?;
     let mut made: BTreeMap<String, Made> = BTreeMap::new();
     let mut profiles: BTreeMap<String, Profile> = BTreeMap::new();
     for step in &fixture.recipe.steps {
@@ -1302,6 +1322,46 @@ fn diff(committed: &str, actual: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The recipe's `precision` is the model's, and an inconsistent one
+    /// is the fixture's own error rather than a panic.
+    #[test]
+    fn the_recipe_names_the_model_s_precision() {
+        let metres = crate::fixtures::corpus_root().join("boolean/probe-through-hole-m");
+        let metric = chain(&metres, "default").expect("the consumer's units");
+        assert_eq!(metric.model.precision().default_tolerance, 1e-6);
+
+        let millimetres = crate::fixtures::corpus_root().join("boolean/through-hole");
+        let default = chain(&millimetres, "default").expect("the default units");
+        assert_eq!(
+            default.model.precision(),
+            arris_io::arris_check::arris_topo::arris_math::Precision::DEFAULT
+        );
+
+        // A floor above the default tolerance is no precision at all, and
+        // the runner says which fixture rather than unwrapping.
+        let scratch =
+            std::env::temp_dir().join(format!("arris-corpus-precision-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&scratch);
+        std::fs::create_dir_all(&scratch).expect("a scratch directory");
+        for file in ["fixture.json", "expected.json"] {
+            std::fs::copy(millimetres.join(file), scratch.join(file)).expect("a copy");
+        }
+        let text = std::fs::read_to_string(scratch.join("fixture.json")).expect("the recipe");
+        std::fs::write(
+            scratch.join("fixture.json"),
+            text.replace(
+                "\"steps\"",
+                "\"precision\": {\"min_tolerance\": 1.0}, \"steps\"",
+            ),
+        )
+        .expect("the edited recipe");
+        assert!(matches!(
+            chain(&scratch, "default"),
+            Err(CorpusError::Precision { .. })
+        ));
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
 
     #[test]
     fn one_recipe_in_two_directories_names_two_step_files() {

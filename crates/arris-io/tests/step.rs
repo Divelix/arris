@@ -199,6 +199,7 @@ fn boxes_recipe(
         ],
         result: "result".into(),
         probes: Vec::new(),
+        precision: Default::default(),
         tolerances: Default::default(),
         analytic: Default::default(),
     }

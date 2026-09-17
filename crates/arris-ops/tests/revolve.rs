@@ -837,6 +837,7 @@ fn revolved_recipe(
         ],
         result: "result".into(),
         probes: Vec::new(),
+        precision: Default::default(),
         tolerances: Default::default(),
         analytic: Analytic {
             volume: Some(Num::Expr(volume.into())),

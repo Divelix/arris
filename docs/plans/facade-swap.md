@@ -84,6 +84,14 @@ the application "the consumer" and never give its path.
   - an elliptic profile maps onto the new segment;
   - several bodies export into one mesh file;
   - "what the facade has today that Arris will not have" is revised.
+- **The fixture recipe carries a `Precision`** (step 6): `fixture.json`
+  gains a `precision` object, every field of `arris_math::Precision` it
+  names over `Precision::DEFAULT`, and the corpus runner creates the
+  model with it instead of `Model::default`. It is Arris's alone — Open
+  CASCADE's `Precision::Confusion` is a constant of its build — so it is
+  outside the recipe hash, like `tolerances`. Public types:
+  `arris_debug::fixtures::PrecisionSpec`, `Recipe::precision` and
+  `CorpusError::Precision`.
 - **No new crate and no layer change.** The adapter lives in the
   consumer.
 
@@ -126,7 +134,7 @@ bound has to be established here.
   design delta. The test reads the file back with `RWStl` through
   `tools/oracle/mesh.py` and with the test's own OBJ parser: the triangle
   count is the sum, and each body's positions are unchanged.
-- [ ] Step 6 **[2]** — The probe corpus in the consumer's units (metres,
+- [x] Step 6 **[2]** — The probe corpus in the consumer's units (metres,
   `Precision` at the micrometre scale ARCHITECTURE §Units gives it).
   Fixtures, each against the oracle:
   - `boolean/probe-through-hole-m` (8.7434e-5);
@@ -259,6 +267,14 @@ bound has to be established here.
   ellipse and a circle between its radii) has no `ŵ`. The rulings come
   ascending by the first operand's section parameter instead, which is
   deterministic in every case; `docs/DATA-MODEL.md` §Curves records it.
+- **Finding (step 6): a fixture in another unit needs its own
+  `mesh_chord`.** The default `1e-3` is a chord for a model of order
+  1–1000 units; on the consumer's r 0.02 hole it leaves the mesh 4%
+  off its volume, far past `mesh_volume_rel`. The metre fixtures with a
+  curved face state `mesh_chord: 1e-5`, which is `4δ/(3r) = 6.7e-4` on
+  that radius — the same margin the default gives the millimetre
+  corpus. `tests/fixtures/README.md` records it beside the new
+  `precision` key.
 - **Finding (step 2): a section pair that touches and crosses is
   `Unsupported`.** `SurfaceIntersection` is `Tangent` or `Transversal`,
   never both, and the meridian arm already refuses a mixed result; the

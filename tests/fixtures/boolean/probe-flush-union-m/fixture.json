@@ -1,0 +1,25 @@
+{
+  "description": "the consumer's flush-union probe in its own units: two 1 m cubes sharing a face, fused at a micrometre default tolerance. The shared face vanishes, the coplanar neighbours are not merged (as Open CASCADE), volume 2.0",
+  "params": {"s": 1.0},
+  "precision": {"default_tolerance": 1e-6},
+  "steps": [
+    {"name": "a", "op": "box", "min": [0, 0, 0], "max": ["s", "s", "s"]},
+    {"name": "b", "op": "box", "min": ["s", 0, 0], "max": ["2 * s", "s", "s"]},
+    {"name": "result", "op": "fuse", "a": "a", "b": "b"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [1, 0.5, 0.5], "expect": "in"},
+    {"label": "outside", "point": [2.5, 0.5, 0.5], "expect": "out"},
+    {"label": "on_face", "point": [1.5, 0.5, 1], "expect": "on"},
+    {"label": "on_edge", "point": [1, 1, 1], "expect": "on"},
+    {"label": "on_former_edge", "point": [1, 0.5, 1], "expect": "on"}
+  ],
+  "analytic": {
+    "volume": "2 * s^3",
+    "area": "10 * s^2",
+    "centroid": ["s", "s / 2", "s / 2"],
+    "counts": {"vertices": 12, "edges": 20, "faces": 10, "loops": 10, "shells": 1},
+    "genus": 0
+  }
+}

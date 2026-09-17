@@ -7,6 +7,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use arris_math::Precision;
 use arris_topo::euler::EulerLine;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -370,6 +371,65 @@ impl Step {
     }
 }
 
+/// The model's tolerance configuration a fixture builds under: every
+/// field of [`Precision`] the recipe names, the rest
+/// `Precision::DEFAULT`. Arris carries no unit, so this is what makes a
+/// fixture's numbers mean metres rather than millimetres: a consumer in
+/// metres sets `default_tolerance` at the micrometre scale
+/// (`docs/ARCHITECTURE.md` §Units), and the corpus's `*-m` fixtures are
+/// the proof that the operations hold there.
+///
+/// It is Arris's alone and never reaches the oracle — Open CASCADE's
+/// `Precision::Confusion` is a constant of its build — so it is outside
+/// the recipe hash ([`SOLID_KEYS`]), like `tolerances`.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PrecisionSpec {
+    /// The tolerance a primitive's entities are created with.
+    pub default_tolerance: f64,
+    /// The floor no entity's tolerance goes below.
+    pub min_tolerance: f64,
+    /// The ceiling above which an operation errors instead of widening.
+    pub max_tolerance: f64,
+    /// Angle in radians below which two directions are parallel.
+    pub angular_tolerance: f64,
+    /// A pcurve's allowed deviation in (u, v) at unit parametric speed.
+    pub parametric_tolerance: f64,
+    /// How many parameters the checker samples along an edge.
+    pub check_samples: usize,
+}
+
+impl Default for PrecisionSpec {
+    /// [`Precision::DEFAULT`], field for field.
+    fn default() -> Self {
+        let p = Precision::DEFAULT;
+        PrecisionSpec {
+            default_tolerance: p.default_tolerance,
+            min_tolerance: p.min_tolerance,
+            max_tolerance: p.max_tolerance,
+            angular_tolerance: p.angular_tolerance,
+            parametric_tolerance: p.parametric_tolerance,
+            check_samples: p.check_samples,
+        }
+    }
+}
+
+impl PrecisionSpec {
+    /// The [`Precision`] a model is created with. It is not checked here:
+    /// `Model::new` refuses an inconsistent one, and the corpus runner
+    /// reports that refusal as the fixture's own error.
+    pub fn precision(&self) -> Precision {
+        Precision {
+            default_tolerance: self.default_tolerance,
+            min_tolerance: self.min_tolerance,
+            max_tolerance: self.max_tolerance,
+            angular_tolerance: self.angular_tolerance,
+            parametric_tolerance: self.parametric_tolerance,
+            check_samples: self.check_samples,
+        }
+    }
+}
+
 /// Comparison tolerances of a fixture. Counts and classifications are
 /// always exact.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -520,6 +580,10 @@ pub struct Recipe {
     /// Probe points.
     #[serde(default)]
     pub probes: Vec<Probe>,
+    /// The precision the model is created with; `Precision::DEFAULT`
+    /// where the recipe names none.
+    #[serde(default)]
+    pub precision: PrecisionSpec,
     /// Comparison tolerances.
     #[serde(default)]
     pub tolerances: Tolerances,
@@ -997,6 +1061,7 @@ mod tests {
         assert!(matches!(&r.steps[2], Step::Transform { rotate: None, .. }));
         assert_eq!(r.probes[0].expect, None);
         assert_eq!(r.tolerances, Tolerances::default());
+        assert_eq!(r.precision, PrecisionSpec::default());
         assert_eq!(r.variant_names(), ["default"]);
         let params = r.params_of("default").unwrap();
         if let Step::Profile { holes, .. } = &r.steps[0] {
@@ -1005,6 +1070,25 @@ mod tests {
             }
         }
         assert!(r.params_of("nope").is_none());
+    }
+
+    #[test]
+    fn a_recipe_names_only_the_precision_fields_it_changes() {
+        let text = r#"{
+            "steps": [], "result": "x",
+            "precision": {"default_tolerance": 1e-6}
+        }"#;
+        let r: Recipe = serde_json::from_str(text).unwrap();
+        let p = r.precision.precision();
+        assert_eq!(p.default_tolerance, 1e-6);
+        assert_eq!(p.min_tolerance, Precision::DEFAULT.min_tolerance);
+        assert_eq!(p.check_samples, Precision::DEFAULT.check_samples);
+        assert!(p.is_consistent());
+        // And it is outside the hash: the oracle never reads it.
+        let with: serde_json::Value = serde_json::from_str(text).unwrap();
+        let without: serde_json::Value =
+            serde_json::from_str(r#"{"steps": [], "result": "x"}"#).unwrap();
+        assert_eq!(recipe_hash(&with).unwrap(), recipe_hash(&without).unwrap());
     }
 
     #[test]

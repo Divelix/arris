@@ -58,6 +58,28 @@ fn boolean_blind_hole() {
     run("boolean/blind-hole");
 }
 
+/// The consumer's through-hole probe in its own units: a 0.1 m plate less
+/// a r 0.02 cylinder, in a model whose default tolerance is a micrometre
+/// — `w²t − πr²t = 8.7434e-5`.
+#[test]
+fn boolean_probe_through_hole_m() {
+    run("boolean/probe-through-hole-m");
+}
+
+/// The consumer's blind-hole probe in the same units: the floor kept,
+/// `w²t − πr²d = 1.8743e-4`.
+#[test]
+fn boolean_probe_blind_hole_m() {
+    run("boolean/probe-blind-hole-m");
+}
+
+/// The consumer's flush-union probe in the same units: two 1 m cubes
+/// sharing a face, volume 2.0.
+#[test]
+fn boolean_probe_flush_union_m() {
+    run("boolean/probe-flush-union-m");
+}
+
 #[test]
 fn boolean_bolt_pattern_8() {
     run("boolean/bolt-pattern-8");
@@ -429,6 +451,13 @@ fn sweep_revolve_onto_axis() {
     run("sweep/revolve-onto-axis");
 }
 
+/// The same profile in the consumer's units: a full turn at a micrometre
+/// default tolerance, volume 2π.
+#[test]
+fn sweep_probe_revolve_onto_axis_m() {
+    run("sweep/probe-revolve-onto-axis-m");
+}
+
 /// A rectangle on the axis with a notch cut in from it: in a full turn
 /// the notch closes into a void of the one lump, two shells from one
 /// loop; a quarter turn opens it onto the flat ends.
@@ -542,6 +571,21 @@ fn blend_box_corner_chamfers() {
 #[test]
 fn blend_second_fillet() {
     run("blend/second-fillet");
+}
+
+/// The consumer's second-blend probe in its own units: the same two
+/// disjoint blends on a 0.1 m cube at a micrometre default tolerance.
+#[test]
+fn blend_probe_second_fillet_m() {
+    run("blend/probe-second-fillet-m");
+}
+
+/// The consumer's probe of a vertical and a cap edge blended in one call,
+/// in the same units: the two blends share the side face x = 0 without
+/// meeting on it.
+#[test]
+fn blend_probe_cap_and_vertical_fillet_m() {
+    run("blend/probe-cap-and-vertical-fillet-m");
 }
 
 /// The cap edge of a face a first blend trimmed, ending where that

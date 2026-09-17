@@ -1,0 +1,31 @@
+{
+  "description": "the consumer's probe of a revolve whose profile touches the axis, in its own units: a 1 x 2 m rectangle with one side on z revolved a full turn in metres, at a micrometre default tolerance. The side on the axis sweeps nothing and its two vertices no rise; volume 2 pi",
+  "params": {"r": 1.0, "h": 2.0},
+  "precision": {"default_tolerance": 1e-6},
+  "steps": [
+    {
+      "name": "rect",
+      "op": "profile",
+      "plane": {"origin": [0, 0, 0], "x": [1, 0, 0], "y": [0, 0, 1]},
+      "outer": {"start": [0, "-h / 2"], "segments": [{"line_to": ["r", "-h / 2"]}, {"line_to": ["r", "h / 2"]}, {"line_to": [0, "h / 2"]}, {"line_to": [0, "-h / 2"]}]}
+    },
+    {"name": "result", "op": "revolve", "profile": "rect", "axis": {"origin": [0, 0, 0], "direction": [0, 0, 1]}, "angle_deg": 360}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [0.35355339059327373, 0.35355339059327373, 0.5], "expect": "in"},
+    {"label": "outside", "point": [1.5, 0, 0], "expect": "out"},
+    {"label": "above", "point": [0.25, 0.25, 1.5], "expect": "out"},
+    {"label": "on_top", "point": [0.35355339059327373, 0.35355339059327373, 1], "expect": "on"},
+    {"label": "on_wall", "point": [0.7071067811865476, 0.7071067811865476, -0.5], "expect": "on"},
+    {"label": "on_axis", "point": [0, 0, 0.25], "expect": "in"},
+    {"label": "behind", "point": [-0.5, -0.1, 0.25], "expect": "in"}
+  ],
+  "analytic": {
+    "volume": "pi * r^2 * h",
+    "area": "2 * pi * r^2 + 2 * pi * r * h",
+    "centroid": [0, 0, 0],
+    "counts": {"vertices": 2, "edges": 3, "faces": 3, "loops": 3, "shells": 1},
+    "genus": 0
+  }
+}

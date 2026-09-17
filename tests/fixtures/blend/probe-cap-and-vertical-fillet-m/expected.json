@@ -1,0 +1,117 @@
+{
+  "occt": "8.0.1.0.0",
+  "recipe_sha256": "593278bed48915ea76fdfe676ce52eade1efe987bb2fabda1772c923bbc939e5",
+  "results": {
+    "default": {
+      "area": 0.05905575191894878,
+      "centroid": [
+        0.05010294926332744,
+        0.049999999999999996,
+        0.04989705073667258
+      ],
+      "counts": {
+        "edges": 18,
+        "faces": 8,
+        "loops": 8,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 12
+      },
+      "degenerate": false,
+      "euler_characteristic": 2,
+      "genus": 0,
+      "inertia": [
+        [
+          1.650155925432489e-06,
+          4.891962718973857e-09,
+          -1.0553061449334288e-11
+        ],
+        [
+          4.891962718973857e-09,
+          1.6532609702441407e-06,
+          4.8919627189734335e-09
+        ],
+        [
+          -1.0553061449334288e-11,
+          4.8919627189734335e-09,
+          1.6501559254324874e-06
+        ]
+      ],
+      "probes": [
+        {
+          "class": "in",
+          "label": "inside",
+          "point": [
+            0.05,
+            0.05,
+            0.05
+          ]
+        },
+        {
+          "class": "out",
+          "label": "vertical_corner_gone",
+          "point": [
+            0.0025,
+            0.0025,
+            0.05
+          ]
+        },
+        {
+          "class": "out",
+          "label": "cap_corner_gone",
+          "point": [
+            0.05,
+            0.0975,
+            0.0975
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_vertical_blend",
+          "point": [
+            0.0029289321881345257,
+            0.0029289321881345257,
+            0.05
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_cap_blend",
+          "point": [
+            0.05,
+            0.09707106781186549,
+            0.09707106781186549
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_cap_contact",
+          "point": [
+            0.05,
+            0.09000000000000001,
+            0.1
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_far_side",
+          "point": [
+            0.1,
+            0.05,
+            0.05
+          ]
+        },
+        {
+          "class": "on",
+          "label": "far_vertex",
+          "point": [
+            0.1,
+            0.0,
+            0.0
+          ]
+        }
+      ],
+      "volume": 0.000995707963267949
+    }
+  }
+}

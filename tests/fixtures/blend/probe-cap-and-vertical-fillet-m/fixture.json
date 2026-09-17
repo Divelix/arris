@@ -1,0 +1,27 @@
+{
+  "description": "the consumer's probe of a vertical and a cap edge filleted in one call, in its own units: a 0.1 m cube in metres, the vertical edge at (0, 0) and the top edge at y = s, z = s blended at r 0.01 in one call, at a micrometre default tolerance. The two edges share no vertex and their blends share the side face x = 0 without meeting on it",
+  "params": {"s": 0.1, "r": 0.01},
+  "precision": {"default_tolerance": 1e-6},
+  "steps": [
+    {"name": "cube", "op": "box", "min": [0, 0, 0], "max": ["s", "s", "s"]},
+    {"name": "result", "op": "fillet", "of": "cube", "edges": [[0, 0, "s / 2"], ["s / 2", "s", "s"]], "radius": "r"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": ["s / 2", "s / 2", "s / 2"], "expect": "in"},
+    {"label": "vertical_corner_gone", "point": [0.0025, 0.0025, 0.05], "expect": "out"},
+    {"label": "cap_corner_gone", "point": [0.05, 0.0975, 0.0975], "expect": "out"},
+    {"label": "on_vertical_blend", "point": ["r - r / sqrt(2)", "r - r / sqrt(2)", "s / 2"], "expect": "on"},
+    {"label": "on_cap_blend", "point": ["s / 2", "s - r + r / sqrt(2)", "s - r + r / sqrt(2)"], "expect": "on"},
+    {"label": "on_cap_contact", "point": ["s / 2", "s - r", "s"], "expect": "on"},
+    {"label": "on_far_side", "point": ["s", "s / 2", "s / 2"], "expect": "on"},
+    {"label": "far_vertex", "point": ["s", 0, 0], "expect": "on"}
+  ],
+  "tolerances": {"mesh_chord": 1e-5},
+  "analytic": {
+    "volume": "s^3 - 2 * (1 - pi / 4) * r^2 * s",
+    "area": "6 * s^2 - 2 * (2 * r * s + 2 * (1 - pi / 4) * r^2 - pi * r * s / 2)",
+    "counts": {"vertices": 12, "edges": 18, "faces": 8, "loops": 8, "shells": 1},
+    "genus": 0
+  }
+}

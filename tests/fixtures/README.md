@@ -194,6 +194,19 @@ of the step that made the fixture pass, and a later change to it is a
   prism, `4δ / (3r)` at that chord on the corpus's smallest radius
   (ADR-0003); and `inertia_rel` (default `1e-9`), read by the runner for
   the `measure` stage's inertia tensor.
+- **`precision`** is the `arris_math::Precision` the model is created
+  with: every field the recipe names, the rest `Precision::DEFAULT`
+  (`{"precision": {"default_tolerance": 1e-6}}`). Arris carries no unit,
+  so this is what makes a recipe's numbers mean metres rather than
+  millimetres — a consumer in metres sets `default_tolerance` at the
+  micrometre scale (`docs/ARCHITECTURE.md` §Units), and the corpus's
+  `probe-*-m` fixtures are the proof that the operations hold there. It is
+  Arris's alone and never reaches the oracle, whose `Precision::Confusion`
+  is a constant of its build, so it is outside the recipe hash like
+  `tolerances` — and a fixture in another unit therefore states a
+  `mesh_chord` of its own, the default `1e-3` being a chord for a model of
+  order 1–1000 units. `Model::new` refuses an inconsistent one and the
+  runner reports it as `CorpusError::Precision`.
 
 ## Geometry fixtures (`"kind": "geometry"`)
 

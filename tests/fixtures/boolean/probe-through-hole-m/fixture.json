@@ -1,0 +1,26 @@
+{
+  "description": "the consumer's through-hole probe in its own units: a 0.1 x 0.1 plate 0.01 thick in metres, less a cylinder r 0.02 on its centre clearing both faces, in a model whose default tolerance is a micrometre (docs/ARCHITECTURE.md §Units). w^2 t - pi r^2 t = 8.7434e-5, genus 1",
+  "params": {"w": 0.1, "t": 0.01, "r": 0.02},
+  "precision": {"default_tolerance": 1e-6},
+  "steps": [
+    {"name": "plate", "op": "box", "min": [0, 0, 0], "max": ["w", "w", "t"]},
+    {"name": "hole", "op": "cylinder", "base": ["w / 2", "w / 2", "-t / 2"], "axis": [0, 0, 1], "radius": "r", "height": "2 * t"},
+    {"name": "result", "op": "cut", "target": "plate", "tool": "hole"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [0.01, 0.01, 0.005], "expect": "in"},
+    {"label": "outside", "point": [0.12, 0.05, 0.005], "expect": "out"},
+    {"label": "on_face", "point": [0.01, 0.01, 0.01], "expect": "on"},
+    {"label": "on_edge", "point": [0.07, 0.05, 0.01], "expect": "on"},
+    {"label": "on_axis", "point": [0.05, 0.05, 0.005], "expect": "out"}
+  ],
+  "tolerances": {"mesh_chord": 1e-5},
+  "analytic": {
+    "volume": "w * w * t - pi * r^2 * t",
+    "area": "2 * w * w + 4 * w * t - 2 * pi * r^2 + 2 * pi * r * t",
+    "centroid": ["w / 2", "w / 2", "t / 2"],
+    "counts": {"vertices": 10, "edges": 15, "faces": 7, "loops": 9, "shells": 1},
+    "genus": 1
+  }
+}

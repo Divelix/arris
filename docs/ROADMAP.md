@@ -18,8 +18,9 @@ The unit of acceptance. A fixture is a directory
 
 - `fixture.json` — the **recipe**: operands as primitives, profiles and
   poses, the operations applied to them in order, the classification probe
-  points, the comparison tolerances, and the closed-form `analytic` values
-  where a formula exists. Both sides evaluate the recipe: the oracle in
+  points, the comparison tolerances, the `precision` the model is built
+  with — `Precision::DEFAULT` unless the fixture is in another unit — and
+  the closed-form `analytic` values where a formula exists. Both sides evaluate the recipe: the oracle in
   Open CASCADE, the test in Arris. A recipe, not a STEP file, so the corpus
   never depends on a reader that does not exist yet and so a change to an
   operand is a one-line diff.
@@ -399,10 +400,13 @@ the STEP reader.
 (8.7434e-5), blind hole (1.8743e-4), enclosed cavity (9.36e-4, two shells),
 cylinder − cylinder transversal (2.2079e-5), flush union (2.0), revolve
 touching the axis (2π), a fillet on a filleted body, a vertical and a cap
-edge filleted in one call — every twin un-ignored and every probe deleted
-(through hole, blind hole and flush union already pass as C1 fixtures at
-another scale, the enclosed cavity as `boolean/enclosed-cavity` and the
-transversal as `boolean/parallel-cylinders-cut` in its own);
+edge filleted in one call — every twin un-ignored and every probe deleted.
+Every one of them is a fixture in metres at the micrometre default
+tolerance a metre model carries (`docs/ARCHITECTURE.md` §Units): the six
+`probe-*-m` fixtures under `boolean/`, `blend/` and `sweep/`
+(**done 2026-09-17**, the recipe's own `precision`), the enclosed cavity
+as `boolean/enclosed-cavity` and the transversal as
+`boolean/parallel-cylinders-cut`;
 `sweep/revolve-frustum`, `revolve-barrel` and `revolve-ring` passing every
 corpus stage with nothing left unchecked; the consumer's naming fixtures
 pass through provenance with no matcher; the consumer's facade compiles

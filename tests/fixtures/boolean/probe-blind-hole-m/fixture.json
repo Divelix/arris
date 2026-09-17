@@ -1,0 +1,25 @@
+{
+  "description": "the consumer's blind-hole probe in its own units: the same 0.1 x 0.1 plate 0.02 thick in metres, less a cylinder r 0.02 sunk 0.01 from the top face and clearing it, at a micrometre default tolerance. w^2 t - pi r^2 d = 1.8743e-4, the floor kept, genus 0",
+  "params": {"w": 0.1, "t": 0.02, "r": 0.02, "d": 0.01},
+  "precision": {"default_tolerance": 1e-6},
+  "steps": [
+    {"name": "plate", "op": "box", "min": [0, 0, 0], "max": ["w", "w", "t"]},
+    {"name": "hole", "op": "cylinder", "base": ["w / 2", "w / 2", "t - d"], "axis": [0, 0, 1], "radius": "r", "height": "2 * d"},
+    {"name": "result", "op": "cut", "target": "plate", "tool": "hole"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [0.01, 0.01, 0.01], "expect": "in"},
+    {"label": "outside", "point": [0.12, 0.05, 0.01], "expect": "out"},
+    {"label": "on_floor", "point": [0.05, 0.05, 0.01], "expect": "on"},
+    {"label": "on_edge", "point": [0.07, 0.05, 0.02], "expect": "on"},
+    {"label": "on_axis_below_floor", "point": [0.05, 0.05, 0.005], "expect": "in"}
+  ],
+  "tolerances": {"mesh_chord": 1e-5},
+  "analytic": {
+    "volume": "w * w * t - pi * r^2 * d",
+    "area": "2 * w * w + 4 * w * t + 2 * pi * r * d",
+    "counts": {"vertices": 10, "edges": 15, "faces": 8, "loops": 9, "shells": 1},
+    "genus": 0
+  }
+}
