@@ -182,7 +182,21 @@ of the step that made the fixture pass, and a later change to it is a
   ruling on the touched face, Arris keeps the face whole); `counts` is
   then required and is Arris's, the runner and `compare.py` hold the
   result to it, the oracle's counts stay in `expected.json` as the
-  record, and the lint holds both to the Euler line. `genus` is what the
+  record, and the lint holds both to the Euler line. `inertia` is the
+  tensor about the centroid at unit density, rows of expressions in
+  `expected.json`'s convention (products of inertia negated), checked
+  against the oracle's relative to its largest component.
+  `measure_differs: "why"` says Open CASCADE's *measurements* of the
+  result are wrong and the closed forms right (ADR-0015): `volume`,
+  `area`, `centroid` and `inertia` are then all required and are what
+  the runner (measure stage and mesh volume) and `compare.py` hold
+  Arris to; the oracle's values stay in `expected.json` as the record,
+  and the lint fails a variant in which none of them differs from its
+  closed form. Before using it an author shows, in the key's text and
+  the description, a closed form derived rather than read off a run,
+  why the oracle is wrong rather than following a convention — an
+  invariance it breaks, such as a motion that is the identity on the
+  solid changing its volume — and the size of its error. `genus` is what the
   Euler line is checked with:
   `V − E + F − (L − F) − 2(S − G) = 0` with the oracle's counts.
 - **Tolerances** are the fixture's; absent ones take the defaults shown.

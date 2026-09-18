@@ -107,6 +107,84 @@ fn a_wrong_analytic_value_fails_the_lint() {
     assert!(lint(Path::new("/nonexistent/fixture")).len() == 1);
 }
 
+/// `analytic.inertia` is a closed form like the others, and
+/// `measure_differs` (ADR-0015) needs every closed form and a
+/// measurement that actually differs from the oracle's: a scratch copy of
+/// the crossing-cylinder fuse, at a turn where Open CASCADE is right,
+/// claims it with one form missing, then with all of them agreeing.
+#[test]
+fn measure_differs_needs_every_closed_form_and_a_difference() {
+    let edit = |tag: &str, f: &dyn Fn(&mut serde_json::Value)| {
+        let scratch = tempdir(tag);
+        copy_fixture("boolean/cross-cylinders-fuse", &scratch);
+        let path = scratch.join("fixture.json");
+        let mut recipe: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        f(&mut recipe["analytic"]);
+        std::fs::write(&path, recipe.to_string()).unwrap();
+        lint(&scratch)
+    };
+    let transverse = "pi * R^2 * L * (3 * R^2 + L^2) / 12";
+    let inertia = serde_json::json!([
+        [
+            format!("{transverse} + pi * R^4 * L / 2 - 112 * R^5 / 45"),
+            0,
+            0
+        ],
+        [0, format!("2 * {transverse} - 128 * R^5 / 45"), 0],
+        [
+            0,
+            0,
+            format!("{transverse} + pi * R^4 * L / 2 - 112 * R^5 / 45")
+        ],
+    ]);
+
+    // The Steinmetz union's inertia is the oracle's; one component off is
+    // a problem like any closed form.
+    assert!(
+        edit("inertia", &|a| a["inertia"] = inertia.clone()).is_empty(),
+        "the closed-form inertia is the oracle's"
+    );
+    let problems = edit("wrong-inertia", &|a| {
+        a["inertia"] = inertia.clone();
+        a["inertia"][1][1] = serde_json::json!(119.7);
+    });
+    assert_eq!(problems.len(), 1, "{problems:?}");
+    assert!(
+        problems[0].contains("analytic inertia[1][1] 119.7 vs oracle"),
+        "{problems:?}"
+    );
+
+    let problems = edit("measure-differs-missing", &|a| {
+        a["measure_differs"] = "a claim".into();
+    });
+    assert!(
+        problems
+            .iter()
+            .any(|p| p.contains("analytic.measure_differs needs the closed forms it is held to: analytic.inertia missing")),
+        "{problems:?}"
+    );
+
+    let problems = edit("measure-differs-agrees", &|a| {
+        a["measure_differs"] = "a claim".into();
+        a["inertia"] = inertia.clone();
+    });
+    assert_eq!(problems.len(), 1, "{problems:?}");
+    assert!(
+        problems[0].contains("[default] analytic.measure_differs is set but every closed form is the oracle's measurement"),
+        "{problems:?}"
+    );
+
+    // Claimed and borne out: the volume differs, and is not reported as
+    // a problem.
+    let problems = edit("measure-differs-differs", &|a| {
+        a["measure_differs"] = "a claim".into();
+        a["inertia"] = inertia.clone();
+        a["volume"] = "2 * pi * R^2 * L".into();
+    });
+    assert!(problems.is_empty(), "{problems:?}");
+}
+
 /// A comparable solid fixture in one of the corpus's areas without its
 /// committed dump fails the lint, one problem per variant missing one;
 /// a result the oracle built no solid for, a recipe expecting a refusal,

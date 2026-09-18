@@ -88,7 +88,7 @@ bound has to be established here.
   fixture must show to claim `measure_differs`: a closed form for every
   field it claims, and a statement of why the oracle's answer is wrong
   rather than merely different. Commit: `docs(adr)`.
-- [ ] Step 2 **[1]** — `measure_differs` in `arris-debug`'s fixture
+- [x] Step 2 **[1]** — `measure_differs` in `arris-debug`'s fixture
   format, the corpus lint, the corpus runner and `tools/oracle/compare.py`,
   per the design delta. Tests: the lint's own mutation harness gains the
   two new failures (the key set with a field missing; the key set where the

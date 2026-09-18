@@ -1097,7 +1097,10 @@ B-Rep).
   the run ending there with the oracle's numbers kept as the record of
   what Open CASCADE builds; one whose recipe states a convention Arris
   does not follow, `analytic.counts_differ`, held to the recipe's own
-  counts with the oracle's kept as the record)
+  counts with the oracle's kept as the record; one whose recipe states
+  the oracle's measurements wrong, `analytic.measure_differs`, held to
+  its closed forms of volume, area, centroid and inertia in the measure
+  stage, the mesh check and `compare.py` alike — ADR-0015)
   over the
   oracle seam (`oracle::compare`: STEP under `target/inspect/`, which the runner
   names `<area>-<slug>-<variant>`, plus a digest of the directory for a

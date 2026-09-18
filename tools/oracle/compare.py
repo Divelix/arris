@@ -16,7 +16,7 @@ require_ocp()
 from oracle import step  # noqa: E402
 from oracle.fixture import load_expected, load_fixture  # noqa: E402
 from oracle.measure import DEFAULT_TOLERANCES, compare, format_table, measure  # noqa: E402
-from oracle.recipe import fixture_kind, probes, recipe_hash  # noqa: E402
+from oracle.recipe import fixture_kind, number, probes, recipe_hash, resolve_params  # noqa: E402
 
 
 def compare_step(directory: Path, step_file: Path, variant: str = "default") -> tuple[bool, str]:
@@ -40,6 +40,21 @@ def compare_step(directory: Path, step_file: Path, variant: str = "default") -> 
         # The recipe states a convention Arris does not follow and gives
         # its own counts; the oracle's stay in expected.json as the record.
         result = {**result, "counts": {"shells": 1, "solids": 1, **analytic["counts"]}}
+    if analytic.get("measure_differs"):
+        # The recipe states the oracle's measurements are wrong and gives
+        # closed forms for them (ADR-0015); the oracle's stay in
+        # expected.json as the record.
+        missing = [k for k in ("volume", "area", "centroid", "inertia") if k not in analytic]
+        if missing:
+            raise OracleError(f"{directory}: analytic.measure_differs needs analytic.{', analytic.'.join(missing)}")
+        params = resolve_params(fixture, variant)
+        result = {
+            **result,
+            "volume": number(analytic["volume"], params),
+            "area": number(analytic["area"], params),
+            "centroid": [number(x, params) for x in analytic["centroid"]],
+            "inertia": [[number(x, params) for x in row] for row in analytic["inertia"]],
+        }
     rows = compare(result, actual, tol)
     return all(r[3] for r in rows), format_table(rows)
 

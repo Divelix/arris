@@ -6,9 +6,11 @@
 //! writes STEP and has the oracle read it back
 //! (`compare.py`), measures the result over the B-Rep and holds its
 //! volume, area, centroid and inertia to the oracle's within the
-//! fixture's tolerances, tessellates the result and holds the mesh
+//! fixture's tolerances (to the recipe's closed forms where it states the
+//! oracle's are wrong, `analytic.measure_differs`, ADR-0015), tessellates
+//! the result and holds the mesh
 //! closed with its signed volume within the fixture's `mesh_volume_rel`
-//! of the oracle's at `mesh_chord` — asking for the corner block and
+//! of that volume at `mesh_chord` — asking for the corner block and
 //! holding every face-local vertex to ADR-0012's two invariants, so the
 //! whole corpus covers them — asserts the provenance accounting of
 //! every step, and diffs the text dump against the committed `dump.txt` —
@@ -632,8 +634,10 @@ pub fn run(dir: &Path, variant: &str) -> Result<(), CorpusError> {
     let tolerances = fixture.recipe.tolerances;
 
     // `measure` over the B-Rep against what the oracle measured of the
-    // same recipe: volume, area, centroid and the inertia tensor.
-    measure_stage(&m, body, expected, &tolerances).map_err(|what| CorpusError::Measure {
+    // same recipe — or, where the recipe says the oracle is wrong, its
+    // closed forms: volume, area, centroid and the inertia tensor.
+    let (target, by) = measure_target(&fixture, &params, expected)?;
+    measure_stage(&m, body, &target, by, &tolerances).map_err(|what| CorpusError::Measure {
         fixture: name.clone(),
         what,
     })?;
@@ -658,11 +662,11 @@ pub fn run(dir: &Path, variant: &str) -> Result<(), CorpusError> {
             "the mesh's signed volume is {mesh_volume}, not positive"
         )));
     }
-    if let Some(oracle_volume) = expected.volume {
-        let relative = (mesh_volume - oracle_volume).abs() / oracle_volume.abs();
+    if let Some(volume) = target.volume {
+        let relative = (mesh_volume - volume).abs() / volume.abs();
         if relative.is_nan() || relative > tolerances.mesh_volume_rel {
             return Err(mesh_failure(format!(
-                "mesh volume {mesh_volume} vs the oracle's {oracle_volume}: {relative:e} relative, above mesh_volume_rel {:e}",
+                "mesh volume {mesh_volume} vs {by} {volume}: {relative:e} relative, above mesh_volume_rel {:e}",
                 tolerances.mesh_volume_rel
             )));
         }
@@ -1231,10 +1235,65 @@ fn corners_stage(m: &Model, body: Body, mesh: &TriMesh) -> Result<(), String> {
 /// not a geometric tolerance.
 const CORNER_NORMAL_SLACK: f64 = 1e-12;
 
+/// What the measure stage holds a result to, and whose it is: the
+/// oracle's measurements, or under `analytic.measure_differs` the
+/// recipe's closed forms of the volume, area, centroid and inertia, each
+/// required (ADR-0015).
+fn measure_target(
+    fixture: &Fixture,
+    params: &BTreeMap<String, f64>,
+    expected: &Measured,
+) -> Result<(Measured, &'static str), CorpusError> {
+    let analytic = &fixture.recipe.analytic;
+    if analytic.measure_differs.is_none() {
+        return Ok((expected.clone(), "the oracle's"));
+    }
+    let missing = |field: &str| CorpusError::Measure {
+        fixture: fixture.name.clone(),
+        what: format!("analytic.measure_differs needs analytic.{field}"),
+    };
+    let eval = |n: &Num| {
+        n.eval(params).map_err(|source| CorpusError::Expression {
+            fixture: fixture.name.clone(),
+            step: "analytic".into(),
+            source,
+        })
+    };
+    let mut target = expected.clone();
+    target.volume = Some(eval(
+        analytic.volume.as_ref().ok_or_else(|| missing("volume"))?,
+    )?);
+    target.area = Some(eval(
+        analytic.area.as_ref().ok_or_else(|| missing("area"))?,
+    )?);
+    let centroid = analytic
+        .centroid
+        .as_ref()
+        .ok_or_else(|| missing("centroid"))?;
+    target.centroid = Some([
+        eval(&centroid[0])?,
+        eval(&centroid[1])?,
+        eval(&centroid[2])?,
+    ]);
+    let inertia = analytic
+        .inertia
+        .as_ref()
+        .ok_or_else(|| missing("inertia"))?;
+    let mut rows = [[0.0; 3]; 3];
+    for (row, forms) in rows.iter_mut().zip(inertia) {
+        for (x, form) in row.iter_mut().zip(forms) {
+            *x = eval(form)?;
+        }
+    }
+    target.inertia = Some(rows);
+    Ok((target, "the closed form's"))
+}
+
 fn measure_stage(
     m: &Model,
     body: Body,
     expected: &Measured,
+    by: &str,
     tolerances: &Tolerances,
 ) -> Result<(), String> {
     let found = mass_properties(m, body).map_err(|e| e.to_string())?;
@@ -1242,7 +1301,7 @@ fn measure_stage(
         let difference = (a - e).abs() / e.abs().max(a.abs()).max(f64::MIN_POSITIVE);
         if difference.is_nan() || difference > tolerance {
             return Err(format!(
-                "{name} {a} vs the oracle's {e}: {difference:e} relative, above {tolerance:e}"
+                "{name} {a} vs {by} {e}: {difference:e} relative, above {tolerance:e}"
             ));
         }
         Ok(())
@@ -1258,7 +1317,7 @@ fn measure_stage(
         let distance = (found.centroid - oracle).norm();
         if distance.is_nan() || distance > tolerances.centroid_abs {
             return Err(format!(
-                "centroid {} vs the oracle's {oracle}: {distance:e} apart, above centroid_abs {:e}",
+                "centroid {} vs {by} {oracle}: {distance:e} apart, above centroid_abs {:e}",
                 found.centroid, tolerances.centroid_abs
             ));
         }
@@ -1275,7 +1334,7 @@ fn measure_stage(
                 let difference = (a - e).abs() / scale;
                 if difference.is_nan() || difference > tolerances.inertia_rel {
                     return Err(format!(
-                        "inertia[{i}][{j}] {a} vs the oracle's {e}: {difference:e} of the tensor, above inertia_rel {:e}",
+                        "inertia[{i}][{j}] {a} vs {by} {e}: {difference:e} of the tensor, above inertia_rel {:e}",
                         tolerances.inertia_rel
                     ));
                 }
@@ -1403,20 +1462,21 @@ mod tests {
         let mut m = Model::default();
         let (body, _) = primitive_box(&mut m, Point3::origin(), Point3::new(40.0, 30.0, 10.0))
             .expect("the box of the recipe");
-        measure_stage(&m, body, &expected, &tolerances).expect("the oracle's numbers");
+        measure_stage(&m, body, &expected, "the oracle's", &tolerances)
+            .expect("the oracle's numbers");
         // Every quantity is actually compared: move each one just past
         // its tolerance and the stage says which.
         let mut wrong = expected.clone();
         wrong.volume = Some(expected.volume.unwrap() * (1.0 + 1e-6));
         assert!(
-            measure_stage(&m, body, &wrong, &tolerances)
+            measure_stage(&m, body, &wrong, "the oracle's", &tolerances)
                 .unwrap_err()
                 .starts_with("volume ")
         );
         let mut wrong = expected.clone();
         wrong.area = Some(expected.area.unwrap() * (1.0 + 1e-6));
         assert!(
-            measure_stage(&m, body, &wrong, &tolerances)
+            measure_stage(&m, body, &wrong, "the oracle's", &tolerances)
                 .unwrap_err()
                 .starts_with("area ")
         );
@@ -1425,7 +1485,7 @@ mod tests {
         centroid[1] += 1e-3;
         wrong.centroid = Some(centroid);
         assert!(
-            measure_stage(&m, body, &wrong, &tolerances)
+            measure_stage(&m, body, &wrong, "the oracle's", &tolerances)
                 .unwrap_err()
                 .starts_with("centroid ")
         );
@@ -1434,10 +1494,46 @@ mod tests {
         inertia[0][1] += inertia[2][2] * 1e-6;
         wrong.inertia = Some(inertia);
         assert!(
-            measure_stage(&m, body, &wrong, &tolerances)
+            measure_stage(&m, body, &wrong, "the oracle's", &tolerances)
                 .unwrap_err()
                 .starts_with("inertia[0][1] ")
         );
+    }
+
+    /// Under `measure_differs` the stage is held to the recipe's closed
+    /// forms, every one of which it needs (ADR-0015); without it, to the
+    /// oracle's measurements.
+    #[test]
+    fn measure_differs_holds_the_stage_to_the_closed_forms() {
+        let dir = fixtures::corpus_root().join("boolean/cross-cylinders-fuse");
+        let mut fixture = fixtures::load(&dir).unwrap();
+        let params = fixture.recipe.params_of("default").unwrap();
+        let expected = fixture.expected.results["default"].clone();
+        let (target, by) = measure_target(&fixture, &params, &expected).unwrap();
+        assert_eq!((target, by), (expected.clone(), "the oracle's"));
+
+        fixture.recipe.analytic.measure_differs = Some("a test".into());
+        let Err(CorpusError::Measure { what, .. }) = measure_target(&fixture, &params, &expected)
+        else {
+            panic!("a closed form missing is an error");
+        };
+        assert_eq!(what, "analytic.measure_differs needs analytic.inertia");
+
+        let row = |r: [&str; 3]| r.map(|x| Num::Expr(x.into()));
+        fixture.recipe.analytic.inertia = Some([
+            row(["2", "0", "0"]),
+            row(["0", "3", "0"]),
+            row(["0", "0", "R + 3"]),
+        ]);
+        let (target, by) = measure_target(&fixture, &params, &expected).unwrap();
+        assert_eq!(by, "the closed form's");
+        let volume = 2.0 * std::f64::consts::PI * 6.0 - 16.0 / 3.0;
+        assert!((target.volume.unwrap() - volume).abs() < 1e-12);
+        assert_eq!(target.centroid, Some([0.0; 3]));
+        assert_eq!(target.inertia.unwrap()[2][2], 4.0);
+        // What the oracle says of everything else is kept.
+        assert_eq!(target.counts, expected.counts);
+        assert_eq!(target.probes, expected.probes);
     }
 
     #[test]

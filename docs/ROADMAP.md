@@ -63,7 +63,9 @@ must fail with that typed refusal — `tangent-contact`, `non-manifold`,
 numbers kept as the record of what Open CASCADE builds instead. A recipe may also say `analytic.counts_differ: "why"` and carry
 its own counts, for the one place Arris's convention is deliberately not
 Open CASCADE's (a tangent ruling left unimprinted); every other fixture
-mirrors the oracle's counts exactly.
+mirrors the oracle's counts exactly. Likewise `analytic.measure_differs:
+"why"` with closed forms for the volume, area, centroid and inertia, for
+a result Open CASCADE measurably builds wrong (ADR-0015).
 Tolerances are the fixture's: relative 1e-9 on volume and area for
 analytic results, exact on counts and classifications. The oracle is run,
 never linked (`SEED.md` §7).

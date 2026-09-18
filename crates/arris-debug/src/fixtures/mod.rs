@@ -557,6 +557,19 @@ pub struct Analytic {
     /// in `expected.json` as the record, and the lint holds both to the
     /// Euler line with `genus`.
     pub counts_differ: Option<String>,
+    /// The inertia tensor about the centroid at unit density, as rows, in
+    /// `expected.json`'s convention (the products of inertia negated).
+    /// Cross-checked against the oracle's like the other closed forms;
+    /// required under `measure_differs`.
+    pub inertia: Option<[[Num; 3]; 3]>,
+    /// Why the oracle's measurements of this result are wrong, and the
+    /// closed forms right (ADR-0015: a motion that is the identity on the
+    /// solid moves Open CASCADE's volume). Then `volume`, `area`,
+    /// `centroid` and `inertia` are required and are what the runner and
+    /// the oracle's `compare.py` hold the result to; the oracle's values
+    /// stay in `expected.json` as the record, and the lint requires at
+    /// least one of them to differ from its closed form in every variant.
+    pub measure_differs: Option<String>,
     /// Genus.
     pub genus: Option<i64>,
 }
@@ -830,7 +843,10 @@ pub const ANALYTIC_REL: f64 = 1e-6;
 /// every variant has a result, the Euler line is zero (`χ = 2(S − G)`
 /// with the oracle's counts and the fixture's `analytic.genus`), and
 /// every `analytic` value matches the oracle within [`ANALYTIC_REL`]
-/// (counts, degeneracy and probe expectations exactly); and a solid in
+/// (counts, degeneracy and probe expectations exactly) — except the
+/// counts under `counts_differ`, which must differ, and the volume, area,
+/// centroid and inertia under `measure_differs`, which must all be stated
+/// and of which at least one must differ (ADR-0015); and a solid in
 /// one of [`DUMPED_AREAS`] that the runner compares — the oracle built a
 /// solid and the recipe expects no refusal — has its dump committed for
 /// every variant (`corpus::dump_path`), which a fixture only has once it
@@ -897,6 +913,26 @@ pub fn lint(dir: &Path) -> Vec<String> {
             }
             if a.degenerate || a.expect_error.is_some() {
                 problem("analytic.counts_differ needs a result Arris builds".into());
+            }
+        }
+        if a.measure_differs.is_some() {
+            let missing: Vec<&str> = [
+                ("volume", a.volume.is_none()),
+                ("area", a.area.is_none()),
+                ("centroid", a.centroid.is_none()),
+                ("inertia", a.inertia.is_none()),
+            ]
+            .into_iter()
+            .filter_map(|(field, absent)| absent.then_some(field))
+            .collect();
+            if !missing.is_empty() {
+                problem(format!(
+                    "analytic.measure_differs needs the closed forms it is held to: analytic.{} missing",
+                    missing.join(", analytic.")
+                ));
+            }
+            if a.degenerate || a.expect_error.is_some() {
+                problem("analytic.measure_differs needs a result Arris builds".into());
             }
         }
         if a.degenerate != m.degenerate {
@@ -968,10 +1004,14 @@ pub fn lint(dir: &Path) -> Vec<String> {
                 }
             }
         }
+        // The measurements that differ from their closed forms: a problem
+        // each, or under `measure_differs` the claim that at least one
+        // does (ADR-0015).
+        let mut differs = Vec::new();
         if let Some(v) = &a.volume {
             match (v.eval(&params), m.volume) {
                 (Ok(av), Some(ov)) if !rel(av, ov) => {
-                    problem(format!("[{variant}] analytic volume {av} vs oracle {ov}"))
+                    differs.push(format!("analytic volume {av} vs oracle {ov}"))
                 }
                 (Err(e), _) => problem(format!("[{variant}] analytic volume: {e}")),
                 _ => {}
@@ -980,7 +1020,7 @@ pub fn lint(dir: &Path) -> Vec<String> {
         if let Some(v) = &a.area {
             match (v.eval(&params), m.area) {
                 (Ok(av), Some(ov)) if !rel(av, ov) => {
-                    problem(format!("[{variant}] analytic area {av} vs oracle {ov}"))
+                    differs.push(format!("analytic area {av} vs oracle {ov}"))
                 }
                 (Err(e), _) => problem(format!("[{variant}] analytic area: {e}")),
                 _ => {}
@@ -990,15 +1030,45 @@ pub fn lint(dir: &Path) -> Vec<String> {
             for (i, n) in cent.iter().enumerate() {
                 match n.eval(&params) {
                     Ok(av) if (av - oc[i]).abs() > r.tolerances.centroid_abs.max(ANALYTIC_REL) => {
-                        problem(format!(
-                            "[{variant}] analytic centroid[{i}] {av} vs oracle {}",
-                            oc[i]
-                        ));
+                        differs.push(format!("analytic centroid[{i}] {av} vs oracle {}", oc[i]));
                     }
                     Err(e) => problem(format!("[{variant}] analytic centroid: {e}")),
                     _ => {}
                 }
             }
+        }
+        if let (Some(tensor), Some(oi)) = (&a.inertia, m.inertia) {
+            // Relative to the tensor's largest component, as the runner
+            // compares it: a product of inertia that cancels to zero is
+            // not compared against itself.
+            let scale = oi
+                .iter()
+                .flatten()
+                .fold(0.0f64, |s, x| s.max(x.abs()))
+                .max(f64::MIN_POSITIVE);
+            for (i, row) in tensor.iter().enumerate() {
+                for (j, n) in row.iter().enumerate() {
+                    match n.eval(&params) {
+                        Ok(av) if (av - oi[i][j]).abs() > ANALYTIC_REL * scale => {
+                            differs.push(format!(
+                                "analytic inertia[{i}][{j}] {av} vs oracle {}",
+                                oi[i][j]
+                            ));
+                        }
+                        Err(e) => problem(format!("[{variant}] analytic inertia: {e}")),
+                        _ => {}
+                    }
+                }
+            }
+        }
+        if a.measure_differs.is_none() {
+            for d in differs {
+                problem(format!("[{variant}] {d}"));
+            }
+        } else if differs.is_empty() {
+            problem(format!(
+                "[{variant}] analytic.measure_differs is set but every closed form is the oracle's measurement"
+            ));
         }
         if let Some(ac) = a.counts {
             if a.counts_differ.is_none() && ac != c {
