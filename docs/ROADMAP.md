@@ -354,7 +354,12 @@ with their `#[ignore]`d twins — green.*
   refused as non-manifold, `oblique-cross-common`,
   `seam-through-crossing-common`, `short-cross-cylinders-fuse`,
   `tee-fuse`); `geom/c2-cylinder-pairs` against the oracle; parallel and
-  crossing pairs at random poses (`boolean_prop.rs`).
+  crossing pairs at random poses (`boolean_prop.rs`). A crossing pair's
+  result does not depend on where the tool's seam sits (2026-09-18,
+  ADR-0015, ADR-0016): a seam beside a crossing vertex
+  (`seam-beside-crossing-fuse`, held to its closed forms where Open
+  CASCADE builds a sliver), and a property turning the tool about its
+  own axis across the whole band.
 - Results of more than one shell — an enclosed cavity, a disjoint `fuse`,
   a `cut` that splits its target, a full revolve of a profile with holes —
   as lumps of one `Solid`, two lumps touching along an edge or at a vertex

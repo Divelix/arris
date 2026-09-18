@@ -41,7 +41,10 @@ down. They apply to every crate; `SEED.md` §9 holds the reasons.
 - **Every fixture has an oracle.** Volume, area, centroid, counts, and
   point classifications computed by Open CASCADE (`tools/oracle/`), stored
   beside the fixture. Arris must match within the fixture's stated
-  tolerance.
+  tolerance. Where the oracle is demonstrably wrong and a closed form is
+  exact, the fixture says so in `analytic.measure_differs` and is held to
+  the closed forms instead, with the evidence ADR-0015 asks for; the
+  oracle's values stay beside it as the record.
 - **Acceptance is a corpus run, not a demo.** A milestone closes on
   numbers: checker green, oracle matched, property tests green.
 - **Property tests over hand-picked cases.** Random operands in random
