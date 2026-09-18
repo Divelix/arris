@@ -296,11 +296,12 @@ fn boolean_seam_through_crossing_common() {
 /// just beside a crossing vertex rather than through it: the same solid
 /// as at any turn, so the result is held to cross-cylinders-fuse's
 /// closed forms — which Open CASCADE misses in this band, stated in
-/// `analytic.measure_differs` (ADR-0015).
+/// `analytic.measure_differs` (ADR-0015). The seam's touch is resolved
+/// into its crossings (ADR-0016) and the sliver between the seam and the
+/// two ellipses is decided by the transversal rule.
 #[test]
-#[ignore = "Unsupported 'no closed form' for the two walls at −90.02° and −90.03°, the sliver of the turned wall beside its seam classifying On the other wall: waits on plans/seam-parametrisation-faults step 5"]
-fn regression_seam_beside_crossing_fuse() {
-    run("regression/seam-beside-crossing-fuse");
+fn boolean_seam_beside_crossing_fuse() {
+    run("boolean/seam-beside-crossing-fuse");
 }
 
 /// The same fuse with the seam between one and two tolerances from the

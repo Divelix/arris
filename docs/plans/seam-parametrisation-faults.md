@@ -156,7 +156,7 @@ bound has to be established here.
   (`Fault::Split`; it was `Fault::Seam` before) —
   `regression/seam-a-tolerance-from-crossing-fuse`, `#[ignore]`d, and a
   backlog line.
-- [ ] Step 5 **[2]** — The `Unsupported` band, which since step 4 is
+- [x] Step 5 **[2]** — The `Unsupported` band, which since step 4 is
   1.15e-5° to about 0.046° either side of ±90° and both of the fixture's
   variants. Step 4 found the ask: `result::Build::select` classifies the
   piece of the turned wall between its seam and the two ellipse arcs to
@@ -175,6 +175,24 @@ bound has to be established here.
   which one, fix it, and the `closed-form-band` variant passes. If step 4
   finds one root cause for both bands, this step collapses into it and is
   ticked with a note saying so rather than a second commit.
+  Done: such a piece is decided by the *transversal rule* at a section
+  edge it has — the direction into the piece at the edge's midpoint,
+  its surface's normal crossed with the loop's tangent, against the
+  other face's effective outward normal; the edge whose surfaces are
+  furthest from tangent is read, and a piece none decides beyond the
+  angular tolerance is `Unsupported` as before (`docs/ARCHITECTURE.md`
+  §Operations, beside the curvature rule it mirrors). No ADR: it is the
+  selection's own rule, measuring no distance and widening no tolerance.
+  Before trusting it the rule was run beside the point classification
+  on every piece the whole workspace suite classifies `Inside` or
+  `Outside`: 121,903 pieces, property tests included, no disagreement.
+  `a_sliver_within_the_tolerance_of_the_other_wall_is_decided_at_its_section_edges`
+  holds `fuse` and `common` to the closed forms (2.4e-10, the same at
+  every turn) and a generic turn's counts across the band on both sides
+  of ±90°; the fixture passes every stage in both variants and is
+  `boolean/seam-beside-crossing-fuse` with its two blessed dumps; and
+  `ARRIS_PROPTEST_CASES=1000` over `boolean_prop` is green, shard 5 of
+  `crossing_cylinders_obey_every_identity` included.
 - [ ] Step 6 **[1]** — The sweep that proves the invariant, not just the
   two poses: a property (or an extension of the existing one) that fuses
   the same pair of solids at a spread of turns and asserts the result is

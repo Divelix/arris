@@ -404,8 +404,21 @@ touch from outside in a `cut` or a `common` passes: the tool's piece is
 dropped, the target's kept whole, and the ruling is no edge — Open
 CASCADE imprints it, and `boolean/tangent-outside-cut` states that
 convention. A piece `On` an edge or a vertex, or on a face its own is
-neither coincident nor tangent with, is `OpError::Unsupported` naming
-the pair. The survivors are grouped into shells by shared edges — none is
+neither coincident nor tangent with, lies within the tolerance of the
+other operand at its interior point — a sliver between a seam and two
+section curves beside the point where they cross is within it
+throughout — and is decided by the *transversal rule* at a section edge
+it has instead: at the edge's midpoint, the direction into the piece is
+its surface's normal crossed with the edge's tangent as the piece's loop
+walks it, and the piece is inside the other operand exactly when that
+direction is against the other face's effective outward normal. The
+piece crosses no face of the other operand inside itself, so every such
+edge decides the same, and the one read is the one whose two surfaces
+are furthest from tangent; nothing in it measures a distance, so no
+tolerance decides it. A piece with no section edge of a `Transversal`
+pair, or whose surfaces are tangent within the angular tolerance along
+every one, is `OpError::Unsupported` naming the pair. The survivors are
+grouped into shells by shared edges — none is
 `Degenerate` with `Reason::Empty`, or with `Reason::ZeroThickness` when
 what was dropped lay on the other operand (two solids sharing only a
 face); an edge piece used by more than two faces, or a vertex two shells

@@ -367,6 +367,31 @@ fn a_touch_on_a_crossing_vertex_joins_it_and_paves_its_edge() {
     }
 }
 
+/// `boolean/cross-cylinders-fuse`'s two cylinders, `R = 1` and `L = 6`
+/// on the `z` and `x` axes, the second turned about its own axis by
+/// `turn` degrees — which moves its seam and nothing else.
+fn turned_crossing(turn: f64) -> (Model, Body, Body) {
+    let mut m = Model::default();
+    let along = |origin: Point3, direction: Vec3| Axis::new(origin, direction).unwrap();
+    let (a, _) = primitive_cylinder(
+        &mut m,
+        along(Point3::new(0.0, 0.0, -3.0), Vec3::z()),
+        1.0,
+        6.0,
+    )
+    .unwrap();
+    let (b, _) = primitive_cylinder(
+        &mut m,
+        along(Point3::new(-3.0, 0.0, 0.0), Vec3::x()),
+        1.0,
+        6.0,
+    )
+    .unwrap();
+    let about = UnitQuaternion::from_axis_angle(&Vec3::x_axis(), turn.to_radians());
+    let (b, _) = transform(&mut m, b, &Isometry::from_rotation(about)).unwrap();
+    (m, a, b)
+}
+
 /// A touch off every vertex stands for the crossings the section curves
 /// make of its edge (ADR-0016). Crossing cylinders with the second turned
 /// about its own axis to just beside ±90°: its seam runs `R sin δ` beside
@@ -381,24 +406,7 @@ fn a_touch_beside_a_crossing_vertex_is_resolved_through_the_section_curves() {
     for turn in [
         -90.02_f64, -90.01, -90.001, -90.0001, -89.9999, -89.98, 89.98, 90.02,
     ] {
-        let mut m = Model::default();
-        let along = |origin: Point3, direction: Vec3| Axis::new(origin, direction).unwrap();
-        let (a, _) = primitive_cylinder(
-            &mut m,
-            along(Point3::new(0.0, 0.0, -3.0), Vec3::z()),
-            1.0,
-            6.0,
-        )
-        .unwrap();
-        let (b, _) = primitive_cylinder(
-            &mut m,
-            along(Point3::new(-3.0, 0.0, 0.0), Vec3::x()),
-            1.0,
-            6.0,
-        )
-        .unwrap();
-        let about = UnitQuaternion::from_axis_angle(&Vec3::x_axis(), turn.to_radians());
-        let (b, _) = transform(&mut m, b, &Isometry::from_rotation(about)).unwrap();
+        let (m, a, b) = turned_crossing(turn);
         let i = interferences(&m, a, b).unwrap_or_else(|e| panic!("turn {turn}: {e}"));
 
         let touches: Vec<&_> = i.hits.iter().filter(|h| h.tangent).collect();
@@ -606,6 +614,58 @@ use arris_ops::arris_check::arris_topo::{
 use arris_ops::arris_check::{Level, check, lumps};
 use arris_ops::measure::mass_properties;
 use arris_ops::{Reason, common, cut, fuse};
+
+/// A piece within the tolerance of the other operand throughout is
+/// decided by the transversal rule (`docs/ARCHITECTURE.md` §Operations).
+/// With the tool's seam `R sin δ` beside a crossing vertex, the piece of
+/// its wall between the seam and the two ellipses is a sliver that far
+/// across and `R (1 − cos δ)` from the first wall everywhere: its interior
+/// point classifies `On` a face its own is transversal to, and was
+/// `Unsupported` across the band out to 0.046°. At every turn — the band
+/// on both sides of ±90°, its two ends, and the one-sided band where Open
+/// CASCADE builds a sliver of its own — `fuse` and `common` are the
+/// Steinmetz union and solid, clean at `Full`, with a generic turn's
+/// counts, and the volume within 1e-9 of the closed form: the fitted
+/// ellipses' error, 2.4e-10 at every turn alike. The one-to-two-tolerance band, 5.8e-6° to 1.1e-5°, is
+/// `regression/seam-a-tolerance-from-crossing-fuse`'s and not among them.
+#[test]
+fn a_sliver_within_the_tolerance_of_the_other_wall_is_decided_at_its_section_edges() {
+    let generic = |op: Boolean| {
+        let (mut m, a, b) = turned_crossing(30.0);
+        let (body, _) = op(&mut m, a, b).unwrap();
+        arris_debug::dump::euler_line(&m, body).unwrap()
+    };
+    let exact_common = 16.0 / 3.0;
+    let exact_fuse = TAU * 6.0 - exact_common;
+    for (name, op, exact) in [
+        ("fuse", fuse as Boolean, exact_fuse),
+        ("common", common as Boolean, exact_common),
+    ] {
+        let counts = generic(op);
+        for turn in [
+            -90.03_f64, -90.04, -90.045, -90.046, -90.02, -90.001, -90.0001, -89.9999, -89.99,
+            -89.97, 89.97, 90.03,
+        ] {
+            let (mut m, a, b) = turned_crossing(turn);
+            let (body, _) = op(&mut m, a, b).unwrap_or_else(|e| panic!("{name} at {turn}: {e}"));
+            let report = check(&m, body, Level::Full);
+            assert!(
+                report.is_ok() && report.unchecked().is_empty(),
+                "{name} at {turn}: {report}"
+            );
+            assert_eq!(
+                arris_debug::dump::euler_line(&m, body).unwrap(),
+                counts,
+                "{name} at {turn}"
+            );
+            let volume = mass_properties(&m, body).unwrap().volume;
+            assert!(
+                (volume - exact).abs() < 1e-9 * exact,
+                "{name} at {turn}: {volume} against {exact}"
+            );
+        }
+    }
+}
 
 /// The fixture's operands cut, the model with them.
 fn cut_of(name: &str) -> (Model, Body, Body, Body, Provenance) {

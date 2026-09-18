@@ -19,7 +19,7 @@ use arris_check::arris_topo::{
 };
 use arris_check::{Classification, Classifier, lumps};
 
-use super::pieces::{Alias, ERef, EdgeOnFace, SplitFace, SubEdge, VRef, split_face};
+use super::pieces::{Alias, ERef, EdgeOnFace, PieceUse, SplitFace, SubEdge, VRef, split_face};
 use super::{Interferences, VertexSource};
 use crate::error::{Fault, OpError, Reason, SplitFault};
 use crate::rebuild::{self, Kept, Plan, Policy, forward};
@@ -72,9 +72,9 @@ impl Op {
 
 /// A piece classified `On` something of the other operand its own face
 /// is neither coincident nor tangent with — an edge, a vertex, a face of
-/// a `Transversal` pair — or a tangent pair the curvature rule cannot
-/// decide, its two curvatures equal: the pair the kernel has no recipe
-/// for, named.
+/// a `Transversal` pair — that the transversal rule cannot decide either,
+/// or a tangent pair the curvature rule cannot decide, its two
+/// curvatures equal: the pair the kernel has no recipe for, named.
 fn unsupported(m: &Model, face: FaceId, on: Shape) -> OpError {
     let kind = |s: Shape| -> GeomKind {
         match s.id {
@@ -510,6 +510,83 @@ impl<'m> Build<'m> {
         Ok((kf != kg).then_some(kf < kg))
     }
 
+    /// Whether a piece of face `f` of operand `side`, bounded by `loops`,
+    /// lies inside the other operand, read where one of its section
+    /// edges crosses the other operand's boundary: the *transversal
+    /// rule* (`docs/ARCHITECTURE.md` §Operations). At the midpoint of a
+    /// section edge of a `Transversal` pair of `f` and `g`, the direction
+    /// into the piece is the surface's normal crossed with the edge's
+    /// tangent as the loop walks it — the loops run counter-clockwise
+    /// about the surface's normal with the piece on their left — and the
+    /// piece is inside exactly when that direction is against `g`'s
+    /// effective outward normal. The piece crosses no face of the other
+    /// operand inside itself, so every section edge on its boundary
+    /// decides the same, and the one read is the one where the two
+    /// surfaces are furthest from tangent. It asks nothing of the
+    /// distance from the piece to the other operand, so a piece lying
+    /// within the tolerance of it throughout — a sliver between a seam
+    /// and two section curves beside the point where they cross — is
+    /// decided like any other. `None` when the piece has no section edge
+    /// of a `Transversal` pair, or the surfaces are tangent within the
+    /// angular tolerance along every one.
+    fn transversal_side(
+        &self,
+        side: usize,
+        f: FaceHandle,
+        loops: &[Vec<PieceUse>],
+    ) -> Result<Option<bool>, OpError> {
+        let surface = self.surface_of(f)?;
+        let mut best: Option<(f64, bool)> = None;
+        for u in loops.iter().flatten() {
+            let ERef::Section(k) = u.edge else {
+                continue;
+            };
+            let Some(s) = self.i.sections.get(k) else {
+                continue;
+            };
+            let Some(curve) = self.i.curves.get(s.curve) else {
+                continue;
+            };
+            let Some(pair) = self.i.pairs.get(curve.pair) else {
+                continue;
+            };
+            if !matches!(pair.intersection, SurfaceIntersection::Transversal(_)) {
+                continue;
+            }
+            let g = if side == 0 { pair.b } else { pair.a };
+            let Some(g) = self.faces[1 - side].iter().copied().find(|h| h.id == g) else {
+                continue;
+            };
+            let e = curve.curve.eval(s.range.midpoint());
+            let along = if u.orientation.is_reversed() {
+                -e.d1
+            } else {
+                e.d1
+            };
+            let uv = surface
+                .project(e.point)
+                .map_err(|e| OpError::Internal(Fault::Geometry(e)))?
+                .uv;
+            let own = surface
+                .normal(uv.x, uv.y)
+                .ok_or(OpError::Internal(Fault::NoNormal { face: f.id }))?
+                .into_inner();
+            let into = own.cross(&along);
+            let length = into.norm();
+            if !(length.is_finite() && length > 0.0) {
+                continue;
+            }
+            let n = self.outward_normal(g, None, e.point)?;
+            let cos = into.dot(&n) / length;
+            if cos.abs() > self.precision.angular_tolerance
+                && best.is_none_or(|(c, _)| cos.abs() > c)
+            {
+                best = Some((cos.abs(), cos < 0.0));
+            }
+        }
+        Ok(best.map(|(_, inside)| inside))
+    }
+
     /// The tangent at `point` of the curve face `f` of operand `side`
     /// touches face `g` along: the nearest curve of their `Tangent` pair.
     fn contact_tangent(&self, side: usize, f: FaceId, g: FaceId, point: Point3) -> Option<Vec3> {
@@ -651,7 +728,16 @@ impl<'m> Build<'m> {
                             };
                             (flip, None)
                         } else {
-                            return Err(unsupported(self.m, f.id, shape));
+                            // Within the tolerance of a face its own is
+                            // transversal to, or of an edge or a vertex:
+                            // read at a section edge the piece has instead.
+                            let Some(inside) = self.transversal_side(side, f, &piece.loops)? else {
+                                return Err(unsupported(self.m, f.id, shape));
+                            };
+                            let Some(flip) = self.op.select(side, inside) else {
+                                continue;
+                            };
+                            (flip, None)
                         }
                     }
                 };

@@ -405,7 +405,7 @@ def round_trip(name: str, fixture: dict, expected: dict, tmp: Path) -> bool:
     # still takes from the oracle — counts, genus, probes: the runner and
     # compare.py hold Arris's measurements to the closed forms, and a body
     # the oracle built wrong need not even measure the same after its own
-    # STEP round trip (`regression/seam-beside-crossing-fuse` does not).
+    # STEP round trip (`boolean/seam-beside-crossing-fuse` does not).
     measured_wrong = fixture.get("analytic", {}).get("measure_differs")
     ok_all = True
     for variant in variant_names(fixture):
