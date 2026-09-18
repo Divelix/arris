@@ -44,8 +44,11 @@ closed forms instead — because Open CASCADE mishandles the same band.
   oracle's values stay in `expected.json` as the record; the lint skips the
   1e-6 analytic-against-oracle comparison for exactly those fields and
   fails if they do *not* in fact differ, the way `counts_differ` already
-  does. The inertia comparison is skipped with the reason named, since a
-  fixture states no closed form for it.
+  does. **`Analytic` also gains `inertia: Option<[[Num; 3]; 3]>`**,
+  required under `measure_differs` and cross-checked against the oracle
+  like the other closed forms where a fixture states it anyway
+  (ADR-0015 — decided in step 1, which settled the open question
+  below).
 - **`tests/fixtures/README.md` §`fixture.json`:** the new key beside
   `counts_differ`, and what an author must show before using it.
 - **ADR-0015** (step 1): a fixture may declare the oracle wrong. The rule
@@ -69,14 +72,19 @@ mechanical; **[2]** careful — a geometric or numeric case to get right
 within a given design; **[3]** unproven — an algorithm whose robustness or
 bound has to be established here.
 
-- [ ] Step 1 **[2]** — ADR-0015: a fixture may declare the oracle wrong.
+- [x] Step 1 **[2]** — ADR-0015: a fixture may declare the oracle wrong.
   The evidence is in hand and goes in the ADR: for a body that is exactly
   centrally symmetric and provably independent of the turn (rotating a
   cylinder about its own axis is the identity on the solid), Open CASCADE
   returns 9 vertices and 15 edges where the same solid at a generic turn
-  gives 11 and 17, a volume 2.3e-5 above the exact `2πR²L − 16R³/3`, and a
-  centroid 3.8e-6 off the origin that *doubles* between the −90.02° and
-  −90.03° variants — a sliver proportional to the offset. Sets what a
+  gives 11 and 17, a volume above the exact `2πR²L − 16R³/3` and a
+  centroid off the origin, both linear in the turn past −90° — a sliver
+  proportional to the offset. (Re-measured for the ADR: at −90.02° the
+  volume is 1.46e-3 high, 4.5e-5 relative, and the centroid 3.77e-6 off
+  in x; the plan's first draft had −90.01°'s relative volume and called
+  −90.02° → −90.03° a doubling, which is −90.01° → −90.02°. The band is
+  one-sided, −90° itself and −89.98° are exact, and it ends between
+  −90.045° and −90.049°.) Sets what a
   fixture must show to claim `measure_differs`: a closed form for every
   field it claims, and a statement of why the oracle's answer is wrong
   rather than merely different. Commit: `docs(adr)`.
@@ -93,8 +101,11 @@ bound has to be established here.
   its `analytic` carrying `measure_differs` and the closed forms, its
   `expected.json` regenerated. Its test `regression_seam_beside_crossing_fuse`
   in `crates/arris/tests/corpus.rs`, `#[ignore]`d with both symptoms named.
-  The recipe and its `expected.json` are already written and parked in this
-  session's scratchpad; the step is to restore, complete and verify them.
+  The recipe and `expected.json` parked in the writing session's
+  scratchpad did not survive it; the step rebuilds them from
+  `cross-cylinders-fuse`'s recipe, as step 1's measurements already did.
+  Arris's counts are 10/16/8/8, as at a generic turn: each seam still
+  meets each ellipse once, only nearer the crossing vertex.
   Commit: `test(fixtures)`.
 - [ ] Step 4 **[3]** — The `Fault::Seam` band, −90.01° to −90.02°. The
   unknown this plan turns on. What is known: `interferences` itself raises
@@ -164,12 +175,11 @@ bound has to be established here.
   property failure appears, which is exactly what happened here and cost a
   half-published release. A third option is a nightly run at a higher count
   than CI's. Not this plan's to decide, but this plan is its evidence.
-- `⚠ OPEN:` **Whether `measure_differs` needs an inertia closed form**
-  (agent, step 2). Skipping the inertia comparison is a hole in a fixture
-  that claims the oracle is wrong: nothing then checks Arris's inertia
-  there. The alternative is to require the fixture to state one, which for
-  two crossing cylinders means deriving it. Step 2 decides and the ADR
-  records which.
+- **Decided in step 1 (ADR-0015): `measure_differs` needs an inertia
+  closed form.** Skipping it left nothing checking Arris's inertia where
+  the oracle cannot; for the Steinmetz union it is the two cylinders'
+  tensors less the bicylinder's, and matches the oracle's generic-turn
+  tensor to 1e-11.
 - **Found in this session, not a question:** Open CASCADE is wrong in the
   same band, in the same direction, by an amount proportional to the turn.
   Both kernels degrade where a seam nearly meets a crossing; only ours says
