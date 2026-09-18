@@ -26,3 +26,4 @@ here; the first ADR is the first decision taken *after* the seed.
 | [0013](0013-mesh-formats-live-in-arris-io.md) | Mesh formats live in `arris-io`, which depends on `arris-mesh` | accepted |
 | [0014](0014-elliptic-profile-segments-sweep-an-elliptic-cylinder.md) | Elliptic profile segments sweep an elliptic cylinder; a revolve refuses them | accepted |
 | [0015](0015-a-fixture-may-declare-the-oracle-wrong.md) | A fixture may declare the oracle's measurements wrong, and is then held to its closed forms | accepted |
+| [0016](0016-a-touch-off-every-vertex-is-resolved-through-the-section-curves.md) | A touch off every vertex is resolved through the section curves; the intersector's touch stays a verdict on depth | accepted |

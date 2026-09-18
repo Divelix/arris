@@ -1,11 +1,12 @@
 //! Building the pave model (ADR-0004): face pairs, edge-on-face hits,
 //! the crossings of a pair's section curves with one another, the hits
-//! and crossings merged into section vertices, paves, section curves cut
-//! into blocks and the blocks kept as section edges with their pcurves; and,
-//! for the coincident pairs, the edge–edge crossings, the paves every
-//! section vertex puts on the pairs' edges, and each edge piece placed
-//! on the other face as an image or matched to a piece of its boundary
-//! as a common block.
+//! and crossings merged into section vertices, a touch off every vertex
+//! resolved into its crossings through the section curves (ADR-0016),
+//! paves, section curves cut into blocks and the blocks kept as section
+//! edges with their pcurves; and, for the coincident pairs, the edge–edge
+//! crossings, the paves every section vertex puts on the pairs' edges,
+//! and each edge piece placed on the other face as an image or matched
+//! to a piece of its boundary as a common block.
 
 use core::f64::consts::PI;
 use std::collections::{BTreeMap, BTreeSet};
@@ -341,38 +342,120 @@ impl<'m> Build<'m> {
             CurveSurfaceIntersection::Points(hits) => hits,
         };
         for h in hits {
-            let Some(t) = e.in_range(h.t) else {
-                continue;
-            };
-            let (side, shift) = f.domain.side(h.uv);
-            let landing = match side {
-                Side::Outside => continue,
-                Side::Inside => Landing::Interior,
-                Side::Boundary => match f.domain.boundary_entity(self.m, h.point)? {
-                    Some(shape) => Landing::Boundary(shape),
-                    // Within the (u, v) band of a loop's polygon but within
-                    // no edge's or vertex's own tolerance: not on the
-                    // boundary, so the winding number alone decides.
-                    None if f.domain.winds_around(h.uv) => Landing::Interior,
-                    None => continue,
-                },
-            };
-            found.push((
-                EdgeFaceHit {
-                    edge: e.id,
-                    face: f.id,
-                    t,
-                    uv: h.uv + shift,
-                    point: h.point,
-                    tangent: h.tangent,
-                    landing,
-                    at_vertex: e.vertex_at(h.point),
-                    vertex: None,
-                },
-                tol.linear,
-            ));
+            if let Some(hit) = self.land(e, f, h.t, h.uv, h.point, h.tangent)? {
+                found.push((hit, tol.linear));
+            }
         }
         Ok(())
+    }
+
+    /// A point of `e`'s curve on `f`'s surface as a hit: `None` when the
+    /// parameter is outside the edge's range or the (u, v) outside the
+    /// face.
+    fn land(
+        &self,
+        e: &EdgeInfo<'m>,
+        f: &FaceInfo<'m>,
+        t: f64,
+        uv: Point2,
+        point: Point3,
+        tangent: bool,
+    ) -> Result<Option<EdgeFaceHit>, OpError> {
+        let Some(t) = e.in_range(t) else {
+            return Ok(None);
+        };
+        let (side, shift) = f.domain.side(uv);
+        let landing = match side {
+            Side::Outside => return Ok(None),
+            Side::Inside => Landing::Interior,
+            Side::Boundary => match f.domain.boundary_entity(self.m, point)? {
+                Some(shape) => Landing::Boundary(shape),
+                // Within the (u, v) band of a loop's polygon but within
+                // no edge's or vertex's own tolerance: not on the
+                // boundary, so the winding number alone decides.
+                None if f.domain.winds_around(uv) => Landing::Interior,
+                None => return Ok(None),
+            },
+        };
+        Ok(Some(EdgeFaceHit {
+            edge: e.id,
+            face: f.id,
+            t,
+            uv: uv + shift,
+            point,
+            tangent,
+            landing,
+            at_vertex: e.vertex_at(point),
+            vertex: None,
+        }))
+    }
+
+    /// The crossings a touch that landed on no vertex stands for: where
+    /// the touching edge crosses a section curve of the touched face and
+    /// a face of its own, as hits (ADR-0016). The intersector's touch is
+    /// a verdict on depth, and a chord `h` deep is `2√(2Rh)` long — 7e-4
+    /// at `h` = 6e-8 and `R` = 1 — so one touch can stand for two
+    /// crossings far apart, which the edge against the surface places
+    /// only to a square root of rounding. The edge against the curve the
+    /// two surfaces meet in is two curves of one surface crossing at an
+    /// angle, and exact. It matters where the two surfaces are tangent to
+    /// each other, the crossing of two ellipses: there the section curves
+    /// leave a touch at any distance, and a seam beside the crossing is
+    /// cut by both ellipses with no hit to pave it. A crossing already
+    /// among the hits of the edge on the face is not made twice.
+    fn resolve_touch(&self, touch: usize) -> Result<Vec<EdgeFaceHit>, OpError> {
+        let (edge, face) = (self.hits[touch].edge, self.hits[touch].face);
+        let side = usize::from(self.edge_info(0, edge).is_none());
+        let (Some(e), Some(f)) = (
+            self.edge_info(side, edge),
+            self.faces[1 - side].iter().find(|f| f.id == face),
+        ) else {
+            return Ok(Vec::new());
+        };
+        let tol = tolerance_of(&self.precision, e.tolerance, f.tolerance);
+        let mut found: Vec<EdgeFaceHit> = Vec::new();
+        for (pi, pair) in self.pairs.iter().enumerate() {
+            let SurfaceIntersection::Transversal(curves) = &pair.intersection else {
+                continue;
+            };
+            let (ia, ib) = self.pair_faces[pi];
+            let (own, other) = if side == 0 { (ia, ib) } else { (ib, ia) };
+            let g = &self.faces[side][own];
+            if self.faces[1 - side][other].id != face || !g.edges().contains(&edge) {
+                continue;
+            }
+            for curve in curves {
+                let hits = match intersect_curves(e.curve, curve, tol)
+                    .map_err(|err| geometry(err, e.shape(), f.shape()))?
+                {
+                    // The edge runs along the section curve: a block of
+                    // it is that edge, and nothing crosses.
+                    CurveIntersection::Coincident => continue,
+                    CurveIntersection::Points(hits) => hits,
+                };
+                for h in hits {
+                    if h.tangent {
+                        continue;
+                    }
+                    let Ok(projection) = f.surface.project(h.point) else {
+                        continue;
+                    };
+                    let Some(hit) = self.land(e, f, h.ta, projection.uv, h.point, false)? else {
+                        continue;
+                    };
+                    let seen = self
+                        .hits
+                        .iter()
+                        .filter(|x| x.edge == edge && x.face == face && !x.tangent)
+                        .chain(found.iter())
+                        .any(|x| (x.point - hit.point).norm() <= tol.linear);
+                    if !seen {
+                        found.push(hit);
+                    }
+                }
+            }
+        }
+        Ok(found)
     }
 
     /// The edges of the two faces of every `Coincident` pair against one
@@ -602,7 +685,8 @@ impl<'m> Build<'m> {
 
     /// Hits, then crossings, then section crossings, merged into section
     /// vertices; then every touch that lands on one of those joins it,
-    /// and any other touch joins nothing.
+    /// and any other touch joins nothing itself, while the crossings it
+    /// stands for ([`Self::resolve_touch`]) are hits merged last.
     fn merge(&mut self) -> Result<(), OpError> {
         for i in 0..self.hits.len() {
             if self.hits[i].tangent {
@@ -657,6 +741,7 @@ impl<'m> Build<'m> {
         // made above passes through it: a ruling or a rim circle through
         // the crossing of two ellipses, where the walls are tangent to
         // each other. It joins that vertex, which then paves its edge.
+        let mut off_every_vertex: Vec<usize> = Vec::new();
         for i in 0..self.hits.len() {
             if !self.hits[i].tangent {
                 continue;
@@ -665,6 +750,7 @@ impl<'m> Build<'m> {
             let point = self.hits[i].point;
             let existing: Vec<VertexId> = self.hits[i].at_vertex.into_iter().collect();
             if self.vertex_near(point, hit_tol, &existing).is_none() {
+                off_every_vertex.push(i);
                 continue;
             }
             let k = self.merge_point(point, hit_tol, existing, VertexSource::Hits)?;
@@ -672,6 +758,24 @@ impl<'m> Build<'m> {
             v.hits.push(i);
             v.hits.sort_unstable();
             self.hits[i].vertex = Some(k);
+        }
+        // A touch off every vertex may still stand for crossings: those
+        // are hits like any other, merged after every vertex above.
+        let mut resolved = false;
+        for i in off_every_vertex {
+            let hit_tol = self.hit_tolerance[i];
+            for mut hit in self.resolve_touch(i)? {
+                let existing: Vec<VertexId> = hit.at_vertex.into_iter().collect();
+                let k = self.merge_point(hit.point, hit_tol, existing, VertexSource::Hits)?;
+                hit.vertex = Some(k);
+                self.vertices[k].hits.push(self.hits.len());
+                self.hits.push(hit);
+                self.hit_tolerance.push(hit_tol);
+                resolved = true;
+            }
+        }
+        if resolved {
+            self.sort_hits();
         }
         let m = self.m;
         for v in &self.vertices {
@@ -699,6 +803,31 @@ impl<'m> Build<'m> {
             }
         }
         Ok(())
+    }
+
+    /// The hits back in `(edge id, t, face)` order after the resolved
+    /// ones were appended, the vertices' hit lists following them.
+    fn sort_hits(&mut self) {
+        let mut order: Vec<usize> = (0..self.hits.len()).collect();
+        order.sort_by(|&x, &y| {
+            let (x, y) = (&self.hits[x], &self.hits[y]);
+            x.edge
+                .cmp(&y.edge)
+                .then_with(|| x.t.total_cmp(&y.t))
+                .then_with(|| x.face.cmp(&y.face))
+        });
+        let mut now = vec![0; order.len()];
+        for (new, &old) in order.iter().enumerate() {
+            now[old] = new;
+        }
+        self.hits = order.iter().map(|&old| self.hits[old].clone()).collect();
+        self.hit_tolerance = order.iter().map(|&old| self.hit_tolerance[old]).collect();
+        for v in &mut self.vertices {
+            for h in &mut v.hits {
+                *h = now[*h];
+            }
+            v.hits.sort_unstable();
+        }
     }
 
     /// The paves on the operand edges: each hit's vertex at its `t`,

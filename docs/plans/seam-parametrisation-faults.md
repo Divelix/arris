@@ -60,6 +60,11 @@ closed forms instead — because Open CASCADE mishandles the same band.
   hits, touches and section vertices): whatever step 4 finds is stated
   there, since that paragraph is where the seam's touch on the other wall
   and its pave are described today.
+- **ADR-0016** (step 4): a touch that lands on no section vertex is
+  resolved through the section curves, in the pave; `arris-geom`'s
+  intersectors are unchanged. No type changes: `Interferences::hits` can
+  now hold hits the edge–curve intersection made, beside the touch they
+  resolve, and `EdgeFaceHit`'s rustdoc says so.
 - **No new crate, no layer change, no change to `OpError` or `Fault`.**
   `Fault::Seam` stays exactly what it is — a kernel bug, caught. This plan
   stops raising it, rather than making it something else.
@@ -115,7 +120,7 @@ bound has to be established here.
   without a pave there") at −90.02°, `Unsupported` ("no closed form for
   +f7 … against +f1") at −90.03°.
   Commit: `test(fixtures)`.
-- [ ] Step 4 **[3]** — The `Fault::Seam` band, −90.01° to −90.02°. The
+- [x] Step 4 **[3]** — The `Fault::Seam` band, −90.01° to −90.02°. The
   unknown this plan turns on. What is known: `interferences` itself raises
   it, before any splitting; at the passing −90.05° the seam's two hits on
   the other wall sit at ±δ radians from the crossing vertex (±8.7e-4 at
@@ -127,7 +132,43 @@ bound has to be established here.
   `regression/` into `boolean/` with its blessed dump (leaving the variant
   behind if step 5 is still open, which the corpus lint forbids — so if
   step 5 has not landed, the move waits for it and this step says so).
-- [ ] Step 5 **[2]** — The `Unsupported` band, −90.03° to −90.04°:
+  Found: the seam's chord in the other wall is `R(1 − cos δ)` deep, under
+  the tolerance up to 0.0256° either side of ±90°, so
+  `intersect_curve_surface` reports it as one touch at its midpoint —
+  `R sin δ` from the
+  crossing vertex, landing on nothing — while its two real crossings are
+  `2R sin δ` apart and each ellipse passes through one. Fixed in the pave,
+  not the intersector (ADR-0016): a touch off every vertex is resolved
+  through the section curves of its faces' pairs, the edge against the
+  curve being exact where the edge against the surface is a square root
+  of rounding. The intersector's own verdict was tried first and is the
+  ADR's rejected alternative: it turned designed tangencies in random
+  poses into crossings 4e-7 apart. `interferences` now returns a generic
+  turn's pave across the whole band
+  (`a_touch_beside_a_crossing_vertex_is_resolved_through_the_section_curves`),
+  and `crossing_cylinders_obey_every_identity` at 1000 cases fails at
+  shard 5 with step 5's refusal instead. **The fixture does not pass
+  yet and has not moved:** with its two hits the default variant now
+  reaches step 5's `Unsupported`, as the variant always did, so both
+  wait for step 5 and the move is that step's. Also found, outside this
+  plan: from 5.8e-6° to 1.1e-5° the two crossings and the crossing vertex
+  are one to two tolerances apart and the arrangement faults
+  (`Fault::Split`; it was `Fault::Seam` before) —
+  `regression/seam-a-tolerance-from-crossing-fuse`, `#[ignore]`d, and a
+  backlog line.
+- [ ] Step 5 **[2]** — The `Unsupported` band, which since step 4 is
+  1.15e-5° to about 0.046° either side of ±90° and both of the fixture's
+  variants. Step 4 found the ask: `result::Build::select` classifies the
+  piece of the turned wall between its seam and the two ellipse arcs to
+  the crossing vertex — a triangle `R sin δ` across, within
+  `R(1 − cos δ)` of the first wall everywhere, so its interior point is
+  `On` a face of a `Transversal` pair and `unsupported` names the two
+  walls. At −90.05° the same piece is 3.8e-7 deep and its point reads
+  `Inside`. The fix decides such a piece without a point that is within
+  the tolerance of the other operand's boundary — and widens no
+  tolerance to do it. When both variants pass, the fixture moves to
+  `boolean/` with its blessed dump (step 4's move). As first written:
+  `Unsupported` at −90.03° to −90.04°:
   `no closed form for +f10 (cylinder surface) against +f4 (cylinder
   surface)` on a pair `interferences` reports as `transversal` with both
   ellipses, so the refusal comes from a later ask, not from the pave. Find
@@ -140,7 +181,9 @@ bound has to be established here.
   the same body — same volume, area and counts — for every one of them.
   Seeded, sharded like its neighbours, and it fails today at −90.02° in one
   line. This is what stops the next seam-shaped bug from waiting for a
-  1000-case run to find it.
+  1000-case run to find it. Its turns stay out of the one-to-two-tolerance
+  band step 4 found (a seam `R sin δ` between 1e-7 and 2e-7 from a crossing
+  vertex, a backlog line's), by construction and said so in its doc.
 
 ## Acceptance
 
@@ -151,7 +194,9 @@ bound has to be established here.
 - `boolean/seam-beside-crossing-fuse` passing every corpus stage in both
   variants — checker at `Full` with nothing unchecked, counts, the closed
   forms it is held to under `measure_differs`, probes, provenance and its
-  blessed dump — and nothing left under `tests/fixtures/regression/`.
+  blessed dump — and nothing of this plan's left under
+  `tests/fixtures/regression/`: `seam-a-tolerance-from-crossing-fuse`,
+  which step 4 found, is a backlog line's (see *Open questions*).
 - The corpus lint green, including its two new mutation cases, and
   `tools/oracle/selftest.py` green.
 - Step 6's property green at its configured case count.
@@ -165,12 +210,13 @@ bound has to be established here.
 - `tests/fixtures/README.md` §`fixture.json` — `measure_differs` beside
   `counts_differ`, and §Property-test failures if step 6 changes what a
   property failure produces.
-- `docs/adr/README.md` — ADR-0015.
+- `docs/adr/README.md` — ADR-0015, and ADR-0016 (done in step 4).
 - `.agents/rules/kernel.md` §Testing — "every fixture has an oracle" gains
   the pointer to ADR-0015 for the case where the oracle is wrong.
 - `docs/ROADMAP.md` §C2 — the crossing-cylinder line notes the
   parametrisation invariant now held by a property.
-- `docs/BACKLOG.md` — whatever step 4 or 5 finds and does not fix.
+- `docs/BACKLOG.md` — whatever step 4 or 5 finds and does not fix (step
+  4: features a tolerance apart are one feature).
 - `AGENTS.md` current state only if C2's line stops being true meanwhile.
 
 ## Open questions
@@ -183,6 +229,15 @@ bound has to be established here.
   property failure appears, which is exactly what happened here and cost a
   half-published release. A third option is a nightly run at a higher count
   than CI's. Not this plan's to decide, but this plan is its evidence.
+- `⚠ OPEN:` **Does the one-to-two-tolerance band hold 0.1.1?** (human,
+  before `/release`). Step 4 left
+  `regression/seam-a-tolerance-from-crossing-fuse` failing: a seam 1e-7
+  to 2e-7 from a crossing vertex,
+  1e-5° wide, a fault before this plan too and not what CI found. Its fix
+  is a clustering merge in the pave, which moves vertex tolerances and
+  wants an idea first. Recommendation: no — it is a near-degenerate
+  configuration of the kind the non-goals name, and step 6's sweep keeps
+  its turns out of that band by construction and says so.
 - **Decided in step 1 (ADR-0015): `measure_differs` needs an inertia
   closed form.** Skipping it left nothing checking Arris's inertia where
   the oracle cannot; for the Steinmetz union it is the two cylinders'

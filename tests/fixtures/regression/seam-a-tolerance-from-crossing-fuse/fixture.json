@@ -1,0 +1,35 @@
+{
+  "description": "seam-beside-crossing-fuse's two cylinders with the turn 7e-6° past −90°: the turned seam meets the first wall 1.22e-7 either side of a point 1.22e-7 from the crossing vertex (0, R, 0), so the two seam crossings and the crossing vertex are three points 1.7e-7 and 2.4e-7 apart — between one vertex tolerance (1e-7) and the two that would keep their balls apart. The solid is the Steinmetz union of cross-cylinders-fuse, as at every turn. Arris fails: Fault::Split, 'a section edge of f1 ends at a node nothing else reaches' — the seam's touch is resolved into its two crossings (ADR-0016), each a vertex of its own, and the two blocks between them and the crossing vertex, 1.7e-7 long with their midpoints inside the seam's band, are dropped as boundary. It fails from 5.8e-6° to 1.1e-5° past ±90°, where the lateral offset is one to two tolerances; below it the touch lands on the crossing vertex and above it the blocks clear the band. The desired result is the body at −90°, the three points one vertex: features a tolerance apart are one feature (found in plans/seam-parametrisation-faults step 4)",
+  "params": {"R": 1, "L": 6, "turn": -90.000007},
+  "steps": [
+    {"name": "a", "op": "cylinder", "base": [0, 0, "-L / 2"], "axis": [0, 0, 1], "radius": "R", "height": "L"},
+    {"name": "b0", "op": "cylinder", "base": ["-L / 2", 0, 0], "axis": [1, 0, 0], "radius": "R", "height": "L"},
+    {"name": "b", "op": "transform", "of": "b0", "rotate": {"axis": [1, 0, 0], "angle_deg": "turn"}},
+    {"name": "result", "op": "fuse", "a": "a", "b": "b"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [0, 0, 0], "expect": "in"},
+    {"label": "in_a", "point": [0, 0, 2], "expect": "in"},
+    {"label": "in_b", "point": [2, 0, 0], "expect": "in"},
+    {"label": "outside", "point": [2, 2, 0], "expect": "out"},
+    {"label": "on_a_cap", "point": [0, 0, "L / 2"], "expect": "on"},
+    {"label": "on_a_wall", "point": ["R * cos(radians(20))", "R * sin(radians(20))", 2], "expect": "on"},
+    {"label": "on_b_wall", "point": [2, 0, "R"], "expect": "on"},
+    {"label": "on_section", "point": ["R * cos(radians(45))", "R * sin(radians(45))", "R * cos(radians(45))"], "expect": "on"},
+    {"label": "on_crossing", "point": [0, "R", 0], "expect": "on"}
+  ],
+  "analytic": {
+    "volume": "2 * pi * R^2 * L - 16 * R^3 / 3",
+    "area": "2 * (2 * pi * R * L + 2 * pi * R^2) - 16 * R^2",
+    "centroid": [0, 0, 0],
+    "inertia": [
+      ["pi * R^2 * L * (3 * R^2 + L^2) / 12 + pi * R^4 * L / 2 - 112 * R^5 / 45", 0, 0],
+      [0, "2 * pi * R^2 * L * (3 * R^2 + L^2) / 12 - 128 * R^5 / 45", 0],
+      [0, 0, "pi * R^2 * L * (3 * R^2 + L^2) / 12 + pi * R^4 * L / 2 - 112 * R^5 / 45"]
+    ],
+    "counts": {"vertices": 8, "edges": 14, "faces": 8, "loops": 8, "shells": 1},
+    "counts_differ": "Open CASCADE builds its body at −90° here too, 9/15: the seam cut once, at the crossing vertex. It also cuts the section arc that runs through an ellipse's parameter origin, one more vertex and edge than Arris, whose edge range crosses the period once (E1), as in cross-cylinders-common",
+    "genus": 0
+  }
+}

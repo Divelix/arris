@@ -9,10 +9,13 @@ use arris_ops::arris_check::arris_topo::arris_geom::{
     Curve, Curve2, GeomKind, Profile, ProfileLoop, ProfileSegment, Surface, SurfaceIntersection,
     SurfaceKind,
 };
-use arris_ops::arris_check::arris_topo::arris_math::{Axis, Frame, Interval, Point3, Vec3};
+use arris_ops::arris_check::arris_topo::arris_math::nalgebra::UnitQuaternion;
+use arris_ops::arris_check::arris_topo::arris_math::{
+    Axis, Frame, Interval, Isometry, Point3, Vec3,
+};
 use arris_ops::arris_check::arris_topo::{Body, EdgeId, Model};
 use arris_ops::boolean::{Interferences, Landing, VertexSource, interferences};
-use arris_ops::{primitive_box, revolve};
+use arris_ops::{primitive_box, primitive_cylinder, revolve, transform};
 use core::f64::consts::TAU;
 use proptest::prelude::*;
 
@@ -360,6 +363,87 @@ fn a_touch_on_a_crossing_vertex_joins_it_and_paves_its_edge() {
             let paves = i.paves.get(&hit.edge).expect("the touched edge is paved");
             assert!(paves.iter().any(|p| p.vertex == v), "{name}\n{i}");
         }
+        assert_sections_consistent(&m, &i).unwrap();
+    }
+}
+
+/// A touch off every vertex stands for the crossings the section curves
+/// make of its edge (ADR-0016). Crossing cylinders with the second turned
+/// about its own axis to just beside ±90°: its seam runs `R sin δ` beside
+/// a crossing vertex, a chord `R (1 − cos δ)` deep in the first wall —
+/// under the tolerance up to 0.0256°, so the intersector's one touch,
+/// landing on nothing — and both ellipses cross it. The two crossings are
+/// hits on that wall to rounding, each with its vertex paving the seam and
+/// one ellipse, and the pave is the one of a generic turn: eight section
+/// edges, not a section edge over a seam (`Fault::Seam`).
+#[test]
+fn a_touch_beside_a_crossing_vertex_is_resolved_through_the_section_curves() {
+    for turn in [
+        -90.02_f64, -90.01, -90.001, -90.0001, -89.9999, -89.98, 89.98, 90.02,
+    ] {
+        let mut m = Model::default();
+        let along = |origin: Point3, direction: Vec3| Axis::new(origin, direction).unwrap();
+        let (a, _) = primitive_cylinder(
+            &mut m,
+            along(Point3::new(0.0, 0.0, -3.0), Vec3::z()),
+            1.0,
+            6.0,
+        )
+        .unwrap();
+        let (b, _) = primitive_cylinder(
+            &mut m,
+            along(Point3::new(-3.0, 0.0, 0.0), Vec3::x()),
+            1.0,
+            6.0,
+        )
+        .unwrap();
+        let about = UnitQuaternion::from_axis_angle(&Vec3::x_axis(), turn.to_radians());
+        let (b, _) = transform(&mut m, b, &Isometry::from_rotation(about)).unwrap();
+        let i = interferences(&m, a, b).unwrap_or_else(|e| panic!("turn {turn}: {e}"));
+
+        let touches: Vec<&_> = i.hits.iter().filter(|h| h.tangent).collect();
+        assert_eq!(touches.len(), 1, "turn {turn}\n{i}");
+        let touch = touches[0];
+        assert_eq!(touch.vertex, None, "turn {turn}\n{i}");
+        let resolved: Vec<&_> = i
+            .hits
+            .iter()
+            .filter(|h| !h.tangent && h.edge == touch.edge && h.face == touch.face)
+            .collect();
+        assert_eq!(resolved.len(), 2, "turn {turn}\n{i}");
+        let lateral = (turn.abs() - 90.0).to_radians().sin().abs();
+        for hit in &resolved {
+            assert!(
+                ((hit.t - touch.t).abs() - lateral).abs() < 1e-12,
+                "turn {turn}\n{i}"
+            );
+            assert!(
+                (hit.point.x.hypot(hit.point.y) - 1.0).abs() < 1e-14,
+                "turn {turn}\n{i}"
+            );
+            let v = hit.vertex.expect("a crossing has a vertex");
+            assert_eq!(i.vertices[v].source, VertexSource::Hits, "turn {turn}\n{i}");
+            let paves = i.paves.get(&hit.edge).expect("the seam is paved");
+            assert!(paves.iter().any(|p| p.vertex == v), "turn {turn}\n{i}");
+            let on = i
+                .curves
+                .iter()
+                .filter(|c| c.paves.iter().any(|p| p.vertex == v))
+                .count();
+            assert_eq!(on, 1, "turn {turn}\n{i}");
+        }
+        assert!(
+            i.hits
+                .windows(2)
+                .all(|w| (w[0].edge, w[0].t) <= (w[1].edge, w[1].t)),
+            "turn {turn}\n{i}"
+        );
+        assert_eq!(i.hits.len(), 5, "turn {turn}\n{i}");
+        assert_eq!(i.vertices.len(), 6, "turn {turn}\n{i}");
+        for c in &i.curves {
+            assert_eq!((c.paves.len(), c.edges.len()), (4, 4), "turn {turn}\n{i}");
+        }
+        assert_eq!(i.sections.len(), 8, "turn {turn}\n{i}");
         assert_sections_consistent(&m, &i).unwrap();
     }
 }

@@ -271,7 +271,20 @@ there to make a hit; a *touch* — a hit where the edge meets the surface
 without crossing it — makes no vertex of its own, but one that lands on
 a vertex made by the hits and crossings joins it, since the edge passes
 through that vertex (a seam ruling or a rim circle through the crossing
-of two ellipses, tangent to the other wall there because the walls are);
+of two ellipses, tangent to the other wall there because the walls are),
+and one that lands on none is *resolved through the section curves*
+(ADR-0016): the edge is intersected with every section curve of the
+touched face and a face of its own, and each crossing on the face is a
+hit like any other, with its vertex and its pave — because the
+intersector's touch is a verdict on depth, the edge within the tolerance
+of the surface, and a chord `h` deep is `2√(2Rh)` long, so beside a
+point where the two surfaces are tangent to each other a seam `6e-8`
+inside the other wall is one touch whose two crossings are `7e-4`
+apart, both ellipses cut it, and neither would find a pave there; the
+edge against the section curve is two curves of one surface crossing at
+an angle, exact where the edge against the surface is a square root of
+rounding, so the intersector's verdict is left as it is and a designed
+tangency in any pose stays one touch;
 the paves each vertex puts on the edge that hit or touched it and on
 every section curve it projects onto within its tolerance; and the
 section edges — the blocks between consecutive paves whose midpoint is

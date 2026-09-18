@@ -56,7 +56,11 @@ pub enum Landing {
 
 /// One point where an edge of one operand meets a face of the other:
 /// the edge's curve against the face's surface, kept when the parameter
-/// is in the edge's range and the (u, v) is on the face.
+/// is in the edge's range and the (u, v) is on the face — or, beside a
+/// touch that landed on no vertex, the edge's curve against a section
+/// curve of that face and a face of the edge's own (ADR-0016): the same
+/// kind of hit, found where the surface alone places it only to a square
+/// root of rounding.
 #[derive(Debug, Clone, PartialEq)]
 pub struct EdgeFaceHit {
     /// The edge.
@@ -77,7 +81,11 @@ pub struct EdgeFaceHit {
     /// touch that lands on a section vertex the hits and crossings made —
     /// a ruling or a rim circle through the crossing of two ellipses,
     /// where the walls are tangent to each other — passes through that
-    /// vertex, so it joins it and paves the edge there.
+    /// vertex, so it joins it and paves the edge there. A touch that
+    /// lands on none is a verdict on depth alone, the edge within the
+    /// tolerance of the surface, and may stand for two crossings far
+    /// apart along it: those are found through the section curves and
+    /// listed as hits of their own beside it (ADR-0016).
     pub tangent: bool,
     /// Where on the face.
     pub landing: Landing,

@@ -298,9 +298,20 @@ fn boolean_seam_through_crossing_common() {
 /// closed forms — which Open CASCADE misses in this band, stated in
 /// `analytic.measure_differs` (ADR-0015).
 #[test]
-#[ignore = "Fault::Seam from interferences at −90.02° and Unsupported 'no closed form' for the two walls at −90.03°: waits on plans/seam-parametrisation-faults steps 4 and 5"]
+#[ignore = "Unsupported 'no closed form' for the two walls at −90.02° and −90.03°, the sliver of the turned wall beside its seam classifying On the other wall: waits on plans/seam-parametrisation-faults step 5"]
 fn regression_seam_beside_crossing_fuse() {
     run("regression/seam-beside-crossing-fuse");
+}
+
+/// The same fuse with the seam between one and two tolerances from the
+/// crossing vertex: its two crossings and that vertex are three points
+/// too far apart to merge and too close for the blocks between them to
+/// clear the seam's band. The desired body is the one at −90°, the three
+/// one vertex.
+#[test]
+#[ignore = "Fault::Split, a section edge of f1 ends at a node nothing else reaches: the blocks between the seam's crossings and the crossing vertex are dropped as boundary (docs/BACKLOG.md, features a tolerance apart)"]
+fn regression_seam_a_tolerance_from_crossing_fuse() {
+    run("regression/seam-a-tolerance-from-crossing-fuse");
 }
 
 /// A tee of equal radii: the branch's rim circle touches the main wall
