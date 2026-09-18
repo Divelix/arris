@@ -193,7 +193,7 @@ bound has to be established here.
   `boolean/seam-beside-crossing-fuse` with its two blessed dumps; and
   `ARRIS_PROPTEST_CASES=1000` over `boolean_prop` is green, shard 5 of
   `crossing_cylinders_obey_every_identity` included.
-- [ ] Step 6 **[1]** — The sweep that proves the invariant, not just the
+- [x] Step 6 **[1]** — The sweep that proves the invariant, not just the
   two poses: a property (or an extension of the existing one) that fuses
   the same pair of solids at a spread of turns and asserts the result is
   the same body — same volume, area and counts — for every one of them.
@@ -202,6 +202,23 @@ bound has to be established here.
   1000-case run to find it. Its turns stay out of the one-to-two-tolerance
   band step 4 found (a seam `R sin δ` between 1e-7 and 2e-7 from a crossing
   vertex, a backlog line's), by construction and said so in its doc.
+  Done: `a_turn_of_the_tool_about_its_own_axis_changes_nothing` in
+  `boolean_prop.rs`, eight shards, one `fuse` or `common` a case over a
+  `crossing_pair` at four turns — a generic one, one through a crossing
+  vertex, and two `R sin δ` beside one with `sin δ` log-uniform from ten
+  tolerances over `R` to 0.03 — green at 256 and at 1000 cases (about
+  30 s and 135 s a shard here). With step 5's rule switched off every
+  shard fails within four seconds, in one line naming the refusal. Two
+  findings shaped it. The counts are the same at every turn but the
+  one through a crossing vertex, which has fewer (two vertices and two
+  edges in a `fuse`, and a face besides in a `common`): the seam is
+  topology, so that turn is held to the mass properties only. And at
+  1000 cases a common 108 from the origin had its centroid 4.6e-6 off
+  at the turn through the crossing and 1.5e-7 at a generic one — both
+  1.4e-10 at the origin — past `fitted_rel`'s bound: the boundary
+  integral over fitted pcurves depends on the distance from the origin,
+  not on the turn. The property measures each result moved back to the
+  pair's frame, and the measurement is a backlog line.
 
 ## Acceptance
 

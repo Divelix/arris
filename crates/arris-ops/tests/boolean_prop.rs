@@ -3,23 +3,26 @@
 //! from `prop::body`, both operand orders — volume
 //! and area additivity, the cut identity, commutativity of `fuse` and
 //! `common`, results of several lumps held to the same identities
-//! (ADR-0006), two runs dumping identically, and every result clean at
-//! `Full` with nothing unchecked. A
+//! (ADR-0006), two runs dumping identically, a turn of the tool about its
+//! own axis — which moves only its seam — changing nothing, and every
+//! result clean at `Full` with nothing unchecked. A
 //! failure
 //! prints the shrunk pair and the seed, and becomes a fixture under
 //! `tests/fixtures/boolean/` (`tests/fixtures/README.md` §Property-test
 //! failures).
 
-use arris_debug::prop::body::{Boxed, Cylindrical, OverlappingPair, TangentPair};
+use arris_debug::prop::body::{Boxed, CrossingPair, Cylindrical, OverlappingPair, TangentPair};
 use arris_debug::testing::{REL, close_to, fail, fitted_rel};
 use arris_debug::{dump_text, prop, prop_shards};
 use arris_ops::arris_check::arris_topo::arris_math::nalgebra::{Quaternion, UnitQuaternion};
-use arris_ops::arris_check::arris_topo::arris_math::{Axis, Isometry, Point3, Vec3};
+use arris_ops::arris_check::arris_topo::arris_math::{
+    Axis, Frame, Isometry, Point3, UnitVec3, Vec3,
+};
 use arris_ops::arris_check::arris_topo::provenance::audit;
 use arris_ops::arris_check::arris_topo::{Body, Model, Provenance};
 use arris_ops::arris_check::{Level, check};
 use arris_ops::measure::{MassProperties, mass_properties};
-use arris_ops::{OpError, Reason, common, cut, fuse};
+use arris_ops::{OpError, Reason, common, cut, fuse, transform};
 use proptest::prelude::*;
 
 /// A boolean of two bodies: `fuse`, `common` or `cut`.
@@ -632,6 +635,108 @@ prop_shards! {
             assert_commutes_with(&mut m, "common", common, (c, inter), a, b)?;
             for (name, op) in [("fuse", fuse as Boolean), ("common", common as Boolean)] {
                 assert_deterministic(|m| pair.build(m), name, op)?;
+            }
+            Ok(())
+        }
+}
+
+/// `pair` with its tool turned about its own axis so that the seam lies
+/// `theta` radians past the crossing vertex `(0, R, 0)` of `pair.a`'s
+/// frame — `π` puts it through the other one, `(0, −R, 0)`. A turn about
+/// its own axis is the identity on the tool as a set of points, so every
+/// turn of one pair is the same pair of solids.
+fn turned(pair: &CrossingPair, theta: f64) -> Result<CrossingPair, TestCaseError> {
+    let d = pair.b.axis.direction.into_inner();
+    let seam = Frame::from_z(Point3::origin(), d)
+        .map_err(fail)?
+        .x()
+        .into_inner();
+    // The seam's angle about `d` from `y`, both perpendicular to `d`.
+    let to_y = seam.cross(&Vec3::y()).dot(&d).atan2(seam.dot(&Vec3::y()));
+    let about = UnitQuaternion::from_axis_angle(&UnitVec3::new_normalize(d), to_y + theta);
+    Ok(CrossingPair {
+        b: Cylindrical {
+            pose: Isometry::from_rotation(about).then(&pair.a.pose),
+            ..pair.b
+        },
+        ..*pair
+    })
+}
+
+prop_shards! {
+    /// Where the tool's seam sits decides nothing (plans/
+    /// seam-parametrisation-faults): two crossing cylinders fused, or
+    /// intersected, with the tool turned about its own axis to a generic
+    /// turn, with its seam through a crossing vertex, and twice `R sin δ`
+    /// beside one — `sin δ` log-uniform from ten tolerances over `R` to
+    /// 0.03, which spans the bands where the seam's chord in the other
+    /// wall is under the tolerance (the pave's touch, ADR-0016) and where
+    /// the sliver it cuts off lies within it (the transversal rule) — are
+    /// the same body at every turn: the same mass properties within what
+    /// the fitted ellipses allow, and the same counts but at the turn
+    /// through a crossing vertex. That one has fewer — two vertices and
+    /// two edges in a `fuse`, and a face besides in a `common` — the
+    /// seam's crossings with the ellipses being the crossing vertices
+    /// themselves: the seam is topology, and where it runs is the one
+    /// thing a turn may change. Each result is measured moved back to the
+    /// pair's own frame, the crossing of the axes at the origin: the
+    /// boundary integral over fitted pcurves carries an error that grows
+    /// with the distance from the origin and differs with where the seam
+    /// cuts the ellipses — 4.6e-6 in a centroid 108 away where the same
+    /// bodies at the origin agree to 1.4e-10 — which is the measurement's,
+    /// not the turn's (`docs/BACKLOG.md`). The generic turn stays a tenth of a
+    /// radian from both crossing vertices. The lower bound keeps every
+    /// turn out of the band a seam one to two tolerances from a crossing
+    /// vertex makes, by construction:
+    /// `regression/seam-a-tolerance-from-crossing-fuse`'s.
+    a_turn_of_the_tool_about_its_own_axis_changes_nothing
+        [shard_0 shard_1 shard_2 shard_3 shard_4 shard_5 shard_6 shard_7]
+        ((pair, is_fuse, (generic, through), beside)) = (
+            prop::body::crossing_pair(),
+            any::<bool>(),
+            (prop::finite_f64(0.1..=core::f64::consts::PI - 0.1), 0u8..4),
+            [
+                (prop::finite_f64(0.0..=1.0), 0u8..4),
+                (prop::finite_f64(0.0..=1.0), 0u8..4),
+            ],
+        ) => {
+            let (name, op) = if is_fuse {
+                ("fuse", fuse as Boolean)
+            } else {
+                ("common", common as Boolean)
+            };
+            let tol = Model::default().precision().default_tolerance;
+            let (lo, hi) = ((10.0 * tol / pair.a.radius).log10(), 0.03_f64.log10());
+            let pi = core::f64::consts::PI;
+            // A quadrant: the side of the crossing vertex, and which one.
+            let at = |quadrant: u8, delta: f64| {
+                let delta = if quadrant & 1 == 1 { -delta } else { delta };
+                if quadrant & 2 == 2 { pi + delta } else { delta }
+            };
+            let mut turns = vec![(at(through, generic), false), (at(through, 0.0), true)];
+            for &(x, quadrant) in &beside {
+                turns.push((at(quadrant, 10f64.powf(lo + x * (hi - lo)).asin()), false));
+            }
+            let mut first: Option<(String, MassProperties, f64)> = None;
+            for &(theta, through) in &turns {
+                let turned = turned(&pair, theta)?;
+                let (mut m, a, b, _, _) = operands_by(|m| turned.build(m))?;
+                let what = format!("{name} at a turn of {theta} rad");
+                let (body, _) = run(&mut m, &what, op, a, b)?;
+                let counts = arris_debug::dump::euler_line(&m, body).map_err(fail)?;
+                // Measured in the pair's own frame: see the doc above.
+                let (home, _) = transform(&mut m, body, &pair.a.pose.inverse()).map_err(fail)?;
+                let props = mass_properties(&m, home).map_err(fail)?;
+                match &first {
+                    None => first = Some((counts, props, fitted_rel(&m, &props))),
+                    Some((c, p, rel)) => {
+                        if !through {
+                            prop_assert_eq!(&counts, c, "{}: counts against the generic turn", what);
+                        }
+                        let rel = rel.max(fitted_rel(&m, &props));
+                        assert_same_properties_to(&props, p, &what, rel)?;
+                    }
+                }
             }
             Ok(())
         }
