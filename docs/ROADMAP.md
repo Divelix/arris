@@ -6,7 +6,7 @@ as its "in" list. One section per cycle; a finished cycle compresses to its
 status line (`/close-cycle`), and the next is appended below.
 
 Spine: **C1** M0 → M1 → M2 → M3 → M4 → M5 (the vertical slice, done), then
-**C2** (the application gate, under way), then the Parasolid-grade cycles one
+**C2** (the application gate, passed on the corpus 2026-09-18), then the Parasolid-grade cycles one
 at a time.
 
 ---
@@ -399,6 +399,15 @@ itself is the consumer's, on its own schedule (ADR-0017).*
   independent tetrahedra-with-the-origin integrator over the tessellation
   as well as the oracle. Every corpus fixture's corner block satisfies
   ADR-0012's invariants with no measurable timing cost.
+- Elliptic profile segments, which the consumer's sketcher emits; the
+  workspace published from a tag. **Done 2026-09-18**, ADR-0014: an
+  extruded ellipse sweeps a `Surface::EllipticCylinder`, checked at `Full`
+  (`sweep/extrude-ellipse`, `-elliptic-slot`, `-plate-elliptic-hole`, and a
+  property over random ellipses); a revolve refuses one as
+  `Reason::EllipticRevolve` (`sweep/revolve-ellipse`), and so does a
+  boolean on an elliptic face (`boolean/elliptic-operand-cut`). STL and
+  OBJ take several bodies. `cargo package --workspace` packages and
+  verifies every published crate, and a `v*` tag publishes them.
 
 **Out:** NURBS–NURBS intersection, sweep along a path, loft, shell, healing,
 the STEP reader.
@@ -419,6 +428,7 @@ corpus stage with nothing left unchecked; every row of the facade table
 (`docs/ARCHITECTURE.md` §How a consumer's kernel facade maps on) present.
 The consumer's naming fixtures, its facade over Arris and its twins
 un-ignored are the consumer's own acceptance, not this cycle's (ADR-0017).
+**Met 2026-09-18**: `/close-cycle` is next.
 
 ---
 

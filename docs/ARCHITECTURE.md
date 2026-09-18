@@ -648,8 +648,8 @@ shell.
 along its plane's normal, either way: `direction` is the normal or its
 opposite within `angular_tolerance` (`Reason::DirectionNotNormal`
 otherwise — an oblique extrusion of an arc is a cylinder of elliptical
-section, which `Surface::EllipticCylinder` now has a variant for
-(ADR-0014) but a sweep along a path and cycle 5's), `length` finite and above
+section, which `Surface::EllipticCylinder` (ADR-0014) could hold, but it
+waits for cycle 5's sweep along a path), `length` finite and above
 `default_tolerance` (`NotPositive` at or below zero, `ZeroThickness`
 within the tolerance). The sweep is the plane's exact normal, never the
 caller's rounding of it. The profile face keeps its plane's frame
@@ -1178,14 +1178,18 @@ B-Rep).
 
 ## How a consumer's kernel facade maps on
 
-The first consumer programs against a facade trait of its own and swaps the
-backend behind it. Its surface maps onto Arris one-to-one; nothing in the
-facade needs Arris types above it.
+The first consumer programs against a facade trait of its own and can swap
+the backend behind it, on its own schedule (ADR-0017). Its surface maps onto
+Arris method for method, and nothing in the facade needs Arris types above
+it. What a method covers is a separate question, answered case by case: a
+blend between faces outside ADR-0007's table is refused where the old
+backend may build it, and the STEP reader is a later cycle. The consumer's
+run of its suite on both backends is what measures this.
 
 | Facade needs | Arris provides |
 |---|---|
 | Primitives (box, cylinder) | `ops::primitive_box`, `ops::primitive_cylinder` |
-| Extrude / revolve of a sketched profile with holes | `ops::extrude`, `ops::revolve` over `Profile` (lines and arcs) |
+| Extrude / revolve of a sketched profile with holes | `ops::extrude`, `ops::revolve` over `Profile` (lines, arcs and elliptic arcs; a revolve refuses an elliptic segment, ADR-0014) |
 | Boolean union / intersect / cut | `ops::fuse`, `ops::common`, `ops::cut` |
 | Transform (geometry only, topology and index order preserved) | `ops::transform` — new ids, provenance `Modified` one-to-one in iteration order |
 | Fillet / chamfer of named edges, one call for all edges | `ops::fillet`, `ops::chamfer` (ADR-0007) |
