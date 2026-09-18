@@ -292,6 +292,17 @@ fn boolean_seam_through_crossing_common() {
     run("boolean/seam-through-crossing-common");
 }
 
+/// The crossing-cylinder fuse with the second cylinder's seam turned to
+/// just beside a crossing vertex rather than through it: the same solid
+/// as at any turn, so the result is held to cross-cylinders-fuse's
+/// closed forms — which Open CASCADE misses in this band, stated in
+/// `analytic.measure_differs` (ADR-0015).
+#[test]
+#[ignore = "Fault::Seam from interferences at −90.02° and Unsupported 'no closed form' for the two walls at −90.03°: waits on plans/seam-parametrisation-faults steps 4 and 5"]
+fn regression_seam_beside_crossing_fuse() {
+    run("regression/seam-beside-crossing-fuse");
+}
+
 /// A tee of equal radii: the branch's rim circle touches the main wall
 /// exactly at the two crossing vertices, and each touch cuts the rim
 /// there.

@@ -7,7 +7,9 @@ check they equal the committed expected.json (if any), write Open CASCADE's
 own STEP of the result to a temporary file and run the comparison on it.
 A result with no solid (`degenerate`) and one Arris refuses by design
 (`analytic.expect_error`) are recorded but not round-tripped: neither is
-ever read back through STEP by the corpus.
+ever read back through STEP by the corpus. One whose recipe says the
+oracle measures it wrong (`analytic.measure_differs`) is round-tripped
+on its counts, genus and probes only.
 Exits 1 on the first disagreement. Run as
 `uv run --project tools/oracle tools/oracle/selftest.py`.
 """
@@ -28,6 +30,7 @@ from oracle.measure import DEFAULT_TOLERANCES, compare, format_table, measure  #
 from oracle.recipe import build, fixture_kind, number, probes, variant_names  # noqa: E402
 
 PI = 3.141592653589793
+MEASUREMENTS = ("volume", "area", "centroid", "inertia")
 
 # Inline recipes exercising every op the interpreter has, each with the
 # closed form it must reproduce. The fixture corpus (tests/fixtures/) holds
@@ -397,6 +400,13 @@ def round_trip(name: str, fixture: dict, expected: dict, tmp: Path) -> bool:
     # slit carries the tangent ruling as an edge of four faces, and Open
     # CASCADE's own reader does not give that back as a closed surface.
     refused = fixture.get("analytic", {}).get("expect_error")
+    # A result the recipe says Open CASCADE measures wrong
+    # (`analytic.measure_differs`, ADR-0015) is compared on what the corpus
+    # still takes from the oracle — counts, genus, probes: the runner and
+    # compare.py hold Arris's measurements to the closed forms, and a body
+    # the oracle built wrong need not even measure the same after its own
+    # STEP round trip (`regression/seam-beside-crossing-fuse` does not).
+    measured_wrong = fixture.get("analytic", {}).get("measure_differs")
     ok_all = True
     for variant in variant_names(fixture):
         shape, _ = build(fixture, variant)
@@ -411,6 +421,8 @@ def round_trip(name: str, fixture: dict, expected: dict, tmp: Path) -> bool:
         back = step.read(path)
         actual = measure(back, probes(fixture, variant), tol["probe"])
         rows = compare(expected["results"][variant], actual, tol)
+        if measured_wrong:
+            rows = [r for r in rows if not r[0].startswith(MEASUREMENTS)]
         ok = all(r[3] for r in rows)
         ok_all &= ok
         print(f"  {name}[{variant}]: STEP round trip {'ok' if ok else 'MISMATCH'}")

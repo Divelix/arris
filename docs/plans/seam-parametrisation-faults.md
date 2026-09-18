@@ -95,7 +95,7 @@ bound has to be established here.
   closed forms and the oracle agree), every existing fixture unchanged, and
   `tools/oracle/selftest.py` green. The public type change is named in the
   commit body.
-- [ ] Step 3 **[1]** — The regression fixture. `regression/
+- [x] Step 3 **[1]** — The regression fixture. `regression/
   seam-beside-crossing-fuse`: `cross-cylinders-fuse`'s two cylinders with
   `turn` at −90.02° (default) and a `closed-form-band` variant at −90.03°,
   its `analytic` carrying `measure_differs` and the closed forms, its
@@ -106,6 +106,14 @@ bound has to be established here.
   `cross-cylinders-fuse`'s recipe, as step 1's measurements already did.
   Arris's counts are 10/16/8/8, as at a generic turn: each seam still
   meets each ellipse once, only nearer the crossing vertex.
+  Found here: Open CASCADE's own body in the band does not survive its
+  own STEP round trip (volume 32.367241 → 32.366737 at −90.02°), so
+  `selftest.py` round-trips a `measure_differs` fixture on counts, genus
+  and probes only; ADR-0015 carries a dated amendment saying so. The
+  symptoms are confirmed as planned, the face names being f7 and f1
+  here: `Fault::Seam` ("a section edge of f7 and f1 crosses a seam of f7
+  without a pave there") at −90.02°, `Unsupported` ("no closed form for
+  +f7 … against +f1") at −90.03°.
   Commit: `test(fixtures)`.
 - [ ] Step 4 **[3]** — The `Fault::Seam` band, −90.01° to −90.02°. The
   unknown this plan turns on. What is known: `interferences` itself raises

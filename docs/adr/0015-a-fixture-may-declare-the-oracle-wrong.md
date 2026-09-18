@@ -155,3 +155,17 @@ overrule.
   no closed form.
 - **Skip inertia under `measure_differs`.** Rejected above: the hole
   lands exactly where the oracle cannot fill it.
+
+## Amendment (2026-09-18, plan `seam-parametrisation-faults` step 3)
+
+The Decision's second point said the oracle's own STEP round trip in
+`selftest.py` "still has to agree with the oracle". It cannot, and that
+is more of the same evidence: Open CASCADE's body in the band does not
+measure the same after its own STEP write and read — at −90.02° its
+volume goes from 32.367241 to 32.366737, its centroid from
+(3.8e-6, −1.5e-6, −3.8e-7) to (5.7e-6, 3.1e-6, −1.0e-7). A correct body
+survives the round trip to 1e-10, as every other fixture's does. Under
+`measure_differs` the round trip is therefore held to what the corpus
+still takes from the oracle — counts, genus and probes, which do survive
+it — and not to the measurements, which the corpus no longer takes from
+the oracle at all. Nothing else in the decision changes.

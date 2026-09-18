@@ -1,0 +1,37 @@
+{
+  "description": "cross-cylinders-fuse's two cylinders with the second turned about its own axis to just past −90°, where its seam runs beside the crossing vertex (0, R, 0) and meets the first wall R·sin δ from it, δ the turn past −90°: a turn about its own axis is the identity on the solid, so the result is the Steinmetz union of cross-cylinders-fuse at every turn, 2πR²L − 16R³/3 and centrally symmetric. Arris fails here where it passes at cross-cylinders-fuse's 30°: Fault::Seam from the pave at the default −90.02°, Unsupported 'no closed form' for the two walls at the closed-form-band variant's −90.03°. Open CASCADE builds a wrong body in the same one-sided band, turns between −90° and −90.049° exclusive: volume, area and centroid off by a sliver linear in δ, stated in measure_differs (ADR-0015) (plans/seam-parametrisation-faults step 3)",
+  "params": {"R": 1, "L": 6, "turn": -90.02},
+  "variants": {"closed-form-band": {"turn": -90.03}},
+  "steps": [
+    {"name": "a", "op": "cylinder", "base": [0, 0, "-L / 2"], "axis": [0, 0, 1], "radius": "R", "height": "L"},
+    {"name": "b0", "op": "cylinder", "base": ["-L / 2", 0, 0], "axis": [1, 0, 0], "radius": "R", "height": "L"},
+    {"name": "b", "op": "transform", "of": "b0", "rotate": {"axis": [1, 0, 0], "angle_deg": "turn"}},
+    {"name": "result", "op": "fuse", "a": "a", "b": "b"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [0, 0, 0], "expect": "in"},
+    {"label": "in_a", "point": [0, 0, 2], "expect": "in"},
+    {"label": "in_b", "point": [2, 0, 0], "expect": "in"},
+    {"label": "outside", "point": [2, 2, 0], "expect": "out"},
+    {"label": "on_a_cap", "point": [0, 0, "L / 2"], "expect": "on"},
+    {"label": "on_a_wall", "point": ["R * cos(radians(20))", "R * sin(radians(20))", 2], "expect": "on"},
+    {"label": "on_b_wall", "point": [2, 0, "R"], "expect": "on"},
+    {"label": "on_section", "point": ["R * cos(radians(45))", "R * sin(radians(45))", "R * cos(radians(45))"], "expect": "on"},
+    {"label": "on_crossing", "point": [0, "R", 0], "expect": "on"}
+  ],
+  "analytic": {
+    "volume": "2 * pi * R^2 * L - 16 * R^3 / 3",
+    "area": "2 * (2 * pi * R * L + 2 * pi * R^2) - 16 * R^2",
+    "centroid": [0, 0, 0],
+    "inertia": [
+      ["pi * R^2 * L * (3 * R^2 + L^2) / 12 + pi * R^4 * L / 2 - 112 * R^5 / 45", 0, 0],
+      [0, "2 * pi * R^2 * L * (3 * R^2 + L^2) / 12 - 128 * R^5 / 45", 0],
+      [0, 0, "pi * R^2 * L * (3 * R^2 + L^2) / 12 + pi * R^4 * L / 2 - 112 * R^5 / 45"]
+    ],
+    "measure_differs": "the result is the same set of points at every turn and centrally symmetric, yet Open CASCADE's volume is 1.46e-3 (4.5e-5 relative) above 2πR²L − 16R³/3 at −90.02° and 2.19e-3 at −90.03°, its area 4.39e-3 and 6.58e-3 above, its centroid 3.8e-6 and 5.6e-6 off the origin — each linear in the turn past −90°, and exact again at −90°, −89.98° and −90.049°. The closed forms are cross-cylinders-fuse's, which Open CASCADE matches to 1e-10 at a generic turn; the inertia is the two cylinders' tensors less the bicylinder's (∫x² = ∫z² = 64R⁵/45, ∫y² = 16R⁵/15 over their common)",
+    "counts": {"vertices": 10, "edges": 16, "faces": 8, "loops": 8, "shells": 1},
+    "counts_differ": "Open CASCADE reports 9/15, two fewer than its 11/17 at a generic turn: it loses the turned seam's two hits on the first wall, 3.5e-4 from the crossing vertices at −90.02° against a vertex tolerance of 1e-7. Arris keeps them: each seam still meets each ellipse once, so its counts are cross-cylinders-fuse's 10/16",
+    "genus": 0
+  }
+}
