@@ -66,6 +66,24 @@ jobs:
       - run: cargo nextest run --workspace
       - run: cargo nextest run -p arris --test corpus --run-ignored only --no-tests pass -E 'not test(/^regression_/)'
       - run: cargo test --workspace --doc
+
+  # The `parallel` features prove determinism, not coverage: the same tests
+  # give byte-identical results with the work split across threads. So they
+  # run at the default case count, in a job of their own beside `test`. At
+  # `test`'s 1000 cases, run after it, they repeated its property coverage
+  # on an oversubscribed runner, about an hour per step.
+  parallel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@nextest
+      # The corpus through the facade compares against the oracle.
+      - uses: astral-sh/setup-uv@v10.1.0
+        with:
+          enable-cache: true
+      - run: uv sync --project tools/oracle
       # arris-mesh's `parallel` feature: the same tests, so every sample
       # body's and primitive's mesh is byte-identical with faces
       # triangulated in parallel.
