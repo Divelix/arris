@@ -276,10 +276,10 @@ conventions the numbers assume are `tests/fixtures/README.md`'s.
 
 ## C2 — the application gate
 
-*Goal: Arris replaces the truck-derived kernel behind the first consumer's
-facade. The gate is a test run, not a judgement call: everything the facade
-uses today, plus the consumer's probe corpus — the recorded kernel failures
-with their `#[ignore]`d twins — green.*
+*Goal: Arris covers what the first consumer's facade uses, and its probe
+corpus — the recorded kernel failures with their `#[ignore]`d twins — is
+green as fixtures. The gate is a corpus run, not a judgement call; the swap
+itself is the consumer's, on its own schedule (ADR-0017).*
 
 - Single-edge fillet and chamfer, several edges in one call: box edges
   (cylinder blends), hole edges (torus blends), the consumer's fixtures.
@@ -407,7 +407,7 @@ the STEP reader.
 (8.7434e-5), blind hole (1.8743e-4), enclosed cavity (9.36e-4, two shells),
 cylinder − cylinder transversal (2.2079e-5), flush union (2.0), revolve
 touching the axis (2π), a fillet on a filleted body, a vertical and a cap
-edge filleted in one call — every twin un-ignored and every probe deleted.
+edge filleted in one call.
 Every one of them is a fixture in metres at the micrometre default
 tolerance a metre model carries (`docs/ARCHITECTURE.md` §Units): the six
 `probe-*-m` fixtures under `boolean/`, `blend/` and `sweep/`
@@ -415,9 +415,10 @@ tolerance a metre model carries (`docs/ARCHITECTURE.md` §Units): the six
 as `boolean/enclosed-cavity` and the transversal as
 `boolean/parallel-cylinders-cut`;
 `sweep/revolve-frustum`, `revolve-barrel` and `revolve-ring` passing every
-corpus stage with nothing left unchecked; the consumer's naming fixtures
-pass through provenance with no matcher; the consumer's facade compiles
-against Arris with the truck crates removed.
+corpus stage with nothing left unchecked; every row of the facade table
+(`docs/ARCHITECTURE.md` §How a consumer's kernel facade maps on) present.
+The consumer's naming fixtures, its facade over Arris and its twins
+un-ignored are the consumer's own acceptance, not this cycle's (ADR-0017).
 
 ---
 

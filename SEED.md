@@ -85,6 +85,8 @@ One path through every crate before any crate is broad. Acceptance: **box − cy
 ### Cycle 2 — the application gate
 Arris replaces monstertruck behind the first consumer's kernel facade when it covers everything that facade uses today **and** passes that application's probe corpus (the recorded truck/monstertruck failures, each with an `#[ignore]`d twin asserting the wanted result): primitives, extrude, revolve, booleans on planar and cylindrical operands including tangent/flush faces, transform, single-edge fillet and chamfer, tessellation, face frames, mass properties, STEP export, topological-reference projection, shape retention. Until then the two projects develop in parallel; the application is never blocked on Arris.
 
+*Amended by ADR-0017 (2026-09-18): the cycle closes on the probe corpus as Arris fixtures; the swap itself is the consumer's, on its own schedule.*
+
 ### Toward Parasolid grade — later cycles, roughly in order
 Cone/sphere/torus intersection pairs · coincident and tangent face handling with tolerance growth · NURBS–NURBS surface intersection · sweep, loft, shell, offset · fillet networks, vertex blends, variable radius · STEP reader and healing · sheet and wire bodies in every operation · IGES. Each earns its own cycle with an acceptance corpus; none is scheduled here.
 

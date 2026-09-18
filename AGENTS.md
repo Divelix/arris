@@ -42,7 +42,8 @@ pieces in a guaranteed **split order** (ADR-0009); `Model::retain` never
 renumbers a slot (ADR-0010); `TriMesh` stays `f64` (ADR-0011). Plane
 projection, face frames, a mesh corner block (ADR-0012), STL/OBJ export
 (ADR-0013) and inertia matched to an independent integrator are in
-(2026-09-16): C2's last non-facade line. **Next:** the facade swap.
+(2026-09-16). C2 closes on the corpus; the swap is the consumer's
+(ADR-0017). **Next:** retire `facade-swap`, then `/close-cycle`.
 
 ## Rules that are not derivable from the code
 

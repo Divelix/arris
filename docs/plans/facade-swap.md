@@ -19,6 +19,11 @@ is built or refused by a typed error at `Full` check. That includes the
 elliptic profile segments its sketcher emits. The C2 **Accept** line then
 holds, and `/close-cycle` can run.
 
+*Amended by ADR-0017 (2026-09-18):* the goal is now the Arris half only:
+everything the facade feeds the kernel, built or refused by a typed error,
+and the probe corpus green as fixtures. The consumer runs the swap
+described above on its own schedule.
+
 ## Non-goals
 
 - Booleans with an elliptic face as an operand: a typed refusal, like the
@@ -41,8 +46,8 @@ has rules of its own: it keeps a plan in its own `docs/plans/`, and it
 needs an ADR superseding its kernel-of-record decision before the work
 starts. The consumer's plan is written and executed there, and its
 commits carry its own plan-step suffix. Its outline is sketched under
-step 8 so this plan shows the whole gate. Step 8's box is ticked here
-when the consumer's acceptance passes. Tracked Arris docs keep calling
+step 8. ADR-0017 took step 8 out of this plan, so no box here waits on
+the consumer's acceptance. Tracked Arris docs keep calling
 the application "the consumer" and never give its path.
 
 ## Design deltas
@@ -79,12 +84,13 @@ the application "the consumer" and never give its path.
 - **docs/DATA-MODEL.md §Profiles, §Surfaces:** the new segment and
   surface.
 - **docs/ARCHITECTURE.md §How a consumer's kernel facade maps on:** the
-  rows get the facts step 8 proves:
-  - the adapter's per-shape index table stands in for the backend's
-    iteration order;
+  rows get the facts steps 2–6 established:
   - an elliptic profile maps onto the new segment;
   - several bodies export into one mesh file;
-  - "what the facade has today that Arris will not have" is revised.
+  - the probe shapes are fixtures in the consumer's units.
+
+  The adapter's own facts (its index table, the revised "what the facade
+  has today") were step 8's, and they moved with it (ADR-0017).
 - **The fixture recipe carries a `Precision`** (step 6): `fixture.json`
   gains a `precision` object, every field of `arris_math::Precision` it
   names over `Precision::DEFAULT`, and the corpus runner creates the
@@ -175,47 +181,14 @@ bound has to be established here.
   dev-dependency survives into a packaged manifest. The human then creates
   the repository, pushes, and bumps and tags the release the consumer
   depends on.
-- [ ] Step 8 **[2]** — The swap, in the consumer's repository, under its
-  own ADR and plan; ticked here when that plan's acceptance passes. It
-  needs step 7's release on crates.io first. Its plan's outline:
-  1. The consumer ADR superseding its kernel-of-record decision and its
-     "no curved boolean operands" product constraint, then its plan. The
-     agent drafts both and stops for the human to accept them (open
-     question 2, answered).
-  2. An `ArrisKernel` beside the old backend behind the same trait:
-     - cgmath ↔ nalgebra at the adapter;
-     - its `Profile` → `geom::Profile` (arc → `ArcTo` with a computed
-       `via`, a ±τ arc → `Circle`, an ellipse → step 2's segment,
-       `SegmentKey` ↔ `(loop_index, segment)`);
-     - the centred box and cylinder conventions, and `symmetric` as a
-       pre-translation;
-     - a rigid-only `Matrix4` → `Isometry`;
-     - the memo store over `Model::retain`;
-     - a per-shape index table for faces, edges and vertices;
-     - `KernelError` from `OpError`.
-  3. `NameMap` built from `Provenance`:
-     - `Side`, `CapStart` and `CapEnd` from `Role`;
-     - `FromA`, `FromB` and `Split(k)` from `modified_from` in the split
-       order;
-     - `Instance` from `transform`;
-     - `FilletBlend` and `ChamferBlend` from `generated_from(edge)`.
-
-     The naming goldens (`tests/naming/*`) pass. A deliberate change goes
-     in its own commit with a reason (open question 3).
-  4. The facade's test suite runs against `ArrisKernel`:
-     - every `#[ignore]`d twin runs and passes (flush union, through
-       hole, blind hole, enclosed cavity, transversal cut, revolve
-       touching the axis, second fillet, a vertical and a cap edge in one
-       call);
-     - the soft-failure tests they replaced are deleted;
-     - the "profile crossing the axis fails" test stays.
-  5. `ArrisKernel` becomes the application's kernel. Also:
-     - its document acceptance tests and its `wasm32` build pass;
-     - its headless snapshots are refreshed only with their diffs read;
-     - an app smoke run through its `visual-debug` skill.
-  6. The old backend goes: `TruckKernel`, the name matcher, the backend
-     probe file and every truck-lineage crate in the manifest.
-     `cargo tree` and the lockfile show none of them.
+- Step 8 — **moved out of this plan (ADR-0017, 2026-09-18).** The swap
+  is the consumer's work, under its own ADR and plan and on its own
+  schedule, from a published release. C2 closes on the Arris half of the
+  gate. Drafting the consumer's plan showed that the old backend handles
+  cases the probe corpus never recorded: blends between faces other than
+  planes and cylinders, and a STEP reader on its roadmap. Those reach
+  Arris as regression fixtures from the consumer's side-by-side run. The
+  known ones are backlog lines. No box: nothing ran here to tick.
 
 ## Acceptance
 
@@ -225,13 +198,10 @@ bound has to be established here.
   configured case count. `cargo build --workspace --target
   wasm32-unknown-unknown` passes, and `cargo package --workspace` packages
   and verifies all nine crates.
-- In the consumer: its full gate (fmt, clippy `-D warnings`, its size and
-  wasm lints, `cargo test --all`, `--all-features`, the `wasm32` build)
-  passes on its own CI — so over `arris` from crates.io, not a path — with
-  no truck-lineage crate in `Cargo.lock`. There is no
-  `#[ignore]` whose reason names the old backend, and its naming goldens
-  pass with the matcher deleted.
-- Together, these are the C2 **Accept** line, item by item.
+- The consumer's half of the old acceptance (its gate over `arris` from
+  crates.io, no truck-lineage crate, its naming goldens with no matcher)
+  is its own, not this plan's (ADR-0017).
+- This is the C2 **Accept** line as ADR-0017 amended it, item by item.
 
 ## Docs to update on completion
 
@@ -246,8 +216,8 @@ bound has to be established here.
 - `docs/BACKLOG.md`: elliptic-faced booleans (C3/C4). If step 3 refused
   it, the elliptic revolve. A consumer-requested non-rigid transform, if
   that ever comes up.
-- `AGENTS.md` current state: C2's gate passed, the facade swapped, next
-  is `/close-cycle` into C3.
+- `AGENTS.md` current state: C2's gate passed on the corpus, next is
+  `/close-cycle` into C3 (done in the ADR-0017 commit).
 - Done in step 7: `README.md` (the crates.io front page of every published
   crate) and `.agents/rules/git.md` §Tags (a tag is what publishes).
 
@@ -266,11 +236,12 @@ bound has to be established here.
   consumer's repository and stops for the human to accept them, before any
   adapter code. It supersedes the consumer's kernel-of-record ADR and the
   "no curved boolean operands" product constraint.
-- `⚠ OPEN:` **Naming goldens for full-circle holes** (agent, in step 8's
-  consumer ADR). The old backend split a full circle into several side
-  faces. Arris makes one. The consumer's `Side { instance }` names for a
-  hole loop change unless the adapter pins them. The goldens move only by
-  a deliberate commit that says why.
+- **Naming goldens for full-circle holes.** Moved to the consumer with
+  step 8 (ADR-0017); what follows is the question as it stood. The old
+  backend split a full circle into several side faces. Arris makes one.
+  The consumer's `Side { instance }` names for a hole loop change unless
+  the adapter pins them. The goldens move only by a deliberate commit
+  that says why.
 - **Elliptic revolve: build or refuse.** Answered in step 1 (ADR-0014):
   refused. The consumer's ellipse entities sit behind a feature that is
   off by default, no sketch tool draws one, and no document or test
