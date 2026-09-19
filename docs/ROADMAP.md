@@ -281,7 +281,7 @@ corpus — the recorded kernel failures with their `#[ignore]`d twins — is
 green as fixtures. The gate is a corpus run, not a judgement call; the swap
 itself is the consumer's, on its own schedule (ADR-0017).*
 
-**Status: done 2026-09-19, tags `c2` and `v0.2.0`.** Retired the
+**Status: done 2026-09-19, tag `c2`, released as `v0.1.1`.** Retired the
 application gate: the first consumer's probe shapes pass every corpus
 stage in its own units, over blends built in closed form on analytic face
 pairs, multi-shell results as lumps of one solid, and quadric faces decided
