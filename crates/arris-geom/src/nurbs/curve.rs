@@ -231,6 +231,39 @@ impl NurbsCurve {
             .map_err(degenerate(GeomKind::Curve(CurveKind::Nurbs)))
     }
 
+    /// The curve over exactly `range`, as a clamped curve in the same
+    /// parameter: `piece.eval(t).point == self.eval(t).point` to rounding
+    /// for every `t` of `range`, and `piece.domain() == range`. A
+    /// periodic curve takes any range of at most one period, wherever it
+    /// starts — an edge's range past the knots' end among them. What a
+    /// reader that finds an edge's range by its vertices needs of a
+    /// closed curve (`arris-io`'s STEP writer).
+    ///
+    /// Errors: [`GeomError::Degenerate`] for a range outside the domain
+    /// of a curve that is not periodic, or longer than one period of one
+    /// that is.
+    ///
+    /// ```
+    /// use arris_geom::NurbsCurve;
+    /// use arris_math::{Interval, Point3};
+    ///
+    /// let c = NurbsCurve::new(
+    ///     2,
+    ///     vec![0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 2.0],
+    ///     vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 2.0, 0.0), Point3::new(3.0, 2.0, 0.0), Point3::new(4.0, 0.0, 0.0)],
+    ///     vec![1.0; 4],
+    /// ).unwrap();
+    /// let piece = c.segment(Interval::new(0.5, 1.5).unwrap()).unwrap();
+    /// assert_eq!((piece.domain().lo(), piece.domain().hi()), (0.5, 1.5));
+    /// assert!((piece.eval(0.8).point - c.eval(0.8).point).norm() < 1e-15);
+    /// ```
+    pub fn segment(&self, range: Interval) -> Result<Self, GeomError> {
+        self.spline
+            .segment(range.lo(), range.hi())
+            .map(|spline| NurbsCurve { spline })
+            .map_err(degenerate(GeomKind::Curve(CurveKind::Nurbs)))
+    }
+
     /// The curve's polynomial pieces in Bernstein form, one per
     /// non-empty span, ascending: what a curve substituted into an
     /// implicit surface is built from (`crate::intersect_spline`).

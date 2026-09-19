@@ -41,7 +41,10 @@ commit that says so (`.agents/rules/git.md`).
   with string expressions and `variants` overriding them. The grammar is
   the module docstring and `tests/fixtures/README.md`.
 - `oracle/measure.py` — volume, area, centroid and the inertia tensor
-  (`GProp`), counts by unique
+  (`GProp`: its fixed-order integration, but the adaptive overloads to
+  `SPLINE_EPS` for a shape with a B-spline edge — a quadric section
+  walked or fitted, over whose pcurves the fixed order is 1e-6 off),
+  counts by unique
   sub-shape (a seam edge once, an edge `BRep_Tool::Degenerated` names not
   at all), loops, shells, solids — of the boundary only: an edge oriented
   INTERNAL or EXTERNAL, a wire of nothing else and a vertex on nothing

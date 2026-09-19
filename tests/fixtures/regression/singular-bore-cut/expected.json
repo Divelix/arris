@@ -1,0 +1,99 @@
+{
+  "occt": "8.0.1.0.0",
+  "recipe_sha256": "f09fa797f20b03dca1e145ad8db8a05987adf8a6fd99556e4f7e65f9ad768b01",
+  "results": {
+    "default": {
+      "area": 46.78598672025348,
+      "centroid": [
+        -7.090394800478788e-11,
+        -0.038998114022705574,
+        3.297424941836382e-11
+      ],
+      "counts": {
+        "edges": 11,
+        "faces": 5,
+        "loops": 6,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 7
+      },
+      "degenerate": false,
+      "euler_characteristic": 0,
+      "genus": 1,
+      "inertia": [
+        [
+          60.67898821443625,
+          1.5342632529817945e-10,
+          8.17186318217633e-11
+        ],
+        [
+          1.5342632529817945e-10,
+          60.570161566450054,
+          -3.6252326472337397e-10
+        ],
+        [
+          8.17186318217633e-11,
+          -3.6252326472337397e-10,
+          8.507330345798266
+        ]
+      ],
+      "probes": [
+        {
+          "class": "in",
+          "label": "inside",
+          "point": [
+            0.0,
+            -0.6,
+            0.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "in_the_bore",
+          "point": [
+            0.0,
+            0.4,
+            0.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "outside",
+          "point": [
+            2.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_main_wall",
+          "point": [
+            0.0,
+            -1.0,
+            0.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_bore_wall",
+          "point": [
+            0.5,
+            0.7856725658119236,
+            0.4596266658713868
+          ]
+        },
+        {
+          "class": "on",
+          "label": "at_the_singular_point",
+          "point": [
+            0.0,
+            1.0,
+            0.0
+          ]
+        }
+      ],
+      "volume": 16.93158449202823
+    }
+  }
+}

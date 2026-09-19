@@ -1,0 +1,150 @@
+{
+  "description": "a tee of unequal radii: a main cylinder R 1, length L on z, fused with a branch r 0.6 on x whose base cap lies in the plane of the main axis, length H, turned about its own axis so its seam is generic. The branch's wall meets the main wall in one closed loop of the quartic two cylinders on crossing axes of unequal radii make, traced and fitted as one periodic NURBS (ADR-0018) and paved once, where the branch's seam pierces the main wall; the base cap lies inside the main cylinder. No closed form in the recipe grammar for the volume: πR²L + πr²H less the branch inside the main, ∫ 2√(r² − y²)√(R² − y²) dy over |y| ≤ r, an elliptic integral (plans/quadric-intersection-curves step 8)",
+  "params": {
+    "R": 1,
+    "r": 0.6,
+    "L": 6,
+    "H": 3,
+    "turn": 30
+  },
+  "steps": [
+    {
+      "name": "main",
+      "op": "cylinder",
+      "base": [
+        0,
+        0,
+        "-L / 2"
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "radius": "R",
+      "height": "L"
+    },
+    {
+      "name": "b0",
+      "op": "cylinder",
+      "base": [
+        0,
+        0,
+        0
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "radius": "r",
+      "height": "H"
+    },
+    {
+      "name": "branch",
+      "op": "transform",
+      "of": "b0",
+      "rotate": {
+        "axis": [
+          1,
+          0,
+          0
+        ],
+        "angle_deg": "turn"
+      }
+    },
+    {
+      "name": "result",
+      "op": "fuse",
+      "a": "main",
+      "b": "branch"
+    }
+  ],
+  "result": "result",
+  "probes": [
+    {
+      "label": "inside",
+      "point": [
+        0,
+        0,
+        0
+      ],
+      "expect": "in"
+    },
+    {
+      "label": "in_branch",
+      "point": [
+        "R + H / 4",
+        0,
+        0
+      ],
+      "expect": "in"
+    },
+    {
+      "label": "behind",
+      "point": [
+        "-R / 2",
+        0,
+        "R / 2"
+      ],
+      "expect": "in"
+    },
+    {
+      "label": "outside",
+      "point": [
+        "-2 * R",
+        0,
+        0
+      ],
+      "expect": "out"
+    },
+    {
+      "label": "beside_the_branch",
+      "point": [
+        "R + H / 2",
+        0,
+        "1.5 * r"
+      ],
+      "expect": "out"
+    },
+    {
+      "label": "on_main_wall",
+      "point": [
+        "-R",
+        0,
+        0
+      ],
+      "expect": "on"
+    },
+    {
+      "label": "on_branch_wall",
+      "point": [
+        "R + H / 4",
+        0,
+        "r"
+      ],
+      "expect": "on"
+    },
+    {
+      "label": "on_branch_cap",
+      "point": [
+        "H",
+        0,
+        "r / 2"
+      ],
+      "expect": "on"
+    },
+    {
+      "label": "on_section",
+      "point": [
+        "R",
+        0,
+        "r"
+      ],
+      "expect": "on"
+    }
+  ],
+  "analytic": {
+    "genus": 0
+  }
+}

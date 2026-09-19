@@ -1,0 +1,108 @@
+{
+  "occt": "8.0.1.0.0",
+  "recipe_sha256": "7cb3896c37abeca64ca7c643d42f7e03735b35754ee7f97b8abb5c17dcdb06f3",
+  "results": {
+    "default": {
+      "area": 44.76669529567358,
+      "centroid": [
+        8.067630313048134e-12,
+        -0.01903756892158315,
+        9.365494270649253e-12
+      ],
+      "counts": {
+        "edges": 6,
+        "faces": 5,
+        "loops": 6,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 4
+      },
+      "degenerate": false,
+      "euler_characteristic": 2,
+      "genus": 0,
+      "inertia": [
+        [
+          60.98357997162942,
+          -1.8157963343101952e-10,
+          6.409722861123795e-11
+        ],
+        [
+          -1.8157963343101952e-10,
+          61.152677981477844,
+          -8.682348333225102e-11
+        ],
+        [
+          6.409722861123795e-11,
+          -8.682348333225102e-11,
+          9.081370848133789
+        ]
+      ],
+      "probes": [
+        {
+          "class": "in",
+          "label": "inside",
+          "point": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "in_the_notch",
+          "point": [
+            0.0,
+            0.8,
+            0.0
+          ]
+        },
+        {
+          "class": "in",
+          "label": "beside_the_notch",
+          "point": [
+            0.0,
+            0.8,
+            0.8
+          ]
+        },
+        {
+          "class": "out",
+          "label": "outside",
+          "point": [
+            2.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_main_wall",
+          "point": [
+            -1.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_notch_floor",
+          "point": [
+            0.0,
+            0.4,
+            0.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_notch_wall",
+          "point": [
+            0.0,
+            0.8,
+            0.4
+          ]
+        }
+      ],
+      "volume": 18.338486106250667
+    }
+  }
+}

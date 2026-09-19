@@ -1,0 +1,146 @@
+{
+  "description": "the main cylinder of tee-unequal-fuse less its branch: a pocket bounded by the branch's wall inside the main and its base cap in the plane of the main axis, opening through the main wall along the loop. The branch's wall meets the main wall in one closed loop of the quartic two cylinders on crossing axes of unequal radii make, traced and fitted as one periodic NURBS (ADR-0018) and paved once, where the branch's seam pierces the main wall; the base cap lies inside the main cylinder. No closed form in the recipe grammar for the volume: πR²L less the branch inside the main, ∫ 2√(r² − y²)√(R² − y²) dy over |y| ≤ r, an elliptic integral (plans/quadric-intersection-curves step 8). volume_rel, area_rel and inertia_rel are 1e-7 here, the model's linear tolerance taken relative: both bodies' loop edges lie within the tolerance of the exact section, not on it — Arris's fitted to a quarter of it (ADR-0018), Open CASCADE's walked and approximated to it — and each trims the two walls it bounds by as much along the loop, which on a body this small in area reaches past 1e-9 of it. Against a quadrature of the exact loop, the area 47.32626680990 is 1.1e-9 above Open CASCADE's and 8e-10 below Arris's own, the volume 17.77207461143 within 2e-10 of both.",
+  "params": {
+    "R": 1,
+    "r": 0.6,
+    "L": 6,
+    "H": 3,
+    "turn": 30
+  },
+  "steps": [
+    {
+      "name": "main",
+      "op": "cylinder",
+      "base": [
+        0,
+        0,
+        "-L / 2"
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "radius": "R",
+      "height": "L"
+    },
+    {
+      "name": "b0",
+      "op": "cylinder",
+      "base": [
+        0,
+        0,
+        0
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "radius": "r",
+      "height": "H"
+    },
+    {
+      "name": "branch",
+      "op": "transform",
+      "of": "b0",
+      "rotate": {
+        "axis": [
+          1,
+          0,
+          0
+        ],
+        "angle_deg": "turn"
+      }
+    },
+    {
+      "name": "result",
+      "op": "cut",
+      "target": "main",
+      "tool": "branch"
+    }
+  ],
+  "result": "result",
+  "probes": [
+    {
+      "label": "inside",
+      "point": [
+        0,
+        0,
+        "R / 2 + r"
+      ],
+      "expect": "in"
+    },
+    {
+      "label": "in_the_pocket",
+      "point": [
+        "R / 2",
+        0,
+        0
+      ],
+      "expect": "out"
+    },
+    {
+      "label": "behind",
+      "point": [
+        "-R / 2",
+        0,
+        0
+      ],
+      "expect": "in"
+    },
+    {
+      "label": "outside",
+      "point": [
+        "-2 * R",
+        0,
+        0
+      ],
+      "expect": "out"
+    },
+    {
+      "label": "on_main_wall",
+      "point": [
+        "-R",
+        0,
+        0
+      ],
+      "expect": "on"
+    },
+    {
+      "label": "on_pocket_wall",
+      "point": [
+        "R / 2",
+        0,
+        "r"
+      ],
+      "expect": "on"
+    },
+    {
+      "label": "on_pocket_floor",
+      "point": [
+        0,
+        0,
+        "r / 2"
+      ],
+      "expect": "on"
+    },
+    {
+      "label": "on_section",
+      "point": [
+        "R",
+        0,
+        "r"
+      ],
+      "expect": "on"
+    }
+  ],
+  "analytic": {
+    "genus": 0
+  },
+  "tolerances": {
+    "volume_rel": 1e-07,
+    "area_rel": 1e-07,
+    "inertia_rel": 1e-07
+  }
+}

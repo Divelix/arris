@@ -62,7 +62,11 @@ impl<'m> Checker<'m> {
     /// E8: an analytic curve over a range E1 accepted cannot cross
     /// itself, so only a NURBS is tested — as a polyline sampled
     /// `Precision::check_samples` times per knot span, two non-adjacent
-    /// segments closer than the edge's tolerance being the crossing.
+    /// segments closer than the edge's tolerance being the crossing when
+    /// more than that tolerance of polyline runs between them. Nearer
+    /// along the curve they are one stretch of it, however many samples
+    /// a short span — a periodic section edge running a few units in the
+    /// last place past its knots' end — put between them.
     fn e8_self_intersections(&mut self) {
         let model = self.model;
         let mut found = Vec::new();
@@ -103,11 +107,29 @@ impl<'m> Checker<'m> {
                 lo = hi;
             }
             let points: Vec<Point3> = parameters.iter().map(|&t| curve.point(t)).collect();
+            // `along[k]`: the polyline's length up to point `k`.
+            let mut along = Vec::with_capacity(points.len());
+            let mut length = 0.0;
+            for (k, p) in points.iter().enumerate() {
+                if k > 0 {
+                    length += (p - points[k - 1]).norm();
+                }
+                along.push(length);
+            }
             let closed = edge.start() == edge.end();
             let n = points.len().saturating_sub(1);
             for i in 0..n {
                 for j in i + 2..n {
                     if closed && i == 0 && j == n - 1 {
+                        continue;
+                    }
+                    let between = along[j] - along[i + 1];
+                    let around = if closed {
+                        between.min(length - (along[j + 1] - along[i]))
+                    } else {
+                        between
+                    };
+                    if around <= edge.tolerance() {
                         continue;
                     }
                     let (sa, sb) = ((points[i], points[i + 1]), (points[j], points[j + 1]));

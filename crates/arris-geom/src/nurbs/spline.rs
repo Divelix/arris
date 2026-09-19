@@ -244,6 +244,90 @@ impl<const D: usize> Spline<D> {
         Spline::new(p, knots, points, weights)
     }
 
+    /// The spline over exactly `[lo, hi]`, clamped there, in the same
+    /// parameter: every knot of the range raised to multiplicity `p`
+    /// (A5.1), and the control points and knots between them kept. A
+    /// periodic spline takes any range of at most one period, wherever
+    /// it starts — the range is wrapped, read on the spline unrolled over
+    /// two periods, and the piece's knots shifted back by the whole
+    /// periods the wrap took; any other spline a range inside its domain.
+    /// The error is the reason.
+    pub(crate) fn segment(&self, lo: f64, hi: f64) -> Result<Self, String> {
+        let p = self.degree;
+        if !(lo.is_finite() && hi.is_finite() && lo < hi) {
+            return Err(format!("[{lo}, {hi}] is no range"));
+        }
+        let (given_lo, given_hi) = (lo, hi);
+        let (mut s, lo, hi) = match self.period {
+            Some(period) => {
+                let length = hi - lo;
+                if length > period && !is_negligible(length - period, period) {
+                    return Err(format!("[{lo}, {hi}] is longer than the period {period}"));
+                }
+                let lo = self.wrap(lo);
+                (self.unrolled(period)?, lo, lo + length.min(period))
+            }
+            None => {
+                let domain = self.domain();
+                if lo < domain.lo() || hi > domain.hi() {
+                    return Err(format!(
+                        "[{lo}, {hi}] is outside the domain [{}, {}]",
+                        domain.lo(),
+                        domain.hi()
+                    ));
+                }
+                (self.clone(), lo, hi)
+            }
+        };
+        for t in [lo, hi] {
+            let already = basis::multiplicity(&s.knots, t);
+            if already < p {
+                s = s.insert_knot(t, p - already)?;
+            }
+        }
+        let (Some(last_lo), Some(first_hi)) = (
+            s.knots.iter().rposition(|&k| k == lo),
+            s.knots.iter().position(|&k| k == hi),
+        ) else {
+            return Err("a knot the insertion put in is missing".to_string());
+        };
+        // A knot of multiplicity `p` or more is interpolated: the point at
+        // `lo` is the control point `p` before its last copy, the one at
+        // `hi` the control point before its first.
+        let (a, b) = (last_lo - p, first_hi - 1);
+        let shift = given_lo - lo;
+        let mut knots = vec![given_lo; p + 1];
+        knots.extend(s.knots[last_lo + 1..first_hi].iter().map(|k| k + shift));
+        knots.extend(core::iter::repeat_n(given_hi, p + 1));
+        Spline::new(
+            p,
+            knots,
+            s.points[a..=b].to_vec(),
+            s.weights[a..=b].to_vec(),
+        )
+    }
+
+    /// A periodic spline over two of its periods, as a spline whose knots
+    /// and control points run on past the first period's end: the knot
+    /// `m = n − p` places on is the knot plus the period, and the control
+    /// point `m` places on the same point, as the periodic sequence is.
+    fn unrolled(&self, period: f64) -> Result<Self, String> {
+        let p = self.degree;
+        let n = self.points.len();
+        let m = n - p;
+        let mut knots = self.knots.clone();
+        for j in n + p + 1..n + p + 1 + m {
+            knots.push(knots[j - m] + period);
+        }
+        let mut points = self.points.clone();
+        let mut weights = self.weights.clone();
+        for j in n..n + m {
+            points.push(points[j - m]);
+            weights.push(weights[j - m]);
+        }
+        Spline::new(p, knots, points, weights)
+    }
+
     /// The spline's polynomial pieces in Bernstein form: for every
     /// non-empty span of the domain, ascending, its two knots and the
     /// `p + 1` homogeneous Bézier control points `(w P, w)` of the piece

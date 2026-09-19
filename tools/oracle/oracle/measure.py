@@ -21,12 +21,12 @@
 import math
 
 from OCP.BRep import BRep_Tool
-from OCP.BRepAdaptor import BRepAdaptor_Surface
+from OCP.BRepAdaptor import BRepAdaptor_Curve, BRepAdaptor_Surface
 from OCP.BRepTools import BRepTools
 from OCP.GCPnts import GCPnts_AbscissaPoint
 from OCP.BRepClass3d import BRepClass3d_SolidClassifier
 from OCP.BRepGProp import BRepGProp
-from OCP.GeomAbs import GeomAbs_SurfaceType
+from OCP.GeomAbs import GeomAbs_CurveType, GeomAbs_SurfaceType
 from OCP.GProp import GProp_GProps
 from OCP.gp import gp_Pnt
 from OCP.TopAbs import (
@@ -52,6 +52,18 @@ from . import OracleError
 # three orders below the corpus's `area_rel` (1e-9).
 LENGTH_TOL = 1e-13
 
+# The relative error the adaptive integration is asked for on a shape
+# bounded by a spline edge (`_spline_bounded`): three orders below the
+# corpus's `volume_rel` and `area_rel` (1e-9), as LENGTH_TOL is.
+SPLINE_EPS = 1e-12
+
+# 3D edge curves the fixed-order integration is exact beside.
+_CONIC_EDGES = (
+    GeomAbs_CurveType.GeomAbs_Line,
+    GeomAbs_CurveType.GeomAbs_Circle,
+    GeomAbs_CurveType.GeomAbs_Ellipse,
+)
+
 _ELEMENTARY = (
     GeomAbs_SurfaceType.GeomAbs_Plane,
     GeomAbs_SurfaceType.GeomAbs_Cylinder,
@@ -68,6 +80,27 @@ def _faces(shape: TopoDS_Shape):
         explorer.Next()
 
 
+def _spline_bounded(shape: TopoDS_Shape) -> bool:
+    """Whether an edge of the shape has a 3D curve that is no line and no
+    conic: a B-spline, the approximation of a section two cylinders on
+    crossing or skew axes meet in (Open CASCADE's walked line, Arris's
+    fitted one, ADR-0018). The faces it bounds are trimmed by B-spline
+    pcurves of many spans, over which the fixed-order integration is 1e-6
+    off in volume and area where the shape itself is right to 1e-10 — the
+    adaptive overloads, asked for SPLINE_EPS, agree with a quadrature of
+    the closed form to 1e-10. Such a shape is measured by those; every
+    other keeps the fixed-order integration and its committed numbers."""
+    explorer = TopExp_Explorer(shape, TopAbs_EDGE)
+    while explorer.More():
+        edge = TopoDS.Edge(explorer.Current())
+        explorer.Next()
+        if BRep_Tool.Degenerated_s(edge):
+            continue
+        if BRepAdaptor_Curve(edge).GetType() not in _CONIC_EDGES:
+            return True
+    return False
+
+
 def _area(shape: TopoDS_Shape) -> float:
     """The total face area. Every face on a plane, cylinder, cone, sphere
     or torus: `BRepGProp::SurfaceProperties` over the whole shape, whose
@@ -82,9 +115,13 @@ def _area(shape: TopoDS_Shape) -> float:
     of a sample — takes the fixed-order integration face by face, as the
     whole-shape call gave it before."""
     faces = list(_faces(shape))
+    spline = _spline_bounded(shape)
     if all(BRepAdaptor_Surface(f).GetType() in _ELEMENTARY for f in faces):
         sp = GProp_GProps()
-        BRepGProp.SurfaceProperties_s(shape, sp)
+        if spline:
+            BRepGProp.SurfaceProperties_s(shape, sp, SPLINE_EPS)
+        else:
+            BRepGProp.SurfaceProperties_s(shape, sp)
         return sp.Mass()
     total = 0.0
     for face in faces:
@@ -202,7 +239,10 @@ def measure(shape: TopoDS_Shape, probes: list[dict], probe_tolerance: float, man
         return out
 
     vp = GProp_GProps()
-    BRepGProp.VolumeProperties_s(shape, vp)
+    if _spline_bounded(shape):
+        BRepGProp.VolumeProperties_s(shape, vp, SPLINE_EPS)
+    else:
+        BRepGProp.VolumeProperties_s(shape, vp)
     area = _area(shape)
     c = vp.CentreOfMass()
     chi = counts["vertices"] - counts["edges"] + 2 * counts["faces"] - counts["loops"]

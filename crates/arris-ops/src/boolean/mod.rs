@@ -55,8 +55,9 @@ pub struct FacePair {
     /// by its [`Interferences::contacts`] — the blocks of the tangent
     /// ruling interior to both faces — and the curvature rule at each;
     /// neither contributes a section edge. A pair past the quadric guard
-    /// meets in curves of one kind and in no point: a *crossing pair* or
-    /// a *touching pair*.
+    /// meets in curves of one kind: a *crossing pair* or a *touching
+    /// pair*; its only points are a traced section's singular points,
+    /// where its branches end (ADR-0018), each a section crossing.
     pub intersection: SurfaceIntersection,
 }
 
@@ -121,12 +122,14 @@ pub enum VertexSource {
     /// Hits or edge–edge crossings merged: at least one of either. A
     /// section crossing may have joined it too.
     Hits,
-    /// Two section curves of one crossing pair crossing each other
-    /// where no edge of either operand pierces: at least one section
-    /// crossing, and no hit but touches landing on it.
+    /// Two section curves of one crossing pair crossing each other, or
+    /// a traced section's branches ending at its singular point, where
+    /// no edge of either operand pierces: at least one section crossing,
+    /// and no hit but touches landing on it.
     SectionCrossing,
     /// A closed section curve of the pair no hit paves, interior to both
-    /// faces: its own point at the curve's parameter zero.
+    /// faces: its own point at the start of its domain — parameter zero
+    /// for a conic.
     CurveStart {
         /// The pair, an index into [`Interferences::pairs`].
         pair: usize,
@@ -167,7 +170,8 @@ pub struct SectionVertex {
 /// on a section curve.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Pave {
-    /// The curve's parameter; a periodic one in `[0, 2π)`.
+    /// The curve's parameter; a periodic one in `[lo, lo + period)` of
+    /// its domain — `[0, 2π)` for a conic.
     pub t: f64,
     /// The section vertex, an index into [`Interferences::vertices`].
     pub vertex: usize,
@@ -197,18 +201,26 @@ pub struct SectionCurve {
 /// ellipses of equal cylinders with crossing axes, at `±R` along the
 /// axes' common perpendicular — and no edge of either operand marks the
 /// point, so the crossing is a section vertex of its own: it paves both
-/// curves, and the pieces of both faces meet at it (ADR-0004).
+/// curves, and the pieces of both faces meet at it (ADR-0004). A traced
+/// pair's fitted branches meet only at its singular points, where they
+/// end exactly (ADR-0018): its crossings are those points on both faces,
+/// the first branch ending at one against each other end there — against
+/// its own other end when one branch leaves the point and comes back —
+/// and no two fitted curves are intersected.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SectionCrossing {
     /// The pair, an index into [`Interferences::pairs`].
     pub pair: usize,
     /// Which two of the pair's crossing curves, indices into its `Meets`
-    /// curves, the lower first.
+    /// curves, the lower first; one curve twice for a traced branch whose
+    /// two ends are the singular point.
     pub curves: [usize; 2],
-    /// The parameter on each of the two curves; a periodic one in
-    /// `[0, 2π)`.
+    /// The parameter on each of the two curves, a periodic one in
+    /// `[lo, lo + period)` of its domain; at a singular point, the end of
+    /// each branch there.
     pub t: [f64; 2],
-    /// The point, on the first curve.
+    /// The point, on the first curve; a singular point as the tracer
+    /// gave it.
     pub point: Point3,
     /// `true` when the curves touch here without crossing. A touch makes
     /// no vertex and no pave.
@@ -436,9 +448,7 @@ pub struct Interferences {
 /// (debug builds, and release with `paranoid`); [`OpError::NotFound`]
 /// when one does not resolve; [`OpError::Unsupported`] naming the face
 /// pair, or the edge and the face, the kernel has no closed form for —
-/// a cone, a sphere, a torus or a NURBS operand, or two cylinders whose
-/// axes cross at unequal radii or pass within the radii without
-/// crossing; [`OpError::Tolerance`] when a section vertex would
+/// a cone, a sphere, a torus or a NURBS operand; [`OpError::Tolerance`] when a section vertex would
 /// need a tolerance above the model's maximum; [`OpError::Internal`]
 /// for a geometry query that failed on validated input or a section
 /// edge crossing a seam without a pave.

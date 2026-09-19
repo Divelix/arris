@@ -896,6 +896,13 @@ domain first. Any other parameter outside the domain evaluates the
 nearest polynomial piece. Knot insertion (`insert_knot(t, times)`)
 leaves the image over the domain unchanged; on a periodic curve it
 breaks the wrap the knots implied, so the result's `period()` is `None`.
+`NurbsCurve::segment(range)` is the curve over exactly `range`, clamped
+there, in the same parameter — the range's ends raised to multiplicity
+`p` by insertion and the control points between kept; a periodic curve
+takes any range of at most one period wherever it starts, read on the
+curve unrolled over two periods, so an edge's block past the knots' end
+is a piece like any other (the STEP writer's, architecture §Formats and
+tools).
 
 ## Topology
 
@@ -1269,7 +1276,7 @@ reference tree) mapped onto this representation.
 | E5 | `edge.tolerance ≥ face.tolerance` for every face it bounds; `≤ vertex.tolerance` of both vertices | Fast |
 | E6 | A degenerate edge has `start == end` and lies on faces whose surface is singular along its pcurve over its range (the image at `check_samples` parameters spans at most the vertex's tolerance) | Fast |
 | E7 | A seam edge (used twice by one loop) has its two coedges in opposite orientation and pcurves that differ by exactly the surface's period in the periodic parameter | Fast |
-| E8 | The edge does not self-intersect within its range. An analytic curve over a range E1 accepted cannot; a NURBS is tested as a polyline of `check_samples` points per knot span, two non-adjacent segments closer than the edge's tolerance being the crossing | Full |
+| E8 | The edge does not self-intersect within its range. An analytic curve over a range E1 accepted cannot; a NURBS is tested as a polyline of `check_samples` points per knot span, two non-adjacent segments closer than the edge's tolerance being the crossing when more than that tolerance of polyline runs between them (around a closed edge, either way) — nearer, they are one stretch of the curve, as a periodic section edge's few units in the last place past its knots' end are | Full |
 
 **Loop and face**
 

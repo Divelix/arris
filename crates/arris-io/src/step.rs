@@ -21,7 +21,11 @@
 //! per edge an `EDGE_CURVE` from its start to its end vertex over a
 //! `SURFACE_CURVE` holding the 3D curve and one `PCURVE` per use — a
 //! `SEAM_CURVE` with the `Forward` use's pcurve first when both uses are in
-//! one loop; `LINE`, `CIRCLE`, `ELLIPSE`, `PLANE`, `CYLINDRICAL_SURFACE`,
+//! one loop — the curve shared by every edge on it, but an edge on a
+//! periodic NURBS written on its own piece over its range
+//! (`NurbsCurve::segment`), since a reader finds the range from the
+//! vertices and a closed curve puts the block past its knots' end on the
+//! wrong side of them; `LINE`, `CIRCLE`, `ELLIPSE`, `PLANE`, `CYLINDRICAL_SURFACE`,
 //! `CONICAL_SURFACE`, `SPHERICAL_SURFACE`, `TOROIDAL_SURFACE` placed by
 //! `AXIS2_PLACEMENT_3D` (origin, `Z`, `X`), a
 //! `SURFACE_OF_LINEAR_EXTRUSION` of an `ELLIPSE` along its `Z` for an
@@ -60,7 +64,7 @@ use arris_check::arris_topo::arris_geom::region2::{Piece, discretise};
 use arris_check::arris_topo::arris_geom::{
     Curve, Curve2, NurbsCurve, NurbsCurve2, NurbsSurface, Surface,
 };
-use arris_check::arris_topo::arris_math::{Frame, Frame2, Point2, Point3, Vec2, Vec3};
+use arris_check::arris_topo::arris_math::{Frame, Frame2, Interval, Point2, Point3, Vec2, Vec3};
 use arris_check::arris_topo::entity::{BodyKind, Coedge, Loop};
 use arris_check::arris_topo::{
     AnyId, Body, CoedgeRef, Curve2Id, CurveId, EdgeId, FaceId, Model, NotFound, Orientation, Shell,
@@ -566,7 +570,7 @@ impl<'m> Writer<'m> {
                 },
             });
         }
-        let curve = self.curve(curve_id)?;
+        let curve = self.edge_curve(curve_id, edge.curve().map(|(_, range)| range))?;
         let geometry = if uses.is_empty() {
             curve
         } else {
@@ -708,6 +712,35 @@ impl<'m> Writer<'m> {
         };
         self.set(number, text);
         self.surfaces.insert(id, number);
+        Ok(number)
+    }
+
+    /// The 3D curve entity an edge over `range` of curve `id` is written
+    /// on: the curve's own, shared by every edge on it — but for a
+    /// periodic NURBS, the edge's own piece over its range, clamped
+    /// (`NurbsCurve::segment`), in the same parameter as its pcurves.
+    /// STEP has no periodic B-spline a reader keeps, and an `EDGE_CURVE`
+    /// carries no range: a reader finds it by projecting the vertices,
+    /// and on a closed curve an edge running past the knots' end — the
+    /// wrap-around block of a traced section loop — projects onto the
+    /// other side of its vertices.
+    fn edge_curve(&mut self, id: CurveId, range: Option<Interval>) -> Result<usize, StepError> {
+        let curve = self.model.curve(id)?;
+        let piece = match (curve, range) {
+            (Curve::Nurbs(n), Some(range)) if n.period().is_some() => {
+                // A range longer than a period is the checker's E1; the
+                // body the writer is given passes it.
+                n.segment(range).ok()
+            }
+            _ => None,
+        };
+        let Some(piece) = piece else {
+            return self.curve(id);
+        };
+        let owner: AnyId = id.into();
+        let number = self.reserve();
+        let text = self.nurbs_curve(&piece, owner)?;
+        self.set(number, text);
         Ok(number)
     }
 

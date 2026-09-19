@@ -1,0 +1,126 @@
+{
+  "occt": "8.0.1.0.0",
+  "recipe_sha256": "f98719d8a2c05f8b23c05101a9b43b492e362bc86c82a0da28cff1d0c8e0ef75",
+  "results": {
+    "default": {
+      "area": 51.8292000587793,
+      "centroid": [
+        0.2161487536137649,
+        -2.003613577438094e-12,
+        2.244293721940543e-11
+      ],
+      "counts": {
+        "edges": 9,
+        "faces": 5,
+        "loops": 5,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 6
+      },
+      "degenerate": false,
+      "euler_characteristic": 2,
+      "genus": 0,
+      "inertia": [
+        [
+          61.681129440294946,
+          4.337308249162677e-11,
+          -3.856319018991662e-10
+        ],
+        [
+          4.337308249162677e-11,
+          70.32924215424424,
+          4.167861888853293e-11
+        ],
+        [
+          -3.856319018991662e-10,
+          4.167861888853293e-11,
+          18.499550809862786
+        ]
+      ],
+      "probes": [
+        {
+          "class": "in",
+          "label": "inside",
+          "point": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "class": "in",
+          "label": "in_branch",
+          "point": [
+            1.75,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "class": "in",
+          "label": "behind",
+          "point": [
+            -0.5,
+            0.0,
+            0.5
+          ]
+        },
+        {
+          "class": "out",
+          "label": "outside",
+          "point": [
+            -2.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "beside_the_branch",
+          "point": [
+            2.5,
+            0.0,
+            0.8999999999999999
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_main_wall",
+          "point": [
+            -1.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_branch_wall",
+          "point": [
+            1.75,
+            0.0,
+            0.6
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_branch_cap",
+          "point": [
+            3.0,
+            0.0,
+            0.3
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_section",
+          "point": [
+            1.0,
+            0.0,
+            0.6
+          ]
+        }
+      ],
+      "volume": 21.16499467442758
+    }
+  }
+}

@@ -670,6 +670,96 @@ fn a_sliver_within_the_tolerance_of_the_other_wall_is_decided_at_its_section_edg
     }
 }
 
+/// The traced sections of step 8's fixtures (ADR-0018): each pair of
+/// walls meets in closed loops, periodic fitted curves paved where the
+/// other operand's seam pierces them, and every section edge on a loop —
+/// in the pave model and in the result the boolean builds — is at its
+/// faces' tolerance: the fit's quarter of it leaves the pcurves room
+/// under the other half, so nothing grows.
+#[test]
+fn a_traced_section_edge_is_at_its_faces_tolerance() {
+    for (name, op, loops) in [
+        ("boolean/tee-unequal-fuse", fuse as Boolean, 1),
+        ("boolean/tee-unequal-cut", cut as Boolean, 1),
+        ("boolean/tee-unequal-common", common as Boolean, 1),
+        ("boolean/skew-hole-cut", cut as Boolean, 1),
+        ("boolean/skew-bore-cut", cut as Boolean, 2),
+    ] {
+        let (mut m, a, b) = inputs(name);
+        let i = interferences(&m, a, b).unwrap();
+        assert_sections_consistent(&m, &i).unwrap();
+        let traced: Vec<_> = i
+            .curves
+            .iter()
+            .filter(|c| !c.edges.is_empty())
+            .filter(|c| matches!(&c.curve, Curve::Nurbs(n) if n.period().is_some()))
+            .collect();
+        assert_eq!(traced.len(), loops, "{name}\n{i}");
+        for s in &i.sections {
+            let pair = &i.pairs[i.curves[s.curve].pair];
+            let faces = [pair.a, pair.b].map(|f| m.face(f).unwrap().tolerance());
+            assert_eq!(s.tolerance, faces[0].max(faces[1]), "{name}\n{i}");
+        }
+        let default = m.precision().default_tolerance;
+        let (body, _) = op(&mut m, a, b).unwrap_or_else(|e| panic!("{name}: {e}"));
+        for e in m.edges(body).unwrap() {
+            let edge = m.edge(e.id).unwrap();
+            assert_eq!(edge.tolerance(), default, "{name}: {} grew", e.id);
+        }
+    }
+}
+
+/// Two cylinders whose axes pass `R − r` apart, a drill touching the
+/// main wall from inside at `(0, R, 0)`: a singular point of the traced
+/// section (ADR-0018), each of the two branches leaving it round one exit
+/// of the drill and coming back. The point is one section vertex, made
+/// from the pair's `Meets` point as its section crossings, and it paves
+/// both ends of both branches, so the blocks between it and the seams'
+/// hits cover each branch whole.
+#[test]
+fn a_singular_point_is_the_vertex_that_ends_its_branches() {
+    let mut m = Model::default();
+    let along = |origin: Point3, direction: Vec3| Axis::new(origin, direction).unwrap();
+    let (main, _) = primitive_cylinder(
+        &mut m,
+        along(Point3::new(0.0, 0.0, -3.0), Vec3::z()),
+        1.0,
+        6.0,
+    )
+    .unwrap();
+    let (drill, _) = primitive_cylinder(
+        &mut m,
+        along(Point3::new(-3.0, 0.4, 0.0), Vec3::x()),
+        0.6,
+        6.0,
+    )
+    .unwrap();
+    let i = interferences(&m, main, drill).unwrap();
+    let singular = Point3::new(0.0, 1.0, 0.0);
+    let v: Vec<usize> = (0..i.vertices.len())
+        .filter(|&k| (i.vertices[k].point - singular).norm() < 1e-12)
+        .collect();
+    assert_eq!(v.len(), 1, "{i}");
+    let v = v[0];
+    assert_eq!(i.vertices[v].source, VertexSource::SectionCrossing, "{i}");
+    assert!(i.vertices[v].hits.is_empty(), "{i}");
+    let branches: Vec<_> = i
+        .curves
+        .iter()
+        .filter(|c| matches!(&c.curve, Curve::Nurbs(n) if n.period().is_none()))
+        .collect();
+    assert_eq!(branches.len(), 2, "{i}");
+    for c in branches {
+        let domain = c.curve.domain();
+        let (first, last) = (c.paves.first().unwrap(), c.paves.last().unwrap());
+        assert_eq!((first.t, first.vertex), (domain.lo(), v), "{i}");
+        assert_eq!((last.t, last.vertex), (domain.hi(), v), "{i}");
+        let covered: f64 = c.edges.iter().map(|&s| i.sections[s].range.length()).sum();
+        assert!((covered - domain.length()).abs() < 1e-12, "{i}");
+    }
+    assert_sections_consistent(&m, &i).unwrap();
+}
+
 /// The fixture's operands cut, the model with them.
 fn cut_of(name: &str) -> (Model, Body, Body, Body, Provenance) {
     let (mut m, a, b) = inputs(name);

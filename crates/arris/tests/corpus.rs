@@ -315,12 +315,57 @@ fn regression_seam_a_tolerance_from_crossing_fuse() {
     run("regression/seam-a-tolerance-from-crossing-fuse");
 }
 
+/// A drill touching the main wall from inside, at a singular point of the
+/// traced section: the pave model makes the point one vertex that ends
+/// both branches, and the main wall is left two pieces meeting only
+/// there.
+#[test]
+#[ignore = "OpError::Internal, BuildError::NotClosed: the main wall's two pieces meet only at the singular vertex, pinched between the drill's exits, and the builder cannot close the shell there (docs/BACKLOG.md, features a tolerance apart)"]
+fn regression_singular_bore_cut() {
+    run("regression/singular-bore-cut");
+}
+
 /// A tee of equal radii: the branch's rim circle touches the main wall
 /// exactly at the two crossing vertices, and each touch cuts the rim
 /// there.
 #[test]
 fn boolean_tee_fuse() {
     run("boolean/tee-fuse");
+}
+
+/// A tee of unequal radii: the branch's wall meets the main wall in one
+/// traced loop, one periodic fitted curve paved once where the branch's
+/// seam pierces the main wall (ADR-0018).
+#[test]
+fn boolean_tee_unequal_fuse() {
+    run("boolean/tee-unequal-fuse");
+}
+
+/// The same operands' cut: a pocket opening through the main wall along
+/// the loop.
+#[test]
+fn boolean_tee_unequal_cut() {
+    run("boolean/tee-unequal-cut");
+}
+
+/// The same operands' common: the branch inside the main.
+#[test]
+fn boolean_tee_unequal_common() {
+    run("boolean/tee-unequal-common");
+}
+
+/// A drill on a skew axis breaking out of the main cylinder's side: one
+/// traced loop, a notch.
+#[test]
+fn boolean_skew_hole_cut() {
+    run("boolean/skew-hole-cut");
+}
+
+/// A drill on a skew axis inside the main cylinder: two traced loops, a
+/// bore, genus 1.
+#[test]
+fn boolean_skew_bore_cut() {
+    run("boolean/skew-bore-cut");
 }
 
 /// The consumer's cylinder − cylinder transversal probe in its own units:

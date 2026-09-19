@@ -8,7 +8,6 @@
 //! and each edge piece placed on the other face as an image or matched
 //! to a piece of its boundary as a common block.
 
-use core::f64::consts::PI;
 use std::collections::{BTreeMap, BTreeSet};
 
 use arris_check::arris_topo::arris_geom::region2::Side;
@@ -18,7 +17,7 @@ use arris_check::arris_topo::arris_geom::{
     intersect_curves, intersect_surfaces, pcurve_on,
 };
 use arris_check::arris_topo::arris_math::{
-    Aabb, Interval, Point2, Point3, Precision, Tolerance, Vec2, period_end, wrap_angle,
+    Aabb, Interval, Point2, Point3, Precision, Tolerance, Vec2, period_end,
 };
 use arris_check::arris_topo::{
     Body, EdgeId, FaceId, Model, Shape, Vertex as VertexHandle, VertexId,
@@ -245,6 +244,22 @@ fn geometry(e: GeomError, a: Shape, b: Shape) -> OpError {
     }
 }
 
+/// `t` on a periodic curve wrapped into `[lo, lo + period)` of its
+/// domain — `[0, 2π)` for a conic, the knots' for a periodic NURBS
+/// section loop — and unchanged on any other curve.
+fn wrap_on(c: &Curve, t: f64) -> f64 {
+    let Some(period) = c.period() else {
+        return t;
+    };
+    let lo = c.domain().lo();
+    let w = if t >= lo && t - lo < period {
+        t
+    } else {
+        lo + (t - lo).rem_euclid(period)
+    };
+    if w - lo >= period { lo } else { w }
+}
+
 /// `n` parameters over `range`, both ends included.
 fn samples(range: Interval, n: usize) -> Vec<f64> {
     let n = n.max(2);
@@ -303,25 +318,8 @@ impl<'m> Build<'m> {
                 });
             }
             let tol = tolerance_of(&self.precision, fa.tolerance, fb.tolerance);
-            let intersection = intersect_surfaces(fa.surface, fb.surface, &self.within, tol)
-                .map_err(|e| geometry(e, fa.shape(), fb.shape()))?;
-            // A traced section — two cylinders on crossing axes of unequal
-            // radii or on skew ones — is a fitted curve or a singular
-            // point, neither of which the pave model reads before plan
-            // step 8 (`quadric-intersection-curves`): refused as the pair
-            // was while the intersector had no arm for it.
-            let traced = !intersection.points().is_empty()
-                || intersection
-                    .curves()
-                    .iter()
-                    .any(|c| matches!(c.curve, Curve::Nurbs(_)));
-            if traced {
-                return Err(OpError::Unsupported {
-                    a: (GeomKind::Surface(fa.surface.kind()), fa.shape()),
-                    b: (GeomKind::Surface(fb.surface.kind()), fb.shape()),
-                });
-            }
-            Ok(intersection)
+            intersect_surfaces(fa.surface, fb.surface, &self.within, tol)
+                .map_err(|e| geometry(e, fa.shape(), fb.shape()))
         };
         #[cfg(feature = "parallel")]
         {
@@ -617,6 +615,15 @@ impl<'m> Build<'m> {
             let tol = tolerance_of(&self.precision, fa.tolerance, fb.tolerance);
             let curves: Vec<(usize, &Curve)> =
                 meet_curves(&pair.intersection, MeetKind::Crossing).collect();
+            if curves.iter().any(|(_, c)| matches!(c, Curve::Nurbs(_))) {
+                // A traced section's branches meet only at its singular
+                // points, where they end exactly (ADR-0018): the crossings
+                // are those, not two fitted curves intersected.
+                for crossing in self.singular_crossings(pi, &curves, tol.linear)? {
+                    found.push((crossing, tol.linear));
+                }
+                continue;
+            }
             for (k, &(ci, ca)) in curves.iter().enumerate() {
                 for &(cj, cb) in &curves[k + 1..] {
                     let hits = match intersect_curves(ca, cb, tol)
@@ -637,18 +644,11 @@ impl<'m> Build<'m> {
                         {
                             continue;
                         }
-                        let wrap = |c: &Curve, t: f64| {
-                            if c.period().is_some() {
-                                wrap_angle(t)
-                            } else {
-                                t
-                            }
-                        };
                         found.push((
                             SectionCrossing {
                                 pair: pi,
                                 curves: [ci, cj],
-                                t: [wrap(ca, h.ta), wrap(cb, h.tb)],
+                                t: [wrap_on(ca, h.ta), wrap_on(cb, h.tb)],
                                 point: h.point,
                                 tangent: h.tangent,
                                 vertex: None,
@@ -670,6 +670,65 @@ impl<'m> Build<'m> {
             self.section_crossing_tolerance.push(tolerance);
         }
         Ok(())
+    }
+
+    /// The crossings a traced pair's singular points make: each `Crossing`
+    /// point of the pair's `Meets` on both faces, with the branches that
+    /// end there — within `tolerance` of it, which they end at exactly —
+    /// the first against each other, or against itself when one branch
+    /// both starts and ends there. A `Touch` point, where the surfaces
+    /// meet at that point alone, splits nothing and makes no vertex, as a
+    /// touch off every vertex makes none.
+    fn singular_crossings(
+        &self,
+        pi: usize,
+        curves: &[(usize, &Curve)],
+        tolerance: f64,
+    ) -> Result<Vec<SectionCrossing>, OpError> {
+        let (ia, ib) = self.pair_faces[pi];
+        let (fa, fb) = (&self.faces[0][ia], &self.faces[1][ib]);
+        let mut out = Vec::new();
+        for p in self.pairs[pi].intersection.points() {
+            if p.kind != MeetKind::Crossing {
+                continue;
+            }
+            if self.on_face(fa, p.point)?.is_none() || self.on_face(fb, p.point)?.is_none() {
+                continue;
+            }
+            let mut ends: Vec<(usize, f64)> = Vec::new();
+            for &(ci, c) in curves {
+                if c.period().is_some() {
+                    continue;
+                }
+                let domain = c.domain();
+                for t in [domain.lo(), domain.hi()] {
+                    if (c.point(t) - p.point).norm() <= tolerance {
+                        ends.push((ci, t));
+                    }
+                }
+            }
+            let Some((&first, rest)) = ends.split_first() else {
+                return Err(OpError::Internal(Fault::Invariant {
+                    what: "a singular point of a traced section that no branch ends at",
+                }));
+            };
+            for &other in rest {
+                let [(ci, ti), (cj, tj)] = if other.0 < first.0 {
+                    [other, first]
+                } else {
+                    [first, other]
+                };
+                out.push(SectionCrossing {
+                    pair: pi,
+                    curves: [ci, cj],
+                    t: [ti, tj],
+                    point: p.point,
+                    tangent: false,
+                    vertex: None,
+                });
+            }
+        }
+        Ok(out)
     }
 
     /// The first vertex (in creation order) that shares an operand vertex
@@ -987,16 +1046,17 @@ impl<'m> Build<'m> {
         for pi in 0..self.pairs.len() {
             let intersection = &self.pairs[pi].intersection;
             // Only a pair with a cone, a sphere, a torus or an elliptic
-            // cylinder meets in both kinds at once, and the quadric guard
-            // refuses those before the intersector is asked; a traced
-            // section's points are refused with it (`intersect_pairs`).
+            // cylinder meets in curves of both kinds at once, and the
+            // quadric guard refuses those before the intersector is asked.
+            // Points past it are a traced section's singular points, which
+            // `section_crossings` read.
             let mixed = intersection
                 .curves()
                 .windows(2)
                 .any(|w| w[0].kind != w[1].kind);
-            if !intersection.points().is_empty() || mixed {
+            if mixed {
                 return Err(OpError::Internal(Fault::Invariant {
-                    what: "a face pair meeting in points or in both kinds past the quadric guard",
+                    what: "a face pair meeting in curves of both kinds past the quadric guard",
                 }));
             }
             let curves: Vec<(usize, Curve)> = meet_curves(intersection, MeetKind::Crossing)
@@ -1080,30 +1140,54 @@ impl<'m> Build<'m> {
         let (ia, ib) = self.pair_faces[pi];
         let (fa, fb) = (&self.faces[0][ia], &self.faces[1][ib]);
         let periodic = curve.period().is_some();
+        // An open curve that ends on a section vertex is paved at that end
+        // — at both, for a traced branch that leaves a singular point and
+        // comes back to it, which a projection finds once (ADR-0018).
+        let mut ends: Vec<Pave> = Vec::new();
+        if !periodic {
+            let domain = curve.domain();
+            for t in [domain.lo(), domain.hi()] {
+                if !t.is_finite() {
+                    continue;
+                }
+                let at = curve.point(t);
+                for (k, v) in self.vertices.iter().enumerate() {
+                    if (v.point(m) - at).norm() <= v.tolerance(m) {
+                        ends.push(Pave { t, vertex: k });
+                    }
+                }
+            }
+        }
         let mut paves: Vec<Pave> = Vec::new();
         for (k, v) in self.vertices.iter().enumerate() {
             let point = v.point(m);
             let Ok(projection) = curve.project(point) else {
                 continue;
             };
+            let at_an_end = ends.iter().any(|e| {
+                e.vertex == k && (curve.point(e.t) - projection.point).norm() <= v.tolerance(m)
+            });
+            if at_an_end {
+                continue;
+            }
             if projection.distance <= v.tolerance(m) {
-                let t = if periodic {
-                    wrap_angle(projection.t)
-                } else {
-                    projection.t
-                };
-                paves.push(Pave { t, vertex: k });
+                paves.push(Pave {
+                    t: wrap_on(curve, projection.t),
+                    vertex: k,
+                });
             }
         }
+        paves.extend(ends);
         paves.sort_by(|x, y| x.t.total_cmp(&y.t).then(x.vertex.cmp(&y.vertex)));
         let curve_index = self.curves.len();
         if paves.is_empty() && periodic {
             // Nothing cuts it: it is interior to both faces or clear of
             // one, and only in the first case does it become an edge, from
-            // its own point at parameter zero.
-            if Self::inside_both(fa, fb, curve.point(PI)).is_some() {
+            // its own point at the start of its domain.
+            let domain = curve.domain();
+            if Self::inside_both(fa, fb, curve.point(domain.midpoint())).is_some() {
                 self.vertices.push(VertexBuild {
-                    points: vec![curve.point(0.0)],
+                    points: vec![curve.point(domain.lo())],
                     base: fa.tolerance.max(fb.tolerance),
                     floor: 0.0,
                     hits: Vec::new(),
@@ -1116,7 +1200,7 @@ impl<'m> Build<'m> {
                     },
                 });
                 paves.push(Pave {
-                    t: 0.0,
+                    t: domain.lo(),
                     vertex: self.vertices.len() - 1,
                 });
             }

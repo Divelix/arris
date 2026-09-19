@@ -1,0 +1,128 @@
+{
+  "description": "a main cylinder R 1, length L on z, less a drill r 0.4 on x whose axis passes d = 0.3 from the main's, skew to it: d + r < R, so the drill runs through the main wall twice and the two walls meet in two closed loops, each traced and fitted as one periodic NURBS (ADR-0018) — a bore through the cylinder, genus 1. The wall probes are off the ruling at the bore's bottom, which is the middle of a loop piece: Open CASCADE's solid classifier casts its ray along the wall there and reads a point on it as in (plans/quadric-intersection-curves step 8)",
+  "params": {
+    "R": 1,
+    "r": 0.4,
+    "d": 0.3,
+    "L": 6,
+    "turn": 30
+  },
+  "steps": [
+    {
+      "name": "main",
+      "op": "cylinder",
+      "base": [
+        0,
+        0,
+        "-L / 2"
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "radius": "R",
+      "height": "L"
+    },
+    {
+      "name": "d0",
+      "op": "cylinder",
+      "base": [
+        "-L / 2",
+        "d",
+        0
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "radius": "r",
+      "height": "L"
+    },
+    {
+      "name": "drill",
+      "op": "transform",
+      "of": "d0",
+      "rotate": {
+        "axis": [
+          1,
+          0,
+          0
+        ],
+        "origin": [
+          0,
+          "d",
+          0
+        ],
+        "angle_deg": "turn"
+      }
+    },
+    {
+      "name": "result",
+      "op": "cut",
+      "target": "main",
+      "tool": "drill"
+    }
+  ],
+  "result": "result",
+  "probes": [
+    {
+      "label": "inside",
+      "point": [
+        0,
+        "-R / 2 - 0.1",
+        0
+      ],
+      "expect": "in"
+    },
+    {
+      "label": "in_the_bore",
+      "point": [
+        0,
+        "d",
+        0
+      ],
+      "expect": "out"
+    },
+    {
+      "label": "outside",
+      "point": [
+        "2 * R",
+        0,
+        0
+      ],
+      "expect": "out"
+    },
+    {
+      "label": "on_main_wall",
+      "point": [
+        0,
+        "-R",
+        0
+      ],
+      "expect": "on"
+    },
+    {
+      "label": "on_bore_wall",
+      "point": [
+        0,
+        "d",
+        "r"
+      ],
+      "expect": "on"
+    },
+    {
+      "label": "on_bore_wall_below",
+      "point": [
+        0.5,
+        "d - r * cos(radians(40))",
+        "r * sin(radians(40))"
+      ],
+      "expect": "on"
+    }
+  ],
+  "analytic": {
+    "genus": 1
+  }
+}

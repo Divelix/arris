@@ -349,6 +349,71 @@ fn projection_onto_the_nurbs_circle_agrees_with_the_analytic_circle() {
     );
 }
 
+/// A piece of a curve is the curve over its range, clamped there: a
+/// random clamped curve over a random range inside its domain, and a
+/// periodic curve over a range of up to a period starting anywhere —
+/// past its knots' end too — in the curve's own parameter throughout.
+#[test]
+fn a_segment_is_the_curve_over_its_range() {
+    check(
+        (
+            nurbs_curve(),
+            finite_f64(0.0..=1.0),
+            finite_f64(0.0..=1.0),
+            frame(),
+            radius(0.5..=3.0),
+            finite_f64(-10.0..=10.0),
+            finite_f64(0.05..=1.0),
+        ),
+        |(c, x, y, f, r, start, share)| {
+            let domain = c.domain();
+            let (lo, hi) = (domain.lerp(x.min(y)), domain.lerp(x.max(y)));
+            prop_assume!(hi - lo > 1e-6 * domain.length());
+            let range = Interval::new(lo, hi).unwrap();
+            let piece = c.segment(range).unwrap();
+            prop_assert_eq!((piece.domain().lo(), piece.domain().hi()), (lo, hi));
+            prop_assert!(piece.period().is_none());
+            for i in 0..=20 {
+                let t = range.lerp(f64::from(i) / 20.0);
+                let off = (piece.eval(t).point - c.eval(t).point).norm();
+                prop_assert!(off <= EXACT, "{off} at t = {t}");
+            }
+            // A periodic curve: a circle fitted as a periodic quintic, over
+            // a range of `share` of a period from anywhere.
+            let circle = Curve::Circle {
+                frame: f,
+                radius: r,
+            };
+            let loop_ = arris_geom::fit_curve_periodic(
+                |t| circle.point(t),
+                Interval::new(0.0, core::f64::consts::TAU).unwrap(),
+                5,
+                |t, q| (q - circle.point(t)).norm(),
+                1e-9,
+            )
+            .unwrap();
+            let period = loop_.period().unwrap();
+            let range = Interval::new(start, start + share * period).unwrap();
+            let piece = loop_.segment(range).unwrap();
+            prop_assert_eq!(
+                (piece.domain().lo(), piece.domain().hi()),
+                (range.lo(), range.hi())
+            );
+            for i in 0..=20 {
+                let t = range.lerp(f64::from(i) / 20.0);
+                let off = (piece.eval(t).point - loop_.eval(t).point).norm();
+                prop_assert!(off <= EXACT, "{off} at t = {t}");
+            }
+            prop_assert!(
+                loop_
+                    .segment(Interval::new(0.0, 1.5 * period).unwrap())
+                    .is_err()
+            );
+            Ok(())
+        },
+    );
+}
+
 /// A polyline's corner is a kink of the distance's derivative: a point
 /// on a leg, beside the corner and nearest a sample on the other side
 /// of it, projects onto itself — the bracket that ends on the knot is

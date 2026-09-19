@@ -125,6 +125,9 @@ those pairs instead of listing them unchecked; and `docs/DATA-MODEL.md`
   one region per boolean. `Interferences`' public shape follows `Meets`
   where it names the old variants (`SectionCurve::index`'s doc, the
   `Display`).
+- **`NurbsCurve::segment`** (step 8, new public API in `arris-geom`):
+  the curve over a range, clamped, in the same parameter — for the STEP
+  writer, which writes an edge on a periodic NURBS on its own piece.
 - **DATA-MODEL:** §Curves (the table of pairs, the traced curves'
   deterministic parametrisation and orientation, the region, the `⚠
   OPEN` removed), §NURBS (`fit_curve`, periodic fits), §Tolerances (a
@@ -210,7 +213,7 @@ bound has to be established here.
   the existing conic arms go, and `curves_coincide` with a `Nurbs`
   operand. `Nurbs`–`Nurbs` stays an explicit `Unsupported` arm. Tests
   and a geometry fixture as step 6's.
-- [ ] Step 8 **[2]** — The pave model over traced sections: one region
+- [x] Step 8 **[2]** — The pave model over traced sections: one region
   per boolean, `Meets` read by kind, a singular point becoming the
   section vertex that ends its branches, closed periodic section curves
   through the existing wrap. Each section edge's tolerance asserted equal
@@ -291,10 +294,10 @@ bound has to be established here.
   instead of listing them unchecked. The pave model refuses a pair past
   the quadric guard that meets in points or in both kinds as an
   invariant — none can reach it — until step 8.
-- `⚠ OPEN:` Open CASCADE's counts on a closed section loop. One vertex
-  per loop is expected on both sides; if its seam placement splits a loop
-  differently, the fixture says so in `analytic.counts_differ` with the
-  reason. Agent, step 8.
+- Closed by step 8: **Open CASCADE's counts on a closed section loop
+  are Arris's.** Both put one vertex on a loop where the other operand's
+  seam pierces it and split a face at a seam the same way, so no fixture
+  of step 8 needs `counts_differ`.
 - Closed by step 4: **the degree of the 3D fit is 5**
   (`SECTION_FIT_DEGREE`). On metre-scale cylinder pairs (radii 1 to 2,
   crossing, skew, tilted) at the default tolerance a loop takes 200 to
@@ -417,3 +420,48 @@ bound has to be established here.
     fixture is `geom/c3-nurbs-crossings`, 15 pairs, every hit matched in
     its point and both parameters to 1e-9 relative, the touch pinned by
     name in `oracle.rs`.
+- Found by step 8, and done there:
+  - **A traced loop's period is its own length**, not a turn: the pave
+    model's periodic handling (paves wrapped into the curve's domain,
+    the seed vertex of an unpaved loop at the domain's start, its middle
+    tested for "inside both") reads the curve's domain instead of
+    `[0, 2π)`.
+  - **An open section curve is paved at each end a vertex lies on.** A
+    singular point's branches leave it and come back; projecting the
+    vertex found one end, and the block to the other was lost.
+  - **The checker's E8 flagged a wrap-around block** whose range runs a
+    few units in the last place past the loop's knots: the tiny span
+    there, sampled like any other, put non-adjacent segments within the
+    tolerance of each other. E8 now needs more than the tolerance of
+    polyline between two segments before their nearness is a crossing
+    (`docs/DATA-MODEL.md` §Invariants).
+  - **STEP lost the wrap-around block**: an `EDGE_CURVE` has no range,
+    and on a periodic curve written as a plain B-spline a reader's
+    projection of the vertices picks the other side, collapsing the
+    block onto its twin (`skew-hole-cut` read back at 18.87 against
+    18.34). An edge on a periodic NURBS is now written on its own piece,
+    `NurbsCurve::segment`.
+  - **Open CASCADE's measurement, not its body, was 1e-6 off.** Its
+    `GProp` fixed-order integration over the many-span pcurves a walked
+    section trims its faces with is off by 6e-7 to 1.7e-6 in volume and
+    area; the adaptive overloads bring its own bodies to within 1e-10 of
+    a quadrature of the exact section, where Arris's already are. The
+    oracle measures a shape with a B-spline edge adaptively (`measure.py`
+    `SPLINE_EPS`); the one committed fixture with such an edge,
+    `elliptic-operand-cut`, moved 1000× nearer its closed form (8.1e-8 to
+    6.5e-11) and was regenerated.
+  - **`tee-unequal-cut` and `-common` hold volume, area and inertia at
+    1e-7 relative**, the model's tolerance: both sides' loop edges lie
+    within the tolerance of the exact section, not on it, and on bodies
+    this small the trim that moves reaches past 1e-9 — both stand within
+    5e-9 of the quadrature, on opposite sides. The fuse and the skew cuts
+    hold the default 1e-9.
+  - **Open CASCADE's solid classifier misreads a point on the ruling
+    through the middle of a loop piece** — it casts its ray along the
+    wall there — so `skew-bore-cut`'s wall probes stand off that ruling.
+  - **A boolean through a singular point stops in the builder**: the
+    pave model makes the point one vertex ending both branches, but a
+    drill touching the main wall from inside leaves the wall two pieces
+    meeting only there, pinched, and the builder refuses to close the
+    shell (`OpError::Internal`). `regression/singular-bore-cut`, ignored,
+    with a backlog line: features a tolerance apart are C3's next plan's.

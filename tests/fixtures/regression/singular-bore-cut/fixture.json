@@ -1,0 +1,128 @@
+{
+  "description": "a main cylinder R 1, length L on z, less a drill r 0.6 on x whose axis passes d = R − r from the main's: the drill touches the main wall from inside at (0, R, 0), where the two walls meet in a singular point of their section (ADR-0018) — two traced branches, each leaving the point round one exit of the drill and coming back to it. The pave model makes the point one section vertex paving both ends of both branches; the main wall keeps two pieces that meet only at that vertex, pinched there between the drill's two exits, and the builder refuses the assembly (OpError::Internal, BuildError::NotClosed). Shrunk from plans/quadric-intersection-curves step 8, which leaves booleans through features a tolerance apart to C3's next plan",
+  "params": {
+    "R": 1,
+    "r": 0.6,
+    "d": 0.4,
+    "L": 6,
+    "turn": 30
+  },
+  "steps": [
+    {
+      "name": "main",
+      "op": "cylinder",
+      "base": [
+        0,
+        0,
+        "-L / 2"
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "radius": "R",
+      "height": "L"
+    },
+    {
+      "name": "d0",
+      "op": "cylinder",
+      "base": [
+        "-L / 2",
+        "d",
+        0
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "radius": "r",
+      "height": "L"
+    },
+    {
+      "name": "drill",
+      "op": "transform",
+      "of": "d0",
+      "rotate": {
+        "axis": [
+          1,
+          0,
+          0
+        ],
+        "origin": [
+          0,
+          "d",
+          0
+        ],
+        "angle_deg": "turn"
+      }
+    },
+    {
+      "name": "result",
+      "op": "cut",
+      "target": "main",
+      "tool": "drill"
+    }
+  ],
+  "result": "result",
+  "probes": [
+    {
+      "label": "inside",
+      "point": [
+        0,
+        "-R / 2 - 0.1",
+        0
+      ],
+      "expect": "in"
+    },
+    {
+      "label": "in_the_bore",
+      "point": [
+        0,
+        "d",
+        0
+      ],
+      "expect": "out"
+    },
+    {
+      "label": "outside",
+      "point": [
+        "2 * R",
+        0,
+        0
+      ],
+      "expect": "out"
+    },
+    {
+      "label": "on_main_wall",
+      "point": [
+        0,
+        "-R",
+        0
+      ],
+      "expect": "on"
+    },
+    {
+      "label": "on_bore_wall",
+      "point": [
+        0.5,
+        "d + r * sin(radians(40))",
+        "r * cos(radians(40))"
+      ],
+      "expect": "on"
+    },
+    {
+      "label": "at_the_singular_point",
+      "point": [
+        0,
+        "R",
+        0
+      ],
+      "expect": "on"
+    }
+  ],
+  "analytic": {
+    "genus": 1
+  }
+}

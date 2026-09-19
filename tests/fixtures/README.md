@@ -144,7 +144,12 @@ of the step that made the fixture pass, and a later change to it is a
   makes — since Open CASCADE's fixed-order integration is 2e-5 off there
   and its adaptive one worse; a shape of elementary faces alone keeps
   the fixed order over the whole shape and its committed numbers bit for
-  bit.
+  bit. A shape with a B-spline edge — the section two cylinders on
+  crossing or skew axes meet in, walked by Open CASCADE and fitted by
+  Arris (ADR-0018) — is measured by the adaptive integration to 1e-12
+  instead, volume and area both: over the many-span pcurves such an edge
+  trims its faces with, the fixed order is 1e-6 off where the shape is
+  right to 1e-10 against a quadrature of the exact section.
 - **A `profile` plane's `x` and `y`** must be orthogonal (each normalised
   first): refused on both sides, by the same named tolerance
   (`arris_math::Precision::DEFAULT.angular_tolerance`, Open CASCADE's

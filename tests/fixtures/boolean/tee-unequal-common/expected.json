@@ -1,0 +1,108 @@
+{
+  "occt": "8.0.1.0.0",
+  "recipe_sha256": "e466fe907444e3d24ab9ac0c3ea39b3c3ff129fdaf1515a09a7f521be7278f50",
+  "results": {
+    "default": {
+      "area": 5.724777354985696,
+      "centroid": [
+        0.47758868111938424,
+        -1.2309352431754795e-11,
+        -4.954621067287546e-10
+      ],
+      "counts": {
+        "edges": 6,
+        "faces": 4,
+        "loops": 4,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 4
+      },
+      "degenerate": false,
+      "euler_characteristic": 2,
+      "genus": 0,
+      "inertia": [
+        [
+          0.19065291670445378,
+          2.23422749443011e-12,
+          2.499148914570082e-10
+        ],
+        [
+          2.23422749443011e-12,
+          0.1813393031880491,
+          -3.322814223635067e-11
+        ],
+        [
+          2.499148914570082e-10,
+          -3.322814223635067e-11,
+          0.1747518635560126
+        ]
+      ],
+      "probes": [
+        {
+          "class": "in",
+          "label": "inside",
+          "point": [
+            0.5,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "behind",
+          "point": [
+            -0.5,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "past_the_main",
+          "point": [
+            1.75,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_branch_wall",
+          "point": [
+            0.5,
+            0.0,
+            0.6
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_base_cap",
+          "point": [
+            0.0,
+            0.0,
+            0.3
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_main_wall",
+          "point": [
+            1.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_section",
+          "point": [
+            1.0,
+            0.0,
+            0.6
+          ]
+        }
+      ],
+      "volume": 1.077481312786549
+    }
+  }
+}

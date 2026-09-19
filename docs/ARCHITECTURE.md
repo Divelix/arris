@@ -253,14 +253,12 @@ new intersector arm widens no boolean silently; booleans with quadric
 operand faces are C3's, with their corpus. Every face pair is
 intersected in one region for the whole boolean — the overlap of the
 operands' boxes grown by its own diagonal — so pairs on the same two
-surfaces get the same traced curve; two cylinders whose section is
-traced, a fitted curve or a singular point, are refused as the same
-`OpError::Unsupported` until the pave model reads them (the plan
-`quadric-intersection-curves`, step 8). It holds every face pair
-whose boxes overlap with its `SurfaceIntersection` — a *crossing
+surfaces get the same traced curve (ADR-0018). It holds every face
+pair whose boxes overlap with its `SurfaceIntersection` — a *crossing
 pair* when its `Meets` curves all cross, a *touching pair* when they
 all touch, and a pair past the quadric guard is always one or the
-other, with no isolated point; every point where
+other; its only points are a traced section's singular points, where
+its branches end; every point where
 an edge of one operand pierces a face of the other, kept when the
 parameter is in the edge's range and the (u, v) is on the face
 (`region2::point_side` on the face's loops, a `Boundary` verdict
@@ -276,7 +274,10 @@ crossing on both faces being a section vertex by the same merge, since
 two curves of one pair meet where the surfaces are tangent to each
 other, the two ellipses of equal cylinders with crossing axes at `±R`
 along the axes' common perpendicular, and no edge of either operand is
-there to make a hit; a *touch* — a hit where the edge meets the surface
+there to make a hit — for a traced pair, whose fitted branches meet
+only at its singular points and end there exactly, the crossings are
+those points on both faces, with the branches that end at each, and no
+two fitted curves are intersected; a *touch* — a hit where the edge meets the surface
 without crossing it — makes no vertex of its own, but one that lands on
 a vertex made by the hits and crossings joins it, since the edge passes
 through that vertex (a seam ruling or a rim circle through the crossing
@@ -295,13 +296,19 @@ an angle, exact where the edge against the surface is a square root of
 rounding, so the intersector's verdict is left as it is and a designed
 tangency in any pose stays one touch;
 the paves each vertex puts on the edge that hit or touched it and on
-every section curve it projects onto within its tolerance; and the
+every section curve it projects onto within its tolerance — an open
+section curve at each of its ends a vertex lies on, both ends of a
+traced branch that leaves a singular point and comes back to it; and the
 section edges — the blocks between consecutive paves whose midpoint is
-inside both faces, a closed curve with no pave seeded at its parameter
-zero when it is interior to both — each with a pcurve on each face by
-`pcurve_on`, translated by whole periods into the copy of the domain the
-face's loops are written in, its tolerance the larger of the faces'
-raised to the pcurves' residual. A `Coincident` pair — two faces on one
+inside both faces, a closed curve with no pave seeded at the start of
+its domain when it is interior to both, and a periodic one's last block
+wrapping round to its first pave, one period on — a traced loop's
+period being its own length, not a turn — each with a pcurve on each
+face by `pcurve_on`, translated by whole periods into the copy of the
+domain the face's loops are written in, its tolerance the larger of the
+faces' raised to the pcurves' residual; a traced loop's stays at its
+faces' — the fit's quarter of the tolerance leaves the pcurves room
+under their half (data-model §Tolerances). A `Coincident` pair — two faces on one
 surface, the flush case — is decided by the same arrangement (ADR-0004):
 the two faces' edges are intersected with one another and every
 crossing is a section vertex; every edge of either face is paved by
@@ -1032,7 +1039,11 @@ B-Rep).
   trimming; the analytic surfaces and curves on `AXIS2_PLACEMENT_3D`
   (origin, `Z`, `X`, as `gp_Ax3` reads them) and the `B_SPLINE_*` entities,
   rational ones as complex entities, so the writer is exhaustive over the
-  geometry enums. Millimetres and radians, since the reader scales to
+  geometry enums. An edge on a periodic NURBS — a traced section loop —
+  is written on its own piece of the curve, clamped over the edge's range
+  (`NurbsCurve::segment`): an `EDGE_CURVE` carries no range and a reader
+  finds it from the vertices, which on a closed curve put the block that
+  wraps past the knots' end on the other side of them. Millimetres and radians, since the reader scales to
   millimetres by default and Arris carries no unit; the uncertainty is
   `default_tolerance`; the time stamp is empty and every real is the
   shortest round-trip decimal, so two writes are byte-identical. What
