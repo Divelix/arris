@@ -115,3 +115,61 @@ fn plane_cylinder_sections_render() {
     .unwrap();
     assert!(front.exists());
 }
+
+/// The branches `trace_quadrics` finds render over the smaller surface's
+/// wireframe: a pipe through a larger one on a skew axis (one loop),
+/// tangent to it from inside (a figure eight through the singular point,
+/// highlighted) and Viviani's curve — `target/inspect/trace-*.png`.
+#[test]
+fn traced_quadric_sections_render() {
+    use arris_debug::Highlight;
+    use arris_geom::trace_quadrics;
+    use arris_math::{Aabb, Precision};
+    use arris_mesh::Polyline;
+
+    let tol = Precision::DEFAULT.tolerance();
+    let within = Aabb {
+        min: [-5.0; 3],
+        max: [5.0; 3],
+    };
+    let main = Surface::Cylinder {
+        frame: Frame::world(),
+        radius: 2.0,
+    };
+    let pipe = |y: f64| Surface::Cylinder {
+        frame: Frame::from_z(Point3::new(0.0, y, 0.0), Vec3::x()).unwrap(),
+        radius: 1.0,
+    };
+    let ball = Surface::Sphere {
+        frame: Frame::world(),
+        radius: 2.0,
+    };
+    let through = Surface::Cylinder {
+        frame: Frame::from_z(Point3::new(1.0, 0.0, 0.0), Vec3::z()).unwrap(),
+        radius: 1.0,
+    };
+    let span = Interval::new(-3.0, 3.0).unwrap();
+    let cases = [
+        ("trace-skew-pipes", main.clone(), pipe(1.5), 1),
+        ("trace-tangent-pipes", main, pipe(1.0), 2),
+        ("trace-viviani", ball, through, 2),
+    ];
+    for (name, a, b, branches) in cases {
+        let trace = trace_quadrics(&a, &b, &within, tol).unwrap();
+        assert_eq!(trace.branches().len(), branches, "{name}");
+        let mut lines = wireframe_of(&b, [Interval::TURN, span], 12);
+        for branch in trace.branches() {
+            let domain = branch.domain();
+            let points = (0..=256)
+                .map(|i| branch.point(domain.lerp(i as f64 / 256.0)).coords.into())
+                .collect();
+            lines.push(Polyline::new(points));
+        }
+        let at = trace
+            .points()
+            .first()
+            .map(|p| Highlight::Point(p.point.coords.into()));
+        let path = render_png(&TriMesh::new(), &lines, View::Iso, at, name).unwrap();
+        assert!(path.exists());
+    }
+}

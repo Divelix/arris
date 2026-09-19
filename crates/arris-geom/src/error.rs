@@ -4,7 +4,7 @@ use core::fmt;
 
 use arris_math::{Point2, Point3, Tolerance};
 
-use crate::{Curve2Kind, CurveKind, FitError, SurfaceKind};
+use crate::{Curve2Kind, CurveKind, FitError, SectionFault, SurfaceKind};
 
 /// The kind of a geometric operand, for errors that name a pair.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -146,6 +146,19 @@ pub enum GeomError {
         t: f64,
         /// The distance there.
         distance: f64,
+    },
+    /// The section of two quadrics is one the tracer
+    /// ([`crate::trace_quadrics`]) does not resolve: a pose of measure
+    /// zero that a closed form owns, or one that needs a decision the
+    /// tracer will not guess.
+    #[error("the section of the {a} and the {b} is degenerate: {fault}")]
+    DegenerateSection {
+        /// The walked surface.
+        a: GeomKind,
+        /// The other surface.
+        b: GeomKind,
+        /// What is degenerate about it.
+        fault: SectionFault,
     },
     /// A NURBS fit ([`crate::fit_curve2`]) did not produce a curve.
     #[error("fit: {0}")]

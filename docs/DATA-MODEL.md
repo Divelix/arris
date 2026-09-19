@@ -412,6 +412,42 @@ pair with an ellipse too — the same conic or not — without the quartic
 of where two such conics meet; it is `Unsupported` only for a `Nurbs`
 operand.
 
+`trace_quadrics(a, b, within, tol) -> Result<SectionTrace, GeomError>`
+is the exact section of two quadrics, one of them ruled — a cylinder, an
+elliptic cylinder or a cone against any of those or a sphere, in any
+pose — before any fit, and nothing calls it yet. The ruled operand is
+walked as a family of lines by its own angle `s`; a ruling meets the
+other quadric where `a(s)w² + b(s)w + c(s) = 0`, and with a cone's
+rulings taken from its apex the discriminant is a trigonometric
+polynomial of degree two for every ruled kind. Where the number of hits
+changes is therefore the roots of one quartic in `tan(s/2)`: the branch
+structure is algebraic, nothing is sampled, and no loop can fall between
+two samples. A `SectionBranch` is one smooth callable over its own
+`domain()`, closed or open — two roots over the same interval are joined
+where the section turns back, through a parameter that removes the
+square root — lying on the walked surface to rounding and on the other
+within `tol.linear`. A critical point of the discriminant where the other
+surface is within `tol.linear` of touching the ruling, the discriminant's
+value read as a distance (`|D| / 4|a||∇q|`), is a **singular point**
+(`SectionPoint`): the value is taken out by a bump reaching twice the
+angle at which it would have vanished, so a near miss, a gap and a loop
+the tolerance cannot tell from a point are all the one point they are at
+that tolerance, branches through it end at it *exactly*
+(`BranchEnd::Singular`), and one that no branch reaches is `isolated`, a
+touch. That decision is a closed bound, so there is no pose the tracer
+guesses at; the poses it refuses are named
+(`GeomError::DegenerateSection` with a `SectionFault`): surfaces tangent
+along a curve and a ruling lying on the other surface, both a closed
+form's, and three turning points within one tolerance, a cusp. Because a
+section may run to infinity — two cones, a cylinder along a cone's
+ruling — every branch is clipped to the extent of `within` along the
+walked rulings (`BranchEnd::Clipped`), again at the roots of a quartic;
+everything inside `within` is returned and a loop inside it stays
+closed. Which operand is walked is a rule on the two surfaces — parallel
+rulings before a cone's, the smaller radius or narrower cone first, then
+the frames coordinate by coordinate — so swapping the arguments changes
+nothing, bit for bit.
+
 `⚠ OPEN:` the intersection curve of two cylinders in a quartic pose (and of
 the other quadric pairs whose curves are not conics) has an exact parametrisation that is not
 a `Curve` variant. Either it becomes one (`Curve::QuadricSection`, exact,

@@ -23,11 +23,12 @@ part of the decision:
 - **A fit needs a bounded curve, and a quadric section need not be one.**
   A plane cuts a cone in a hyperbola, and two cones on different axes meet
   in unbounded branches in an open set of poses. `intersect_surfaces`
-  therefore takes a region (`within: &Aabb`): a bounded branch is returned
-  whole whatever the region, an unbounded one is clipped to it. A boolean
-  passes one region for the whole operation (the overlap of the operands'
-  boxes), so every face pair on the same two surfaces gets the same curve
-  bit for bit.
+  therefore takes a region (`within: &Aabb`): every branch is clipped to
+  the region's extent along the walked rulings, and a loop inside it stays
+  closed. A boolean passes one region for the whole operation (the overlap
+  of the operands' boxes, grown generously — it only has to bound what
+  runs to infinity), so every face pair on the same two surfaces gets the
+  same curve bit for bit.
 - **A closed branch is a periodic B-spline.** The pave model cuts a closed
   section curve at its paves only and wraps the last block round; a
   clamped closed fit would put a joint vertex where the oracle has none.
@@ -98,7 +99,12 @@ those pairs instead of listing them unchecked; and `docs/DATA-MODEL.md`
   ignore the region and return their unbounded lines as today. Callers:
   `boolean/pave.rs`, `blend.rs`, `arris-check`'s S5 and B1, the geometry
   fixtures' runner.
-- **New in `arris-geom`:** a private `trace` module (step 1); public
+- **New in `arris-geom`:** `trace_quadrics` with `SectionTrace`,
+  `SectionBranch`, `SectionPoint`, `BranchEnd` and `SectionFault`, and
+  `GeomError::DegenerateSection` (step 1 — public, not the private module
+  first planned: the crate's property tests are integration tests because
+  of the dev-dependency cycle through `arris-debug`, and the exact section
+  is what the procedural curve of the upgrade path evaluates); public
   `fit_curve` and its periodic form beside `fit_curve2` (step 2); a named
   constant for the section fit's fraction of the tolerance, with the
   reason above in its comment (step 4).
@@ -128,8 +134,8 @@ mechanical; **[2]** careful — a geometric or numeric case to get right
 within a given design; **[3]** unproven — an algorithm whose robustness or
 bound has to be established here.
 
-- [ ] Step 1 **[3]** — The tracer, a ruled quadric against any quadric,
-  in a private `arris-geom` module, wired to nothing. Walk the rulings of
+- [x] Step 1 **[3]** — The tracer, a ruled quadric against any quadric,
+  as `arris_geom::trace_quadrics`, wired to nothing. Walk the rulings of
   the ruled operand by their angle `s`; each ruling meets the other
   quadric in the roots of `a(s)v² + b(s)v + c(s)`. With a cone's rulings
   taken from its apex, the discriminant is a trigonometric polynomial of
@@ -252,15 +258,22 @@ bound has to be established here.
 
 ## Open questions
 
-- `⚠ OPEN:` which operand is walked when both are ruled, so the result
-  is symmetric under a swap and the better-conditioned family is used
-  (the smaller cylinder's rulings all hit the larger). Agent, step 1;
-  recorded in ADR-0018.
-- `⚠ OPEN:` whether a near-double root of the discriminant can be
-  decided as singular-or-not in `tol.linear` by a closed bound. If step 1
-  finds poses it cannot decide, each becomes a `regression/` fixture with
-  a typed refusal and goes to C3's tolerance plan; the tracer does not
-  guess. Agent, step 1.
+- Closed by step 1, for ADR-0018 to record: **the walked operand** is
+  the one with parallel rulings before a cone, then the smaller radius or
+  the narrower cone, then a circular section before an elliptic one, then
+  the frames coordinate by coordinate — a rule on the surfaces, so a swap
+  changes nothing bit for bit (property-tested). **Singular or not is a
+  closed bound**: a critical point of the discriminant is singular when
+  `|D| / 4|a||∇q|`, the distance the other surface would have to move for
+  the ruling to touch it, is within `tol.linear`, or `|D|` is within its
+  own rounding. No pose is left undecided; the refusals are named poses
+  of measure zero (`SectionFault`). What step 1 also found: a branch must
+  end at its singular point *exactly*, which the discriminant's own value
+  subtracted as a bump gives and clamping does not (a near miss leaves
+  the two roots `√(tol·R)` apart, far more than the tolerance); and the
+  clip applies to every branch, not only the unbounded ones, because a
+  near-asymptotic loop a thousand radii long is as useless to a fit as an
+  unbounded one.
 - `⚠ OPEN:` Open CASCADE's counts on a closed section loop. One vertex
   per loop is expected on both sides; if its seam placement splits a loop
   differently, the fixture says so in `analytic.counts_differ` with the

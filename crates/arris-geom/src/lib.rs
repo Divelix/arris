@@ -32,6 +32,7 @@ pub mod profile;
 mod project;
 pub mod region2;
 mod surface;
+mod trace;
 
 pub use curve::{Curve, CurveEval, CurveKind};
 pub use curve2::{Curve2, Curve2Eval, Curve2Kind, Curve2Projection};
@@ -46,3 +47,6 @@ pub use pcurve::{PCURVE_FIT_DEGREE, PCURVE_SAMPLES, pcurve_on, project_to_plane}
 pub use profile::{Profile, ProfileEdge, ProfileError, ProfileLoop, ProfileSegment};
 pub use project::{CurveProjection, SurfaceProjection};
 pub use surface::{Surface, SurfaceEval, SurfaceKind};
+pub use trace::{
+    BranchEnd, SectionBranch, SectionFault, SectionPoint, SectionTrace, trace_quadrics,
+};
