@@ -25,25 +25,16 @@ cargo install cargo-nextest --locked  # the hook runs the suite under nextest
 
 **C1 done (2026-09-12): the vertical slice.** Primitives, transform,
 booleans on plane and cylinder with typed refusals, extrude and revolve of
-a `geom::Profile`, tessellation, mass properties and STEP, every
-`primitive/*`, `transform/*`, `boolean/*`, `sweep/*` and `provenance/*`
-fixture passing every corpus stage against Open CASCADE; a failure waiting
-for its fix lives under `tests/fixtures/regression/`. ADR-0001 to 0005.
-**C2 under way: the application gate.** Multi-shell results are lumps of
-one `Solid` (ADR-0006): cavities, split cuts, disjoint fuses, full revolves
-with holes; a revolve profile may touch its axis. Fillet and chamfer on
-plane–plane and plane–cylinder edges, with miters, corners and hole rims,
-every `blend/*` fixture green against `BRepFilletAPI` (ADR-0007).
-Cylinder–cylinder booleans: parallel, tangent, equal-radius crossing.
-Cone, sphere and torus faces check at `Full` on a shared axis (ADR-0008).
-The three facade decisions are taken and
-`docs/ARCHITECTURE.md` has no `⚠ OPEN` left: no name grammar, an origin's
-pieces in a guaranteed **split order** (ADR-0009); `Model::retain` never
-renumbers a slot (ADR-0010); `TriMesh` stays `f64` (ADR-0011). Plane
-projection, face frames, a mesh corner block (ADR-0012), STL/OBJ export
-(ADR-0013) and inertia matched to an independent integrator are in
-(2026-09-16). C2 closes on the corpus; the swap is the consumer's
-(ADR-0017); its gate passed 2026-09-18. **Next:** `/close-cycle`.
+a `geom::Profile`, tessellation, mass properties and STEP, every fixture
+passing every corpus stage against Open CASCADE; a failure waiting for its
+fix lives under `tests/fixtures/regression/`. ADR-0001 to 0005.
+**C2 done (2026-09-19): the application gate.** The first consumer's probe
+shapes pass the corpus in its own units: closed-form blends (ADR-0007),
+lumps of one `Solid` (ADR-0006), cylinder–cylinder booleans, quadric faces
+on a shared axis (ADR-0008), the facade decisions (ADR-0009 to 0011), mesh
+corners, STL/OBJ and elliptic profiles (ADR-0012 to 0014); the swap is the
+consumer's (ADR-0017). **Next:** C3, every quadric pair — `/idea` on the
+quadric-curve `⚠ OPEN` (`docs/DATA-MODEL.md` §Curves), then `/plan`.
 
 ## Rules that are not derivable from the code
 

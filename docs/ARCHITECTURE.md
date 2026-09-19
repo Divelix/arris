@@ -991,7 +991,7 @@ B-Rep).
 ## Formats and tools
 
 - **STEP AP214** (`arris_io::step::write(&model, &[bodies]) -> Result<
-  String, StepError>`): the writer is a cycle-1 deliverable because the
+  String, StepError>`): the writer came first, in C1, because the
   oracle reads Arris's output through it. One product whose shape
   representation lists a solid entity per lump of each solid body
   (`arris_check::lumps`, ADR-0006): a `MANIFOLD_SOLID_BREP` over its
@@ -1030,7 +1030,7 @@ B-Rep).
   shared vertex index, so several meshes become one file by writing every
   mesh's facets in argument order under a single `solid`/`endsolid`
   (ASCII) or a single header and triangle count (binary); no
-  renumbering needed (facade-swap step 5). A facet's normal is the
+  renumbering needed. A facet's normal is the
   triangle's own winding, never the corner block's — never the point of
   asking `RWStl` to compute normals a flat facet does not have a use
   for; ASCII writes every real as the shortest round-trip decimal so two
@@ -1052,7 +1052,7 @@ B-Rep).
   one without the other. Unlike STL, OBJ's `v`/`vt`/`vn` indices are
   shared across the whole file, so several meshes are written one after
   another, each mesh's own `f` indices offset by the running total of
-  the meshes before it (facade-swap step 5). Every real is the shortest
+  the meshes before it. Every real is the shortest
   round-trip decimal, `f64` throughout, so two writes of the same meshes
   are byte-identical; `write` never fails.
 - **Text dump** (`arris-debug::dump_text`): the deterministic, diffable
@@ -1197,11 +1197,11 @@ run of its suite on both backends is what measures this.
 | A face's outward-oriented frame | `ops::query::face_frame(&model, face)` for a plane (stable across re-evaluation, since a primitive's frame or a sweep's profile plane is), `ops::query::frame_at(&model, face, uv)` for any face at a `(u, v)` its domain contains |
 | Mass properties (volume, area, centroid, inertia) | `ops::measure::mass_properties` → `MassProperties` (exact over the B-Rep, the tensor about the centroid); or the consumer's own integrator over `TriMesh` |
 | STEP export of several bodies | `io::step::write(&model, &[bodies])` |
-| A render mesh as STL or OBJ of several bodies, beside STEP | `io::stl::write_ascii`/`write_binary(&meshes, name)`, `io::obj::write(&meshes)` — one `TriMesh` per body, `vt`/`vn` written when a mesh carries the corner block (ADR-0012, ADR-0013, facade-swap step 5) |
+| A render mesh as STL or OBJ of several bodies, beside STEP | `io::stl::write_ascii`/`write_binary(&meshes, name)`, `io::obj::write(&meshes)` — one `TriMesh` per body, `vt`/`vn` written when a mesh carries the corner block (ADR-0012, ADR-0013) |
 | Projecting an edge or vertex onto a sketch plane | `ops::query::project_to_plane(&model, &[shapes], &plane)` → a `Projection` per shape: a vertex's `Point2`, an edge's `Curve2` (a line stays a line, a circle becomes a circle or an ellipse, an ellipse stays an ellipse, a NURBS a `Curve2::Nurbs`) with the edge's range carried into that curve's own parameter, so the piece is the edge's and no more (data-model §Pcurves) |
 | Persistent topological names (origin-based) | Emitted by the consumer from `Provenance`: an output face is named after the input face it was `Modified` from, `Split(k)` when one input yields several outputs, and after the tool face when `Generated`; edges and vertices derive from their faces exactly as today. No centroid matching. Arris ships no name grammar (ADR-0009): the words are the application's. What the kernel guarantees is the **split order** — an origin's outputs in `generated_from` and `modified_from` are the pieces in an order that holds under every parameter edit keeping which entities bound which piece (a face's by the origins bounding each piece, an edge's along its curve; data-model §Provenance), so `Split(k)` means the same piece after the edit |
 | Memoising shapes by content, dropping unreferenced ones | Memoisation stays in the consumer (it is about features, not geometry); dropping is `Model::retain`, which frees slots without moving a surviving id (§The model, ADR-0010) |
-| Units | Arris is unit-agnostic. The consumer sets `Precision` for its unit (metres: `default_tolerance` at the micrometre scale) when it creates the `Model`. A fixture says which unit it is in the same way, through its recipe's `precision`: the corpus's `probe-*-m` fixtures are the consumer's probe shapes in metres at that tolerance (facade-swap step 6) |
+| Units | Arris is unit-agnostic. The consumer sets `Precision` for its unit (metres: `default_tolerance` at the micrometre scale) when it creates the `Model`. A fixture says which unit it is in the same way, through its recipe's `precision`: the corpus's `probe-*-m` fixtures are the consumer's probe shapes in metres at that tolerance |
 
 What the facade has today that Arris will not have: a tolerance nudge
 (there is none; a degenerate boolean is `OpError::Degenerate`), and a

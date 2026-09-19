@@ -6,8 +6,8 @@ as its "in" list. One section per cycle; a finished cycle compresses to its
 status line (`/close-cycle`), and the next is appended below.
 
 Spine: **C1** M0 → M1 → M2 → M3 → M4 → M5 (the vertical slice, done), then
-**C2** (the application gate, passed on the corpus 2026-09-18), then the Parasolid-grade cycles one
-at a time.
+**C2** (the application gate, done 2026-09-19), then **C3** (every quadric
+pair), then the Parasolid-grade cycles one at a time.
 
 ---
 
@@ -281,133 +281,32 @@ corpus — the recorded kernel failures with their `#[ignore]`d twins — is
 green as fixtures. The gate is a corpus run, not a judgement call; the swap
 itself is the consumer's, on its own schedule (ADR-0017).*
 
-- Single-edge fillet and chamfer, several edges in one call: box edges
-  (cylinder blends), hole edges (torus blends), the consumer's fixtures.
-  A second fillet on an already-filleted body. Two blended edges meeting
-  at a corner whose third edge stays sharp — a vertical and a cap edge, or
-  two cap edges, the same solid rotated — meet in a miter, two cylinders
-  and one ellipse, not a vertex blend (Open CASCADE, checked). **Done
-  2026-09-15**, ADR-0007: blends are rolling-ball stripes built in closed
-  form on analytic face pairs. `ops::fillet` and `ops::chamfer` on a plane–plane edge with
-  its ends trimmed by the face across are in, convex or concave and
-  several disjoint edges in one call (`blend/box-edge-fillet`,
-  `box-cap-edge-fillet`, `box-posed-edge-fillet`, `box-oblique-end`,
-  `l-inner-edge`, `box-four-verticals`, `box-edge-chamfer`,
-  `box-four-vertical-chamfers`); two chamfers at a corner meet in a line
-  and pass every stage (`box-corner-chamfers`), and so does the fillet
-  miter (`fillet-miter`), its two blend cylinders decided by the
-  cylinder–cylinder line's equal-radius crossing arm. A second fillet on a
-  filleted body passes (`second-fillet`), its composed record naming
-  every face by the extrude's parts; the C6 cases Open CASCADE builds are
-  refusals by fixture — a tangent chain (`tangent-chain-cap-edge`) and a
-  vertex of five edges (`five-edge-vertex`). Three blends at a box corner
-  meet in a sphere octant, its pole a degenerate edge, or in a triangle,
-  and pass every stage (`box-corner-three-fillets`,
-  `box-corner-three-chamfers`, `box-all-edges-fillet`), S5 deciding the
-  sphere against its cylinders and planes by ADR-0008's meridian arm. A
-  plane against a cylinder along a ruling
-  fillets to a cylinder, convex or concave (`d-chord-edge`,
-  `rib-root-edge`), S5 deciding the blend against the face it is tangent
-  to by the parallel-axis arm. A plane against a cylinder along a circle
-  is a closed edge with no ends: a hole's rim fillets to a torus and
-  chamfers to a cone, a boss's base fillets to a concave torus
-  (`hole-rim-fillet`, `hole-rim-chamfer`, `boss-base-fillet`), S5
-  deciding each against its faces by ADR-0008's meridian arm. At random, a pick of a box's or an L's
-  edges in a random pose fillets and chamfers clean at `Full`, audited, at
-  its closed-form volume miters and corners included, the same moved
-  before or after and deterministic (`crates/arris-ops/tests/blend_prop.rs`),
-  nothing unchecked at rest; in a pose, S5 leaves unchecked only two blend
-  cylinders on skew axes within `2r` of each other and a corner's sphere
-  against a blend cylinder whose axis misses its centre, both C3's.
-- Cone, sphere and torus in the intersector in the positions a blend and
-  M5's revolves put them, every one a conic: a plane against a quadric
-  with the plane perpendicular to the axis, a cylinder against a quadric
-  coaxial with it, a sphere against a cylinder through its centre,
-  plane–sphere, a plane through a cone's or a torus's axis (M5's partial
-  revolves), and a line against each quadric. The general pairs —
-  plane–cone and plane–torus off the axis, two cones or tori on different
-  axes — are C3's. **Done 2026-09-15**, ADR-0008: one meridian arm for
-  every pair sharing an axis, isolated meetings as
-  `SurfaceIntersection::Points`; a plane through the axis cuts the
-  meridian; a line meets each quadric by closed form;
-  `geom/c2-quadric-pairs` against the oracle. Booleans with a quadric
-  face stay refused by the pave model's quadric guard.
-- The checker's S5 and B1 arms, and `classify_point`, against cone,
-  sphere and torus faces over those arms, so M5's quadric-faced revolves
-  become corpus fixtures. **Done 2026-09-15**: `sweep/revolve-frustum`
-  (narrowing, widening, a quarter turn), `revolve-barrel` and
-  `revolve-ring` (full and a quarter turn) pass every stage; random
-  general revolve profiles check at `Full` with nothing unchecked
-  (`revolve.rs`).
-- Cylinder–cylinder booleans. Parallel axes (rulings, a tangent line)
-  are what the transversal probe needs and what a blend along a ruling's
-  S5 row needs; equal radii with crossing axes, two ellipses, is the
-  miter's S5 row. Crossing axes of unequal radii and skew axes within the
-  radii, a quartic, close the quadric-curve `⚠ OPEN` with an ADR and are
-  C3's; no probe forces them. **Done 2026-09-15**: coaxial
-  (`boolean/coaxial-cut`, `coaxial-fuse`); parallel
-  (`parallel-cylinders-cut`, the probe in its own units, `-common`,
-  `-fuse`, `-seam`); tangent outside and inside, by one curvature rule
-  for every tangent pair (`tangent-cylinders-fuse`, `-cut`,
-  `pin-in-bore-fuse`, `-cut`); equal radii crossing, the two ellipses
-  meeting at section crossings (`cross-cylinders-common`, `-fuse`, `-cut`
-  refused as non-manifold, `oblique-cross-common`,
-  `seam-through-crossing-common`, `short-cross-cylinders-fuse`,
-  `tee-fuse`); `geom/c2-cylinder-pairs` against the oracle; parallel and
-  crossing pairs at random poses (`boolean_prop.rs`). A crossing pair's
-  result does not depend on where the tool's seam sits (2026-09-18,
-  ADR-0015, ADR-0016): a seam beside a crossing vertex
-  (`seam-beside-crossing-fuse`, held to its closed forms where Open
-  CASCADE builds a sliver), and a property turning the tool about its
-  own axis across the whole band.
-- Results of more than one shell — an enclosed cavity, a disjoint `fuse`,
-  a `cut` that splits its target, a full revolve of a profile with holes —
-  as lumps of one `Solid`, two lumps touching along an edge or at a vertex
-  refused as `Reason::NonManifold`. **Done 2026-09-13**, ADR-0006.
-- The revolve profile touching its axis (apex and degenerate edges), which
-  M5 refused. The probe is a rectangle with one side on the axis: plane
-  and cylinder faces only. **Done 2026-09-13**: `sweep/revolve-onto-axis`
-  and `sweep/revolve-notch-to-axis`, a full-turn pinch refused as
-  `Reason::NonManifold`.
-- `Model::retain` semantics (the compaction `⚠ OPEN`), the `f32`
-  boundary `⚠ OPEN`, the origin-name helper `⚠ OPEN` — each an ADR with
-  the consumer's adapter as the test. **Done 2026-09-16.** ADR-0009:
-  Arris ships no name grammar; a consumer names from `Provenance`, and
-  what only the kernel can give it — the **split order** of an origin's
-  pieces, a face's by the origins that bound them and an edge's along its
-  curve — is a contract that holds under every parameter edit keeping
-  which entities bound which piece, proven on five `provenance/split-*`
-  fixtures, a geometric test of the edge rule, and a property over a box
-  cut by bars rebuilt resized and re-posed. ADR-0010: `Model::retain`
-  never renumbers a slot — a live id never moves, a dead one never
-  aliases, and a dense copy is `Model::import`. ADR-0011: `TriMesh` stays
-  `f64`; the cast is the consumer's, one line at its own boundary.
-- Projection of edges and vertices to a plane; face frames; mass
-  properties with inertia matched to the consumer's integrator; STL and
-  OBJ export from the tessellation, beside STEP; per-corner normals and
-  (u, v) in `TriMesh` with face-local vertices, `f64` fields beside the
-  watertight buffer a renderer asks for them with (ADR-0011). **Done
-  2026-09-16**, ADR-0012 (the corner block: `MeshRequest`, `Corners`,
-  the singular rule) and ADR-0013 (mesh formats live in `arris-io`,
-  which depends on `arris-mesh`): `ops::query::project_to_plane` carries
-  an edge's range through its own projected curve's parameter, the
-  circle-to-ellipse phase shift its retiring case; `ops::query::face_frame`
-  and `frame_at` give a face's outward-oriented frame, on a plane or at a
-  `(u, v)`; `io::stl` (ASCII and binary) and `io::obj` read back clean
-  through Open CASCADE's `RWStl` (`tools/oracle/mesh.py`) and the test's
-  own OBJ parser; `measure::mass_properties`'s inertia tensor matches an
-  independent tetrahedra-with-the-origin integrator over the tessellation
-  as well as the oracle. Every corpus fixture's corner block satisfies
-  ADR-0012's invariants with no measurable timing cost.
-- Elliptic profile segments, which the consumer's sketcher emits; the
-  workspace published from a tag. **Done 2026-09-18**, ADR-0014: an
-  extruded ellipse sweeps a `Surface::EllipticCylinder`, checked at `Full`
-  (`sweep/extrude-ellipse`, `-elliptic-slot`, `-plate-elliptic-hole`, and a
-  property over random ellipses); a revolve refuses one as
-  `Reason::EllipticRevolve` (`sweep/revolve-ellipse`), and so does a
-  boolean on an elliptic face (`boolean/elliptic-operand-cut`). STL and
-  OBJ take several bodies. `cargo package --workspace` packages and
-  verifies every published crate, and a `v*` tag publishes them.
+**Status: done 2026-09-19, tags `c2` and `v0.2.0`.** Retired the
+application gate: the first consumer's probe shapes pass every corpus
+stage in its own units, over blends built in closed form on analytic face
+pairs, multi-shell results as lumps of one solid, and quadric faces decided
+through their meridians on a shared axis, with the facade's three open
+decisions taken. ADR-0006 to ADR-0017.
+
+- Fillet and chamfer, several edges in one call: plane–plane edges with
+  miters and three-blend corners, plane–cylinder edges along a ruling and
+  around a rim, a second blend on a blended body (ADR-0007).
+- Cone, sphere and torus in the intersector wherever two surfaces share an
+  axis or a plane holds it, and a line against each (ADR-0008); the
+  checker's S5 and B1 and `classify_point` over them, so M5's quadric-faced
+  revolves are corpus fixtures.
+- Cylinder–cylinder booleans: coaxial, parallel, tangent inside and out,
+  equal radii crossing, whatever the tool's seam (ADR-0015, ADR-0016).
+- Results of more than one shell as lumps of one `Solid` (ADR-0006); a
+  revolve profile touching its axis.
+- The facade's three decisions: no name grammar and a guaranteed split
+  order (ADR-0009), `Model::retain` never renumbers (ADR-0010), `TriMesh`
+  stays `f64` (ADR-0011).
+- Plane projection, face frames, inertia matched to an independent
+  integrator, the mesh corner block (ADR-0012), STL and OBJ export
+  (ADR-0013).
+- Elliptic profile segments, swept to an elliptic cylinder (ADR-0014); the
+  workspace published from a tag.
 
 **Out:** NURBS–NURBS intersection, sweep along a path, loft, shell, healing,
 the STEP reader.
@@ -418,7 +317,8 @@ cylinder − cylinder transversal (2.2079e-5), flush union (2.0), revolve
 touching the axis (2π), a fillet on a filleted body, a vertical and a cap
 edge filleted in one call.
 Every one of them is a fixture in metres at the micrometre default
-tolerance a metre model carries (`docs/ARCHITECTURE.md` §Units): the six
+tolerance a metre model carries (`docs/ARCHITECTURE.md` §How a consumer's
+kernel facade maps on, *Units*): the six
 `probe-*-m` fixtures under `boolean/`, `blend/` and `sweep/`
 (**done 2026-09-17**, the recipe's own `precision`), the enclosed cavity
 as `boolean/enclosed-cavity` and the transversal as
@@ -428,7 +328,53 @@ corpus stage with nothing left unchecked; every row of the facade table
 (`docs/ARCHITECTURE.md` §How a consumer's kernel facade maps on) present.
 The consumer's naming fixtures, its facade over Arris and its twins
 un-ignored are the consumer's own acceptance, not this cycle's (ADR-0017).
-**Met 2026-09-18**: `/close-cycle` is next.
+
+---
+
+## C3 — every quadric pair
+
+*Goal: a boolean takes a cone, sphere, torus or elliptic-cylinder face as
+an operand in any pose, because every quadric pair meets in the
+intersector: conics by closed form, and the curves that are not conics
+stored as the ADR that closes the quadric-curve `⚠ OPEN` decides. Faces
+that meet within a tolerance, touching or coincident, are a corpus of
+their own and not left to luck.*
+
+- The general quadric pairs in `intersect_surfaces`: a plane oblique to a
+  cone's or a torus's axis, or parallel to it and off it; two cylinders on
+  crossing axes of unequal radii or skew axes within the radii; every pair
+  of cones, spheres and tori sharing no axis; the elliptic cylinder
+  against the quadrics. Their curves exact or fitted by an ADR, which also
+  settles the result type of a pair that mixes kinds (a circle beside a
+  point, a crossing beside a touch; ADR-0008).
+- Conics against a cone, a sphere or a torus in `intersect_curve_surface`,
+  and two coplanar conics that are not the same conic in
+  `intersect_curves`, for the pave model's edge–face hits.
+- A fitted pcurve fallback on cones, spheres and tori for the oblique
+  sections a boolean leaves there.
+- The pave model's quadric guard lifted: booleans with cone, sphere, torus
+  and elliptic-cylinder operand faces, each a corpus fixture against the
+  oracle.
+- S5 and B1 over every such pair, so a posed blend's cylinders on skew axes
+  and a corner's sphere against a blend cylinder are checked, not listed as
+  unchecked.
+- Features a tolerance apart: section vertices clustered by closure rather
+  than first-come merging (`regression/seam-a-tolerance-from-crossing-fuse`),
+  and a corpus of faces touching and coincident within a tolerance.
+
+**Out:** NURBS operands and NURBS–NURBS intersection (C4); blends on
+quadric face pairs (C6); a spindle torus; a revolve of an elliptic segment;
+the STEP reader.
+
+**Accept:** property tests at random poses of every quadric pair — every
+intersection point on both surfaces within the tolerance, the curve's
+image matching both surfaces at its samples; the boolean identities of M4
+(volume additivity, cut-then-fuse, commutativity) over a quadric operand
+against a box and a cylinder; every new `boolean/*` quadric fixture
+passing every corpus stage against Open CASCADE;
+`crates/arris-ops/tests/blend_prop.rs` with nothing unchecked in a pose;
+`regression/seam-a-tolerance-from-crossing-fuse` moved into `boolean/`;
+`docs/DATA-MODEL.md` with no `⚠ OPEN` left.
 
 ---
 
@@ -437,8 +383,6 @@ un-ignored are the consumer's own acceptance, not this cycle's (ADR-0017).
 Each earns its own section with an acceptance corpus when it is next; none
 is scheduled here (`SEED.md` §6).
 
-- **C3** — every quadric pair in the intersector; tolerance growth and
-  coincident/tangent face handling as a corpus of its own.
 - **C4** — NURBS–NURBS surface intersection (a marcher with explicit seam
   handling); NURBS operands in booleans.
 - **C5** — sweep along a path, loft, shell, offset.

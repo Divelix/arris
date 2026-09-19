@@ -80,7 +80,7 @@ With `O, X, Y, Z` the frame and `c = cos`, `s = sin`:
 | EllipticCylinder | `O + a c u·X + b s u·Y + v·Z`, `a ≥ b > 0` | u ∈ [0, 2π), v ∈ ℝ | u, period 2π | seam at u = 0, the ruling through `O + a·X`; `X` is the section's major axis. What an extruded elliptic profile segment sweeps (ADR-0014) |
 | Cone | `O + (R + v·s α)(c u·X + s u·Y) + v·c α·Z` | u ∈ [0, 2π), v ∈ ℝ | u | seam at u = 0; apex at v = −R / s α, a degenerate edge. `α` ∈ (0, π/2) is the half-angle; `R` the radius at v = 0 |
 | Sphere | `O + R c v (c u·X + s u·Y) + R s v·Z` | u ∈ [0, 2π), v ∈ [−π/2, π/2] | u | seam at u = 0; poles at v = ±π/2, degenerate edges |
-| Torus | `O + (R + r c v)(c u·X + s u·Y) + r s v·Z` | u, v ∈ [0, 2π) | u and v | seams at u = 0 and v = 0; `R > r` in cycle 1 (no self-intersecting tori until an operation needs them) |
+| Torus | `O + (R + r c v)(c u·X + s u·Y) + r s v·Z` | u, v ∈ [0, 2π) | u and v | seams at u = 0 and v = 0; `R > r` (no self-intersecting tori until an operation needs them: a revolve refuses one as `Reason::SpindleTorus`) |
 | Nurbs | Piegl & Tiller, rational; clamped or not (§NURBS) | knot range | either, where the knots and net wrap | as the knots say |
 
 The surface normal is `∂P/∂u × ∂P/∂v`, normalised. For the analytic types
@@ -143,7 +143,7 @@ and a face's interior grid by.
 `SurfaceKind` is the fieldless twin of the enum, used in errors and
 dispatch tables. `Surface::frame()` is the placing frame of an analytic
 variant and `None` for `Nurbs`, which is placed by its control points;
-`project` onto a `Nurbs` is `GeomError::Unsupported` in cycle 1 (there is
+`project` onto a `Nurbs` is `GeomError::Unsupported` (there is
 no closed form, and no operation asks for it yet). `Surface` and `Curve`
 are `Clone`, not `Copy`: the NURBS variants own their knots and control
 points.
@@ -420,8 +420,8 @@ with STEP export fitting a B-spline at write time) or the intersector fits
 `SEED.md` §10 lists this as the first kickoff question; it is decided by the
 ADR that lands the general quadric pairs (C3, `docs/ROADMAP.md`) — a
 blend's own surfaces meet only in conics, since the construction places
-them (ADR-0007) — and cycle 1's plane–cylinder pairs produce only lines,
-circles and ellipses. Until then S5 reports a pair in a general position
+them (ADR-0007) — and every pair the intersector decides today meets in
+lines, circles, ellipses or points. Until then S5 reports a pair in a general position
 as unchecked — two cylinders on crossing axes of unequal radii, or on skew
 axes closer than the sum of the radii, which two fillets on skew edges of
 a posed body can make; a cone, a sphere or a torus against a surface
@@ -824,7 +824,7 @@ test scaffolding that stores a dangling reference as given), the builder
   mix, including a face used by two shells (a face separating two regions
   of one body) and an edge used by more than two coedges.
   Non-manifold structure is thus representable from day one (`SEED.md`
-  §9); cycle-1 operations produce and accept `Solid` only: the builder's
+  §9); every operation today produces and accepts `Solid` only: the builder's
   `finish` builds no other kind (`BuildError::Kind`), and `measure`
   refuses one as `OpError::Degenerate` with `Reason::NotSolid`.
 

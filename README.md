@@ -33,8 +33,9 @@ and each break is listed in the release's commit. What is in today:
   in JSON and bytes.
 
 Not in yet: free-form NURBS surfaces and curves, variable-radius blends,
-sheet and non-manifold bodies, a STEP reader, and booleans whose operands
-would meet in an elliptic or quadric–quadric intersection curve. Each of
+sheet and non-manifold bodies, a STEP reader, booleans on cone, sphere,
+torus or elliptic-cylinder faces, and booleans whose operands would meet in
+a quartic intersection curve. Each of
 those is a typed refusal today, never a wrong answer.
 
 ## Correctness
