@@ -827,8 +827,8 @@ prop_shards! {
     /// Two cylinders of unequal radii on crossing axes, or on skew axes
     /// with the narrower through the wider or breaking out of its side:
     /// their walls meet in traced loops, fitted periodic NURBS
-    /// (plans/quadric-intersection-curves step 9). `fuse`, `common` and
-    /// both cuts clean at `Full` with nothing unchecked and their
+    /// (ADR-0018). `fuse`, `common` and both cuts clean at `Full` with
+    /// nothing unchecked and their
     /// provenance audited, additive, the cut identity both ways whatever
     /// the lumps, `fuse` and `common` commuting, `(a − b) ∪ b` the union
     /// within what two fittings of the same loops allow and with its

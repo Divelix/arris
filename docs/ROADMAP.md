@@ -340,16 +340,26 @@ stored as the ADR that closes the quadric-curve `⚠ OPEN` decides. Faces
 that meet within a tolerance, touching or coincident, are a corpus of
 their own and not left to luck.*
 
-- The general quadric pairs in `intersect_surfaces`: a plane oblique to a
-  cone's or a torus's axis, or parallel to it and off it; two cylinders on
-  crossing axes of unequal radii or skew axes within the radii; every pair
-  of cones, spheres and tori sharing no axis; the elliptic cylinder
-  against the quadrics. Their curves exact or fitted by an ADR, which also
-  settles the result type of a pair that mixes kinds (a circle beside a
-  point, a crossing beside a touch; ADR-0008).
+**Status: in progress.** Every quadric pair without a torus meets in the
+intersector, conics exact and quartics traced and fitted to NURBS inside
+a region, one `Meets` result for every meeting (ADR-0018, done
+2026-09-19); a boolean of cylinders cuts through the fitted edge it left,
+and S5 and B1 decide those pairs. Open: the torus pairs, the conic hits
+on curved quadrics, the quadric guard, features a tolerance apart.
+
+- The general quadric pairs in `intersect_surfaces`. **Done** (ADR-0018):
+  a plane oblique to a cone's axis or parallel to it and off it; two
+  cylinders on crossing axes of unequal radii or skew axes within the
+  radii; cylinder, cone and sphere against a cone or a sphere sharing no
+  axis; the elliptic cylinder against the quadrics; the result type of a
+  pair that mixes kinds. **Left:** every pair with a torus sharing no
+  axis with the other surface, the spiric section among them, on the
+  tracer's interface and the same fit.
 - Conics against a cone, a sphere or a torus in `intersect_curve_surface`,
   and two coplanar conics that are not the same conic in
-  `intersect_curves`, for the pave model's edge–face hits.
+  `intersect_curves`, for the pave model's edge–face hits. (A fitted
+  `Curve::Nurbs` against every analytic surface and against a line, a
+  circle or an ellipse is done, ADR-0018.)
 - A fitted pcurve fallback on cones, spheres and tori for the oblique
   sections a boolean leaves there.
 - The pave model's quadric guard lifted: booleans with cone, sphere, torus
@@ -357,7 +367,8 @@ their own and not left to luck.*
   oracle.
 - S5 and B1 over every such pair, so a posed blend's cylinders on skew axes
   and a corner's sphere against a blend cylinder are checked, not listed as
-  unchecked.
+  unchecked. **Done** for every pair without a torus (ADR-0018);
+  `blend_prop.rs` holds nothing unchecked.
 - Features a tolerance apart: section vertices clustered by closure rather
   than first-come merging (`regression/seam-a-tolerance-from-crossing-fuse`),
   and a corpus of faces touching and coincident within a tolerance.

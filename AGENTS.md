@@ -24,18 +24,17 @@ cargo install cargo-nextest --locked  # the hook runs the suite under nextest
 ## Current state
 
 **C1 done (2026-09-12): the vertical slice.** Primitives, transform,
-booleans on plane and cylinder with typed refusals, extrude and revolve of
-a `geom::Profile`, tessellation, mass properties and STEP, every fixture
-passing every corpus stage against Open CASCADE; a failure waiting for its
-fix lives under `tests/fixtures/regression/`. ADR-0001 to 0005.
+booleans on plane and cylinder, extrude and revolve, tessellation, mass
+properties and STEP against Open CASCADE; a failure waiting for its fix
+lives under `tests/fixtures/regression/`. ADR-0001 to 0005.
 **C2 done (2026-09-19): the application gate.** The first consumer's probe
-shapes pass the corpus in its own units: closed-form blends (ADR-0007),
-lumps of one `Solid` (ADR-0006), cylinder–cylinder booleans, quadric faces
-on a shared axis (ADR-0008), the facade decisions (ADR-0009 to 0011), mesh
-corners, STL/OBJ and elliptic profiles (ADR-0012 to 0014); the swap is the
-consumer's (ADR-0017). **Next:** C3, every quadric pair — `/work` on
-`docs/plans/quadric-intersection-curves.md` (fitted section curves, one
-`Meets` result).
+shapes pass the corpus in its own units: blends, lumps, cylinder–cylinder
+booleans, quadrics on a shared axis, the facade decisions, mesh formats,
+elliptic profiles. ADR-0006 to 0017.
+**C3 in progress:** every quadric pair without a torus meets, quartics
+traced and fitted to NURBS, one `Meets` result (ADR-0018). **Next:** C3's
+second plan — torus pairs, conic hits on curved quadrics, the quadric
+guard lifted.
 
 ## Rules that are not derivable from the code
 

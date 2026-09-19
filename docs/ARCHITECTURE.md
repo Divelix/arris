@@ -18,7 +18,7 @@ re-exports the public API. Lower crates never name types from upper ones.
 | Crate | Owns | External deps | Layer |
 |---|---|---|---|
 | `arris-math` | `Point3`/`Vec3`/`UnitVec3` (over `nalgebra`, ADR-0001), `Frame`, `Frame2`, `Axis`, `Isometry`, `Interval`, `Aabb`, `wrap_angle`, exact orientation predicates (over `robust`), polynomial and interval-guarded Newton root finding, `Precision` and `Tolerance` | `nalgebra`, `robust`, `serde` (feature) | 0 — representation |
-| `arris-geom` | `Surface`, `Curve`, `Curve2` (analytic + NURBS): evaluation, derivatives, point projection, curve/curve, curve/surface and surface/surface intersection, bounding boxes over a parameter range, pcurves and the NURBS fit behind them; the (u, v) toolkit `region2` and `integrate` shared by the checker, tessellation, mass properties and classification; `Profile`, the planar sketch of lines, arcs and elliptic arcs a sweep takes, validated and oriented by `Profile::edges`; `GeomError` | `arris-math`, `thiserror`, `serde` (feature) | 0 — representation |
+| `arris-geom` | `Surface`, `Curve`, `Curve2` (analytic + NURBS): evaluation, derivatives, point projection, curve/curve, curve/surface and surface/surface intersection (`trace_quadrics`, the exact section of two quadrics that the intersector fits), bounding boxes over a parameter range, pcurves and the NURBS fit behind them; the (u, v) toolkit `region2` and `integrate` shared by the checker, tessellation, mass properties and classification; `Profile`, the planar sketch of lines, arcs and elliptic arcs a sweep takes, validated and oriented by `Profile::edges`; `GeomError` | `arris-math`, `thiserror`, `serde` (feature) | 0 — representation |
 | `arris-topo` | `Model` (the arena), typed ids, `Shape`/`Body`/`Face`/… handles, orientation, entities, pcurves, per-entity tolerances, Euler operators including the assembly seam (`Assembly::of_body`, `effective_uses`, `AssemblySlots`), the Euler line (`euler::EulerLine`), adjacency and iteration, `Provenance` and its audit; re-exports `arris-geom` and `arris-math` | `arris-geom`, `arris-math`, `thiserror`, `serde` (feature) | 0 — representation |
 | `arris-check` | The invariant checker: `check(&Model, Body, Level) -> Report` and the `Violation` list of data-model §Invariants; the shared face domain (`domain::FaceDomain`), point classifier (`classify::Classifier`, `classify_point`) and region flux (`flux::face_flux`) every `Full` row, the boolean and tessellation read a face through; re-exports `arris-topo` | `arris-topo`, `serde` (feature, forwarded to `arris-topo`) | 1 |
 | `arris-ops` | Primitives, extrude and revolve of a `Profile`, transform, booleans, the blends, each returning `Provenance`; the queries `measure` (mass properties) and `query` (projection onto a plane, a face's outward frame) | `arris-check`, `thiserror`, `rayon` (feature) | 2 — algorithms |
@@ -1257,6 +1257,6 @@ Collected from this document; each closes with an ADR.
 None. The three this document carried were C2's facade line, closed
 together: ADR-0009 (Arris owns no name grammar, and the split order is a
 contract), ADR-0010 (compaction keeps slots sparse) and ADR-0011 (the
-tessellation boundary is `f64`). The kernel's one remaining open question
-is the quadric-curve one in `docs/DATA-MODEL.md` §Open questions.
+tessellation boundary is `f64`). `docs/DATA-MODEL.md` carries none
+either: its last, the quadric intersection curves, is ADR-0018.
 
