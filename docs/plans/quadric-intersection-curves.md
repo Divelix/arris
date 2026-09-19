@@ -162,7 +162,7 @@ bound has to be established here.
   and whose image is closed to rounding. Tests mirror `fit_curve2`'s: a
   helix, Viviani's curve as a periodic fit held to its closed form
   between samples, the error arms, determinism.
-- [ ] Step 3 **[2]** — ADR-0018 and `SurfaceIntersection::Meets`. Every
+- [x] Step 3 **[2]** — ADR-0018 and `SurfaceIntersection::Meets`. Every
   caller ported (`meridian.rs`, the closed-form table, S5, B1, the pave
   model, `result.rs`, `blend.rs`, the debug renderer, the geometry
   fixtures' runner) with no change of behaviour; the two results
@@ -274,6 +274,14 @@ bound has to be established here.
   clip applies to every branch, not only the unbounded ones, because a
   near-asymptotic loop a thousand radii long is as useless to a fit as an
   unbounded one.
+- Closed by step 3: **no fixture was restaged.** No blessed dump prints
+  a pair's intersection (the `Interferences` display is in none), so the
+  corpus is untouched. The one behaviour that moved is the one the step
+  asked for: the two mixed positions are returned, and S5, which holds
+  curves and points to one rule whatever their kind, decides them
+  instead of listing them unchecked. The pave model refuses a pair past
+  the quadric guard that meets in points or in both kinds as an
+  invariant — none can reach it — until step 8.
 - `⚠ OPEN:` Open CASCADE's counts on a closed section loop. One vertex
   per loop is expected on both sides; if its seam placement splits a loop
   differently, the fixture says so in `analytic.counts_differ` with the

@@ -251,7 +251,10 @@ sphere or a torus is refused before any intersector is asked — the
 intersector named it before the coaxial arm existed (ADR-0008) — so a
 new intersector arm widens no boolean silently; booleans with quadric
 operand faces are C3's, with their corpus. It holds every face pair
-whose boxes overlap with its `SurfaceIntersection`; every point where
+whose boxes overlap with its `SurfaceIntersection` — a *crossing
+pair* when its `Meets` curves all cross, a *touching pair* when they
+all touch, and a pair past the quadric guard is always one or the
+other, with no isolated point; every point where
 an edge of one operand pierces a face of the other, kept when the
 parameter is in the edge's range and the (u, v) is on the face
 (`region2::point_side` on the face's loops, a `Boundary` verdict
@@ -262,7 +265,7 @@ is within the larger of the two tolerances or that shares an operand
 vertex with it, and the vertex's tolerance is the largest of the
 entities merged plus the spread of the points (data-model
 §Tolerances); the *section crossings* — two section curves of one
-`Transversal` pair intersected with each other (`intersect_curves`), a
+crossing pair intersected with each other (`intersect_curves`), a
 crossing on both faces being a section vertex by the same merge, since
 two curves of one pair meet where the surfaces are tangent to each
 other, the two ellipses of equal cylinders with crossing axes at `±R`
@@ -315,7 +318,7 @@ edge that lies in a face of the other operand
 (`Interferences::coincident`) is paved and placed the same way whether
 or not a face of its own is coincident with that face: a seam on the
 ruling two parallel walls cross along splits the other wall as an image,
-since no coincident neighbour is there to place it. A `Tangent` pair — a
+since no coincident neighbour is there to place it. A touching pair — a
 plane and a cylinder, or two parallel cylinders, touching along a ruling
 — contributes no section edge and no pave on any operand edge: the
 ruling is paved by the *touches*, the hits of either face's edges on the
@@ -415,7 +418,7 @@ direction is against the other face's effective outward normal. The
 piece crosses no face of the other operand inside itself, so every such
 edge decides the same, and the one read is the one whose two surfaces
 are furthest from tangent; nothing in it measures a distance, so no
-tolerance decides it. A piece with no section edge of a `Transversal`
+tolerance decides it. A piece with no section edge of a crossing
 pair, or whose surfaces are tangent within the angular tolerance along
 every one, is `OpError::Unsupported` naming the pair. The survivors are
 grouped into shells by shared edges — none is
@@ -822,9 +825,10 @@ compile until it is handled, and a pair without an exact formula is a
 `GeomError::Unsupported` arm naming both kinds (`OpError::Unsupported`
 once an operation wraps it with the entities) — never a wildcard falling
 back to a generic marcher where a closed form exists. The results are
-enums too: `SurfaceIntersection::{Empty, Coincident, Transversal,
-Tangent, Points}` for a surface pair — `Points` where the surfaces meet
-only at isolated points, a touch or a crossing through an apex —
+enums too: `SurfaceIntersection::{Empty, Coincident, Meets { curves,
+points }}` for a surface pair — each curve and isolated point of a
+`Meets` a `Crossing` or a `Touch`, the two kinds together in one result
+(ADR-0018) —
 `CurveSurfaceIntersection::{Points, Coincident}` for a curve against a
 surface and `CurveIntersection::{Points, Coincident}` for two curves, so
 a caller matches the case rather than counting curves or points. A pair

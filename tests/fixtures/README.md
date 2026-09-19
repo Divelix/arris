@@ -291,7 +291,8 @@ oracle's sampled points on Arris's curves to 1e-9.
   has a closed form the oracle's own case analysis let go, holds Arris's
   curves to both surfaces — and `oracle.rs` pins which one each pair is
   by name. A pair meeting in isolated points is `"type": "point"` with
-  its `points`; Arris's `Points` are held to them exactly.
+  its `points`; Arris's points of a meeting in points alone are held to
+  them exactly.
 - The corpus lint checks presence, hash and shape for this kind (every
   name resolves, every spec builds, one result per sample and pair with
   the counts asked for); the values are the oracle test's to compare.
@@ -304,7 +305,7 @@ oracle's sampled points on Arris's curves to 1e-9.
   the oracle drops as off both operands and counts under `dropped`. Two
   parallel cylinders touching come back as one ruling or as two about
   1e-7 apart, by the same rounding (`c2-cylinder-pairs`' inside touch is
-  two), and each is compared against Arris's single `Tangent` ruling to
+  two), and each is compared against Arris's single touching ruling to
   1e-6. The
   cylinder–cylinder intersector has no case for skew axes: it answers
   `unsolved` for unequal radii whether or not the cylinders can meet,
@@ -313,7 +314,7 @@ oracle's sampled points on Arris's curves to 1e-9.
   `Empty` for the pair further apart than the radii stands against
   `unsolved`. The plane–sphere case decides a touch at machine epsilon,
   so a plane built tangent at a pole comes back `empty` (or a circle of
-  rounding radius) where Arris says `Points`, which the oracle test
+  rounding radius) where Arris says one touching point, which the oracle test
   accepts within 1e-6 of Arris's point; the cylinder–sphere case wants
   the sphere's own axis on the cylinder's exactly, so `c2-quadric-pairs`
   has the same sphere twice — its frame turned across the axis, which

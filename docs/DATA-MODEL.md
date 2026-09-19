@@ -189,8 +189,8 @@ the curve over the range within the chord, by the same `|d2| h² / 8`
 bound with the same floors and ceiling.
 
 `intersect_surfaces(a, b, tol)` returns `SurfaceIntersection::{Empty,
-Coincident, Transversal(Vec<Curve>), Tangent(Vec<Curve>),
-Points(Vec<Point3>)}` for the pairs with a closed form and
+Coincident, Meets { curves: Vec<MeetCurve>, points: Vec<MeetPoint> }}`
+for the pairs with a closed form and
 `GeomError::Unsupported` naming the pair for every other — plane–plane (a
 line), plane–cylinder (a circle, an ellipse, two rulings, one tangent
 ruling, or nothing), cylinder–cylinder wherever the curve is a line or a
@@ -198,20 +198,27 @@ conic, by the first table below, and every pair with a cone, a sphere or
 a torus in it wherever the two share an axis, by the meridian arm of the
 second table (ADR-0008), and the elliptic cylinder's pairs by the third
 table (ADR-0014); every other pair, and every pair with a `Nurbs`
-operand, is an explicit `Unsupported` arm. `Points` are isolated
-meetings: a touch (a plane tangent to a sphere, two spheres touching) or
-a crossing through a singular point (a plane perpendicular to a cone
-through its apex, two cones closing on one apex), every point on the
-shared axis and ascending along it. `tol.angular` decides parallel and
+operand, is an explicit `Unsupported` arm. Every curve and every point
+of a `Meets` carries its `MeetKind` (ADR-0018): a curve is a `Crossing`
+when the surfaces cross along it and a `Touch` when they are tangent all
+along it; a point is a `Touch` when the surfaces are tangent there and
+apart around it (a plane tangent to a sphere, two spheres touching) and
+a `Crossing` through a singular point (a plane perpendicular to a cone
+through its apex, two cones closing on one apex). A `Meets` holds at
+least one entry and mixes kinds freely — a circle beside a point, a
+touching ruling between two crossing ones; its curves come in the order
+the arm documents, the kinds interleaved in it, and its points lie on
+the shared axis and ascend along it. The tables name a curve's kind
+where it is a touch; every other curve crosses. `tol.angular` decides parallel and
 perpendicular, `tol.linear` decides coincident, tangent and empty.
 
 | Two cylinders, radii `R₁`, `R₂` | Result |
 |---|---|
 | Parallel axes, `d` apart, `d ≤ tol.linear` (coaxial) | `Coincident` when the radii agree within `tol.linear`, `Empty` when they do not |
-| Parallel, `d` within `tol.linear` of `R₁ + R₂` or of `\|R₁ − R₂\|` | `Tangent`, one ruling |
-| Parallel, `\|R₁ − R₂\| < d < R₁ + R₂` | `Transversal`, two rulings |
+| Parallel, `d` within `tol.linear` of `R₁ + R₂` or of `\|R₁ − R₂\|` | one touching ruling |
+| Parallel, `\|R₁ − R₂\| < d < R₁ + R₂` | two rulings |
 | Parallel, otherwise (apart, nested) | `Empty` |
-| Crossing axes (nearest approach within `tol.linear`), radii equal within `tol.linear` | `Transversal`, two ellipses |
+| Crossing axes (nearest approach within `tol.linear`), radii equal within `tol.linear` | two ellipses |
 | Crossing axes, unequal radii | `Unsupported` (a quartic, C3) |
 | Skew axes, nearest approach over `R₁ + R₂ + tol.linear` | `Empty` (triangle inequality) |
 | Skew axes, nearest approach within that | `Unsupported` (a quartic, C3) |
@@ -232,10 +239,10 @@ section's parameter — up to four.
 
 | Elliptic cylinder, radii `a ≥ b`, against | Result |
 |---|---|
-| A plane, normal parallel to the axis within `tol.angular` | `Transversal`, the section ellipse at the piercing point, the cylinder's own axes |
-| A plane parallel to the axis, offset `d` from the section's centre along its normal `n` against the section's reach `M = √((a n·X)² + (b n·Y)²)` | `\|d\|` within `tol.linear` of `M`: `Tangent`, one ruling; `\|d\| < M`: `Transversal`, two rulings ordered along `n × Z`, negative first; beyond: `Empty` |
-| A plane oblique to the axis | `Transversal`, one ellipse: the affine image of the section, its semi-axes the singular values of the section's semi-diameters slid along the axis into the plane, `Z` the plane's normal, `X` the major axis |
-| A cylinder or an elliptic cylinder with parallel axes | `Coincident`, `Empty`, `Tangent` rulings or `Transversal` rulings by the sections; sections that both touch and cross mix kinds and are `Unsupported` |
+| A plane, normal parallel to the axis within `tol.angular` | the section ellipse at the piercing point, the cylinder's own axes |
+| A plane parallel to the axis, offset `d` from the section's centre along its normal `n` against the section's reach `M = √((a n·X)² + (b n·Y)²)` | `\|d\|` within `tol.linear` of `M`: one touching ruling; `\|d\| < M`: two rulings ordered along `n × Z`, negative first; beyond: `Empty` |
+| A plane oblique to the axis | one ellipse: the affine image of the section, its semi-axes the singular values of the section's semi-diameters slid along the axis into the plane, `Z` the plane's normal, `X` the major axis |
+| A cylinder or an elliptic cylinder with parallel axes | `Coincident`, `Empty`, or a ruling at each meeting of the sections, touching where they touch — both kinds in one `Meets` when the sections both touch and cross |
 | A cylinder or an elliptic cylinder with other axes; a cone, a sphere, a torus, a NURBS | `Unsupported` |
 
 **The meridian arm.** Two surfaces of revolution about one axis meet
@@ -269,16 +276,18 @@ when the centres are within `tol.linear` of the sum or the difference of
 the radii (a touch) — and the mirror pair of sections meets in the
 mirror points bit for bit, so only the half-plane `ρ ≥ 0` is read. A
 meeting within `tol.linear` of the axis is a point on it; one beyond is
-a circle about the axis of radius `ρ`, `Transversal` at a crossing and
-`Tangent` at a touch. Two sections that coincide make the pair
+a circle about the axis of radius `ρ`, crossing or touching as the
+sections meet; a point on the axis is a crossing when any two sections
+cross there. Two sections that coincide make the pair
 `Coincident` when every other meeting lies on a coincident section, as
-the apex of two equal coaxial cones does. `tol.linear` carries over
+the apex of two equal coaxial cones does, and `Unsupported` when one
+does not — a partial coincidence, not a meeting. `tol.linear` carries over
 exactly: a distance in the plane through the axis is the 3D distance
 between points at one angle, and a point's distance to a surface of
-revolution is its distance to the full symmetric section. A result that
-would mix kinds — a circle beside a point on the axis (a sphere centred
-on a cone's axis through its apex), a crossing beside a touch — is
-`Unsupported`, as is every pair sharing no axis: a plane oblique to a
+revolution is its distance to the full symmetric section. Kinds mix in
+one `Meets` (ADR-0018): a sphere centred on a cone's axis through its
+apex meets it in a circle and the apex. Every pair sharing no axis is
+`Unsupported`: a plane oblique to a
 cone's or a torus's axis, a plane parallel to the axis and further than
 `tol.linear` from it, two cones or tori on different axes, a sphere off
 the axis; these are C3's general positions.
@@ -286,7 +295,7 @@ the axis; these are C3's general positions.
 **A plane through the axis** — its normal perpendicular to a cone's or a
 torus's axis within `tol.angular`, the carrier's origin within
 `tol.linear` of it — cuts the meridian itself, both halves, each
-`Transversal`: a cone in the two rulings through its apex, a torus in its
+crossing: a cone in the two rulings through its apex, a torus in its
 two tube circles. These are a partial revolve's flat ends against its
 cone and torus faces. A sphere's is the meridian arm's (a plane through
 its centre), a cylinder's the plane–cylinder rulings.
@@ -323,7 +332,7 @@ sphere takes the plane's frame moved to the sphere's centre, and two
 spheres take `Z` from the first centre toward the second with `X` the
 first sphere's `X` or `Y`, whichever has the larger component across
 that line. The circles come ascending along the frame's `Z`, and so do
-the points of a `Points` result; swapping the operands gives the same
+the points of a `Meets`; swapping the operands gives the same
 point sets, and reverses the order when the second operand's axis points
 the other way. A plane through the axis, with normal `n`, orders its two
 curves by the side `w = Z × n` of the carrier's own `Z`, `+w` first: a
@@ -453,11 +462,12 @@ the other quadric pairs whose curves are not conics) has an exact parametrisatio
 a `Curve` variant. Either it becomes one (`Curve::QuadricSection`, exact,
 with STEP export fitting a B-spline at write time) or the intersector fits
 `Curve::Nurbs` to the edge's tolerance and the exact form is never stored.
-`SEED.md` §10 lists this as the first kickoff question; it is decided by the
-ADR that lands the general quadric pairs (C3, `docs/ROADMAP.md`) — a
-blend's own surfaces meet only in conics, since the construction places
-them (ADR-0007) — and every pair the intersector decides today meets in
-lines, circles, ellipses or points. Until then S5 reports a pair in a general position
+`SEED.md` §10 lists this as the first kickoff question. ADR-0018 decides
+it: a fitted `Curve::Nurbs` held under the faces' tolerance, the conics
+exact, traced by `trace_quadrics` inside a region; this marker goes when
+the intersector returns the fits (plans/quadric-intersection-curves
+step 4). Every pair the intersector decides today meets in lines,
+circles, ellipses or points. Until then S5 reports a pair in a general position
 as unchecked — two cylinders on crossing axes of unequal radii, or on skew
 axes closer than the sum of the radii, which two fillets on skew edges of
 a posed body can make; a cone, a sphere or a torus against a surface
@@ -1176,7 +1186,7 @@ reference tree) mapped onto this representation.
 | S2 | In a `Solid` body every non-degenerate edge of the shell is used by exactly two coedges, with opposite effective orientation (the two faces agree on which side the material is); in a `Sheet` by one or two; in `General` by any number. A degenerate edge is a singular point of a surface, not a boundary between two faces — a sphere's pole is used once by the one face that closes on it — so it is not counted here. The orientations pair up in every kind: as many forward uses as reversed, but for an odd count, where exactly one is left over. A `Wire` body's shell is not judged here — B3 says it should have none | Fast |
 | S3 | A shell is connected through its edges | Fast |
 | S4 | A shell of a `Solid` is closed: no non-degenerate edge with one coedge (S2's exemption) | Fast |
-| S5 | The faces of a shell intersect only along their shared edges and vertices: their surfaces' intersection is empty, or every point of it that is interior to both faces is within the tolerance of an edge or vertex they share; two coincident surfaces must not carry faces whose interiors overlap. Surfaces meeting in isolated points (`SurfaceIntersection::Points`: a touch, or a crossing through an apex) are held to the same rule point by point — a point inside both faces that is not within tolerance of a vertex both faces reach, or of an edge they share, is a violation; the vertex clause covers two cones closing on one apex, or a blend sphere touching a plane at the corner of its contact lines, which share a vertex but no edge. A pair whose boxes — each face's edges' curve boxes and its surface's box over its loops, grown by the tolerances — are apart shares no point and is decided without an intersector; a pair with a cone, a sphere or a torus in it is decided wherever the two share an axis or a plane holds that axis (ADR-0008), which is every pair a revolve makes; a pair the intersector has no closed form for is **unchecked** — listed by `Report::unchecked`, never passed and never a violation | Full |
+| S5 | The faces of a shell intersect only along their shared edges and vertices: their surfaces' intersection is empty, or every point of it that is interior to both faces is within the tolerance of an edge or vertex they share; two coincident surfaces must not carry faces whose interiors overlap. Surfaces meeting in isolated points (the points of a `Meets`: a touch, or a crossing through an apex) are held to the same rule point by point, and every curve is held to it whether it crosses or touches — a point inside both faces that is not within tolerance of a vertex both faces reach, or of an edge they share, is a violation; the vertex clause covers two cones closing on one apex, or a blend sphere touching a plane at the corner of its contact lines, which share a vertex but no edge. A pair whose boxes — each face's edges' curve boxes and its surface's box over its loops, grown by the tolerances — are apart shares no point and is decided without an intersector; a pair with a cone, a sphere or a torus in it is decided wherever the two share an axis or a plane holds that axis (ADR-0008), which is every pair a revolve makes; a pair the intersector has no closed form for is **unchecked** — listed by `Report::unchecked`, never passed and never a violation | Full |
 | B1 | A `Solid` body has at least one shell, and its shells nest into lumps (ADR-0006): every shell enclosing positive volume is an outer shell and every one enclosing negative volume — its effective normals turned into the void — a void, a shell enclosing none being neither; no face of one shell meets a face of another, by S5's test with nothing shared; and, one shell lying inside another when a vertex of it does by the parity of a ray cast against the other's faces alone, each void's innermost container is an outer shell and each outer shell's is none or a void. `arris_check::lumps` returns the lumps this proves — each outer shell with the voids whose innermost container it is. A face pair of two shells the intersector has no closed form for, or a shell no ray could be classified against, is **unchecked**, as S5's undecided pairs are. A ray meets every analytic surface by closed form, and one whose hit lands at a cone's apex or a sphere's pole lands on that face's degenerate edge, a boundary, and is abandoned for the next direction — so a solid of plane, cylinder, cone, sphere and torus faces is decided wherever its face pairs are (ADR-0008) | Full |
 | B2 | A `Solid` body encloses positive volume: `∬ p · (r_u × r_v) / 3` over each face's region in (u, v), summed with the sign of each face use. The value is reported with the violation | Full |
 | B3 | A `Wire` body has no shells; `free_edges` form chains (each vertex used by at most two free edges) — `General` bodies exempt | Fast |
@@ -1436,4 +1446,5 @@ skipped, so the dump of an invalid body says where.
 ## Open questions
 
 - `⚠ OPEN:` quadric–quadric intersection curves, exact variant or fitted
-  NURBS (§Curves).
+  NURBS (§Curves) — decided by ADR-0018 (fitted), open until the
+  intersector returns the fits.

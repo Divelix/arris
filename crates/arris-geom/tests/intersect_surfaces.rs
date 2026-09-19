@@ -6,8 +6,8 @@
 //! with a cone, a sphere or a torus in them meet where their meridians
 //! meet (ADR-0008): every circle is centred on the axis and is a genuine
 //! crossing of the meridians, no crossing a sampled meridian sees is
-//! missed, constructed touches are `Tangent` and constructed apexes and
-//! poles are `Points`. Every other surface pair — two cylinders in a
+//! missed, constructed touches are touching curves and constructed
+//! apexes and poles are points alone. Every other surface pair — two cylinders in a
 //! quartic pose, a plane oblique to a cone's axis, two tori on different
 //! axes — is `Unsupported`.
 
@@ -16,7 +16,8 @@ use core::f64::consts::{FRAC_PI_2, TAU};
 use arris_debug::prop::geom::{HALF_ANGLE_RANGE, RADIUS_RANGE, cylinder, plane, surface};
 use arris_debug::prop::{DEFAULT_SCALE, check, finite_f64, frame, point_in_box, unit_vec3};
 use arris_geom::{
-    Curve, GeomError, GeomKind, Surface, SurfaceIntersection, SurfaceKind, intersect_surfaces,
+    Curve, GeomError, GeomKind, MeetKind, Surface, SurfaceIntersection, SurfaceKind,
+    intersect_surfaces,
 };
 use arris_math::{Frame, Point3, Precision, Tolerance, UnitVec3, Vec3};
 use proptest::prelude::*;
@@ -136,22 +137,43 @@ fn same_curve(a: &Curve, b: &Curve) -> bool {
     }
 }
 
-fn curves_of(r: &SurfaceIntersection) -> &[Curve] {
-    match r {
-        SurfaceIntersection::Transversal(c) | SurfaceIntersection::Tangent(c) => c,
-        SurfaceIntersection::Empty
-        | SurfaceIntersection::Coincident
-        | SurfaceIntersection::Points(_) => &[],
-    }
+fn curves_of(r: &SurfaceIntersection) -> Vec<&Curve> {
+    r.curves().iter().map(|m| &m.curve).collect()
 }
 
-fn points_of(r: &SurfaceIntersection) -> &[Point3] {
+fn points_of(r: &SurfaceIntersection) -> Vec<Point3> {
+    r.points().iter().map(|m| m.point).collect()
+}
+
+/// A result read as the shapes the closed-form arms here give one at a
+/// time: curves that all cross, curves that all touch, points alone —
+/// or `Mixed`, several at once.
+#[derive(Debug, Clone, PartialEq)]
+enum Seen {
+    Empty,
+    Coincident,
+    Crossing(Vec<Curve>),
+    Touch(Vec<Curve>),
+    Points(Vec<Point3>),
+    Mixed,
+}
+
+fn seen(r: &SurfaceIntersection) -> Seen {
+    let all = |kind: MeetKind| r.curves().iter().all(|m| m.kind == kind);
     match r {
-        SurfaceIntersection::Points(p) => p,
-        SurfaceIntersection::Transversal(_)
-        | SurfaceIntersection::Tangent(_)
-        | SurfaceIntersection::Empty
-        | SurfaceIntersection::Coincident => &[],
+        SurfaceIntersection::Empty => Seen::Empty,
+        SurfaceIntersection::Coincident => Seen::Coincident,
+        SurfaceIntersection::Meets { curves, points } if curves.is_empty() => {
+            Seen::Points(points.iter().map(|m| m.point).collect())
+        }
+        SurfaceIntersection::Meets { points, .. } if !points.is_empty() => Seen::Mixed,
+        SurfaceIntersection::Meets { .. } if all(MeetKind::Crossing) => {
+            Seen::Crossing(curves_of(r).into_iter().cloned().collect())
+        }
+        SurfaceIntersection::Meets { .. } if all(MeetKind::Touch) => {
+            Seen::Touch(curves_of(r).into_iter().cloned().collect())
+        }
+        SurfaceIntersection::Meets { .. } => Seen::Mixed,
     }
 }
 
@@ -165,7 +187,7 @@ fn common_properties(a: &Surface, b: &Surface) -> Result<SurfaceIntersection, Te
     for c in curves_of(&r) {
         on_both(c, a, b)?;
     }
-    for &p in points_of(&r) {
+    for p in points_of(&r) {
         let (da, db) = (implicit_distance(a, p), implicit_distance(b, p));
         prop_assert!(
             da <= tol().linear && db <= tol().linear,
@@ -322,8 +344,8 @@ fn plane_cylinder_follows_the_case_table() {
             unreachable!()
         };
         let r = common_properties(&plane, &cyl)?;
-        match (case, &r) {
-            (Case::Circle, SurfaceIntersection::Transversal(c)) => {
+        match (case, &seen(&r)) {
+            (Case::Circle, Seen::Crossing(c)) => {
                 let [
                     Curve::Circle {
                         frame: cf,
@@ -339,7 +361,7 @@ fn plane_cylinder_follows_the_case_table() {
                 prop_assert_eq!(cf.x(), frame.x());
                 prop_assert_eq!(cf.z(), frame.z());
             }
-            (Case::Ellipse, SurfaceIntersection::Transversal(c)) => {
+            (Case::Ellipse, Seen::Crossing(c)) => {
                 let [
                     Curve::Ellipse {
                         frame: ef,
@@ -360,7 +382,7 @@ fn plane_cylinder_follows_the_case_table() {
                 );
                 prop_assert!(ef.x().dot(&frame.z()) > 0.0, "major axis points down v");
             }
-            (Case::TwoLines, SurfaceIntersection::Transversal(c)) => {
+            (Case::TwoLines, Seen::Crossing(c)) => {
                 let [
                     Curve::Line {
                         origin: o1,
@@ -381,7 +403,7 @@ fn plane_cylinder_follows_the_case_table() {
                 prop_assert!(((o2 - reference).norm() - half).abs() <= EXACT);
                 prop_assert!((o1 - o2).norm() >= 2.0 * half - EXACT);
             }
-            (Case::TangentLine, SurfaceIntersection::Tangent(c)) => {
+            (Case::TangentLine, Seen::Touch(c)) => {
                 let [Curve::Line { origin, direction }] = c.as_slice() else {
                     return Err(TestCaseError::fail(format!("{case:?}: {r:?}")));
                 };
@@ -391,7 +413,7 @@ fn plane_cylinder_follows_the_case_table() {
                 prop_assert!((origin - reference).norm() <= EXACT);
                 prop_assert!((implicit_distance(&cyl, *origin)) <= EXACT);
             }
-            (Case::Empty, SurfaceIntersection::Empty) => {}
+            (Case::Empty, Seen::Empty) => {}
             _ => return Err(TestCaseError::fail(format!("{case:?} gave {r:?}"))),
         }
         Ok(())
@@ -410,7 +432,7 @@ fn random_plane_and_cylinder_agree_on_every_common_property() {
 fn two_random_planes_meet_along_a_line_on_both() {
     check((plane(), plane()), |(a, b)| {
         let r = common_properties(&a, &b)?;
-        let SurfaceIntersection::Transversal(c) = &r else {
+        let Seen::Crossing(c) = seen(&r) else {
             return Err(TestCaseError::fail(format!("{r:?}")));
         };
         let [Curve::Line { origin, direction }] = c.as_slice() else {
@@ -552,7 +574,7 @@ fn a_tilted_plane_is_oblique_never_a_guess() {
         };
         let r = common_properties(&plane, &cyl)?;
         if tilt > tol().angular && FRAC_PI_2 - tilt > tol().angular {
-            let oblique = matches!(&r, SurfaceIntersection::Transversal(c) if matches!(c.as_slice(), [Curve::Ellipse { .. }]));
+            let oblique = matches!(seen(&r), Seen::Crossing(c) if matches!(c.as_slice(), [Curve::Ellipse { .. }]));
             prop_assert!(oblique, "tilt {tilt} gave {:?}", r);
         }
         Ok(())
@@ -584,8 +606,7 @@ fn through_hole_faces_against_the_hole() {
     }
     for (z, normal) in [(0.0, -Vec3::z()), (10.0, Vec3::z())] {
         let cap = wall(Point3::new(0.0, 0.0, z), normal);
-        let SurfaceIntersection::Transversal(c) = intersect_surfaces(&cap, &hole, tol()).unwrap()
-        else {
+        let Seen::Crossing(c) = seen(&intersect_surfaces(&cap, &hole, tol()).unwrap()) else {
             panic!()
         };
         let [Curve::Circle { frame, radius }] = c.as_slice() else {
@@ -775,14 +796,11 @@ fn parallel_cylinders_follow_the_case_table() {
         let r = common_properties(&a, &b)?;
         let fa = a.frame().unwrap();
         let z = fa.z();
-        let rulings = match (case, &r) {
-            (Parallel::Two, SurfaceIntersection::Transversal(c)) if c.len() == 2 => c,
-            (Parallel::Outside | Parallel::Inside, SurfaceIntersection::Tangent(c))
-                if c.len() == 1 =>
-            {
-                c
-            }
-            (Parallel::Apart | Parallel::Nested, SurfaceIntersection::Empty) => return Ok(()),
+        let read = seen(&r);
+        let rulings = match (case, &read) {
+            (Parallel::Two, Seen::Crossing(c)) if c.len() == 2 => c,
+            (Parallel::Outside | Parallel::Inside, Seen::Touch(c)) if c.len() == 1 => c,
+            (Parallel::Apart | Parallel::Nested, Seen::Empty) => return Ok(()),
             _ => return Err(TestCaseError::fail(format!("{case:?} gave {r:?}"))),
         };
         let mut origins = Vec::new();
@@ -846,7 +864,7 @@ fn equal_cylinders_crossing_meet_in_the_two_bisecting_ellipses() {
         let Surface::Cylinder { radius, .. } = a else {
             unreachable!()
         };
-        let SurfaceIntersection::Transversal(c) = &r else {
+        let Seen::Crossing(c) = seen(&r) else {
             return Err(TestCaseError::fail(format!("{r:?}")));
         };
         let [first, second] = c.as_slice() else {
@@ -1180,8 +1198,8 @@ const BRACKET: f64 = 1e-5 * DEFAULT_SCALE;
 const ACROSS: f64 = 1e-6;
 
 /// Every result circle is centred on the axis about it, every result
-/// point is on the axis, every `Transversal` circle is a crossing of the
-/// meridians and every `Tangent` one is not, and every crossing the
+/// point is on the axis, every crossing circle is a crossing of the
+/// meridians and every touching one is not, and every crossing the
 /// sampled meridian of `a` sees against `b` is one of the result's.
 fn meets_where_the_meridians_meet(
     a: &Surface,
@@ -1195,7 +1213,8 @@ fn meets_where_the_meridians_meet(
     // The result's meetings in the half-plane, as 3D points on `a`'s
     // meridian.
     let mut meetings: Vec<Point3> = Vec::new();
-    for c in curves_of(r) {
+    for m in r.curves() {
+        let c = &m.curve;
         let Curve::Circle { frame, radius } = c else {
             return Err(TestCaseError::fail(format!("{c:?} is no circle")));
         };
@@ -1208,20 +1227,19 @@ fn meets_where_the_meridians_meet(
         let t = meridian_param(a, axis, on_meridian);
         let before = signed_distance(b, meridian_at(a, axis, t - ACROSS));
         let after = signed_distance(b, meridian_at(a, axis, t + ACROSS));
-        match r {
-            SurfaceIntersection::Transversal(_) => prop_assert!(
+        match m.kind {
+            MeetKind::Crossing => prop_assert!(
                 before * after < 0.0,
                 "{c:?} is no crossing: {before} and {after} either side"
             ),
-            SurfaceIntersection::Tangent(_) => prop_assert!(
+            MeetKind::Touch => prop_assert!(
                 before * after > 0.0,
                 "{c:?} is a crossing: {before} and {after} either side"
             ),
-            _ => unreachable!(),
         }
         meetings.push(on_meridian);
     }
-    for &p in points_of(r) {
+    for p in points_of(r) {
         prop_assert!(off_axis(p) <= EXACT, "{p} is off the axis");
         meetings.push(p);
     }
@@ -1290,10 +1308,11 @@ fn normals_parallel(a: &Surface, b: &Surface, p: Point3) -> Result<(), TestCaseE
     Ok(())
 }
 
-/// The one circle of a `Tangent` result, or a failure naming it.
+/// The one circle of a result that touches along curves, or a failure
+/// naming it.
 fn one_tangent_circle(r: &SurfaceIntersection) -> Result<(Point3, f64), TestCaseError> {
-    match r {
-        SurfaceIntersection::Tangent(c) => match c.as_slice() {
+    match seen(r) {
+        Seen::Touch(c) => match c.as_slice() {
             [Curve::Circle { frame, radius }] => Ok((frame.origin(), *radius)),
             _ => Err(TestCaseError::fail(format!("{r:?}"))),
         },
@@ -1301,10 +1320,10 @@ fn one_tangent_circle(r: &SurfaceIntersection) -> Result<(Point3, f64), TestCase
     }
 }
 
-/// The one point of a `Points` result, or a failure naming it.
+/// The one point of a result of points alone, or a failure naming it.
 fn one_point(r: &SurfaceIntersection) -> Result<Point3, TestCaseError> {
-    match r {
-        SurfaceIntersection::Points(p) if p.len() == 1 => Ok(p[0]),
+    match seen(r) {
+        Seen::Points(p) if p.len() == 1 => Ok(p[0]),
         _ => Err(TestCaseError::fail(format!("{r:?}"))),
     }
 }
@@ -1463,7 +1482,7 @@ fn constructed_apexes_are_points_and_equal_cones_coincide() {
         // `R / tan α` either side of the apex.
         let cylinder = on_axis(Coaxial::Cylinder, &axis, pb);
         let r = common_properties(&cylinder, &cone)?;
-        let SurfaceIntersection::Transversal(c) = &r else {
+        let Seen::Crossing(c) = seen(&r) else {
             return Err(TestCaseError::fail(format!("{r:?}")));
         };
         prop_assert_eq!(c.len(), 2, "{:?}", r);
@@ -1484,7 +1503,7 @@ fn constructed_apexes_are_points_and_equal_cones_coincide() {
 
 /// A plane through the axis of a cone cuts its two rulings through the
 /// apex, and through the axis of a torus its two tube circles: each
-/// `Transversal`, on both surfaces, a ruling from the apex along the
+/// crossing, on both surfaces, a ruling from the apex along the
 /// cone's `∂P/∂v` at the half-angle to the axis and a circle of radius
 /// `r` about `O ± R·w` in the plane with its `t` the torus's `v`, the
 /// first on the side `w = Z × n`; the plane's origin anywhere in it, its
@@ -1509,7 +1528,7 @@ fn a_plane_through_the_axis_cuts_the_meridian() {
                 // is taken from it.
                 let w = w * own_z.dot(&z).signum();
                 let r = common_properties(&plane, &carrier)?;
-                let SurfaceIntersection::Transversal(c) = &r else {
+                let Seen::Crossing(c) = seen(&r) else {
                     return Err(TestCaseError::fail(format!("{kind:?}: {r:?}")));
                 };
                 prop_assert_eq!(c.len(), 2, "{:?}: {:?}", kind, r);

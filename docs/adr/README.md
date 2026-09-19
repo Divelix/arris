@@ -28,3 +28,4 @@ here; the first ADR is the first decision taken *after* the seed.
 | [0015](0015-a-fixture-may-declare-the-oracle-wrong.md) | A fixture may declare the oracle's measurements wrong, and is then held to its closed forms | accepted |
 | [0016](0016-a-touch-off-every-vertex-is-resolved-through-the-section-curves.md) | A touch off every vertex is resolved through the section curves; the intersector's touch stays a verdict on depth | accepted |
 | [0017](0017-the-application-gate-closes-on-the-corpus.md) | The application gate closes on the corpus; the swap is the consumer's | accepted |
+| [0018](0018-quadric-sections-are-fitted-nurbs-and-one-meets-result.md) | Quadric sections are fitted NURBS under the faces' tolerance, traced by ruling families in a region; one `Meets` result | accepted |

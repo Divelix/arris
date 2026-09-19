@@ -6,7 +6,7 @@
 
 use core::f64::consts::{FRAC_PI_2, FRAC_PI_4, PI};
 
-use arris_geom::{Curve, NurbsSurface, Surface, SurfaceIntersection, intersect_surfaces};
+use arris_geom::{Curve, MeetKind, NurbsSurface, Surface, SurfaceIntersection, intersect_surfaces};
 use arris_math::{Frame, Point3, Precision, Tolerance, Vec3};
 
 /// Closed form against the second fundamental form, at unit scale.
@@ -184,8 +184,8 @@ fn a_direction_off_the_tangent_plane_or_of_no_length_has_no_curvature() {
 /// never reached by two cylinders. Across a tangent ruling, signed
 /// against one normal, an outside touch is `−1/R₁` against `+1/R₂` and an
 /// inside touch `−1/R₁` against `−1/R₂` with `R₁ ≠ R₂`; equal radii
-/// touching inside are the same axis, which is `Coincident`, not
-/// `Tangent`.
+/// touching inside are the same axis, which is `Coincident`, not a
+/// touch.
 #[test]
 fn a_tangent_cylinder_pair_never_ties_its_curvatures() {
     let cylinder = |x: f64, radius: f64| Surface::Cylinder {
@@ -197,12 +197,13 @@ fn a_tangent_cylinder_pair_never_ties_its_curvatures() {
         (cylinder(0.0, 1.0), cylinder(3.0, 2.0)),
         (cylinder(0.0, 2.0), cylinder(1.0, 1.0)),
     ] {
-        let SurfaceIntersection::Tangent(curves) = intersect_surfaces(&a, &b, tol()).unwrap()
-        else {
-            panic!("a tangent pair");
+        let r = intersect_surfaces(&a, &b, tol()).unwrap();
+        let [meet] = r.curves() else {
+            panic!("one ruling: {r:?}");
         };
-        let [Curve::Line { origin, direction }] = curves.as_slice() else {
-            panic!("one ruling: {curves:?}");
+        assert_eq!(meet.kind, MeetKind::Touch, "a tangent pair");
+        let Curve::Line { origin, direction } = &meet.curve else {
+            panic!("one ruling: {r:?}");
         };
         let on_a = a.project(*origin).unwrap().uv;
         let on_b = b.project(*origin).unwrap().uv;

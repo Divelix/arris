@@ -199,13 +199,16 @@ impl<'m> Checker<'m> {
             Err(_) => return Err((sa.kind(), sb.kind())),
             Ok(SurfaceIntersection::Empty) => false,
             Ok(SurfaceIntersection::Coincident) => self.regions_overlap(a, sa, b, sb, tolerance),
-            Ok(SurfaceIntersection::Transversal(curves))
-            | Ok(SurfaceIntersection::Tangent(curves)) => curves
-                .iter()
-                .any(|c| self.curve_is_interior_to_both(a, sa, b, sb, c, tolerance)),
-            Ok(SurfaceIntersection::Points(points)) => points
-                .iter()
-                .any(|&p| self.point_is_interior_to_both(a, sa, b, sb, p, tolerance)),
+            // Crossing or touching, every curve and every point is held to
+            // the one rule.
+            Ok(SurfaceIntersection::Meets { curves, points }) => {
+                curves
+                    .iter()
+                    .any(|c| self.curve_is_interior_to_both(a, sa, b, sb, &c.curve, tolerance))
+                    || points
+                        .iter()
+                        .any(|p| self.point_is_interior_to_both(a, sa, b, sb, p.point, tolerance))
+            }
         })
     }
 

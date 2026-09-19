@@ -28,18 +28,20 @@ use core::f64::consts::FRAC_PI_2;
 use arris_math::{Frame, Point3, Tolerance, UnitVec3, Vec3};
 
 use crate::intersect::line_angle;
-use crate::{Curve, GeomError, GeomKind, Surface, SurfaceIntersection, SurfaceKind};
+use crate::{
+    Curve, GeomError, GeomKind, MeetCurve, MeetKind, MeetPoint, Surface, SurfaceIntersection,
+    SurfaceKind,
+};
 
 /// The intersection of two surfaces at least one of which is a cone, a
-/// sphere or a torus, when they share an axis: `Transversal` or `Tangent`
-/// circles about the axis ascending along it, `Points` on the axis
-/// ascending along it, `Coincident` or `Empty`; and a plane through a
-/// cone's or a torus's axis, which cuts the meridian itself — two
-/// `Transversal` rulings or tube circles ([`through_the_axis`]). A pair
-/// that shares no axis, and a pair whose meetings mix kinds — a circle
-/// beside a point on the axis, a crossing beside a touch — is
-/// `Unsupported` naming the kinds: the first is C3's general position,
-/// the second a result type decided with it.
+/// sphere or a torus, when they share an axis: circles about the axis
+/// ascending along it and points on the axis ascending along it, each a
+/// crossing or a touch and together in one `Meets` when both occur
+/// (ADR-0018), `Coincident` or `Empty`; and a plane through a cone's or a
+/// torus's axis, which cuts the meridian itself — two crossing rulings
+/// or tube circles ([`through_the_axis`]). A pair that shares no axis is
+/// `Unsupported` naming the kinds, C3's general position, and so is a
+/// coincident section beside a meeting off it.
 pub(crate) fn intersect_coaxial(
     a: &Surface,
     b: &Surface,
@@ -90,12 +92,19 @@ pub(crate) fn intersect_coaxial(
     // The half-plane `ρ ≥ 0`: a meeting within `tol.linear` of the axis is
     // a point on it, one beyond is a circle of radius `ρ`, and one on the
     // far side is the mirror of a meeting already kept.
-    let mut points: Vec<f64> = Vec::new();
-    let mut circles: Vec<(Kind, [f64; 2])> = Vec::new();
+    let mut points: Vec<(MeetKind, f64)> = Vec::new();
+    let mut circles: Vec<(MeetKind, [f64; 2])> = Vec::new();
     for (kind, [rho, z]) in meetings {
+        let kind = match kind {
+            Kind::Cross => MeetKind::Crossing,
+            Kind::Touch => MeetKind::Touch,
+        };
         if rho.abs() <= tol.linear {
-            if !points.iter().any(|&q| (q - z).abs() <= tol.linear) {
-                points.push(z);
+            // A point two sections cross at is a crossing, whatever another
+            // pair of sections does there (`Crossing` orders first).
+            match points.iter_mut().find(|(_, q)| (q - z).abs() <= tol.linear) {
+                Some(point) => point.0 = point.0.min(kind),
+                None => points.push((kind, z)),
             }
         } else if rho > 0.0
             && !circles
@@ -105,35 +114,31 @@ pub(crate) fn intersect_coaxial(
             circles.push((kind, [rho, z]));
         }
     }
+    if circles.is_empty() && points.is_empty() {
+        return Ok(SurfaceIntersection::Empty);
+    }
     let z: Vec3 = axis.z().into_inner();
     let at = |height: f64| axis.origin() + height * z;
-    if circles.is_empty() {
-        if points.is_empty() {
-            return Ok(SurfaceIntersection::Empty);
-        }
-        points.sort_by(f64::total_cmp);
-        return Ok(SurfaceIntersection::Points(
-            points.into_iter().map(at).collect(),
-        ));
-    }
-    if !points.is_empty() {
-        return Err(unsupported());
-    }
-    let kind = circles[0].0;
-    if circles.iter().any(|(k, _)| *k != kind) {
-        return Err(unsupported());
-    }
+    points.sort_by(|p, q| p.1.total_cmp(&q.1));
     circles.sort_by(|p, q| p.1[1].total_cmp(&q.1[1]).then(p.1[0].total_cmp(&q.1[0])));
-    let curves: Vec<Curve> = circles
-        .into_iter()
-        .map(|(_, [rho, height])| Curve::Circle {
-            frame: axis.with_origin(at(height)),
-            radius: rho,
-        })
-        .collect();
-    Ok(match kind {
-        Kind::Cross => SurfaceIntersection::Transversal(curves),
-        Kind::Touch => SurfaceIntersection::Tangent(curves),
+    Ok(SurfaceIntersection::Meets {
+        curves: circles
+            .into_iter()
+            .map(|(kind, [rho, height])| MeetCurve {
+                curve: Curve::Circle {
+                    frame: axis.with_origin(at(height)),
+                    radius: rho,
+                },
+                kind,
+            })
+            .collect(),
+        points: points
+            .into_iter()
+            .map(|(kind, height)| MeetPoint {
+                point: at(height),
+                kind,
+            })
+            .collect(),
     })
 }
 
@@ -302,7 +307,7 @@ fn shared_axis(a: &Surface, b: &Surface, tol: Tolerance) -> Result<Shared, GeomE
 }
 
 /// A plane through `carrier`'s axis, whose normal is `n`: the carrier's
-/// meridian, both halves of it, each `Transversal` — the normals across
+/// meridian, both halves of it, each crossing — the normals across
 /// the cut are the plane's and one in the plane. With `w = Z × n` over
 /// the carrier's own `Z`, a cone gives the two rulings through its apex
 /// on the sides `+w` then `−w`, each from the apex along the cone's
@@ -328,10 +333,10 @@ fn through_the_axis(carrier: &Surface, n: UnitVec3) -> Option<SurfaceIntersectio
                 origin: apex,
                 direction: UnitVec3::new_normalize(sa * w + ca * z),
             };
-            Some(SurfaceIntersection::Transversal(vec![
-                ruling(w),
-                ruling(-w),
-            ]))
+            Some(SurfaceIntersection::curves_of(
+                MeetKind::Crossing,
+                vec![ruling(w), ruling(-w)],
+            ))
         }
         Surface::Torus {
             ref frame,
@@ -348,7 +353,10 @@ fn through_the_axis(carrier: &Surface, n: UnitVec3) -> Option<SurfaceIntersectio
                         radius: minor_radius,
                     })
             };
-            Some(SurfaceIntersection::Transversal(vec![tube(w)?, tube(-w)?]))
+            Some(SurfaceIntersection::curves_of(
+                MeetKind::Crossing,
+                vec![tube(w)?, tube(-w)?],
+            ))
         }
         Surface::Plane { .. }
         | Surface::Cylinder { .. }
@@ -569,6 +577,29 @@ mod tests {
         Precision::DEFAULT.tolerance()
     }
 
+    /// The curves of a `Meets` with no points, every one of `kind`.
+    fn only(r: &SurfaceIntersection, kind: MeetKind) -> Vec<Curve> {
+        assert!(r.points().is_empty(), "{r:?}");
+        r.curves()
+            .iter()
+            .map(|m| {
+                assert_eq!(m.kind, kind, "{r:?}");
+                m.curve.clone()
+            })
+            .collect()
+    }
+
+    /// A `Meets` of these points alone.
+    fn points(kind: MeetKind, points: &[Point3]) -> SurfaceIntersection {
+        SurfaceIntersection::Meets {
+            curves: Vec::new(),
+            points: points
+                .iter()
+                .map(|&point| MeetPoint { point, kind })
+                .collect(),
+        }
+    }
+
     #[test]
     fn a_plane_through_the_apex_is_a_point_and_beside_it_a_circle() {
         let cone = Surface::Cone {
@@ -582,15 +613,15 @@ mod tests {
         };
         assert_eq!(
             intersect_coaxial(&through, &cone, tol()).unwrap(),
-            SurfaceIntersection::Points(vec![Point3::new(0.0, 0.0, -2.0)])
+            points(MeetKind::Crossing, &[Point3::new(0.0, 0.0, -2.0)])
         );
         let beside = Surface::Plane {
             frame: Frame::from_z(Point3::new(5.0, 1.0, 1.0), -Vec3::z()).unwrap(),
         };
-        let SurfaceIntersection::Transversal(c) = intersect_coaxial(&cone, &beside, tol()).unwrap()
-        else {
-            panic!()
-        };
+        let c = only(
+            &intersect_coaxial(&cone, &beside, tol()).unwrap(),
+            MeetKind::Crossing,
+        );
         let [Curve::Circle { frame, radius }] = c.as_slice() else {
             panic!("{c:?}")
         };
@@ -609,10 +640,10 @@ mod tests {
             frame: Frame::from_z(Point3::new(0.0, 0.0, 3.0), Vec3::x()).unwrap(),
             radius: 2.0,
         };
-        let SurfaceIntersection::Tangent(c) = intersect_coaxial(&ball, &wall, tol()).unwrap()
-        else {
-            panic!()
-        };
+        let c = only(
+            &intersect_coaxial(&ball, &wall, tol()).unwrap(),
+            MeetKind::Touch,
+        );
         let [Curve::Circle { frame, radius }] = c.as_slice() else {
             panic!("{c:?}")
         };
@@ -633,16 +664,16 @@ mod tests {
         };
         assert_eq!(
             intersect_coaxial(&a, &touch, tol()).unwrap(),
-            SurfaceIntersection::Points(vec![Point3::new(2.0, 0.0, 0.0)])
+            points(MeetKind::Touch, &[Point3::new(2.0, 0.0, 0.0)])
         );
         let cross = Surface::Sphere {
             frame: Frame::world().with_origin(Point3::new(0.0, 2.0, 0.0)),
             radius: 2.0,
         };
-        let SurfaceIntersection::Transversal(c) = intersect_coaxial(&a, &cross, tol()).unwrap()
-        else {
-            panic!()
-        };
+        let c = only(
+            &intersect_coaxial(&a, &cross, tol()).unwrap(),
+            MeetKind::Crossing,
+        );
         let [Curve::Circle { frame, radius }] = c.as_slice() else {
             panic!("{c:?}")
         };
@@ -664,8 +695,12 @@ mod tests {
         );
     }
 
+    /// A sphere about a point of a cone's axis through its apex: the apex
+    /// on the axis and a circle off it, in one `Meets` (ADR-0018). Apex at
+    /// `z = −2`, centre at `z = 1`, radius 3: the nappe `ρ = z + 2` meets
+    /// `ρ² + (z − 1)² = 9` again at `z = 1`, `ρ = 3`.
     #[test]
-    fn a_sphere_through_the_apex_mixes_a_circle_with_a_point_and_is_refused() {
+    fn a_sphere_through_the_apex_meets_in_a_circle_and_a_point() {
         let cone = Surface::Cone {
             frame: Frame::world(),
             radius: 2.0,
@@ -675,9 +710,19 @@ mod tests {
             frame: Frame::world().with_origin(Point3::new(0.0, 0.0, 1.0)),
             radius: 3.0,
         };
-        assert!(matches!(
-            intersect_coaxial(&cone, &ball, tol()),
-            Err(GeomError::Unsupported { .. })
-        ));
+        let r = intersect_coaxial(&cone, &ball, tol()).unwrap();
+        let [point] = r.points() else { panic!("{r:?}") };
+        assert_eq!(point.kind, MeetKind::Crossing);
+        assert!((point.point - Point3::new(0.0, 0.0, -2.0)).norm() <= 1e-12);
+        let [circle] = r.curves() else {
+            panic!("{r:?}")
+        };
+        assert_eq!(circle.kind, MeetKind::Crossing);
+        let Curve::Circle { frame, radius } = &circle.curve else {
+            panic!("{r:?}")
+        };
+        assert!((frame.origin() - Point3::new(0.0, 0.0, 1.0)).norm() <= 1e-12);
+        assert!((radius - 3.0).abs() <= 1e-12);
+        assert_eq!(intersect_coaxial(&ball, &cone, tol()).unwrap(), r);
     }
 }

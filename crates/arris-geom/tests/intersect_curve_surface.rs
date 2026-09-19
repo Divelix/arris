@@ -852,13 +852,14 @@ fn oblique_section() -> impl Strategy<Value = (Surface, Curve)> {
                     frame: Frame::from_z(origin, normal).ok()?,
                 };
                 match arris_geom::intersect_surfaces(&plane, &cyl, tol()) {
-                    Ok(arris_geom::SurfaceIntersection::Transversal(curves)) => {
-                        match curves.first() {
-                            Some(e @ Curve::Ellipse { .. }) => Some((cyl, e.clone())),
-                            _ => None,
-                        }
-                    }
-                    _ => None,
+                    Ok(r) => match r.curves().first() {
+                        Some(arris_geom::MeetCurve {
+                            curve: e @ Curve::Ellipse { .. },
+                            kind: arris_geom::MeetKind::Crossing,
+                        }) => Some((cyl, e.clone())),
+                        _ => None,
+                    },
+                    Err(_) => None,
                 }
             },
         )

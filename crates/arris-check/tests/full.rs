@@ -392,7 +392,7 @@ fn s5_two_faces_that_cross_along_the_line_of_their_planes() {
     );
 }
 
-/// S5 through the `Points` arm (ADR-0008): a plane face touching a sphere
+/// S5 through a meeting in points alone (ADR-0008): a plane face touching a sphere
 /// face at one point interior to both — the sphere's equator at `u = π/2`,
 /// off its seam and its poles — with nothing shared to excuse it. S3
 /// says alongside that two faces sharing no edge are two components.

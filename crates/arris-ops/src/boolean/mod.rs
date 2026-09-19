@@ -18,11 +18,26 @@ mod result;
 use core::fmt;
 use std::collections::BTreeMap;
 
-use arris_check::arris_topo::arris_geom::{Curve, Curve2, SurfaceIntersection};
+use arris_check::arris_topo::arris_geom::{Curve, Curve2, MeetKind, SurfaceIntersection};
 use arris_check::arris_topo::arris_math::{Interval, Point2, Point3};
 use arris_check::arris_topo::{Body, Curve2Id, EdgeId, FaceId, Model, Provenance, Shape, VertexId};
 
 use crate::error::OpError;
+
+/// The curves of `intersection` that meet as `kind`, each with its
+/// index among the `Meets` curves: what a section curve's or a contact's
+/// index names.
+pub(super) fn meet_curves(
+    intersection: &SurfaceIntersection,
+    kind: MeetKind,
+) -> impl Iterator<Item = (usize, &Curve)> {
+    intersection
+        .curves()
+        .iter()
+        .enumerate()
+        .filter(move |(_, c)| c.kind == kind)
+        .map(|(i, c)| (i, &c.curve))
+}
 
 /// One face pair whose bounding boxes overlap, with what their surfaces
 /// have in common: the pair a boolean has to decide.
@@ -32,13 +47,16 @@ pub struct FacePair {
     pub a: FaceId,
     /// The face of the second.
     pub b: FaceId,
-    /// Their surfaces' intersection. A `Transversal` pair carries the
-    /// section curves; a `Coincident` pair is decided by the arrangement
-    /// of the two faces on one surface — its [`Interferences::crossings`],
-    /// [`Interferences::images`] and [`Interferences::blocks`] — and a
-    /// `Tangent` one by its [`Interferences::contacts`] — the blocks of
-    /// the tangent ruling interior to both faces — and the curvature rule
-    /// at each; neither contributes a section edge.
+    /// Their surfaces' intersection. The crossing curves of a `Meets`
+    /// pair are the section curves; a `Coincident` pair is decided by the
+    /// arrangement of the two faces on one surface — its
+    /// [`Interferences::crossings`], [`Interferences::images`] and
+    /// [`Interferences::blocks`] — and the touching curves of a `Meets`
+    /// by its [`Interferences::contacts`] — the blocks of the tangent
+    /// ruling interior to both faces — and the curvature rule at each;
+    /// neither contributes a section edge. A pair past the quadric guard
+    /// meets in curves of one kind and in no point: a *crossing pair* or
+    /// a *touching pair*.
     pub intersection: SurfaceIntersection,
 }
 
@@ -76,7 +94,7 @@ pub struct EdgeFaceHit {
     pub point: Point3,
     /// `true` when the edge touches the surface here without crossing
     /// it. A touch pierces nothing: it makes no section vertex of its
-    /// own; it paves the tangent ruling of a `Tangent` pair, whose blocks
+    /// own; it paves the tangent ruling of a touching pair, whose blocks
     /// between touches are the pair's [`Interferences::contacts`]. A
     /// touch that lands on a section vertex the hits and crossings made —
     /// a ruling or a rim circle through the crossing of two ellipses,
@@ -103,7 +121,7 @@ pub enum VertexSource {
     /// Hits or edge–edge crossings merged: at least one of either. A
     /// section crossing may have joined it too.
     Hits,
-    /// Two section curves of one `Transversal` pair crossing each other
+    /// Two section curves of one crossing pair crossing each other
     /// where no edge of either operand pierces: at least one section
     /// crossing, and no hit but touches landing on it.
     SectionCrossing,
@@ -161,7 +179,8 @@ pub struct Pave {
 pub struct SectionCurve {
     /// The pair, an index into [`Interferences::pairs`].
     pub pair: usize,
-    /// Which of the pair's `Transversal` curves.
+    /// Which of the pair's crossing curves: an index into its `Meets`
+    /// curves.
     pub index: usize,
     /// The curve, as `intersect_surfaces` gave it.
     pub curve: Curve,
@@ -171,7 +190,7 @@ pub struct SectionCurve {
     pub edges: Vec<usize>,
 }
 
-/// One point where two section curves of one `Transversal` pair cross
+/// One point where two section curves of one pair cross
 /// each other on both faces: the two curves intersected, kept when the
 /// point is inside each face or on its boundary. Two surfaces meet in
 /// two curves that cross where they are tangent to each other — the two
@@ -183,8 +202,8 @@ pub struct SectionCurve {
 pub struct SectionCrossing {
     /// The pair, an index into [`Interferences::pairs`].
     pub pair: usize,
-    /// Which two of the pair's `Transversal` curves, the lower index
-    /// first.
+    /// Which two of the pair's crossing curves, indices into its `Meets`
+    /// curves, the lower first.
     pub curves: [usize; 2],
     /// The parameter on each of the two curves; a periodic one in
     /// `[0, 2π)`.
@@ -220,7 +239,7 @@ pub struct SectionEdge {
     pub pcurves: [Curve2; 2],
 }
 
-/// A block of a `Tangent` pair's ruling interior to both faces: where the
+/// A block of a touching pair's ruling interior to both faces: where the
 /// two faces touch along a curve. The ruling is paved by every hit of
 /// either face's edges on the other face that lies on it — the touches,
 /// which are where the ruling leaves one face inside the other — and a
@@ -234,7 +253,8 @@ pub struct SectionEdge {
 pub struct Contact {
     /// The pair, an index into [`Interferences::pairs`].
     pub pair: usize,
-    /// Which of the pair's `Tangent` curves.
+    /// Which of the pair's touching curves: an index into its `Meets`
+    /// curves.
     pub curve: usize,
     /// The parameter range on it, between two consecutive paves.
     pub range: Interval,
@@ -345,7 +365,7 @@ pub struct Interferences {
     /// Every edge-on-face hit: `a`'s edges against `b`'s faces and `b`'s
     /// against `a`'s, ascending by `(edge id, t)`.
     pub hits: Vec<EdgeFaceHit>,
-    /// Every crossing of two section curves of one `Transversal` pair on
+    /// Every crossing of two section curves of one crossing pair on
     /// both faces, ascending by `(pair, curves, t on the first)`.
     pub section_crossings: Vec<SectionCrossing>,
     /// The section vertices.
@@ -353,13 +373,13 @@ pub struct Interferences {
     /// The paves on every operand edge that has one, ascending by `t`,
     /// one per section vertex.
     pub paves: BTreeMap<EdgeId, Vec<Pave>>,
-    /// The section curves of every `Transversal` pair, in pair order.
+    /// The section curves of every crossing pair, in pair order.
     pub curves: Vec<SectionCurve>,
     /// The section edges, in curve order and then along each curve —
     /// the split order a pair's section edges reach the record in
     /// (ADR-0009, `docs/DATA-MODEL.md` §Provenance).
     pub sections: Vec<SectionEdge>,
-    /// The contacts of every `Tangent` pair, in pair order and then along
+    /// The contacts of every touching pair, in pair order and then along
     /// each ruling.
     pub contacts: Vec<Contact>,
     /// Edges of one operand lying in the surface of a face of the other
@@ -389,7 +409,7 @@ pub struct Interferences {
 /// exactly when its parameter is in the edge's range and its (u, v) is
 /// on the face; hits within tolerance of one another are one section
 /// vertex, made once, whose tolerance follows the growth rule; two
-/// section curves of one `Transversal` pair that cross each other at a
+/// section curves of one crossing pair that cross each other at a
 /// point on both faces make a section vertex there too, merged with any
 /// hit at the point by the same rule; a section
 /// vertex paves every edge that hit it and every section curve it lies
@@ -397,7 +417,7 @@ pub struct Interferences {
 /// their midpoint is inside both faces, and each kept block carries a
 /// pcurve on each face that is same-parameter with the curve within the
 /// edge's tolerance, translated into the copy of the domain the face's
-/// loops are written in. For a `Tangent` pair, the ruling is paved by
+/// loops are written in. For a touching pair, the ruling is paved by
 /// the touches — the hits of either face's edges on the other face
 /// lying on it — and every block between consecutive paves whose
 /// midpoint is inside both faces is a [`Contact`], with no section edge
@@ -744,22 +764,17 @@ impl fmt::Display for Interferences {
                 SurfaceIntersection::Coincident => {
                     writeln!(f, "  p{i} {} x {}: coincident", p.a, p.b)?;
                 }
-                SurfaceIntersection::Transversal(curves) => {
-                    writeln!(f, "  p{i} {} x {}: transversal", p.a, p.b)?;
+                SurfaceIntersection::Meets { curves, points } => {
+                    writeln!(f, "  p{i} {} x {}: meets", p.a, p.b)?;
+                    let kind = |k: MeetKind| match k {
+                        MeetKind::Crossing => "crossing",
+                        MeetKind::Touch => "touch",
+                    };
                     for c in curves {
-                        writeln!(f, "    {}", curve(c))?;
+                        writeln!(f, "    {} {}", kind(c.kind), curve(&c.curve))?;
                     }
-                }
-                SurfaceIntersection::Tangent(curves) => {
-                    writeln!(f, "  p{i} {} x {}: tangent", p.a, p.b)?;
-                    for c in curves {
-                        writeln!(f, "    {}", curve(c))?;
-                    }
-                }
-                SurfaceIntersection::Points(points) => {
-                    writeln!(f, "  p{i} {} x {}: points", p.a, p.b)?;
                     for q in points {
-                        writeln!(f, "    point {}", point3(*q))?;
+                        writeln!(f, "    {} point {}", kind(q.kind), point3(q.point))?;
                     }
                 }
             }

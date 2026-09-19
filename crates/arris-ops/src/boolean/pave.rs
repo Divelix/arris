@@ -13,9 +13,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use arris_check::arris_topo::arris_geom::region2::Side;
 use arris_check::arris_topo::arris_geom::{
-    Curve, Curve2, CurveIntersection, CurveSurfaceIntersection, GeomError, GeomKind, Surface,
-    SurfaceIntersection, SurfaceKind, curves_coincide, intersect_curve_surface, intersect_curves,
-    intersect_surfaces, pcurve_on,
+    Curve, Curve2, CurveIntersection, CurveSurfaceIntersection, GeomError, GeomKind, MeetKind,
+    Surface, SurfaceIntersection, SurfaceKind, curves_coincide, intersect_curve_surface,
+    intersect_curves, intersect_surfaces, pcurve_on,
 };
 use arris_check::arris_topo::arris_math::{
     Interval, Point2, Point3, Precision, Tolerance, Vec2, period_end, wrap_angle,
@@ -29,7 +29,7 @@ use arris_check::domain::band;
 use super::faces::{EdgeInfo, FaceInfo};
 use super::{
     CommonBlock, Contact, EdgeEdgeHit, EdgeFaceHit, EdgeImage, FacePair, Interferences, Landing,
-    Pave, SectionCrossing, SectionCurve, SectionEdge, SectionVertex, VertexSource,
+    Pave, SectionCrossing, SectionCurve, SectionEdge, SectionVertex, VertexSource, meet_curves,
 };
 use crate::error::{Fault, OpError};
 
@@ -415,16 +415,13 @@ impl<'m> Build<'m> {
         let tol = tolerance_of(&self.precision, e.tolerance, f.tolerance);
         let mut found: Vec<EdgeFaceHit> = Vec::new();
         for (pi, pair) in self.pairs.iter().enumerate() {
-            let SurfaceIntersection::Transversal(curves) = &pair.intersection else {
-                continue;
-            };
             let (ia, ib) = self.pair_faces[pi];
             let (own, other) = if side == 0 { (ia, ib) } else { (ib, ia) };
             let g = &self.faces[side][own];
             if self.faces[1 - side][other].id != face || !g.edges().contains(&edge) {
                 continue;
             }
-            for curve in curves {
+            for (_, curve) in meet_curves(&pair.intersection, MeetKind::Crossing) {
                 let hits = match intersect_curves(e.curve, curve, tol)
                     .map_err(|err| geometry(err, e.shape(), f.shape()))?
                 {
@@ -558,7 +555,7 @@ impl<'m> Build<'m> {
         Ok(on.then_some(projection.uv + shift))
     }
 
-    /// The curves of every `Transversal` pair against one another: a
+    /// The curves of every crossing pair against one another: a
     /// crossing on both faces is recorded, sorted by `(pair, curves, t on
     /// the first)`. Two curves of one pair meet where the surfaces are
     /// tangent to each other — the two ellipses of equal cylinders with
@@ -567,14 +564,13 @@ impl<'m> Build<'m> {
     fn section_crossings(&mut self) -> Result<(), OpError> {
         let mut found: Vec<(SectionCrossing, f64)> = Vec::new();
         for (pi, pair) in self.pairs.iter().enumerate() {
-            let SurfaceIntersection::Transversal(curves) = &pair.intersection else {
-                continue;
-            };
             let (ia, ib) = self.pair_faces[pi];
             let (fa, fb) = (&self.faces[0][ia], &self.faces[1][ib]);
             let tol = tolerance_of(&self.precision, fa.tolerance, fb.tolerance);
-            for (ci, ca) in curves.iter().enumerate() {
-                for (cj, cb) in curves.iter().enumerate().skip(ci + 1) {
+            let curves: Vec<(usize, &Curve)> =
+                meet_curves(&pair.intersection, MeetKind::Crossing).collect();
+            for (k, &(ci, ca)) in curves.iter().enumerate() {
+                for &(cj, cb) in &curves[k + 1..] {
                     let hits = match intersect_curves(ca, cb, tol)
                         .map_err(|e| geometry(e, fa.shape(), fb.shape()))?
                     {
@@ -937,44 +933,43 @@ impl<'m> Build<'m> {
         Some(out)
     }
 
-    /// The section curves of every `Transversal` pair, paved and cut into
+    /// The section curves of every crossing pair, paved and cut into
     /// blocks, the blocks interior to both faces kept as section edges.
     fn sections(&mut self) -> Result<(), OpError> {
         for pi in 0..self.pairs.len() {
-            let curves = match &self.pairs[pi].intersection {
-                SurfaceIntersection::Transversal(curves) => curves.clone(),
-                SurfaceIntersection::Empty
-                | SurfaceIntersection::Coincident
-                | SurfaceIntersection::Tangent(_) => continue,
-                // Only a pair with a cone, a sphere or a torus meets in
-                // points, and the quadric guard refuses those before the
-                // intersector is asked.
-                SurfaceIntersection::Points(_) => {
-                    return Err(OpError::Internal(Fault::Invariant {
-                        what: "a face pair meeting in points past the quadric guard",
-                    }));
-                }
-            };
-            for (ci, curve) in curves.iter().enumerate() {
-                self.section_curve(pi, ci, curve)?;
+            let intersection = &self.pairs[pi].intersection;
+            // Only a pair with a cone, a sphere, a torus or an elliptic
+            // cylinder meets in points or in both kinds at once, and the
+            // quadric guard refuses those before the intersector is asked.
+            let mixed = intersection
+                .curves()
+                .windows(2)
+                .any(|w| w[0].kind != w[1].kind);
+            if !intersection.points().is_empty() || mixed {
+                return Err(OpError::Internal(Fault::Invariant {
+                    what: "a face pair meeting in points or in both kinds past the quadric guard",
+                }));
+            }
+            let curves: Vec<(usize, Curve)> = meet_curves(intersection, MeetKind::Crossing)
+                .map(|(ci, c)| (ci, c.clone()))
+                .collect();
+            for (ci, curve) in &curves {
+                self.section_curve(pi, *ci, curve)?;
             }
         }
         Ok(())
     }
 
-    /// The rulings of every `Tangent` pair, paved by the touches and cut
+    /// The touching rulings of every pair, paved by the touches and cut
     /// into blocks, the blocks interior to both faces kept as contacts.
     fn contacts(&mut self) -> Result<(), OpError> {
         for pi in 0..self.pairs.len() {
-            let curves = match &self.pairs[pi].intersection {
-                SurfaceIntersection::Tangent(curves) => curves.clone(),
-                SurfaceIntersection::Empty
-                | SurfaceIntersection::Coincident
-                | SurfaceIntersection::Transversal(_)
-                | SurfaceIntersection::Points(_) => continue,
-            };
-            for (ci, curve) in curves.iter().enumerate() {
-                self.contact_curve(pi, ci, curve)?;
+            let curves: Vec<(usize, Curve)> =
+                meet_curves(&self.pairs[pi].intersection, MeetKind::Touch)
+                    .map(|(ci, c)| (ci, c.clone()))
+                    .collect();
+            for (ci, curve) in &curves {
+                self.contact_curve(pi, *ci, curve)?;
             }
         }
         Ok(())

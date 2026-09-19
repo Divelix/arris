@@ -13,8 +13,8 @@ use arris_debug::fixtures::geom::{
 use arris_debug::fixtures::{Kind, corpus, kind_of};
 use arris_debug::testing::{REL, close, close_param};
 use arris_geom::{
-    Curve, CurveSurfaceIntersection, GeomError, Surface, SurfaceIntersection, SurfaceKind,
-    intersect_curve_surface, intersect_surfaces,
+    Curve, CurveSurfaceIntersection, GeomError, MeetKind, Surface, SurfaceIntersection,
+    SurfaceKind, intersect_curve_surface, intersect_surfaces,
 };
 use arris_math::{Point3, Precision, Tolerance, Vec3};
 
@@ -175,16 +175,35 @@ fn check_curve_projection(name: &str, c: &Curve, p: &Projection, errors: &mut Ve
 }
 
 /// Arris's type name for a surface pair, in the oracle's vocabulary.
-fn surface_type(r: &SurfaceIntersection) -> (String, &[Curve]) {
+fn surface_type(r: &SurfaceIntersection) -> (String, Vec<&Curve>) {
     match r {
-        SurfaceIntersection::Empty => ("empty".into(), &[]),
-        SurfaceIntersection::Coincident => ("coincident".into(), &[]),
-        SurfaceIntersection::Points(_) => ("point".into(), &[]),
-        SurfaceIntersection::Transversal(c) | SurfaceIntersection::Tangent(c) => {
-            let kinds: std::collections::BTreeSet<String> =
-                c.iter().map(|c| c.kind().to_string()).collect();
-            (kinds.into_iter().collect::<Vec<_>>().join("+"), c)
+        SurfaceIntersection::Empty => ("empty".into(), Vec::new()),
+        SurfaceIntersection::Coincident => ("coincident".into(), Vec::new()),
+        SurfaceIntersection::Meets { curves, .. } if curves.is_empty() => {
+            ("point".into(), Vec::new())
         }
+        SurfaceIntersection::Meets { curves, .. } => {
+            let kinds: std::collections::BTreeSet<String> =
+                curves.iter().map(|c| c.curve.kind().to_string()).collect();
+            (
+                kinds.into_iter().collect::<Vec<_>>().join("+"),
+                curves.iter().map(|c| &c.curve).collect(),
+            )
+        }
+    }
+}
+
+/// `true` when the surfaces meet in curves and touch along every one.
+fn touching(r: &SurfaceIntersection) -> bool {
+    !r.curves().is_empty() && r.curves().iter().all(|c| c.kind == MeetKind::Touch)
+}
+
+/// The points of a result that meets in isolated points alone, else none.
+fn only_points(r: &SurfaceIntersection) -> Vec<Point3> {
+    if r.curves().is_empty() {
+        r.points().iter().map(|p| p.point).collect()
+    } else {
+        Vec::new()
     }
 }
 
@@ -240,7 +259,8 @@ fn check_surface_pair(a: &Surface, b: &Surface, res: &PairResult, errors: &mut V
         }
     };
     let (kind, curves) = surface_type(&r);
-    if let SurfaceIntersection::Points(points) = &r {
+    let points = only_points(&r);
+    if !points.is_empty() {
         // Isolated points: the oracle's `point` has the same count, each
         // of its points within REL of one of ours — the foot of a centre,
         // well conditioned unlike the crossings a touch splits into. The
@@ -286,7 +306,7 @@ fn check_surface_pair(a: &Surface, b: &Surface, res: &PairResult, errors: &mut V
     // At a touch the oracle, deciding it by rounding, may split one ruling
     // into two a square root of the rounding apart: every oracle curve is
     // then held to TOUCH against our one, whatever their count.
-    let touch = matches!(r, SurfaceIntersection::Tangent(_));
+    let touch = touching(&r);
     let counts_agree = if touch {
         !res.curves.is_empty()
     } else {
@@ -522,7 +542,7 @@ fn the_c1_intersection_cases_classify_as_built() {
     for (a, b, kind, count) in surface_cases {
         let r = intersect_surfaces(&built.surfaces[*a], &built.surfaces[*b], tol()).unwrap();
         let (got, curves) = surface_type(&r);
-        let got = if matches!(r, SurfaceIntersection::Tangent(_)) {
+        let got = if touching(&r) {
             format!("tangent {got}")
         } else {
             got
@@ -581,7 +601,7 @@ fn the_c2_cylinder_pairs_classify_as_built() {
             Err(e) => panic!("{a} vs {b}: {e}"),
             Ok(r) => {
                 let (got, curves) = surface_type(&r);
-                let got = if matches!(r, SurfaceIntersection::Tangent(_)) {
+                let got = if touching(&r) {
                     format!("tangent {got}")
                 } else {
                     got
@@ -670,10 +690,12 @@ fn the_c2_quadric_pairs_classify_as_built() {
         let r = intersect_surfaces(&built.surfaces[*a], &built.surfaces[*b], tol())
             .unwrap_or_else(|e| panic!("{a} vs {b}: {e}"));
         let (got, curves) = surface_type(&r);
-        let got = match &r {
-            SurfaceIntersection::Tangent(_) => (format!("tangent {got}"), curves.len()),
-            SurfaceIntersection::Points(p) => (got, p.len()),
-            _ => (got, curves.len()),
+        let got = if touching(&r) {
+            (format!("tangent {got}"), curves.len())
+        } else if curves.is_empty() && !r.points().is_empty() {
+            (got, r.points().len())
+        } else {
+            (got, curves.len())
         };
         assert_eq!(
             (got.0.as_str(), got.1),

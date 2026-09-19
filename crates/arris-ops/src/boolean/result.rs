@@ -9,7 +9,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use arris_check::arris_topo::arris_geom::{GeomKind, Surface, SurfaceIntersection};
+use arris_check::arris_topo::arris_geom::{GeomKind, MeetKind, Surface, SurfaceIntersection};
 use arris_check::arris_topo::arris_math::{Interval, Point2, Point3, Precision, Tolerance, Vec3};
 use arris_check::arris_topo::builder::Builder;
 use arris_check::arris_topo::entity::BodyKind;
@@ -20,7 +20,7 @@ use arris_check::arris_topo::{
 use arris_check::{Classification, Classifier, lumps};
 
 use super::pieces::{Alias, ERef, EdgeOnFace, PieceUse, SplitFace, SubEdge, VRef, split_face};
-use super::{Interferences, VertexSource};
+use super::{Interferences, VertexSource, meet_curves};
 use crate::error::{Fault, OpError, Reason, SplitFault};
 use crate::rebuild::{self, Kept, Plan, Policy, forward};
 
@@ -72,7 +72,7 @@ impl Op {
 
 /// A piece classified `On` something of the other operand its own face
 /// is neither coincident nor tangent with — an edge, a vertex, a face of
-/// a `Transversal` pair — that the transversal rule cannot decide either,
+/// a crossing pair — that the transversal rule cannot decide either,
 /// or a tangent pair the curvature rule cannot decide, its two
 /// curvatures equal: the pair the kernel has no recipe for, named.
 fn unsupported(m: &Model, face: FaceId, on: Shape) -> OpError {
@@ -412,7 +412,7 @@ impl<'m> Build<'m> {
     /// operand `side` is tangent to it.
     fn tangent_partner(&self, side: usize, f: FaceId, on: Shape) -> Option<FaceHandle> {
         self.partner(side, f, on, |i| {
-            matches!(i, SurfaceIntersection::Tangent(_))
+            meet_curves(i, MeetKind::Touch).next().is_some()
         })
     }
 
@@ -514,7 +514,7 @@ impl<'m> Build<'m> {
     /// lies inside the other operand, read where one of its section
     /// edges crosses the other operand's boundary: the *transversal
     /// rule* (`docs/ARCHITECTURE.md` §Operations). At the midpoint of a
-    /// section edge of a `Transversal` pair of `f` and `g`, the direction
+    /// section edge of a crossing pair of `f` and `g`, the direction
     /// into the piece is the surface's normal crossed with the edge's
     /// tangent as the loop walks it — the loops run counter-clockwise
     /// about the surface's normal with the piece on their left — and the
@@ -527,7 +527,7 @@ impl<'m> Build<'m> {
     /// within the tolerance of it throughout — a sliver between a seam
     /// and two section curves beside the point where they cross — is
     /// decided like any other. `None` when the piece has no section edge
-    /// of a `Transversal` pair, or the surfaces are tangent within the
+    /// of a crossing pair, or the surfaces are tangent within the
     /// angular tolerance along every one.
     fn transversal_side(
         &self,
@@ -550,7 +550,12 @@ impl<'m> Build<'m> {
             let Some(pair) = self.i.pairs.get(curve.pair) else {
                 continue;
             };
-            if !matches!(pair.intersection, SurfaceIntersection::Transversal(_)) {
+            let crossing = pair
+                .intersection
+                .curves()
+                .get(curve.index)
+                .is_some_and(|c| c.kind == MeetKind::Crossing);
+            if !crossing {
                 continue;
             }
             let g = if side == 0 { pair.b } else { pair.a };
@@ -588,7 +593,7 @@ impl<'m> Build<'m> {
     }
 
     /// The tangent at `point` of the curve face `f` of operand `side`
-    /// touches face `g` along: the nearest curve of their `Tangent` pair.
+    /// touches face `g` along: the nearest of their pair's touching curves.
     fn contact_tangent(&self, side: usize, f: FaceId, g: FaceId, point: Point3) -> Option<Vec3> {
         let pair = self.i.pairs.iter().find(|p| {
             if side == 0 {
@@ -597,12 +602,8 @@ impl<'m> Build<'m> {
                 p.a == g && p.b == f
             }
         })?;
-        let SurfaceIntersection::Tangent(curves) = &pair.intersection else {
-            return None;
-        };
-        curves
-            .iter()
-            .filter_map(|c| {
+        meet_curves(&pair.intersection, MeetKind::Touch)
+            .filter_map(|(_, c)| {
                 let on = c.project(point).ok()?;
                 Some((on.distance, c.eval(on.t).d1))
             })
@@ -634,16 +635,15 @@ impl<'m> Build<'m> {
                     }))
             };
             let (fa, fb) = (find(0, pair.a)?, find(1, pair.b)?);
-            let SurfaceIntersection::Tangent(curves) = &pair.intersection else {
-                return Err(OpError::Internal(Fault::Invariant {
-                    what: "a contact's pair is tangent",
-                }));
-            };
-            let along = curves
+            let along = pair
+                .intersection
+                .curves()
                 .get(c.curve)
+                .filter(|m| m.kind == MeetKind::Touch)
                 .ok_or(OpError::Internal(Fault::Invariant {
-                    what: "a contact's ruling",
+                    what: "a contact's ruling touches",
                 }))?
+                .curve
                 .eval(c.range.midpoint())
                 .d1;
             let (Some(inside_a), Some(inside_b)) = (

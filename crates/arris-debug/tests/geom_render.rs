@@ -63,7 +63,7 @@ fn cylinder_wireframe_with_a_circle_and_an_ellipse_renders() {
 /// wireframe: `target/inspect/plane-cylinder-sections.png`.
 #[test]
 fn plane_cylinder_sections_render() {
-    use arris_geom::{SurfaceIntersection, intersect_surfaces};
+    use arris_geom::{MeetKind, intersect_surfaces};
     use arris_math::Precision;
 
     let tol = Precision::DEFAULT.tolerance();
@@ -86,12 +86,12 @@ fn plane_cylinder_sections_render() {
     let mut kinds = Vec::new();
     for frame in planes {
         let plane = Surface::Plane { frame };
-        let SurfaceIntersection::Transversal(curves) =
-            intersect_surfaces(&plane, &cyl, tol).unwrap()
-        else {
-            panic!("every section here is transversal")
-        };
-        for c in curves {
+        let r = intersect_surfaces(&plane, &cyl, tol).unwrap();
+        assert!(
+            !r.curves().is_empty() && r.curves().iter().all(|m| m.kind == MeetKind::Crossing),
+            "every section here is transversal: {r:?}"
+        );
+        for c in r.curves().iter().map(|m| m.curve.clone()) {
             kinds.push(c.kind());
             let range = match c {
                 Curve::Line { .. } => height,

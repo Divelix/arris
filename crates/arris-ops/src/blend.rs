@@ -18,8 +18,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use arris_check::arris_topo::arris_geom::region2::Side;
 use arris_check::arris_topo::arris_geom::{
-    Curve, Curve2, GeomKind, Surface, SurfaceIntersection, SurfaceKind, intersect_surfaces,
-    pcurve_on,
+    Curve, Curve2, GeomKind, MeetKind, Surface, SurfaceIntersection, SurfaceKind,
+    intersect_surfaces, pcurve_on,
 };
 use arris_check::arris_topo::arris_math::{
     Frame, Interval, Point2, Point3, Tolerance, UnitVec2, UnitVec3, Vec2, Vec3, wrap_angle,
@@ -882,10 +882,14 @@ fn face_end(
             let cut = intersect_surfaces(&s.surface, surface3, tol)
                 .map_err(|g| OpError::Internal(Fault::Geometry(g)))?;
             let arc_curve = match cut {
-                SurfaceIntersection::Transversal(curves) if curves.len() == 1 => curves[0].clone(),
-                SurfaceIntersection::Transversal(_)
-                | SurfaceIntersection::Tangent(_)
-                | SurfaceIntersection::Points(_)
+                SurfaceIntersection::Meets { mut curves, points }
+                    if points.is_empty()
+                        && curves.len() == 1
+                        && curves[0].kind == MeetKind::Crossing =>
+                {
+                    curves.swap_remove(0).curve
+                }
+                SurfaceIntersection::Meets { .. }
                 | SurfaceIntersection::Empty
                 | SurfaceIntersection::Coincident => {
                     return Err(invariant("a transversal section of the blend at its end"));

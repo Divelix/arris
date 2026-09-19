@@ -6,8 +6,8 @@
 use arris_debug::{corpus, fixtures, prop, sample};
 use arris_ops::OpError;
 use arris_ops::arris_check::arris_topo::arris_geom::{
-    Curve, Curve2, GeomKind, Profile, ProfileLoop, ProfileSegment, Surface, SurfaceIntersection,
-    SurfaceKind,
+    Curve, Curve2, GeomKind, MeetKind, Profile, ProfileLoop, ProfileSegment, Surface,
+    SurfaceIntersection, SurfaceKind,
 };
 use arris_ops::arris_check::arris_topo::arris_math::nalgebra::UnitQuaternion;
 use arris_ops::arris_check::arris_topo::arris_math::{
@@ -107,6 +107,12 @@ fn assert_sections_consistent(m: &Model, i: &Interferences) -> Result<(), TestCa
         }
     }
     Ok(())
+}
+
+/// A `Meets` of curves only, every one meeting as `kind`: a crossing or
+/// a touching pair.
+fn meets_only(r: &SurfaceIntersection, kind: MeetKind) -> bool {
+    r.points().is_empty() && !r.curves().is_empty() && r.curves().iter().all(|c| c.kind == kind)
 }
 
 #[test]
@@ -214,7 +220,7 @@ fn a_disjoint_pair_and_a_tangent_touch_have_no_section() {
     assert!(
         i.pairs
             .iter()
-            .any(|p| matches!(p.intersection, SurfaceIntersection::Tangent(_))),
+            .any(|p| meets_only(&p.intersection, MeetKind::Touch)),
         "{i}"
     );
     assert!(
@@ -228,10 +234,7 @@ fn a_disjoint_pair_and_a_tangent_touch_have_no_section() {
     // both faces, at (40, 15, 5).
     assert_eq!(i.contacts.len(), 1, "{i}");
     let c = &i.contacts[0];
-    assert!(matches!(
-        i.pairs[c.pair].intersection,
-        SurfaceIntersection::Tangent(_)
-    ));
+    assert!(meets_only(&i.pairs[c.pair].intersection, MeetKind::Touch));
     assert!((c.range.length() - 10.0).abs() < 1e-9, "{i}");
     assert!(
         (c.point - Point3::new(40.0, 15.0, 5.0)).norm() < 1e-9,
@@ -299,7 +302,7 @@ fn an_oblique_hole_has_two_ellipses_with_nurbs_pcurves_on_the_wall() {
 fn crossing_cylinders_have_two_section_crossings_paving_both_ellipses() {
     let (m, _, _, i) = interferences_of("boolean/cross-cylinders-common");
     let transversal: Vec<usize> = (0..i.pairs.len())
-        .filter(|&p| matches!(i.pairs[p].intersection, SurfaceIntersection::Transversal(_)))
+        .filter(|&p| meets_only(&i.pairs[p].intersection, MeetKind::Crossing))
         .collect();
     assert_eq!(transversal.len(), 1, "{i}");
     assert_eq!(i.hits.len(), 4, "{i}");

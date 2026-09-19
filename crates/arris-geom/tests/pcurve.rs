@@ -11,8 +11,8 @@ use core::f64::consts::{PI, TAU};
 use arris_debug::prop::geom::{cylinder, nurbs_curve, plane};
 use arris_debug::prop::{DEFAULT_SCALE, check, finite_f64, frame, radius, unit_vec3};
 use arris_geom::{
-    Curve, Curve2, Curve2Kind, NurbsCurve, Surface, SurfaceIntersection, intersect_surfaces,
-    pcurve_on, project_to_plane,
+    Curve, Curve2, Curve2Kind, MeetKind, NurbsCurve, Surface, intersect_surfaces, pcurve_on,
+    project_to_plane,
 };
 use arris_math::{Frame, Interval, Point3, Precision, Tolerance, Vec3};
 use proptest::prelude::*;
@@ -234,13 +234,12 @@ fn every_section_of_a_cylinder_has_a_pcurve_on_it() {
             let plane = Surface::Plane {
                 frame: Frame::from_z(origin, normal).unwrap(),
             };
-            let SurfaceIntersection::Transversal(curves) =
-                intersect_surfaces(&plane, &s, tol()).unwrap()
-            else {
-                prop_assert!(false, "no transversal section for {which:?}");
-                return Ok(());
-            };
-            for c in &curves {
+            let r = intersect_surfaces(&plane, &s, tol()).unwrap();
+            let crossing = r.points().is_empty()
+                && !r.curves().is_empty()
+                && r.curves().iter().all(|m| m.kind == MeetKind::Crossing);
+            prop_assert!(crossing, "no transversal section for {which:?}: {r:?}");
+            for c in r.curves().iter().map(|m| &m.curve) {
                 let range = match c {
                     Curve::Line { .. } => Interval::new(-DEFAULT_SCALE, DEFAULT_SCALE).unwrap(),
                     _ => Interval::TURN,
