@@ -311,8 +311,17 @@ faces' — the fit's quarter of the tolerance leaves the pcurves room
 under their half (data-model §Tolerances). A `Coincident` pair — two faces on one
 surface, the flush case — is decided by the same arrangement (ADR-0004):
 the two faces' edges are intersected with one another and every
-crossing is a section vertex; every edge of either face is paved by
-every section vertex on it; and each piece of each edge between its
+crossing is a section vertex — at an end vertex of either edge when that
+end lies within the tolerance of the other edge and so does its own
+edge from the crossing to it: two edges on one surface crossing at a
+shallow angle stay that near over a stretch longer than the tolerance,
+the intersector's point may lie anywhere along it, and where an earlier
+operation made the vertex at that crossing it is that vertex, not a
+second one a hair past its tolerance; every edge of either face is paved by
+every section vertex on it but its own ends — a vertex holding one of
+the edge's end vertices, a crossing merged into it even a hair past
+that end's tolerance, paves nothing there, which would leave a sliver
+block; and each piece of each edge between its
 paves is matched to the piece of that face's edge it coincides with
 as a *common block* when an edge of that face is `Coincident` with its
 curve and the two pieces overlap (the same piece then, with the same

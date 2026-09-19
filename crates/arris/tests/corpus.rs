@@ -368,6 +368,23 @@ fn boolean_skew_bore_cut() {
     run("boolean/skew-bore-cut");
 }
 
+/// A slot across the fused tee's junction: the box's planes cross the
+/// tee's fitted edge (ADR-0018) in four section vertices, found by the
+/// NURBS curve against a plane, and every edge stays at its faces'
+/// tolerance.
+#[test]
+fn boolean_tee_unequal_slot_cut() {
+    run("boolean/tee-unequal-slot-cut");
+}
+
+/// A drill through the fused tee's junction: its wall meets both walls in
+/// traced loops that cross the tee's fitted edge, found by the NURBS
+/// curve against a cylinder.
+#[test]
+fn boolean_tee_unequal_drill_cut() {
+    run("boolean/tee-unequal-drill-cut");
+}
+
 /// The consumer's cylinder − cylinder transversal probe in its own units:
 /// two parallel walls meeting in two rulings, `(πr² − lens)·h =
 /// 2.2079e-5`.

@@ -479,15 +479,25 @@ fn nurbs_conic_coplanar(
     Ok(points(out))
 }
 
+/// The points [`nurbs_line`] samples between two candidates to tell one
+/// shallow crossing, found by both planes, from two: the stretch between
+/// two candidates of one crossing is a few tolerances long and straight
+/// to rounding, so every sample of it is on the line, while between two
+/// crossings the curve leaves the line and the samples across the gap
+/// see it do so.
+const LINE_STRETCH_SAMPLES: usize = 8;
+
 /// A NURBS curve against a line, through two planes that hold the line
 /// and are square to each other: every common point is on both, so the
 /// curve's hits on either within `tol.linear` of the line are the
 /// candidates. A crossing of the line is transversal to at least one of
 /// the two planes unless the curve runs along the line there, so it is
-/// found to rounding by that one; the candidates of one point are one
-/// hit, a crossing of a plane before a touch of the other — the curve is
-/// tangent to the line only where it touches every plane through it —
-/// then the one nearest the line. A curve in one of the planes is the
+/// found to rounding by that one; the candidates of one point — within
+/// `tol.linear` of each other, or joined by a stretch of the curve that
+/// stays within it of the line — are one hit, a crossing of a plane
+/// before a touch of the other — the curve is tangent to the line only
+/// where it touches every plane through it — then the one nearest the
+/// line. A curve in one of the planes is the
 /// coplanar case, the other plane's hits being the answer as a line and
 /// a coplanar conic are; a curve in both lies along the line,
 /// `Coincident`.
@@ -537,12 +547,22 @@ fn nurbs_line(
         .collect();
     // Stable, so the first plane's candidate wins a tie.
     candidates.sort_by(|x, y| x.1.tangent.cmp(&y.1.tangent).then(x.0.total_cmp(&y.0)));
+    // One crossing when the curve stays within `tol.linear` of the line
+    // from one candidate to the other: at a shallow angle each plane
+    // finds the crossing where the curve's own offset across it vanishes,
+    // and those two lie that offset over the angle's tangent apart, which
+    // can be past `tol.linear` though nothing leaves the line between.
+    let stays_on_line = |t0: f64, t1: f64| {
+        (1..LINE_STRETCH_SAMPLES).all(|k| {
+            let s = k as f64 / LINE_STRETCH_SAMPLES as f64;
+            off_line(a.point(t0 + s * (t1 - t0))) <= tol.linear
+        })
+    };
     let mut kept: Vec<CurveCurveHit> = Vec::with_capacity(candidates.len());
     for (_, candidate) in candidates {
-        match kept
-            .iter_mut()
-            .find(|k| (k.point - candidate.point).norm() <= tol.linear)
-        {
+        match kept.iter_mut().find(|k| {
+            (k.point - candidate.point).norm() <= tol.linear || stays_on_line(k.ta, candidate.ta)
+        }) {
             // A crossing of either plane there says the curve crosses.
             Some(k) => k.tangent &= candidate.tangent,
             None => kept.push(candidate),

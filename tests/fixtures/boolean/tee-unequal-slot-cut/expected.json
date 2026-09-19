@@ -1,0 +1,135 @@
+{
+  "occt": "8.0.1.0.0",
+  "recipe_sha256": "6aaf46e2e016334ca8b774f703b97727358733a885dfd9c67e1abbf563613ba8",
+  "results": {
+    "default": {
+      "area": 59.20725930014556,
+      "centroid": [
+        0.13963571585930407,
+        5.553126984723157e-11,
+        2.1052004186236767e-10
+      ],
+      "counts": {
+        "edges": 33,
+        "faces": 11,
+        "loops": 11,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 22
+      },
+      "degenerate": false,
+      "euler_characteristic": 0,
+      "genus": 1,
+      "inertia": [
+        [
+          60.52698565116863,
+          -9.811349612809374e-10,
+          -3.7079012460197504e-09
+        ],
+        [
+          -9.811349612809374e-10,
+          67.04518443325036,
+          6.348111585003499e-10
+        ],
+        [
+          -3.7079012460197504e-09,
+          6.348111585003499e-10,
+          16.330124108331287
+        ]
+      ],
+      "probes": [
+        {
+          "class": "in",
+          "label": "inside",
+          "point": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "class": "in",
+          "label": "in_branch_past_the_slot",
+          "point": [
+            2.75,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "class": "in",
+          "label": "in_branch_beside_the_slot",
+          "point": [
+            1.75,
+            0.4,
+            0.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "in_the_slot",
+          "point": [
+            0.75,
+            0.0,
+            1.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "outside",
+          "point": [
+            -2.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_main_wall",
+          "point": [
+            -1.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_slot_floor",
+          "point": [
+            0.5,
+            0.0,
+            1.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_slot_side_in_main",
+          "point": [
+            0.75,
+            0.2,
+            1.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_slot_side_in_branch",
+          "point": [
+            1.75,
+            0.2,
+            0.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_section",
+          "point": [
+            0.916515138991168,
+            0.4,
+            0.44721359549995787
+          ]
+        }
+      ],
+      "volume": 19.666181348209427
+    }
+  }
+}

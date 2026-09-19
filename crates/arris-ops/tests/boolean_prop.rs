@@ -1,6 +1,7 @@
 //! The booleans at random poses (ADR-0004): a
-//! box and a cylinder, and two cylinders on parallel or crossing axes,
-//! from `prop::body`, both operand orders — volume
+//! box and a cylinder, and two cylinders on parallel or crossing axes —
+//! of one radius, or of two meeting in a traced, fitted quartic
+//! (ADR-0018) — from `prop::body`, both operand orders — volume
 //! and area additivity, the cut identity, commutativity of `fuse` and
 //! `common`, results of several lumps held to the same identities
 //! (ADR-0006), two runs dumping identically, a turn of the tool about its
@@ -11,7 +12,9 @@
 //! `tests/fixtures/boolean/` (`tests/fixtures/README.md` §Property-test
 //! failures).
 
-use arris_debug::prop::body::{Boxed, CrossingPair, Cylindrical, OverlappingPair, TangentPair};
+use arris_debug::prop::body::{
+    Boxed, CrossingPair, Cylindrical, OverlappingPair, QuarticPair, TangentPair,
+};
 use arris_debug::testing::{REL, close_to, fail, fitted_rel};
 use arris_debug::{dump_text, prop, prop_shards};
 use arris_ops::arris_check::arris_topo::arris_math::nalgebra::{Quaternion, UnitQuaternion};
@@ -740,4 +743,274 @@ prop_shards! {
             }
             Ok(())
         }
+}
+
+// -- two cylinders meeting in a quartic (ADR-0018) ------------------------
+
+/// `body`'s mass properties measured moved by `back`: a pair's results
+/// measured in its own frame, near the origin. The boundary integral over
+/// fitted pcurves, which meet their neighbours only within the edges'
+/// tolerance, grows with the distance from the origin (`docs/BACKLOG.md`,
+/// mass properties that do not depend on where the body is) — 1.2e-9
+/// relative in a common's volume 25 away where the same bodies at the
+/// origin agree to 2.6e-11 — which is the measurement's, not the
+/// boolean's.
+fn measured_at(
+    m: &mut Model,
+    body: Body,
+    back: &Isometry,
+) -> Result<MassProperties, TestCaseError> {
+    let (home, _) = transform(m, body, back).map_err(fail)?;
+    mass_properties(m, home).map_err(fail)
+}
+
+/// The quartic property over one pair.
+fn quartic_identities(pair: &QuarticPair) -> Result<(), TestCaseError> {
+    let back = pair.a.pose.inverse();
+    let (mut m, a, b, _, _) = operands_by(|m| pair.build(m))?;
+    let (pa, pb) = (
+        measured_at(&mut m, a, &back)?,
+        measured_at(&mut m, b, &back)?,
+    );
+    let (u, _) = run(&mut m, "fuse(a, b)", fuse, a, b)?;
+    let (c, _) = run(&mut m, "common(a, b)", common, a, b)?;
+    let (diff, _) = run(&mut m, "cut(a, b)", cut, a, b)?;
+    let (back_cut, _) = run(&mut m, "cut(b, a)", cut, b, a)?;
+    let union = measured_at(&mut m, u, &back)?;
+    let inter = measured_at(&mut m, c, &back)?;
+    assert_additive(&union, &inter, &pa, &pb)?;
+    assert_cut_identity(&measured_at(&mut m, diff, &back)?, &inter, &pa, &pb)?;
+    assert_cut_identity(&measured_at(&mut m, back_cut, &back)?, &inter, &pb, &pa)?;
+    let default = m.precision().default_tolerance;
+    for body in [u, c, diff, back_cut] {
+        for e in m.edges(body).map_err(fail)? {
+            let tolerance = m.edge(e.id).map_err(fail)?.tolerance();
+            prop_assert!(tolerance == default, "{} grew to {}", e.id, tolerance);
+        }
+    }
+    let (restored, _) = run(&mut m, "fuse(a − b, b)", fuse, diff, b)?;
+    let prestored = measured_at(&mut m, restored, &back)?;
+    let rel = fitted_rel(&m, &union);
+    assert_same_properties_to(&prestored, &union, "(a − b) ∪ b against a ∪ b", rel)?;
+    prop_assert_eq!(
+        arris_debug::dump::euler_line(&m, restored).map_err(fail)?,
+        arris_debug::dump::euler_line(&m, u).map_err(fail)?,
+        "(a − b) ∪ b: counts"
+    );
+    for (name, op, first) in [
+        ("fuse", fuse as Boolean, u),
+        ("common", common as Boolean, c),
+    ] {
+        let (other, _) = run(&mut m, &format!("{name}(b, a)"), op, b, a)?;
+        let (pfirst, pother) = (
+            measured_at(&mut m, first, &back)?,
+            measured_at(&mut m, other, &back)?,
+        );
+        assert_same_properties(&pfirst, &pother, name)?;
+        let (da, db) = (
+            dump_text(&m, first).map_err(fail)?,
+            dump_text(&m, other).map_err(fail)?,
+        );
+        prop_assert_eq!(
+            up_to_ids(&da),
+            up_to_ids(&db),
+            "{}: dumps\n{}\n{}",
+            name,
+            da,
+            db
+        );
+    }
+    Ok(())
+}
+
+prop_shards! {
+    /// Two cylinders of unequal radii on crossing axes, or on skew axes
+    /// with the narrower through the wider or breaking out of its side:
+    /// their walls meet in traced loops, fitted periodic NURBS
+    /// (plans/quadric-intersection-curves step 9). `fuse`, `common` and
+    /// both cuts clean at `Full` with nothing unchecked and their
+    /// provenance audited, additive, the cut identity both ways whatever
+    /// the lumps, `fuse` and `common` commuting, `(a − b) ∪ b` the union
+    /// within what two fittings of the same loops allow and with its
+    /// counts, and no edge of any result above its faces' tolerance —
+    /// every body measured in the pair's own frame ([`measured_at`]).
+    quartic_cylinders_obey_every_identity
+        [shard_0 shard_1 shard_2 shard_3 shard_4 shard_5 shard_6 shard_7
+         shard_8 shard_9 shard_10 shard_11 shard_12 shard_13 shard_14
+         shard_15]
+        (pair) = prop::body::quartic_pair() => { quartic_identities(&pair) }
+}
+
+/// The first shrunk failure of the property above (seed, count and shard
+/// in the commit body): a pipe breaking out of a wider cylinder's side at
+/// 30°, posed. In `fuse(a − b, b)` the notch's loop edge crosses the
+/// tool's seam 1.04e-7 from its own end vertex, a hair past that
+/// vertex's tolerance, and the crossing merged into the section vertex
+/// holding that end paved the end's vertex beside it: a sliver block the
+/// tool's wall could not be split along (`SplitFault::Turn`).
+#[test]
+fn cut_then_fuse_of_a_posed_notch_paves_no_sliver() {
+    let q = |w, i, j, k| UnitQuaternion::from_quaternion(Quaternion::new(w, i, j, k));
+    let pair = QuarticPair {
+        a: Cylindrical {
+            axis: Axis::new(Point3::new(0.0, 0.0, -18.591497639375465), Vec3::z()).unwrap(),
+            radius: 4.362154122057592,
+            height: 37.18299527875093,
+            pose: Isometry::new(
+                q(
+                    0.39735241229102636,
+                    -0.8049770723501876,
+                    0.055914839041806996,
+                    0.43703146821705174,
+                ),
+                Vec3::zeros(),
+            ),
+        },
+        b: Cylindrical {
+            axis: Axis::new(
+                Point3::new(-6.804960430409843, 4.754293292607629, -11.786537208965626),
+                Vec3::new(0.49999999999999994, 0.0, 0.8660254037844387),
+            )
+            .unwrap(),
+            radius: 1.3086462366172775,
+            height: 27.219841721639376,
+            pose: Isometry::new(
+                q(
+                    -0.38861564805113025,
+                    0.8338430943856225,
+                    0.08895622062190912,
+                    -0.38179885129198093,
+                ),
+                Vec3::new(
+                    -1.3736883297866176,
+                    0.019778598734097874,
+                    0.5950931799908585,
+                ),
+            ),
+        },
+        psi: 0.5235987755982988,
+        offset: 4.754293292607629,
+    };
+    quartic_identities(&pair).unwrap();
+}
+
+/// A pair in the numbers a [`QuarticPair`] prints as: `a` on `z` from
+/// `z0`, `b` from `origin` along `direction`, each pose as its rotation's
+/// `[i, j, k, w]` and its translation.
+fn printed_pair(
+    (z0, ra, ha, qa, ta): (f64, f64, f64, [f64; 4], [f64; 3]),
+    (origin, direction, rb, hb, qb, tb): ([f64; 3], [f64; 3], f64, f64, [f64; 4], [f64; 3]),
+) -> QuarticPair {
+    let pose = |q: [f64; 4], t: [f64; 3]| {
+        Isometry::new(
+            UnitQuaternion::from_quaternion(Quaternion::new(q[3], q[0], q[1], q[2])),
+            Vec3::new(t[0], t[1], t[2]),
+        )
+    };
+    let d = Vec3::new(direction[0], direction[1], direction[2]);
+    QuarticPair {
+        a: Cylindrical {
+            axis: Axis::new(Point3::new(0.0, 0.0, z0), Vec3::z()).unwrap(),
+            radius: ra,
+            height: ha,
+            pose: pose(qa, ta),
+        },
+        b: Cylindrical {
+            axis: Axis::new(Point3::new(origin[0], origin[1], origin[2]), d).unwrap(),
+            radius: rb,
+            height: hb,
+            pose: pose(qb, tb),
+        },
+        psi: d.z.acos(),
+        offset: origin[1],
+    }
+}
+
+/// The shrunk failures of the property above at 1000 cases (seed, count
+/// and shards in the commit body), each a pipe breaking out of a wider
+/// cylinder's side, posed. In `fuse(a − b, b)` the notch's loop edge
+/// crosses the tool's seam at a shallow angle, where the two stay within
+/// the tolerance of each other over a stretch longer than it: the two
+/// planes the NURBS–line arm cuts the seam with each found the crossing,
+/// more than the tolerance apart, two hits of one crossing; and the one
+/// hit, where it was one, lay a hair past the tolerance of the vertex the
+/// cut had made there. Both made a second vertex beside the first — a
+/// sliver block (`SplitFault::Turn`), or a sliver face read as a tangent
+/// contact.
+#[test]
+fn cut_then_fuse_across_a_shallow_seam_crossing() {
+    for pair in [
+        printed_pair(
+            (
+                -33.271785099980114,
+                8.784080989788679,
+                66.54357019996023,
+                [0.8534056078886708, -0.5212474157481917, 0.0, 0.0],
+                [0.0; 3],
+            ),
+            (
+                [-18.73658712072356, 9.917425628099492, -14.535197979256553],
+                [0.7901221055007523, 0.0, 0.6129494745891034],
+                6.8297416108142865,
+                47.42706726031656,
+                [
+                    0.768996988947286,
+                    -0.6180635441690795,
+                    0.08507851090243305,
+                    -0.13929369455143564,
+                ],
+                [0.368980530659905, -2.572707340369413, 3.167632839953812],
+            ),
+        ),
+        printed_pair(
+            (
+                -6.465142997646601,
+                2.963504607715283,
+                12.930285995293202,
+                [0.8215254802359442, 0.5701718033392228, 0.0, 0.0],
+                [0.0; 3],
+            ),
+            (
+                [-4.623067188035841, 2.768975511689066, -1.8420758096107592],
+                [0.9289713659270369, 0.0, 0.3701515923073348],
+                0.8890513823145848,
+                9.953088669040731,
+                [
+                    -0.8092333294483326,
+                    -0.5854353545288876,
+                    -0.027972515808736387,
+                    -0.040303877442897165,
+                ],
+                [
+                    -0.023346537933804104,
+                    -0.10667794678265723,
+                    -0.27131164504694527,
+                ],
+            ),
+        ),
+        printed_pair(
+            (
+                -24.010644021068433,
+                4.490124734597612,
+                48.02128804213687,
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0; 3],
+            ),
+            (
+                [-8.78850567293599, 3.7553340362184136, -15.222138348132445],
+                [0.49999999999999994, 0.0, 0.8660254037844387],
+                2.8336299928490463,
+                35.15402269174397,
+                [
+                    0.10556022737653042,
+                    0.9925435596796849,
+                    -0.060945225691557935,
+                    0.0,
+                ],
+                [-0.7869161560813056, 0.11158811459991469, 0.4543262545432073],
+            ),
+        ),
+    ] {
+        quartic_identities(&pair).unwrap();
+    }
 }

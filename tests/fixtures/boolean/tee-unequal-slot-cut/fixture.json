@@ -1,0 +1,181 @@
+{
+  "description": "a slot across the junction of a tee of unequal radii: the tee of boolean/tee-unequal-fuse (R 1, r 0.6), less a box 2w wide in y, from x = R / 2 to past the main wall along the branch and 2h tall, so it cuts both walls and the one fitted periodic NURBS they meet in (ADR-0018). The box's planes y = ±w cross that edge in four points, each a section vertex found by the NURBS curve against a plane (plans/quadric-intersection-curves step 6), where the plane's lines on the two walls end; the loop is left two open pieces, and the slot is a window through the branch, so the result has genus 1. Every edge of the result stays at its faces' tolerance, the fitted one included (plans/quadric-intersection-curves step 9)",
+  "params": {
+    "R": 1,
+    "r": 0.6,
+    "L": 6,
+    "H": 3,
+    "turn": 30,
+    "w": 0.2,
+    "h": 2
+  },
+  "steps": [
+    {
+      "name": "main",
+      "op": "cylinder",
+      "base": [
+        0,
+        0,
+        "-L / 2"
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "radius": "R",
+      "height": "L"
+    },
+    {
+      "name": "b0",
+      "op": "cylinder",
+      "base": [
+        0,
+        0,
+        0
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "radius": "r",
+      "height": "H"
+    },
+    {
+      "name": "branch",
+      "op": "transform",
+      "of": "b0",
+      "rotate": {
+        "axis": [
+          1,
+          0,
+          0
+        ],
+        "angle_deg": "turn"
+      }
+    },
+    {
+      "name": "tee",
+      "op": "fuse",
+      "a": "main",
+      "b": "branch"
+    },
+    {
+      "name": "slot",
+      "op": "box",
+      "min": [
+        "R / 2",
+        "-w",
+        "-h"
+      ],
+      "max": [
+        "R + H / 2",
+        "w",
+        "h"
+      ]
+    },
+    {
+      "name": "result",
+      "op": "cut",
+      "target": "tee",
+      "tool": "slot"
+    }
+  ],
+  "result": "result",
+  "probes": [
+    {
+      "label": "inside",
+      "point": [
+        0,
+        0,
+        0
+      ],
+      "expect": "in"
+    },
+    {
+      "label": "in_branch_past_the_slot",
+      "point": [
+        "(R + H / 2 + H) / 2",
+        0,
+        0
+      ],
+      "expect": "in"
+    },
+    {
+      "label": "in_branch_beside_the_slot",
+      "point": [
+        "R + H / 4",
+        "2 * w",
+        0
+      ],
+      "expect": "in"
+    },
+    {
+      "label": "in_the_slot",
+      "point": [
+        "3 * R / 4",
+        0,
+        "h / 2"
+      ],
+      "expect": "out"
+    },
+    {
+      "label": "outside",
+      "point": [
+        "-2 * R",
+        0,
+        0
+      ],
+      "expect": "out"
+    },
+    {
+      "label": "on_main_wall",
+      "point": [
+        "-R",
+        0,
+        0
+      ],
+      "expect": "on"
+    },
+    {
+      "label": "on_slot_floor",
+      "point": [
+        "R / 2",
+        0,
+        "h / 2"
+      ],
+      "expect": "on"
+    },
+    {
+      "label": "on_slot_side_in_main",
+      "point": [
+        "3 * R / 4",
+        "w",
+        "h / 2"
+      ],
+      "expect": "on"
+    },
+    {
+      "label": "on_slot_side_in_branch",
+      "point": [
+        "R + H / 4",
+        "w",
+        0
+      ],
+      "expect": "on"
+    },
+    {
+      "label": "on_section",
+      "point": [
+        "sqrt(R^2 - 4 * w^2)",
+        "2 * w",
+        "sqrt(r^2 - 4 * w^2)"
+      ],
+      "expect": "on"
+    }
+  ],
+  "analytic": {
+    "genus": 1
+  }
+}

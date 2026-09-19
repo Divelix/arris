@@ -490,7 +490,11 @@ in `tol.linear` of length by that arm, and a curve on the cylinder too is
 `Coincident`. Against a line, through the two planes that hold the line
 and are square to each other (the line's `Frame::from_z` gives their
 normals): the hits on either within `tol.linear` of the line are the
-candidates, those within `tol.linear` of each other one hit — a crossing
+candidates, those within `tol.linear` of each other, or joined by a
+stretch of the curve that stays within it of the line, one hit — at a
+shallow angle each plane finds the crossing where the curve's own
+offset across it vanishes, the two that offset over the angle's tangent
+apart, which can be past `tol.linear` — a crossing
 of either plane before a touch, since a curve is tangent to a line only
 where it touches every plane through it, then the one nearest the line —
 a curve in one plane is the coplanar case, the other plane's hits the

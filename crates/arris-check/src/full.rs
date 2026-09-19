@@ -418,8 +418,8 @@ impl<'m> Checker<'m> {
     /// `true` when the surfaces' intersection curve has a point interior
     /// to both faces, within `tolerance` of both surfaces, that is not on
     /// an edge or vertex they share. The curve is sampled over the
-    /// parameters both faces' boundaries reach — its whole domain when it
-    /// is periodic.
+    /// parameters both faces' boundaries reach — its whole domain when
+    /// that is bounded ([`Checker::curve_range`]).
     fn curve_is_interior_to_both(
         &self,
         a: FaceId,
@@ -461,9 +461,13 @@ impl<'m> Checker<'m> {
     }
 
     /// The parameters of `curve` both faces' boundaries reach: its whole
-    /// domain when it is periodic, else the overlap of the hulls of each
-    /// face's boundary projected onto it. `None` when they do not
-    /// overlap.
+    /// domain when that is bounded — a periodic curve, or a NURBS, which
+    /// the intersector already bounded by the overlap of the two faces'
+    /// boxes — else, for a line, the overlap of the hulls of each face's
+    /// boundary projected onto it. `None` when they do not overlap. A
+    /// traced branch clipped by that overlap is a NURBS of a hundred
+    /// control points, and projecting every point of both faces' polygons
+    /// onto it took seconds a pair.
     fn curve_range(
         &self,
         a: FaceId,
@@ -472,8 +476,9 @@ impl<'m> Checker<'m> {
         sb: &Surface,
         curve: &Curve,
     ) -> Option<Interval> {
-        if curve.period().is_some() {
-            return Some(curve.domain());
+        let domain = curve.domain();
+        if curve.period().is_some() || (domain.lo().is_finite() && domain.hi().is_finite()) {
+            return Some(domain);
         }
         let mut hulls = Vec::with_capacity(2);
         for (face, surface) in [(a, sa), (b, sb)] {

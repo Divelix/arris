@@ -221,7 +221,7 @@ bound has to be established here.
   `boolean/tee-unequal-fuse`, `-cut` and `-common` (crossing axes,
   `r < R`), `boolean/skew-hole-cut` (skew axes, the drill partly outside:
   one loop), `boolean/skew-bore-cut` (skew and fully inside: two loops).
-- [ ] Step 9 **[2]** — A boolean through a fitted edge, which is what
+- [x] Step 9 **[2]** — A boolean through a fitted edge, which is what
   steps 6 and 7 are for: `boolean/tee-unequal-slot-cut` (a box cut
   across the junction curve of the fused tee) and
   `boolean/tee-unequal-drill-cut` (a cylinder through it). The test
@@ -465,3 +465,53 @@ bound has to be established here.
     meeting only there, pinched, and the builder refuses to close the
     shell (`OpError::Internal`). `regression/singular-bore-cut`, ignored,
     with a backlog line: features a tolerance apart are C3's next plan's.
+- Found by step 9, and done there:
+  - **Both booleans through the tee's fitted edge build as they are**:
+    `tee-unequal-slot-cut` (the box's planes cross the loop's three
+    pieces in four points, the slot a window through the branch, genus
+    1) and `tee-unequal-drill-cut` (the drill's wall meets both walls in
+    traced loops crossing the tee's loop in two points) pass every
+    corpus stage, every edge at its faces' tolerance. The drill cut
+    holds volume, area and inertia at 1e-7 relative as the tee's cut
+    does: built at a model tolerance of 1e-10 Arris measures area
+    53.6887165506, Open CASCADE's body 4e-10 below it, Arris's at the
+    default tolerance 9e-10 above.
+  - **A crossing merged into an edge's own end paved it again.** In
+    `fuse(a − b, b)` of a posed notch the loop edge crossed the tool's
+    seam 1.04e-7 from its end vertex, a hair past that vertex's
+    tolerance; the crossing joined the section vertex holding the end,
+    which then paved the edge beside its own end — a 2e-8 sliver block
+    the tool's wall could not be split along (`SplitFault::Turn`).
+    `pave_edges` now skips a crossing whose vertex holds one of the
+    edge's ends, as `pave_coincident_edges` already did
+    (`docs/ARCHITECTURE.md` §Operations); the shrunk case is a test
+    beside the property.
+  - **S5 took seconds on a traced branch clipped by the faces' boxes**:
+    `curve_range` projected every point of both faces' polygons onto
+    the open NURBS, 4.4 s a pair where the check is otherwise 50 ms. A
+    curve with a bounded domain — periodic, or a NURBS the region
+    already bounded — is sampled over its domain; only a line needs the
+    hull. Same verdicts, the checker's tests unchanged.
+  - **The quartic property measures in the pair's own frame**: the
+    boundary integral over fitted pcurves grows with the distance from
+    the origin (`docs/BACKLOG.md`, mass properties that do not depend on
+    where the body is), 1.2e-9 relative in a common 25 away where the
+    same bodies at the origin agree to 2.6e-11; the fuse and the common
+    carry the same pcurves, so it is the measurement, not the boolean.
+    It runs in 16 shards: seven booleans and their `Full` checks a case.
+  - **Shallow crossings of a loop edge and a seam, at 1000 cases.**
+    Three more posed notches failed `fuse(a − b, b)`: where the notch's
+    fitted loop crosses the tool's seam at a shallow angle the two stay
+    within the tolerance over a stretch longer than it. The NURBS–line
+    arm's two planes each found the crossing, 1.1e-7 apart, two hits of
+    one; it now joins candidates the curve runs between within the
+    tolerance of the line (`intersect_curves.rs`, `docs/DATA-MODEL.md`
+    §Curves). And the one hit, where it was one, lay a hair past the
+    tolerance of the vertex the cut had made there; the pave model now
+    puts a crossing at an edge's end vertex when that end is on the other
+    edge and the stretch between is too (`at_shared_end`,
+    `docs/ARCHITECTURE.md` §Operations). Both are the features a
+    tolerance apart the next plan takes on, in the one form this plan's
+    identities reach; the shrunk cases are a test beside the property,
+    which passes at 1000 cases with every other property of `arris-geom`,
+    `arris-ops` and `arris`.

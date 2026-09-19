@@ -466,6 +466,92 @@ pub fn crossing_pair() -> impl Strategy<Value = CrossingPair> {
         )
 }
 
+/// Two cylinders of unequal radii whose axes cross at an angle `psi`, or
+/// pass skew at a distance `offset`, both under one motion: `a` on the `z`
+/// axis centred at the origin, radius `R`; `b` narrower, radius `r`, its
+/// axis in the direction `(sin ψ, 0, cos ψ)` through `(0, offset, 0)`,
+/// turned about its own axis first. Their walls meet in the quartic that
+/// is traced and fitted (ADR-0018): two loops round `b` where it passes
+/// through `a` (`offset < R − r`), one where it breaks out of `a`'s side
+/// (`R − r < offset < R + r`). Each cylinder is long enough that its caps
+/// stand clear of the other's wall.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct QuarticPair {
+    /// The wider cylinder.
+    pub a: Cylindrical,
+    /// The narrower; its pose is a turn about its own axis, then `a`'s.
+    pub b: Cylindrical,
+    /// The angle between the axes, in radians.
+    pub psi: f64,
+    /// The distance between the axes, zero where they cross.
+    pub offset: f64,
+}
+
+impl QuarticPair {
+    /// Both bodies in `m`, `a` first.
+    pub fn build(&self, m: &mut Model) -> Result<(Body, Body), OpError> {
+        Ok((self.a.build(m)?, self.b.build(m)?))
+    }
+}
+
+/// [`QuarticPair`]s: `R`, `r / R ∈ [0.3, 0.85]`, `ψ ∈ [30°, 90°]`, and the
+/// offset in one of three kinds a third each — zero, the axes crossing;
+/// in `[0.1, 0.8]` of `R − r`, skew with `b` through `a`; or `R − r` plus
+/// `[0.1, 0.9]` of `2r`, skew and breaking out. The section is singular
+/// at `R − r` and `R + r`, where the walls touch, and the kinds keep a
+/// tenth of the way clear of both. Both cylinders are `1.2` to `2` times
+/// the length that puts their caps' discs past the other wall, and `b` is
+/// turned about its axis by a random angle, so its seam is generic.
+pub fn quartic_pair() -> impl Strategy<Value = QuarticPair> {
+    (
+        radius(MIN_EXTENT / 2.0..=MAX_EXTENT / 2.0),
+        finite_f64(0.3..=0.85),
+        finite_f64(30.0..=90.0),
+        (0u8..3, finite_f64(0.0..=1.0)),
+        finite_f64(1.2..=2.0),
+        finite_f64(0.0..=core::f64::consts::TAU),
+        pose_in(DEFAULT_SCALE),
+    )
+        .prop_filter_map(
+            "two cylinders meeting in a quartic",
+            |(big, ratio, psi_deg, (kind, gap), stretch, turn, pose)| {
+                let (r1, r2) = (big, ratio * big);
+                let offset = match kind {
+                    0 => 0.0,
+                    1 => (0.1 + 0.7 * gap) * (r1 - r2),
+                    _ => r1 - r2 + (0.1 + 0.8 * gap) * 2.0 * r2,
+                };
+                let psi = psi_deg.to_radians();
+                let d = Vec3::new(psi.sin(), 0.0, psi.cos());
+                // `b`'s cap discs, of radius `r`, stand more than `R + r`
+                // from `a`'s axis; `a`'s caps above every point of `b`
+                // within `R + r` of that axis.
+                let long_b = stretch * 2.0 * (r1 + r2) / psi.sin();
+                let long_a = stretch * 2.0 * ((r1 + r2) / psi.tan() + r1 + r2);
+                let centre = Point3::new(0.0, offset, 0.0);
+                let spin = UnitQuaternion::from_axis_angle(&UnitVec3::try_new(d, 0.0)?, turn);
+                // The turn about `b`'s own axis, through `centre`.
+                let about = Isometry::new(spin, centre.coords - spin * centre.coords);
+                Some(QuarticPair {
+                    a: Cylindrical {
+                        axis: Axis::z_at(Point3::new(0.0, 0.0, -long_a / 2.0)),
+                        radius: r1,
+                        height: long_a,
+                        pose,
+                    },
+                    b: Cylindrical {
+                        axis: Axis::new(centre - (long_b / 2.0) * d, d).ok()?,
+                        radius: r2,
+                        height: long_b,
+                        pose: about.then(&pose),
+                    },
+                    psi,
+                    offset,
+                })
+            },
+        )
+}
+
 /// Box extents, each in `[MIN_EXTENT, MAX_EXTENT]`.
 fn extents() -> impl Strategy<Value = Vec3> {
     (

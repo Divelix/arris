@@ -709,6 +709,56 @@ fn a_traced_section_edge_is_at_its_faces_tolerance() {
     }
 }
 
+/// A boolean through a fitted edge (ADR-0018), the tee's loop in its three
+/// pieces between the seams: the box's
+/// planes cross it in four points and the drill's wall in two, each a
+/// crossing of the NURBS curve against the other operand's surface that
+/// paves the edge, and every edge of the result — the fitted edge's
+/// pieces, the traced loops the drill's wall adds, the lines and circles
+/// the box's planes add — is at its faces' tolerance: nothing grew
+/// through the chain, the idea's first tripwire kept as an assertion.
+#[test]
+fn a_boolean_through_a_fitted_edge_grows_no_tolerance() {
+    for (name, crossings) in [
+        ("boolean/tee-unequal-slot-cut", 4),
+        ("boolean/tee-unequal-drill-cut", 2),
+    ] {
+        let (mut m, a, b) = inputs(name);
+        let fitted: Vec<EdgeId> = m
+            .edges(a)
+            .unwrap()
+            .into_iter()
+            .filter(|e| {
+                let edge = m.edge(e.id).unwrap();
+                edge.curve()
+                    .is_some_and(|(c, _)| matches!(m.curve(c).unwrap(), Curve::Nurbs(_)))
+            })
+            .map(|e| e.id)
+            .collect();
+        // The loop, cut where the two seams pierce it.
+        assert_eq!(fitted.len(), 3, "{name}: the tee's loop");
+        let i = interferences(&m, a, b).unwrap();
+        assert_sections_consistent(&m, &i).unwrap();
+        let hits: Vec<_> = i
+            .hits
+            .iter()
+            .filter(|h| fitted.contains(&h.edge) && !h.tangent)
+            .collect();
+        assert_eq!(hits.len(), crossings, "{name}\n{i}");
+        for h in hits {
+            let surface = m.surface(m.face(h.face).unwrap().surface()).unwrap();
+            let distance = surface.project(h.point).unwrap().distance;
+            assert!(distance < 1e-12, "{name}: {h:?} is {distance} off");
+        }
+        let default = m.precision().default_tolerance;
+        let (body, _) = cut(&mut m, a, b).unwrap_or_else(|e| panic!("{name}: {e}"));
+        for e in m.edges(body).unwrap() {
+            let edge = m.edge(e.id).unwrap();
+            assert_eq!(edge.tolerance(), default, "{name}: {} grew", e.id);
+        }
+    }
+}
+
 /// Two cylinders whose axes pass `R − r` apart, a drill touching the
 /// main wall from inside at `(0, R, 0)`: a singular point of the traced
 /// section (ADR-0018), each of the two branches leaving it round one exit

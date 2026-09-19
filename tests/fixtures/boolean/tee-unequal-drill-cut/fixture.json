@@ -1,0 +1,188 @@
+{
+  "description": "a drill through the junction of a tee of unequal radii: the tee of boolean/tee-unequal-fuse (R 1, r 0.6), less a cylinder rd 0.2 on the axis at 45° in the xz plane through the junction's point (R, 0, r), its base cap's centre on the main axis at (0, 0, r − R), inside the main, turned about its own axis so its seam is generic. Its axis crosses both the main's and the branch's, so its wall meets each in the quartic of crossing axes of unequal radii, traced and fitted (ADR-0018), and both of those cross the tee's own fitted edge, found by the NURBS curve against the drill's cylinder (plans/quadric-intersection-curves step 6): a blind hole opening through the junction. Every edge of the result stays at its faces' tolerance, the fitted one included (plans/quadric-intersection-curves step 9). volume_rel, area_rel and inertia_rel are 1e-7 here, the model's linear tolerance taken relative, as in boolean/tee-unequal-cut: the three fitted loops lie within the tolerance of the exact sections, not on them, and trim the walls they bound by as much. Built at a model tolerance of 1e-10, where the fits close in on the exact sections, Arris measures area 53.6887165506 and volume 20.97780267262, which the builds at 1e-8 and 1e-9 agree with to 5e-10 relative; Open CASCADE's body is 4e-10 below that in area and 1e-10 in volume, Arris's at the default tolerance 9e-10 above in area and 4e-10 in volume.",
+  "params": {
+    "R": 1,
+    "r": 0.6,
+    "L": 6,
+    "H": 3,
+    "turn": 30,
+    "rd": 0.2,
+    "spin": 20
+  },
+  "steps": [
+    {
+      "name": "main",
+      "op": "cylinder",
+      "base": [
+        0,
+        0,
+        "-L / 2"
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "radius": "R",
+      "height": "L"
+    },
+    {
+      "name": "b0",
+      "op": "cylinder",
+      "base": [
+        0,
+        0,
+        0
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "radius": "r",
+      "height": "H"
+    },
+    {
+      "name": "branch",
+      "op": "transform",
+      "of": "b0",
+      "rotate": {
+        "axis": [
+          1,
+          0,
+          0
+        ],
+        "angle_deg": "turn"
+      }
+    },
+    {
+      "name": "tee",
+      "op": "fuse",
+      "a": "main",
+      "b": "branch"
+    },
+    {
+      "name": "d0",
+      "op": "cylinder",
+      "base": [
+        0,
+        0,
+        "r - R"
+      ],
+      "axis": [
+        1,
+        0,
+        1
+      ],
+      "radius": "rd",
+      "height": "R * sqrt(2) + 1"
+    },
+    {
+      "name": "drill",
+      "op": "transform",
+      "of": "d0",
+      "rotate": {
+        "axis": [
+          1,
+          0,
+          1
+        ],
+        "origin": [
+          0,
+          0,
+          "r - R"
+        ],
+        "angle_deg": "spin"
+      }
+    },
+    {
+      "name": "result",
+      "op": "cut",
+      "target": "tee",
+      "tool": "drill"
+    }
+  ],
+  "result": "result",
+  "probes": [
+    {
+      "label": "inside",
+      "point": [
+        "-R / 2",
+        0,
+        0
+      ],
+      "expect": "in"
+    },
+    {
+      "label": "in_branch",
+      "point": [
+        "R + H / 2",
+        0,
+        0
+      ],
+      "expect": "in"
+    },
+    {
+      "label": "in_the_hole",
+      "point": [
+        "R / 2",
+        0,
+        "r - R / 2"
+      ],
+      "expect": "out"
+    },
+    {
+      "label": "outside",
+      "point": [
+        "-2 * R",
+        0,
+        0
+      ],
+      "expect": "out"
+    },
+    {
+      "label": "on_main_wall",
+      "point": [
+        "-R",
+        0,
+        0
+      ],
+      "expect": "on"
+    },
+    {
+      "label": "on_hole_floor",
+      "point": [
+        0,
+        0,
+        "r - R"
+      ],
+      "expect": "on"
+    },
+    {
+      "label": "on_hole_wall",
+      "point": [
+        "R / 2",
+        "rd",
+        "r - R / 2"
+      ],
+      "expect": "on"
+    },
+    {
+      "label": "on_section",
+      "point": [
+        "sqrt(R^2 - r^2 / 4)",
+        "r / 2",
+        "sqrt(3) * r / 2"
+      ],
+      "expect": "on"
+    }
+  ],
+  "analytic": {
+    "genus": 0
+  },
+  "tolerances": {
+    "volume_rel": 1e-07,
+    "area_rel": 1e-07,
+    "inertia_rel": 1e-07
+  }
+}

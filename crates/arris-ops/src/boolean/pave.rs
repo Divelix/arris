@@ -232,6 +232,62 @@ fn tolerance_of(precision: &Precision, a: f64, b: f64) -> Tolerance {
     Tolerance::new(a.max(b), precision.angular_tolerance)
 }
 
+/// The points [`at_shared_end`] samples along the stretch from a
+/// crossing to an edge's end.
+const END_STRETCH_SAMPLES: usize = 8;
+
+/// A crossing of `a` and `b` moved to an end vertex of either when it is
+/// the same meeting: the end lies within the tolerance of the other
+/// curve, and so does the edge from the crossing to that end. Two edges
+/// on one surface crossing at a shallow angle stay within the tolerance
+/// of each other over a stretch longer than it, and the intersector's
+/// point may lie anywhere along it; where one edge already ends on the
+/// other there — the vertex an earlier operation made at that crossing
+/// — the crossing is that vertex, not a second one a hair past its
+/// tolerance beside it. `None` when the crossing is within an end's own
+/// tolerance, which [`EdgeInfo::vertex_at`] reads, or joins no end.
+fn at_shared_end(
+    a: &EdgeInfo<'_>,
+    ta: f64,
+    b: &EdgeInfo<'_>,
+    tb: f64,
+    point: Point3,
+    tol: Tolerance,
+) -> Option<(f64, f64, Point3)> {
+    for (side, (x, tx, y)) in [(a, ta, b), (b, tb, a)].into_iter().enumerate() {
+        for (k, &(_, end, end_tolerance)) in x.ends.iter().enumerate() {
+            if (point - end).norm() <= end_tolerance {
+                return None;
+            }
+            let within = tol.linear.max(end_tolerance);
+            let Ok(on_y) = y.curve.project(end) else {
+                continue;
+            };
+            let Some(ty) = y.in_range(on_y.t) else {
+                continue;
+            };
+            if on_y.distance > within {
+                continue;
+            }
+            let te = if k == 0 { x.range.lo() } else { x.range.hi() };
+            let stays = (1..END_STRETCH_SAMPLES).all(|i| {
+                let s = i as f64 / END_STRETCH_SAMPLES as f64;
+                y.curve
+                    .project(x.curve.point(tx + s * (te - tx)))
+                    .is_ok_and(|q| q.distance <= within)
+            });
+            if stays {
+                return Some(if side == 0 {
+                    (te, ty, end)
+                } else {
+                    (ty, te, end)
+                });
+            }
+        }
+    }
+    None
+}
+
 /// A geometry error on validated input as the operation's: a missing
 /// closed form names the two entities, anything else is a kernel fault.
 fn geometry(e: GeomError, a: Shape, b: Shape) -> OpError {
@@ -540,10 +596,12 @@ impl<'m> Build<'m> {
                         let (Some(ta), Some(tb)) = (ea.in_range(h.ta), eb.in_range(h.tb)) else {
                             continue;
                         };
+                        let (ta, tb, point) = at_shared_end(ea, ta, eb, tb, h.point, tol)
+                            .unwrap_or((ta, tb, h.point));
                         let seen = found.iter().any(|(x, t)| {
                             x.a == ea.id
                                 && x.b == eb.id
-                                && (x.point - h.point).norm() <= t.max(tol.linear)
+                                && (x.point - point).norm() <= t.max(tol.linear)
                         });
                         if seen {
                             continue;
@@ -555,7 +613,7 @@ impl<'m> Build<'m> {
                                 ta,
                                 b: eb.id,
                                 tb,
-                                point: h.point,
+                                point,
                                 tangent: h.tangent,
                                 vertex: None,
                             },
@@ -949,9 +1007,16 @@ impl<'m> Build<'m> {
                 continue;
             };
             for (side, id, t) in [(0, x.a, x.ta), (1, x.b, x.tb)] {
-                let at_end = self
-                    .edge_info(side, id)
-                    .is_some_and(|e| e.vertex_at(x.point).is_some());
+                // At the edge's own end: within that vertex's tolerance,
+                // or merged into the section vertex that holds it — a
+                // crossing a hair past the end's tolerance would otherwise
+                // pave the end's own vertex beside it, a sliver block.
+                let at_end = self.edge_info(side, id).is_some_and(|e| {
+                    e.vertex_at(x.point).is_some()
+                        || e.ends
+                            .iter()
+                            .any(|end| self.vertices[vertex].existing.contains(&end.0))
+                });
                 if !at_end {
                     wanted.push((id, t, vertex));
                 }
