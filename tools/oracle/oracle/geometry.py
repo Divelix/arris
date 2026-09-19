@@ -27,7 +27,8 @@ The result per sample: `Geom_*::D2` at every parameter and
 `GeomAPI_ProjectPointOnSurf` / `OnCurve` for every point (nearest point,
 its parameters, the distance). Per pair: `IntAna_QuadQuadGeo` for two
 surfaces — the type (`empty`, `coincident`, `point`, `line`, `circle`,
-`ellipse`, or `unsolved` where it finds no conic,
+`ellipse`, `parabola`, `hyperbola` — one branch per curve — or `unsolved`
+where it finds no conic,
 `IntAna_NoGeometricSolution`) and, for every curve it returns, its type
 and sampled points, or for a `point` result its points; an `unsolved`
 pair also carries the lines `GeomAPI_IntSS` walks, as curves of type
@@ -50,7 +51,9 @@ from OCP.Geom import (
     Geom_ConicalSurface,
     Geom_CylindricalSurface,
     Geom_Ellipse,
+    Geom_Hyperbola,
     Geom_Line,
+    Geom_Parabola,
     Geom_Plane,
     Geom_SphericalSurface,
     Geom_ToroidalSurface,
@@ -70,6 +73,11 @@ CURVE_TYPES = ("line", "circle", "ellipse")
 # curve's own origin, closed curves at this many even steps of a turn.
 LINE_SAMPLES = (-3.0, -1.0, 0.0, 1.0, 3.0)
 TURN_SAMPLES = 8
+
+# An open conic (a parabola, a hyperbola's branch) is sampled at these
+# parameters of its own: `Geom_Parabola`'s is the distance along the
+# axis of symmetry's normal, `Geom_Hyperbola`'s the `u` of `cosh u`.
+OPEN_CONIC_SAMPLES = (-2.0, -1.0, -0.5, 0.0, 0.5, 1.0, 2.0)
 
 # A walked section line of `GeomAPI_IntSS` is sampled at this many even
 # steps of its parameter, both ends included, and each sample is polished
@@ -194,6 +202,10 @@ def _sample_closed(kind: str, conic) -> dict:
     return {"type": kind, "points": [_xyz(curve.Value(2.0 * math.pi * i / TURN_SAMPLES)) for i in range(TURN_SAMPLES)]}
 
 
+def _sample_open(kind: str, curve) -> dict:
+    return {"type": kind, "points": [_xyz(curve.Value(u)) for u in OPEN_CONIC_SAMPLES]}
+
+
 _QUADRIC_OF = {
     "plane": lambda s: s.Pln(),
     "cylinder": lambda s: s.Cylinder(),
@@ -265,6 +277,12 @@ def intersect_surfaces(name_a: str, kind_a: str, a, name_b: str, kind_b: str, b)
     elif t == IntAna_ResultType.IntAna_Ellipse:
         out["type"] = "ellipse"
         out["curves"] = [_sample_closed("ellipse", r.Ellipse(i + 1)) for i in range(r.NbSolutions())]
+    elif t == IntAna_ResultType.IntAna_Parabola:
+        out["type"] = "parabola"
+        out["curves"] = [_sample_open("parabola", Geom_Parabola(r.Parabola(i + 1))) for i in range(r.NbSolutions())]
+    elif t == IntAna_ResultType.IntAna_Hyperbola:
+        out["type"] = "hyperbola"
+        out["curves"] = [_sample_open("hyperbola", Geom_Hyperbola(r.Hyperbola(i + 1))) for i in range(r.NbSolutions())]
     elif t == IntAna_ResultType.IntAna_NoGeometricSolution:
         out["type"] = "unsolved"
         sections, dropped = _walked_sections(name_a, a, name_b, b)

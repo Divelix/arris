@@ -25,7 +25,7 @@
 
 use core::f64::consts::FRAC_PI_2;
 
-use arris_math::{Frame, Point3, Tolerance, UnitVec3, Vec3};
+use arris_math::{Aabb, Frame, Point3, Tolerance, UnitVec3, Vec3};
 
 use crate::intersect::line_angle;
 use crate::{
@@ -40,11 +40,13 @@ use crate::{
 /// (ADR-0018), `Coincident` or `Empty`; and a plane through a cone's or a
 /// torus's axis, which cuts the meridian itself — two crossing rulings
 /// or tube circles ([`through_the_axis`]). A pair that shares no axis is
-/// `Unsupported` naming the kinds, C3's general position, and so is a
-/// coincident section beside a meeting off it.
+/// in general position, decided by [`crate::intersect::off_axis`] inside
+/// `within`; a coincident section beside a meeting off it is
+/// `Unsupported` naming the kinds.
 pub(crate) fn intersect_coaxial(
     a: &Surface,
     b: &Surface,
+    within: &Aabb,
     tol: Tolerance,
 ) -> Result<SurfaceIntersection, GeomError> {
     let unsupported = || GeomError::Unsupported {
@@ -64,7 +66,7 @@ pub(crate) fn intersect_coaxial(
             let carrier = if a.kind() == SurfaceKind::Plane { b } else { a };
             return through_the_axis(carrier, normal).ok_or_else(unsupported);
         }
-        Shared::None => return Err(unsupported()),
+        Shared::None => return crate::intersect::off_axis(a, b, within, tol),
     };
     let (sa, sb) = (sections(a, &axis), sections(b, &axis));
     let mut coincident: Vec<Section> = Vec::new();
@@ -152,7 +154,7 @@ enum Shared {
     /// A plane the carrier's axis lies in, with the plane's normal: the
     /// plane cuts the carrier in its meridian, not in a parallel.
     InPlane { normal: UnitVec3 },
-    /// No axis: a general position, C3's.
+    /// No axis: a general position.
     None,
 }
 
@@ -577,6 +579,14 @@ mod tests {
         Precision::DEFAULT.tolerance()
     }
 
+    /// The coaxial pairs here ignore the region.
+    fn within() -> Aabb {
+        Aabb {
+            min: [-100.0; 3],
+            max: [100.0; 3],
+        }
+    }
+
     /// The curves of a `Meets` with no points, every one of `kind`.
     fn only(r: &SurfaceIntersection, kind: MeetKind) -> Vec<Curve> {
         assert!(r.points().is_empty(), "{r:?}");
@@ -612,14 +622,14 @@ mod tests {
             frame: Frame::from_z(Point3::new(5.0, 1.0, -2.0), Vec3::z()).unwrap(),
         };
         assert_eq!(
-            intersect_coaxial(&through, &cone, tol()).unwrap(),
+            intersect_coaxial(&through, &cone, &within(), tol()).unwrap(),
             points(MeetKind::Crossing, &[Point3::new(0.0, 0.0, -2.0)])
         );
         let beside = Surface::Plane {
             frame: Frame::from_z(Point3::new(5.0, 1.0, 1.0), -Vec3::z()).unwrap(),
         };
         let c = only(
-            &intersect_coaxial(&cone, &beside, tol()).unwrap(),
+            &intersect_coaxial(&cone, &beside, &within(), tol()).unwrap(),
             MeetKind::Crossing,
         );
         let [Curve::Circle { frame, radius }] = c.as_slice() else {
@@ -641,7 +651,7 @@ mod tests {
             radius: 2.0,
         };
         let c = only(
-            &intersect_coaxial(&ball, &wall, tol()).unwrap(),
+            &intersect_coaxial(&ball, &wall, &within(), tol()).unwrap(),
             MeetKind::Touch,
         );
         let [Curve::Circle { frame, radius }] = c.as_slice() else {
@@ -663,7 +673,7 @@ mod tests {
             radius: 1.0,
         };
         assert_eq!(
-            intersect_coaxial(&a, &touch, tol()).unwrap(),
+            intersect_coaxial(&a, &touch, &within(), tol()).unwrap(),
             points(MeetKind::Touch, &[Point3::new(2.0, 0.0, 0.0)])
         );
         let cross = Surface::Sphere {
@@ -671,7 +681,7 @@ mod tests {
             radius: 2.0,
         };
         let c = only(
-            &intersect_coaxial(&a, &cross, tol()).unwrap(),
+            &intersect_coaxial(&a, &cross, &within(), tol()).unwrap(),
             MeetKind::Crossing,
         );
         let [Curve::Circle { frame, radius }] = c.as_slice() else {
@@ -686,12 +696,12 @@ mod tests {
             radius: 2.0,
         };
         assert_eq!(
-            intersect_coaxial(&a, &same, tol()).unwrap(),
+            intersect_coaxial(&a, &same, &within(), tol()).unwrap(),
             SurfaceIntersection::Coincident
         );
         assert_eq!(
-            intersect_coaxial(&a, &touch, tol()).unwrap(),
-            intersect_coaxial(&touch, &a, tol()).unwrap()
+            intersect_coaxial(&a, &touch, &within(), tol()).unwrap(),
+            intersect_coaxial(&touch, &a, &within(), tol()).unwrap()
         );
     }
 
@@ -710,7 +720,7 @@ mod tests {
             frame: Frame::world().with_origin(Point3::new(0.0, 0.0, 1.0)),
             radius: 3.0,
         };
-        let r = intersect_coaxial(&cone, &ball, tol()).unwrap();
+        let r = intersect_coaxial(&cone, &ball, &within(), tol()).unwrap();
         let [point] = r.points() else { panic!("{r:?}") };
         assert_eq!(point.kind, MeetKind::Crossing);
         assert!((point.point - Point3::new(0.0, 0.0, -2.0)).norm() <= 1e-12);
@@ -723,6 +733,9 @@ mod tests {
         };
         assert!((frame.origin() - Point3::new(0.0, 0.0, 1.0)).norm() <= 1e-12);
         assert!((radius - 3.0).abs() <= 1e-12);
-        assert_eq!(intersect_coaxial(&ball, &cone, tol()).unwrap(), r);
+        assert_eq!(
+            intersect_coaxial(&ball, &cone, &within(), tol()).unwrap(),
+            r
+        );
     }
 }

@@ -287,7 +287,16 @@ oracle's sampled points on Arris's curves to 1e-9.
   a torus's four crossings and its inner and outer equators grazed) and
   `c3-cylinder-pairs` (the cylinder pairs that meet in a quartic:
   crossing axes of unequal radii, skew axes within the radii breaking
-  out of the larger cylinder or staying inside it, one pair swapped).
+  out of the larger cylinder or staying inside it, one pair swapped) and
+  `c3-quadric-pairs` (the pairs with a cone or a sphere in them that
+  share no axis: a plane off a cone's axis in an ellipse, a parabola and
+  a hyperbola, through the apex in the apex, two rulings or a touching
+  one; a pipe, a ball and a narrow cone against a cone, a post through
+  the ball). An oracle parabola or hyperbola, sampled at its own
+  parameters in `[−2, 2]` a branch per curve, is held against Arris's
+  exact rational quadratic NURBS. The geometry grammar has no elliptic
+  cylinder, which Open CASCADE carries only as a surface of extrusion;
+  its traced pairs are the property tests'.
 - A surface pair Open CASCADE finds no conic for is `"type": "unsolved"`
   (`IntAna_NoGeometricSolution`), with the lines `GeomAPI_IntSS` walks
   for it as curves of type `section`: 17 samples each, every one polished

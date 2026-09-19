@@ -191,9 +191,10 @@ impl SurfaceIntersection {
 /// [`arris_math::roots`]: `Coincident`, `Empty`, or a ruling at each
 /// meeting of the sections, touching where they touch, ascending by the
 /// first operand's section parameter — up to four of them, touches and
-/// crossings together (ADR-0018); crossing axes and every pair of the
-/// elliptic cylinder with a cone, a sphere, a torus or a NURBS are
-/// `Unsupported`. Every pair with a cone, a sphere or a torus in it is
+/// crossings together (ADR-0018); crossing axes, and the elliptic
+/// cylinder against a cone or a sphere in any pose, meet in a traced and
+/// fitted section, and against a torus or a NURBS are `Unsupported`.
+/// Every pair with a cone, a sphere or a torus in it is
 /// decided when the two share an axis — a plane perpendicular to it, a
 /// cylinder, cone or torus on it, a sphere centred on it, and every
 /// plane–sphere and sphere–sphere pair — by one arm over the meridian
@@ -201,7 +202,12 @@ impl SurfaceIntersection {
 /// §Curves): circles about the axis and points on it, each crossing or
 /// touching, `Coincident` or `Empty`; a plane through a cone's or a
 /// torus's axis cuts its meridian, two rulings through the apex or two
-/// tube circles; a pair sharing no axis is `Unsupported`. Read
+/// tube circles. A pair sharing no axis is in general position: a plane
+/// against a cone meets it in an exact conic — an ellipse, a parabola or
+/// a hyperbola's two branches as rational quadratic NURBS over `within`,
+/// or through the apex the apex, one touching ruling or two crossing
+/// ones; a cylinder, a cone or a sphere against a cone or a sphere in a
+/// traced and fitted section; a torus is `Unsupported`. Read
 /// `IntAna_QuadQuadGeo` in the reference tree for the case analysis,
 /// reimplemented on our frames.
 ///
@@ -283,6 +289,7 @@ pub fn intersect_surfaces(
             b,
             (ca, [*ra, *ra]),
             (cb, [*major_radius, *minor_radius]),
+            within,
             tol,
         ),
         (
@@ -300,6 +307,7 @@ pub fn intersect_surfaces(
             b,
             (ca, [*major_radius, *minor_radius]),
             (cb, [*rb, *rb]),
+            within,
             tol,
         ),
         (
@@ -313,24 +321,18 @@ pub fn intersect_surfaces(
                 major_radius: ba,
                 minor_radius: bb,
             },
-        ) => elliptic_pair(a, b, (ca, [*aa, *ab]), (cb, [*ba, *bb]), tol),
-        (
-            Surface::EllipticCylinder { .. },
-            Surface::Cone { .. }
-            | Surface::Sphere { .. }
-            | Surface::Torus { .. }
-            | Surface::Nurbs(_),
-        )
-        | (
-            Surface::Cone { .. }
-            | Surface::Sphere { .. }
-            | Surface::Torus { .. }
-            | Surface::Nurbs(_),
-            Surface::EllipticCylinder { .. },
-        ) => Err(GeomError::Unsupported {
-            a: GeomKind::Surface(a.kind()),
-            b: GeomKind::Surface(b.kind()),
-        }),
+        ) => elliptic_pair(a, b, (ca, [*aa, *ab]), (cb, [*ba, *bb]), within, tol),
+        (Surface::EllipticCylinder { .. }, Surface::Cone { .. } | Surface::Sphere { .. })
+        | (Surface::Cone { .. } | Surface::Sphere { .. }, Surface::EllipticCylinder { .. }) => {
+            crate::section::traced(a, b, within, tol)
+        }
+        (Surface::EllipticCylinder { .. }, Surface::Torus { .. } | Surface::Nurbs(_))
+        | (Surface::Torus { .. } | Surface::Nurbs(_), Surface::EllipticCylinder { .. }) => {
+            Err(GeomError::Unsupported {
+                a: GeomKind::Surface(a.kind()),
+                b: GeomKind::Surface(b.kind()),
+            })
+        }
         (
             Surface::Plane { .. }
             | Surface::Cylinder { .. }
@@ -342,7 +344,7 @@ pub fn intersect_surfaces(
         | (
             Surface::Cone { .. } | Surface::Sphere { .. } | Surface::Torus { .. },
             Surface::Plane { .. } | Surface::Cylinder { .. },
-        ) => crate::meridian::intersect_coaxial(a, b, tol),
+        ) => crate::meridian::intersect_coaxial(a, b, within, tol),
         (
             Surface::Nurbs(_),
             Surface::Plane { .. }
@@ -359,6 +361,83 @@ pub fn intersect_surfaces(
             | Surface::Sphere { .. }
             | Surface::Torus { .. },
             Surface::Nurbs(_),
+        ) => Err(GeomError::Unsupported {
+            a: GeomKind::Surface(a.kind()),
+            b: GeomKind::Surface(b.kind()),
+        }),
+    }
+}
+
+/// Two surfaces that share no axis, at least one of them a cone, a sphere
+/// or a torus — what the meridian arm leaves (ADR-0008): a plane against
+/// a cone meets it in an exact conic (`crate::cone_section`); a
+/// cylinder, a cone or a sphere against a cone or a sphere in a quartic,
+/// traced inside `within` and fitted (`crate::section`); a torus in any
+/// such pair is `Unsupported`, C3's next plan. A plane against a sphere
+/// and two spheres always share an axis, and the pairs with neither a
+/// cone, a sphere nor a torus in them never reach here; each is listed,
+/// `Unsupported`, so the match stays exhaustive without a wildcard.
+pub(crate) fn off_axis(
+    a: &Surface,
+    b: &Surface,
+    within: &Aabb,
+    tol: Tolerance,
+) -> Result<SurfaceIntersection, GeomError> {
+    match (a, b) {
+        (
+            Surface::Plane { frame: plane },
+            Surface::Cone {
+                frame,
+                radius,
+                half_angle,
+            },
+        )
+        | (
+            Surface::Cone {
+                frame,
+                radius,
+                half_angle,
+            },
+            Surface::Plane { frame: plane },
+        ) => crate::cone_section::plane_cone(plane, frame, *radius, *half_angle, within, tol),
+        (
+            Surface::Cylinder { .. } | Surface::Cone { .. } | Surface::Sphere { .. },
+            Surface::Cone { .. } | Surface::Sphere { .. },
+        )
+        | (Surface::Cone { .. } | Surface::Sphere { .. }, Surface::Cylinder { .. }) => {
+            crate::section::traced(a, b, within, tol)
+        }
+        (
+            Surface::Plane { .. },
+            Surface::Plane { .. }
+            | Surface::Cylinder { .. }
+            | Surface::EllipticCylinder { .. }
+            | Surface::Sphere { .. }
+            | Surface::Torus { .. }
+            | Surface::Nurbs(_),
+        )
+        | (
+            Surface::Cylinder { .. },
+            Surface::Plane { .. }
+            | Surface::Cylinder { .. }
+            | Surface::EllipticCylinder { .. }
+            | Surface::Torus { .. }
+            | Surface::Nurbs(_),
+        )
+        | (
+            Surface::Cone { .. } | Surface::Sphere { .. },
+            Surface::EllipticCylinder { .. } | Surface::Torus { .. } | Surface::Nurbs(_),
+        )
+        | (Surface::Sphere { .. }, Surface::Plane { .. })
+        | (
+            Surface::EllipticCylinder { .. } | Surface::Torus { .. } | Surface::Nurbs(_),
+            Surface::Plane { .. }
+            | Surface::Cylinder { .. }
+            | Surface::EllipticCylinder { .. }
+            | Surface::Cone { .. }
+            | Surface::Sphere { .. }
+            | Surface::Torus { .. }
+            | Surface::Nurbs(_),
         ) => Err(GeomError::Unsupported {
             a: GeomKind::Surface(a.kind()),
             b: GeomKind::Surface(b.kind()),
@@ -778,20 +857,18 @@ fn plane_elliptic_cylinder(
 /// `Z` from the section point — `Coincident`, `Empty`, or touching
 /// rulings at the touches and crossing ones at the crossings, together
 /// and ascending by the first section's parameter (ADR-0018); axes that
-/// are not parallel are `Unsupported` (a quartic space curve, C3's).
+/// are not parallel meet in a quartic space curve, traced inside
+/// `within` and fitted (`crate::section`).
 fn elliptic_pair(
     a: &Surface,
     b: &Surface,
     (ca, [aa, ab]): (&Frame, [f64; 2]),
     (cb, [ba, bb]): (&Frame, [f64; 2]),
+    within: &Aabb,
     tol: Tolerance,
 ) -> Result<SurfaceIntersection, GeomError> {
-    let unsupported = || GeomError::Unsupported {
-        a: GeomKind::Surface(a.kind()),
-        b: GeomKind::Surface(b.kind()),
-    };
     if line_angle(&ca.z(), &cb.z()) > tol.angular {
-        return Err(unsupported());
+        return crate::section::traced(a, b, within, tol);
     }
     let first = Conic2 {
         centre: Point2::origin(),
@@ -1077,15 +1154,20 @@ mod tests {
         for r in &c {
             on_both(r, &wall, &other);
         }
-        // A crossing axis has no closed form.
+        // A crossing axis has no closed form: a smaller cylinder through
+        // the wall meets it in two traced loops, fitted and periodic.
         let crossing = Surface::Cylinder {
             frame: Frame::from_z(Point3::origin(), Vec3::x()).unwrap(),
             radius: 1.0,
         };
-        assert!(matches!(
-            intersect_surfaces(&wall, &crossing, &within(), tol()),
-            Err(GeomError::Unsupported { .. })
-        ));
+        let r = intersect_surfaces(&wall, &crossing, &within(), tol()).unwrap();
+        let c = only(&r, MeetKind::Crossing);
+        assert_eq!(c.len(), 2, "{r:?}");
+        assert!(
+            c.iter()
+                .all(|c| matches!(c, Curve::Nurbs(n) if n.period().is_some())),
+            "{r:?}"
+        );
     }
 
     /// A circle of radius 2 about (1, 0) touches the 3 × 2 section at its

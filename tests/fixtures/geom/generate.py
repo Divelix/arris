@@ -6,8 +6,9 @@ parameters on and off the seam, projections from both sides),
 committed general pose), `c2-cylinder-pairs` (every pose of the
 cylinder–cylinder table in that pose), `c2-quadric-pairs` (the coaxial
 pairs with a cone, a sphere or a torus in them, and the pairs any sphere
-makes, in that pose) and `c3-cylinder-pairs` (the cylinder pairs that
-meet in a quartic, in that pose). Plain Python, no Open CASCADE: the coordinates
+makes, in that pose), `c3-cylinder-pairs` (the cylinder pairs that
+meet in a quartic, in that pose) and `c3-quadric-pairs` (the pairs with
+a cone or a sphere in them that share no axis, in that pose). Plain Python, no Open CASCADE: the coordinates
 are the closed forms of `docs/DATA-MODEL.md` §Geometry written out in
 world space at full precision, so both sides read identical numbers.
 Rerun after editing, then `tools/oracle/expected.py` on each directory.
@@ -474,6 +475,68 @@ def c3_cylinder_pairs():
     }
 
 
+# --- c3-quadric-pairs --------------------------------------------------------------
+
+
+def c3_quadric_pairs():
+    f = POSES["tilt"]
+    alpha = math.radians(30.0)
+    surfaces = {"cone": {"type": "cone", **f.spec(radius=1.0, half_angle_deg=30.0)}}
+    pairs = []
+    apex = [0.0, 0.0, -1.0 / math.tan(alpha)]
+
+    def local_frame(origin, z, x):
+        return Frame(f.to_world(origin), f.vec(z), f.vec(x))
+
+    def plane(name, origin, tilt):
+        # The normal `tilt` off the cone's axis, towards its local x.
+        n = [math.sin(tilt), 0.0, math.cos(tilt)]
+        surfaces[name] = {"type": "plane", **local_frame(origin, n, [0.0, 1.0, 0.0]).spec()}
+        pairs.append({"a": name, "b": "cone"})
+
+    # A plane off the axis and the apex: steeper than the cone an ellipse,
+    # as steep a parabola, parallel to the axis a hyperbola's two branches.
+    plane("steep", [0.0, 0.0, 1.0], math.radians(20.0))
+    plane("parabolic", [0.0, 0.0, 1.0], math.pi / 2 - alpha)
+    plane("parallel", [0.5, 0.0, 0.0], math.pi / 2)
+    # Through the apex: the apex alone, two rulings, one touching ruling.
+    plane("apex_steep", apex, math.radians(20.0))
+    plane("apex_shallow", apex, math.radians(80.0))
+    plane("apex_touch", apex, math.pi / 2 - alpha)
+
+    def other(name, spec, a="cone"):
+        surfaces[name] = spec
+        pairs.append({"a": a, "b": name})
+
+    # A pipe across the cone's axis through one nappe: two loops.
+    other("pipe", {"type": "cylinder", **local_frame([0.0, 0.0, 2.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]).spec(radius=0.4)})
+    # A ball straddling the cone off its axis: one loop.
+    ball = [1.8, 0.0, 1.5]
+    other("ball", {"type": "sphere", **local_frame(ball, [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]).spec(radius=1.0)})
+    # A post along the axis's direction through the ball, off its centre.
+    other("post", {"type": "cylinder", **local_frame([2.3, 0.0, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]).spec(radius=0.6)}, a="ball")
+    # A narrow cone, its apex inside the first's upper nappe and its axis
+    # 8° off: its lower nappe leaves the first's upper nappe and enters
+    # its lower one, a loop on each.
+    t = math.radians(8.0)
+    zb = [math.sin(t), 0.0, math.cos(t)]
+    spike_apex = [0.0, 0.0, 1.0]
+    beta = math.radians(10.0)
+    origin = add(spike_apex, mul(0.3 / math.tan(beta), zb))
+    other("spike", {"type": "cone", **local_frame(origin, zb, [0.0, 1.0, 0.0]).spec(radius=0.3, half_angle_deg=10.0)})
+    # Two the other way round.
+    pairs.append({"a": "cone", "b": "parallel"})
+    pairs.append({"a": "spike", "b": "cone"})
+    return {
+        "kind": "geometry",
+        "description": "the quadric pairs with a cone or a sphere in them that share no axis, around one cone in the tilt pose: a plane off the axis in an ellipse, a parabola and a hyperbola's two branches, exact; through the apex the apex alone, two rulings and one touching ruling; a pipe across the axis, a ball straddling the cone, a post through the ball and a narrow cone inside the first, which Arris traces and fits (ADR-0018) and Open CASCADE walks in GeomAPI_IntSS; two pairs swapped; written by generate.py",
+        "surfaces": surfaces,
+        "curves": {},
+        "samples": [],
+        "pairs": pairs,
+    }
+
+
 # --- c2-quadric-pairs --------------------------------------------------------------
 
 
@@ -656,3 +719,4 @@ if __name__ == "__main__":
     write("c2-cylinder-pairs", c2_cylinder_pairs())
     write("c2-quadric-pairs", c2_quadric_pairs())
     write("c3-cylinder-pairs", c3_cylinder_pairs())
+    write("c3-quadric-pairs", c3_quadric_pairs())

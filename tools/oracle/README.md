@@ -57,8 +57,9 @@ commit that says so (`.agents/rules/git.md`).
   `IntAna_QuadQuadGeo` for surface pairs (`unsolved` where it reports
   `NoGeometricSolution`, with `GeomAPI_IntSS`'s walked lines sampled and
   polished onto both surfaces by Newton steps as `section` curves;
-  `point` where it reports `IntAna_Point`, through the overload each kind
-  pair has) and `IntAna_IntConicQuad` for a
+  `point` where it reports `IntAna_Point`, a parabola's and a
+  hyperbola's branches sampled at their own parameters, through the
+  overload each kind pair has) and `IntAna_IntConicQuad` for a
   curve against a surface — `IntAna_IntLinTorus` for a line against a
   torus — hits deduplicated within `Precision::Confusion` and dropped
   (counted) when off either operand.

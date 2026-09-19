@@ -14,11 +14,14 @@
 
 use core::f64::consts::{FRAC_PI_2, TAU};
 
-use arris_debug::prop::geom::{HALF_ANGLE_RANGE, RADIUS_RANGE, cylinder, plane, surface};
+use arris_debug::prop::geom::{
+    HALF_ANGLE_RANGE, RADIUS_RANGE, cone, cylinder, elliptic_cylinder, plane, sphere, surface,
+};
 use arris_debug::prop::{DEFAULT_SCALE, check, finite_f64, frame, point_in_box, unit_vec3};
+use arris_debug::prop_shards;
 use arris_geom::{
-    Curve, GeomError, GeomKind, MeetKind, SECTION_FIT_FRACTION, Surface, SurfaceIntersection,
-    SurfaceKind, intersect_surfaces,
+    Curve, GeomError, GeomKind, HYPERBOLA_HALF_SPAN, MeetKind, SECTION_FIT_FRACTION, Surface,
+    SurfaceIntersection, SurfaceKind, intersect_surfaces,
 };
 use arris_math::{Aabb, Frame, Point3, Precision, Tolerance, UnitVec3, Vec3};
 use proptest::prelude::*;
@@ -84,30 +87,44 @@ fn implicit_distance(s: &Surface, p: Point3) -> f64 {
     signed_distance(s, p).abs()
 }
 
-/// Every sampled point of `c` lies on both `a` and `b`.
-fn on_both(c: &Curve, a: &Surface, b: &Surface) -> Result<(), TestCaseError> {
-    let range = match c {
-        Curve::Line { .. } => -DEFAULT_SCALE..=DEFAULT_SCALE,
-        Curve::Circle { .. } | Curve::Ellipse { .. } => 0.0..=TAU,
-        Curve::Nurbs(c) => c.domain().lo()..=c.domain().hi(),
+/// Every sampled point of `c` lies on both `a` and `b`: to rounding, and
+/// a NURBS — a fitted section, or an exact conic that is held no looser —
+/// within the fit's fraction of the tolerance, plus `slack`, the
+/// tolerance a traced branch may be off within a singular point's reach.
+/// A NURBS is sampled densely, so the fit is held between its own check
+/// parameters too, and relative to its size, so a clipped branch a
+/// thousand units long is held as its rounding allows.
+fn on_both(c: &Curve, a: &Surface, b: &Surface, slack: f64) -> Result<(), TestCaseError> {
+    let (range, samples) = match c {
+        Curve::Line { .. } => (-DEFAULT_SCALE..=DEFAULT_SCALE, SAMPLES),
+        Curve::Circle { .. } | Curve::Ellipse { .. } => (0.0..=TAU, SAMPLES),
+        Curve::Nurbs(c) => (c.domain().lo()..=c.domain().hi(), DENSE),
     };
-    for i in 0..SAMPLES {
-        let s = i as f64 / (SAMPLES - 1) as f64;
+    for i in 0..samples {
+        let s = i as f64 / (samples - 1) as f64;
         let t = range.start() + s * (range.end() - range.start());
         let p = c.point(t);
+        let bound = match c {
+            Curve::Nurbs(_) => {
+                slack + SECTION_FIT_FRACTION * tol().linear + 1e-11 * (1.0 + p.coords.norm())
+            }
+            Curve::Line { .. } | Curve::Circle { .. } | Curve::Ellipse { .. } => EXACT,
+        };
         let (da, db) = (implicit_distance(a, p), implicit_distance(b, p));
         prop_assert!(
-            da <= EXACT && db <= EXACT,
+            da <= bound && db <= bound,
             "{c:?} at t = {t} is off by {da} from {a:?} and {db} from {b:?}"
         );
     }
     Ok(())
 }
 
-/// The same point set, up to a line's orientation.
+/// The same point set, up to a line's orientation; a NURBS — fitted or a
+/// conic's branch — the same curve bit for bit.
 fn same_curve(a: &Curve, b: &Curve) -> bool {
     let parallel = |x: &UnitVec3, y: &UnitVec3| x.cross(y).norm() <= EXACT;
     match (a, b) {
+        (Curve::Nurbs(x), Curve::Nurbs(y)) => x == y,
         (
             Curve::Line { origin, direction },
             Curve::Line {
@@ -194,10 +211,28 @@ fn seen(r: &SurfaceIntersection) -> Seen {
 /// first, a coaxial pair its circles along the first's axis),
 /// determinism.
 fn common_properties(a: &Surface, b: &Surface) -> Result<SurfaceIntersection, TestCaseError> {
-    let r = intersect_surfaces(a, b, &within(), tol())
-        .map_err(|e| TestCaseError::fail(e.to_string()))?;
+    common_properties_in(a, b, &within())
+}
+
+/// [`common_properties`] inside a region of the caller's.
+fn common_properties_in(
+    a: &Surface,
+    b: &Surface,
+    within: &Aabb,
+) -> Result<SurfaceIntersection, TestCaseError> {
+    let r = intersect_surfaces(a, b, within, tol())
+        .map_err(|e| TestCaseError::fail(format!("{a:?} vs {b:?}: {e}")))?;
+    let slack = if r.points().is_empty()
+        || r.curves()
+            .iter()
+            .all(|m| !matches!(m.curve, Curve::Nurbs(_)))
+    {
+        0.0
+    } else {
+        tol().linear
+    };
     for c in curves_of(&r) {
-        on_both(c, a, b)?;
+        on_both(c, a, b, slack)?;
     }
     for p in points_of(&r) {
         let (da, db) = (implicit_distance(a, p), implicit_distance(b, p));
@@ -206,8 +241,8 @@ fn common_properties(a: &Surface, b: &Surface) -> Result<SurfaceIntersection, Te
             "{p} is off by {da} from {a:?} and {db} from {b:?}"
         );
     }
-    let swapped = intersect_surfaces(b, a, &within(), tol())
-        .map_err(|e| TestCaseError::fail(e.to_string()))?;
+    let swapped =
+        intersect_surfaces(b, a, within, tol()).map_err(|e| TestCaseError::fail(e.to_string()))?;
     prop_assert_eq!(
         core::mem::discriminant(&swapped),
         core::mem::discriminant(&r),
@@ -243,8 +278,8 @@ fn common_properties(a: &Surface, b: &Surface) -> Result<SurfaceIntersection, Te
             taken[i] = true;
         }
     }
-    let again = intersect_surfaces(a, b, &within(), tol())
-        .map_err(|e| TestCaseError::fail(e.to_string()))?;
+    let again =
+        intersect_surfaces(a, b, within, tol()).map_err(|e| TestCaseError::fail(e.to_string()))?;
     prop_assert_eq!(&again, &r, "two runs differ");
     Ok(r)
 }
@@ -539,28 +574,20 @@ fn coaxial(a: &Surface, b: &Surface) -> bool {
 #[test]
 fn every_other_pair_is_unsupported() {
     check((surface(), surface()), |(a, b)| {
-        let decided = |k| matches!(k, SurfaceKind::Plane | SurfaceKind::Cylinder);
+        // Every quadric pair without a torus is decided in every pose —
+        // by a closed form, an exact conic or the tracer (ADR-0018) — and
+        // a pair with a torus in it wherever the two share an axis or a
+        // plane holds the torus's axis (ADR-0008); a random pose is
+        // almost never coaxial, and the property decides the pose rather
+        // than relying on that.
+        let torus = |k| k == SurfaceKind::Torus;
         let elliptic = |k| k == SurfaceKind::EllipticCylinder;
-        let parallel =
-            |x: &UnitVec3, y: &UnitVec3| x.cross(y).norm().atan2(x.dot(y).abs()) <= tol().angular;
-        // Planes and cylinders are decided in every pose — two cylinders
-        // in a quartic one by the tracer (ADR-0018) — and a pair with a
-        // cone, a sphere or a torus in it is almost never coaxial; the
-        // property decides the pose rather than relying on that. An
-        // elliptic cylinder is decided
-        // against a plane in every pose and against a cylinder or an
-        // elliptic cylinder when the axes are parallel (ADR-0014).
-        let supported = if elliptic(a.kind()) || elliptic(b.kind()) {
-            let cylindrical =
-                |k| matches!(k, SurfaceKind::Cylinder | SurfaceKind::EllipticCylinder);
-            let (fa, fb) = (a.frame().unwrap(), b.frame().unwrap());
-            a.kind() == SurfaceKind::Plane
-                || b.kind() == SurfaceKind::Plane
-                || (cylindrical(a.kind()) && cylindrical(b.kind()) && parallel(&fa.z(), &fb.z()))
-        } else if decided(a.kind()) && decided(b.kind()) {
-            true
+        let supported = if torus(a.kind()) || torus(b.kind()) {
+            // An elliptic cylinder is no surface of revolution and shares
+            // no axis with a torus.
+            !elliptic(a.kind()) && !elliptic(b.kind()) && coaxial(&a, &b)
         } else {
-            coaxial(&a, &b)
+            true
         };
         match intersect_surfaces(&a, &b, &within(), tol()) {
             Ok(_) => prop_assert!(supported, "{a:?} vs {b:?} should be unsupported"),
@@ -1576,7 +1603,9 @@ fn constructed_apexes_are_points_and_equal_cones_coincide() {
 /// cone's `∂P/∂v` at the half-angle to the axis and a circle of radius
 /// `r` about `O ± R·w` in the plane with its `t` the torus's `v`, the
 /// first on the side `w = Z × n`; the plane's origin anywhere in it, its
-/// normal either way. The same plane a hair off the axis is C3's.
+/// normal either way. The same plane off the axis cuts a cone in a
+/// hyperbola's two branches, and a torus in a spiric section, still
+/// C3's.
 #[test]
 fn a_plane_through_the_axis_cuts_the_meridian() {
     check(
@@ -1646,20 +1675,30 @@ fn a_plane_through_the_axis_cuts_the_meridian() {
                         _ => return Err(TestCaseError::fail(format!("{kind:?}: {curve:?}"))),
                     }
                 }
-                // Off the axis by more than the tolerance: a hyperbola or
-                // a spiric section, C3's.
+                // Off the axis by more than the tolerance: a hyperbola's
+                // two exact branches, or a spiric section, C3's.
                 let off = Surface::Plane {
                     frame: plane
                         .frame()
                         .unwrap()
                         .with_origin(anchor + (pb.r2 + 0.5) * around),
                 };
-                let apart = intersect_surfaces(&off, &carrier, &within(), tol());
-                prop_assert!(
-                    matches!(apart, Err(GeomError::Unsupported { .. })),
-                    "a plane off the axis: {:?}",
-                    apart
-                );
+                if kind == Coaxial::Torus {
+                    let apart = intersect_surfaces(&off, &carrier, &within(), tol());
+                    prop_assert!(
+                        matches!(apart, Err(GeomError::Unsupported { .. })),
+                        "a plane off the axis: {:?}",
+                        apart
+                    );
+                } else {
+                    let near = Aabb::of_point(anchor).inflated(4.0 * DEFAULT_SCALE);
+                    let r = common_properties_in(&off, &carrier, &near)?;
+                    let Seen::Crossing(c) = seen(&r) else {
+                        return Err(TestCaseError::fail(format!("off the axis: {r:?}")));
+                    };
+                    prop_assert_eq!(c.len(), 2, "{:?}", r);
+                    prop_assert!(c.iter().all(|c| matches!(c, Curve::Nurbs(_))));
+                }
             }
             Ok(())
         },
@@ -1689,8 +1728,14 @@ fn apart() -> impl Strategy<Value = Apart> {
     ]
 }
 
+/// Every pose of §Non-goals of ADR-0008 is decided now but a torus's: a
+/// plane oblique to a cone's axis or parallel to it and off it in an
+/// exact conic, two cones off one axis and a sphere off a cone's or a
+/// cylinder's axis traced and fitted (ADR-0018) — each on both surfaces
+/// and bit for bit under a swap — while a torus in any of them stays
+/// `Unsupported` naming the pair, C3's next plan.
 #[test]
-fn every_non_coaxial_quadric_pose_is_unsupported() {
+fn every_non_coaxial_quadric_pose_is_decided_but_a_torus() {
     check(
         (
             frame(),
@@ -1745,16 +1790,206 @@ fn every_non_coaxial_quadric_pose_is_unsupported() {
             // and the cylinder plan's arms, not this one's: a cylinder
             // carries the axis here only against an off-centre sphere.
             prop_assume!(kind != Coaxial::Cylinder || pose == Apart::OffCentre);
-            for (x, y) in [(&carrier, &other), (&other, &carrier)] {
-                match intersect_surfaces(x, y, &within(), tol()) {
-                    Err(GeomError::Unsupported { a, b }) => {
-                        prop_assert_eq!(a, GeomKind::Surface(x.kind()));
-                        prop_assert_eq!(b, GeomKind::Surface(y.kind()));
+            if kind == Coaxial::Torus {
+                for (x, y) in [(&carrier, &other), (&other, &carrier)] {
+                    match intersect_surfaces(x, y, &within(), tol()) {
+                        Err(GeomError::Unsupported { a, b }) => {
+                            prop_assert_eq!(a, GeomKind::Surface(x.kind()));
+                            prop_assert_eq!(b, GeomKind::Surface(y.kind()));
+                        }
+                        other => {
+                            return Err(TestCaseError::fail(format!("{x:?} vs {y:?}: {other:?}")));
+                        }
                     }
-                    other => return Err(TestCaseError::fail(format!("{x:?} vs {y:?}: {other:?}"))),
                 }
+                return Ok(());
             }
+            let near = Aabb::of_point(axis.origin()).inflated(4.0 * DEFAULT_SCALE);
+            common_properties_in(&carrier, &other, &near)?;
             Ok(())
         },
+    );
+}
+
+// --- every quadric pair at a meeting pose (C3's accept line) -----------------
+
+/// A rough size of a surface: how far from a point of it another can sit
+/// and still be likely to meet it.
+fn size(surface: &Surface) -> f64 {
+    match *surface {
+        Surface::Cylinder { radius, .. }
+        | Surface::Sphere { radius, .. }
+        | Surface::Cone { radius, .. } => radius,
+        Surface::EllipticCylinder { minor_radius, .. } => minor_radius,
+        Surface::Plane { .. } | Surface::Torus { .. } | Surface::Nurbs(_) => 1.0,
+    }
+}
+
+/// Every quadric but the torus, in a random pose.
+fn quadric() -> impl Strategy<Value = Surface> {
+    prop_oneof![plane(), cylinder(), elliptic_cylinder(), cone(), sphere()]
+}
+
+/// Two quadrics placed to meet: the second's origin within its own size
+/// of a point of the first, and a region of thirty units about it.
+fn meeting() -> impl Strategy<Value = (Surface, Surface, Aabb)> {
+    (
+        quadric(),
+        quadric(),
+        finite_f64(0.0..=TAU),
+        finite_f64(-5.0..=5.0),
+        unit_vec3(),
+        finite_f64(0.0..=0.9),
+    )
+        .prop_map(|(a, b, u, v, direction, reach)| {
+            let v = if matches!(a, Surface::Sphere { .. }) {
+                v * 0.3
+            } else {
+                v
+            };
+            let at = a.point(u, v) + direction.into_inner() * (reach * size(&b));
+            let mut b = b;
+            match &mut b {
+                Surface::Plane { frame }
+                | Surface::Cylinder { frame, .. }
+                | Surface::EllipticCylinder { frame, .. }
+                | Surface::Cone { frame, .. }
+                | Surface::Sphere { frame, .. }
+                | Surface::Torus { frame, .. } => *frame = frame.with_origin(at),
+                Surface::Nurbs(_) => {}
+            }
+            (a, b, Aabb::of_point(at).inflated(30.0))
+        })
+}
+
+prop_shards! {
+    /// C3's accept line for every quadric pair without a torus, at random
+    /// poses where the two meet: decided — by a closed form, an exact
+    /// conic or the tracer and a fit (ADR-0018) — every curve on both
+    /// surfaces at its samples, a fitted one densely and within the fit's
+    /// fraction of the tolerance, every point on both within the
+    /// tolerance, the same under a swap and on a second run. Sharded: a
+    /// case traces and fits three times.
+    every_quadric_pair_without_a_torus_meets_on_both_surfaces
+        [shard_0 shard_1 shard_2 shard_3]
+        ((a, b, within)) = meeting() => {
+            common_properties_in(&a, &b, &within)?;
+            Ok(())
+        }
+}
+
+// --- a plane against a cone off its axis --------------------------------------
+
+/// Every sample of each curve of `r` on both surfaces to rounding — the
+/// conics are exact, not fitted.
+fn exactly_on_both(r: &SurfaceIntersection, a: &Surface, b: &Surface) {
+    for m in r.curves() {
+        let domain = match &m.curve {
+            Curve::Line { .. } => arris_math::Interval::new(-5.0, 5.0).unwrap(),
+            other => other.domain(),
+        };
+        for i in 0..=400 {
+            let p = m.curve.point(domain.lerp(i as f64 / 400.0));
+            let off = implicit_distance(a, p).max(implicit_distance(b, p));
+            assert!(off <= 1e-12 * (1.0 + p.coords.norm()), "{p} is {off} off");
+        }
+    }
+}
+
+/// A cone of half-angle 30° about `z`, its apex at `z = −√3`, against a
+/// plane of each pose: steeper than the cone an ellipse, as steep a
+/// parabola, shallower a hyperbola's two branches; through the apex the
+/// apex alone, one touching ruling or two crossing ones. Parabolas and
+/// hyperbolas are exact rational quadratics clipped to the region; a
+/// hyperbola's arcs keep their middle weight at `cosh` of at most
+/// `HYPERBOLA_HALF_SPAN`.
+#[test]
+fn a_plane_cuts_a_cone_off_its_axis_in_every_conic() {
+    let alpha = core::f64::consts::FRAC_PI_6;
+    let cone = Surface::Cone {
+        frame: Frame::world(),
+        radius: 1.0,
+        half_angle: alpha,
+    };
+    let apex = Point3::new(0.0, 0.0, -(3.0f64.sqrt()));
+    let within = Aabb {
+        min: [-20.0; 3],
+        max: [20.0; 3],
+    };
+    // A plane through `at` whose normal is `tilt` off the axis, towards x.
+    let plane = |at: Point3, tilt: f64| Surface::Plane {
+        frame: Frame::from_z(at, Vec3::new(tilt.sin(), 0.0, tilt.cos())).unwrap(),
+    };
+    let meet = |p: &Surface| {
+        let r = intersect_surfaces(p, &cone, &within, tol()).unwrap();
+        assert_eq!(intersect_surfaces(&cone, p, &within, tol()).unwrap(), r);
+        exactly_on_both(&r, p, &cone);
+        r
+    };
+    let up = Point3::new(0.0, 0.0, 1.0);
+
+    let r = meet(&plane(up, 0.3));
+    let Seen::Crossing(c) = seen(&r) else {
+        panic!("{r:?}")
+    };
+    assert!(matches!(c.as_slice(), [Curve::Ellipse { .. }]), "{r:?}");
+
+    let steep = FRAC_PI_2 - alpha;
+    let r = meet(&plane(up, steep));
+    let Seen::Crossing(c) = seen(&r) else {
+        panic!("{r:?}")
+    };
+    let [Curve::Nurbs(parabola)] = c.as_slice() else {
+        panic!("{r:?}")
+    };
+    assert_eq!(parabola.degree(), 2);
+    assert!(parabola.weights().iter().all(|&w| w == 1.0));
+
+    let r = meet(&plane(Point3::new(0.5, 0.0, 0.0), FRAC_PI_2));
+    let Seen::Crossing(c) = seen(&r) else {
+        panic!("{r:?}")
+    };
+    assert_eq!(c.len(), 2, "{r:?}");
+    for branch in &c {
+        let Curve::Nurbs(h) = branch else {
+            panic!("{r:?}")
+        };
+        assert_eq!(h.degree(), 2);
+        assert!(
+            h.weights()
+                .iter()
+                .all(|&w| (1.0..=HYPERBOLA_HALF_SPAN.cosh()).contains(&w))
+        );
+        // The branch reaches past the region at both ends.
+        let d = h.domain();
+        for end in [d.lo(), d.hi()] {
+            let p = h.eval(end).point;
+            assert!(
+                (0..3).any(|i| p[i] < within.min[i] || p[i] > within.max[i]),
+                "{p} is inside the region"
+            );
+        }
+    }
+
+    let r = meet(&plane(apex, 0.3));
+    assert!(r.curves().is_empty(), "{r:?}");
+    assert_eq!(r.points().len(), 1);
+    assert_eq!(r.points()[0].kind, MeetKind::Crossing);
+    assert!((r.points()[0].point - apex).norm() < 1e-12);
+
+    let r = meet(&plane(apex, steep));
+    let Seen::Touch(c) = seen(&r) else {
+        panic!("{r:?}")
+    };
+    assert!(matches!(c.as_slice(), [Curve::Line { .. }]), "{r:?}");
+
+    let r = meet(&plane(apex, FRAC_PI_2 - 0.2));
+    let Seen::Crossing(c) = seen(&r) else {
+        panic!("{r:?}")
+    };
+    assert_eq!(c.len(), 2, "{r:?}");
+    assert!(
+        c.iter()
+            .all(|c| matches!(c, Curve::Line { origin, .. } if (origin - apex).norm() < 1e-12))
     );
 }

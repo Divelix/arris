@@ -178,7 +178,7 @@ bound has to be established here.
   oracle's sampled points on Arris's curves; the roadmap's property test
   for the pair at random poses. `docs/DATA-MODEL.md` §Curves loses its
   `⚠ OPEN` in this commit. Commit body names the changed signature.
-- [ ] Step 5 **[2]** — The other ruled pairs: cylinder–cone, cone–cone,
+- [x] Step 5 **[2]** — The other ruled pairs: cylinder–cone, cone–cone,
   sphere against a cylinder or a cone off its axis, the elliptic cylinder
   against each. A plane oblique to a cone, or parallel to its axis and
   off it: `Curve::Ellipse`, or the parabola or hyperbola branches as
@@ -318,3 +318,23 @@ bound has to be established here.
     them; `docs/DATA-MODEL.md`'s S5 row says so. Step 10 is left the
     pairs step 5 adds, the blend property tests with nothing unchecked
     and the rows restated.
+- Found by step 5, and done there:
+  - **A plane off a cone's axis is exact in every pose**, including
+    through the apex: the apex alone, one touching ruling or two
+    crossing ones, by the angle between the plane and the axis against
+    the half-angle (`cone_section.rs`). A hyperbola's arcs keep their
+    middle weight under `cosh HYPERBOLA_HALF_SPAN`, built split at double
+    knots rather than split afterwards by knot insertion — the same
+    curve, without the step.
+  - **No elliptic cylinder in the oracle fixture.** The geometry grammar
+    has none and Open CASCADE carries one only as a surface of
+    extrusion, which `IntAna_QuadQuadGeo` does not take; the elliptic
+    cylinder's traced pairs are held by the every-pair property test.
+  - **The tracer's refusals stand**: `SectionFault` poses of measure
+    zero stay `GeomError::DegenerateSection`, not `Unsupported` — among
+    them two cones sharing an apex, whose section is up to four rulings
+    through it (a backlog line).
+  - **S5 decides every pair step 5 added** over the overlap of the face
+    boxes, as step 4's pairs; `docs/DATA-MODEL.md`'s S5 row says so.
+  - Two property tests of the closed-form table fail at 3000 cases and
+    did before this plan; a backlog line records them.

@@ -17,6 +17,7 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+mod cone_section;
 mod conic2;
 mod curve;
 mod curve2;
@@ -35,6 +36,7 @@ mod section;
 mod surface;
 mod trace;
 
+pub use cone_section::HYPERBOLA_HALF_SPAN;
 pub use curve::{Curve, CurveEval, CurveKind};
 pub use curve2::{Curve2, Curve2Eval, Curve2Kind, Curve2Projection};
 pub use error::{AmbiguousLocus, GeomError, GeomKind};

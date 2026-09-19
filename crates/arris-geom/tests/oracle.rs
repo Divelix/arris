@@ -202,6 +202,16 @@ fn surface_type(r: &SurfaceIntersection) -> (String, Vec<&Curve>) {
     }
 }
 
+/// Arris's name for the kind of an oracle curve: a parabola or a
+/// hyperbola's branch, which no `Curve` variant carries, is an exact
+/// rational quadratic NURBS (ADR-0018).
+fn ours(kind: &str) -> &str {
+    match kind {
+        "parabola" | "hyperbola" => "NURBS",
+        other => other,
+    }
+}
+
 /// `true` when the surfaces meet in curves and touch along every one.
 fn touching(r: &SurfaceIntersection) -> bool {
     !r.curves().is_empty() && r.curves().iter().all(|c| c.kind == MeetKind::Touch)
@@ -336,7 +346,7 @@ fn check_surface_pair(a: &Surface, b: &Surface, res: &PairResult, errors: &mut V
     } else {
         curves.len() == res.curves.len()
     };
-    if kind != res.kind || !counts_agree {
+    if kind != ours(&res.kind) || !counts_agree {
         errors.push(format!(
             "{label}: {kind} with {} curves vs oracle {} with {}",
             curves.len(),
@@ -351,7 +361,7 @@ fn check_surface_pair(a: &Surface, b: &Surface, res: &PairResult, errors: &mut V
     let mut taken = vec![false; curves.len()];
     for sample in &res.curves {
         let on = |c: &Curve| {
-            c.kind().to_string() == sample.kind
+            c.kind().to_string() == ours(&sample.kind)
                 && sample.points.iter().all(|p| {
                     let bound = if touch {
                         TOUCH
@@ -524,8 +534,8 @@ fn turn_diff(a: f64, b: f64, c: &Curve) -> f64 {
 fn every_geometry_fixture_matches_the_oracle() {
     let fixtures = geometry_fixtures();
     assert!(
-        fixtures.len() >= 5,
-        "expected geom/analytic-eval, geom/c1-intersections, geom/c2-cylinder-pairs, geom/c2-quadric-pairs and geom/c3-cylinder-pairs"
+        fixtures.len() >= 6,
+        "expected geom/analytic-eval, geom/c1-intersections, geom/c2-cylinder-pairs, geom/c2-quadric-pairs, geom/c3-cylinder-pairs and geom/c3-quadric-pairs"
     );
     let mut errors = Vec::new();
     for f in &fixtures {
@@ -835,5 +845,60 @@ fn the_c3_cylinder_pairs_meet_in_the_loops_they_were_built_with() {
                 "{a} vs {b}: not a periodic fit"
             );
         }
+    }
+}
+
+/// What Arris says about every pair of `geom/c3-quadric-pairs`, by name: a
+/// plane off a cone's axis in the conic it was built for — the parabola
+/// and the hyperbola's branches exact rational quadratics — or through the
+/// apex in its point, two rulings or one touching ruling; the traced pairs
+/// in the loops they were built with, fitted and closed.
+#[test]
+fn the_c3_quadric_pairs_classify_as_built() {
+    let f = geometry_fixtures()
+        .into_iter()
+        .find(|f| f.name == "geom/c3-quadric-pairs")
+        .expect("geom/c3-quadric-pairs");
+    let built = build(&f);
+    let cases: &[(&str, &str, &str, usize)] = &[
+        ("steep", "cone", "ellipse", 1),
+        ("parabolic", "cone", "NURBS", 1),
+        ("parallel", "cone", "NURBS", 2),
+        ("apex_steep", "cone", "point", 1),
+        ("apex_shallow", "cone", "line", 2),
+        ("apex_touch", "cone", "tangent line", 1),
+        ("cone", "pipe", "loops", 2),
+        ("cone", "ball", "loops", 1),
+        ("ball", "post", "loops", 1),
+        ("cone", "spike", "loops", 2),
+        ("cone", "parallel", "NURBS", 2),
+        ("spike", "cone", "loops", 2),
+    ];
+    assert_eq!(
+        cases.len(),
+        f.recipe.pairs.len(),
+        "every pair of the fixture is pinned here"
+    );
+    for (a, b, kind, count) in cases {
+        let r = intersect_surfaces(&built.surfaces[*a], &built.surfaces[*b], &within(), tol())
+            .unwrap_or_else(|e| panic!("{a} vs {b}: {e}"));
+        let (got, curves) = surface_type(&r);
+        let loops = curves
+            .iter()
+            .all(|c| matches!(c, Curve::Nurbs(n) if n.period().is_some()));
+        let got = if touching(&r) {
+            (format!("tangent {got}"), curves.len())
+        } else if curves.is_empty() {
+            (got, r.points().len())
+        } else if loops {
+            ("loops".to_owned(), curves.len())
+        } else {
+            (got, curves.len())
+        };
+        assert_eq!(
+            (got.0.as_str(), got.1),
+            (*kind, *count),
+            "{a} vs {b}: {r:?}"
+        );
     }
 }
