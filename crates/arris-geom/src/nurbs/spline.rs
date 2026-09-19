@@ -27,6 +27,14 @@ pub(crate) struct Derivatives<const D: usize> {
     pub d2: SVector<f64, D>,
 }
 
+/// One polynomial piece of a spline in Bernstein form over `[lo, hi]`:
+/// the homogeneous Bézier control points `(w P, w)`.
+pub(crate) struct BezierSpan<const D: usize> {
+    pub lo: f64,
+    pub hi: f64,
+    pub control: Vec<(SVector<f64, D>, f64)>,
+}
+
 impl<const D: usize> Spline<D> {
     /// A validated spline; the error is the reason for
     /// `GeomError::Degenerate`.
@@ -222,6 +230,49 @@ impl<const D: usize> Spline<D> {
             })
             .unzip();
         Spline::new(p, knots, points, weights)
+    }
+
+    /// The spline's polynomial pieces in Bernstein form: for every
+    /// non-empty span of the domain, ascending, its two knots and the
+    /// `p + 1` homogeneous Bézier control points `(w P, w)` of the piece
+    /// over it — the blossom of the span at its own ends, `p − k` times
+    /// the first and `k` times the second (de Boor's recurrence with a
+    /// different argument at each level), which reads unclamped knots as
+    /// it reads clamped ones, so a periodic spline needs no unwrapping.
+    /// The image of each piece is the spline's over the span to rounding.
+    #[allow(clippy::needless_range_loop)] // de Boor's index passes, as written
+    pub(crate) fn bezier_spans(&self) -> Vec<BezierSpan<D>> {
+        let p = self.degree;
+        let n = self.points.len();
+        let mut spans = Vec::with_capacity(n - p);
+        for i in p..n {
+            let (lo, hi) = (self.knots[i], self.knots[i + 1]);
+            if lo == hi {
+                continue;
+            }
+            let mut control = Vec::with_capacity(p + 1);
+            for k in 0..=p {
+                let mut d: Vec<(SVector<f64, D>, f64)> = (i - p..=i)
+                    .map(|j| (self.weights[j] * self.points[j].coords, self.weights[j]))
+                    .collect();
+                for r in 1..=p {
+                    // The last `k` arguments of the blossom are `hi`.
+                    let t = if r > p - k { hi } else { lo };
+                    for j in (r..=p).rev() {
+                        let g = i - p + j;
+                        let alpha =
+                            (t - self.knots[g]) / (self.knots[g + p - r + 1] - self.knots[g]);
+                        d[j] = (
+                            (1.0 - alpha) * d[j - 1].0 + alpha * d[j].0,
+                            (1.0 - alpha) * d[j - 1].1 + alpha * d[j].1,
+                        );
+                    }
+                }
+                control.push(d[p]);
+            }
+            spans.push(BezierSpan { lo, hi, control });
+        }
+        spans
     }
 
     /// The spline with every control point mapped through `f`.

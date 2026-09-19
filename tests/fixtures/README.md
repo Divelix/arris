@@ -267,6 +267,7 @@ oracle's sampled points on Arris's curves to 1e-9.
 | `line` | `origin`, `direction` |
 | `circle` | `origin`, `z`, `x`, `radius` |
 | `ellipse` | `origin`, `z`, `x` (the major axis), `major_radius`, `minor_radius` |
+| `nurbs` | `degree`, `knots` (flat: each as often as it repeats), `control_points` (Cartesian), `weights` |
 
 - A frame is `origin`, `z`, `x` as `Frame::new` and `gp_Ax3` build it: `x`
   made perpendicular to `z`, both normalised, `y = z × x`. Numbers may be
@@ -292,11 +293,21 @@ oracle's sampled points on Arris's curves to 1e-9.
   share no axis: a plane off a cone's axis in an ellipse, a parabola and
   a hyperbola, through the apex in the apex, two rulings or a touching
   one; a pipe, a ball and a narrow cone against a cone, a post through
-  the ball). An oracle parabola or hyperbola, sampled at its own
+  the ball) and `c3-nurbs-hits` (an ellipse as four rational quadratic
+  arcs, a quintic of three spans and a rational cubic with a double
+  knot, each against a plane, a cylinder, a cone, a sphere and a torus).
+  An oracle parabola or hyperbola, sampled at its own
   parameters in `[−2, 2]` a branch per curve, is held against Arris's
   exact rational quadratic NURBS. The geometry grammar has no elliptic
   cylinder, which Open CASCADE carries only as a surface of extrusion;
   its traced pairs are the property tests'.
+- A `nurbs` curve is `NurbsCurve::new`'s arguments and the oracle's
+  `Geom_BSplineCurve` over the same knots, so the two share a parameter
+  and its hits are compared in it. Against a surface it goes through
+  `GeomAPI_IntCS`, Open CASCADE's general curve–surface intersector,
+  whose hits are held to both operands and deduplicated as the conics'
+  are; it has no `coincident`, and a segment of the curve on the surface
+  is an error of the recipe.
 - A surface pair Open CASCADE finds no conic for is `"type": "unsolved"`
   (`IntAna_NoGeometricSolution`), with the lines `GeomAPI_IntSS` walks
   for it as curves of type `section`: 17 samples each, every one polished

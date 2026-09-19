@@ -387,13 +387,17 @@ fn every_cycle_one_query_on_a_nurbs_is_unsupported_by_name() {
                 b: GeomKind::Surface(SurfaceKind::Nurbs),
             }
         );
+        // A NURBS curve meets every analytic surface (ADR-0018); it is
+        // the NURBS surface that no curve meets yet.
         prop_assert_eq!(
-            intersect_curve_surface(&curve, &p, tol),
+            intersect_curve_surface(&curve, &surface, tol),
             Err(GeomError::Unsupported {
                 a: GeomKind::Curve(CurveKind::Nurbs),
-                b: GeomKind::Surface(SurfaceKind::Plane),
+                b: GeomKind::Surface(SurfaceKind::Nurbs),
             })
         );
+        let curve_on_plane = intersect_curve_surface(&curve, &p, tol);
+        prop_assert!(curve_on_plane.is_ok(), "{curve_on_plane:?}");
         let line = Curve::Line {
             origin: Point3::origin(),
             direction: Vec3::z_axis(),

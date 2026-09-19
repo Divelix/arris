@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use arris_geom::profile::{Profile, ProfileLoop, ProfileSegment};
-use arris_geom::{Curve, Surface};
+use arris_geom::{Curve, GeomError, NurbsCurve, Surface};
 use arris_math::{Frame, FrameError, Point2, Point3, Precision, UnitVec3, Vec2, Vec3};
 use serde::{Deserialize, Serialize};
 
@@ -117,6 +117,19 @@ pub enum CurveSpec {
         /// `b`.
         minor_radius: Num,
     },
+    /// [`Curve::Nurbs`], as [`NurbsCurve::new`] takes it: the oracle's
+    /// `Geom_BSplineCurve` over the same knots, each written as often as
+    /// it repeats, so the two share a parameter.
+    Nurbs {
+        /// `p`.
+        degree: usize,
+        /// The `n + p + 1` knots.
+        knots: Vec<Num>,
+        /// The `n` control points, Cartesian.
+        control_points: Vec<[Num; 3]>,
+        /// The `n` weights.
+        weights: Vec<Num>,
+    },
 }
 
 /// A parameter to evaluate at: `[u, v]` for a surface, `t` for a curve.
@@ -201,6 +214,15 @@ pub enum BuildError {
     ZeroDirection {
         /// The spec.
         name: String,
+    },
+    /// A NURBS curve's degree, knots, control points and weights are no
+    /// curve.
+    #[error("{name}: {source}")]
+    Geometry {
+        /// The spec.
+        name: String,
+        /// The cause.
+        source: GeomError,
     },
     /// A profile plane's `x` and `y` are not orthogonal, as the oracle's
     /// `recipe.py` also refuses (by the same tolerance,
@@ -443,6 +465,30 @@ pub fn build_curve(
             major_radius: num(name, major_radius, params)?,
             minor_radius: num(name, minor_radius, params)?,
         },
+        CurveSpec::Nurbs {
+            degree,
+            knots,
+            control_points,
+            weights,
+        } => {
+            let numbers = |of: &[Num]| {
+                of.iter()
+                    .map(|n| num(name, n, params))
+                    .collect::<Result<Vec<f64>, _>>()
+            };
+            let points = control_points
+                .iter()
+                .map(|p| vec3(name, p, params).map(Point3::from))
+                .collect::<Result<Vec<Point3>, _>>()?;
+            Curve::Nurbs(
+                NurbsCurve::new(*degree, numbers(knots)?, points, numbers(weights)?).map_err(
+                    |source| BuildError::Geometry {
+                        name: name.to_string(),
+                        source,
+                    },
+                )?,
+            )
+        }
     })
 }
 

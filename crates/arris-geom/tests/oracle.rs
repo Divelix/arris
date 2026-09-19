@@ -534,8 +534,8 @@ fn turn_diff(a: f64, b: f64, c: &Curve) -> f64 {
 fn every_geometry_fixture_matches_the_oracle() {
     let fixtures = geometry_fixtures();
     assert!(
-        fixtures.len() >= 6,
-        "expected geom/analytic-eval, geom/c1-intersections, geom/c2-cylinder-pairs, geom/c2-quadric-pairs, geom/c3-cylinder-pairs and geom/c3-quadric-pairs"
+        fixtures.len() >= 7,
+        "expected geom/analytic-eval, geom/c1-intersections, geom/c2-cylinder-pairs, geom/c2-quadric-pairs, geom/c3-cylinder-pairs, geom/c3-quadric-pairs and geom/c3-nurbs-hits"
     );
     let mut errors = Vec::new();
     for f in &fixtures {
@@ -900,5 +900,48 @@ fn the_c3_quadric_pairs_classify_as_built() {
             (*kind, *count),
             "{a} vs {b}: {r:?}"
         );
+    }
+}
+
+/// How many times each curve of `geom/c3-nurbs-hits` crosses each surface,
+/// by name: what the oracle's general intersector found and what Arris's
+/// spans in the surfaces' implicit forms find, every hit a crossing.
+#[test]
+fn the_c3_nurbs_hits_cross_as_built() {
+    let f = geometry_fixtures()
+        .into_iter()
+        .find(|f| f.name == "geom/c3-nurbs-hits")
+        .expect("geom/c3-nurbs-hits");
+    let built = build(&f);
+    let cases: &[(&str, &str, usize)] = &[
+        ("ring", "floor", 2),
+        ("ring", "wall", 4),
+        ("ring", "cone", 4),
+        ("ring", "sphere", 2),
+        ("ring", "torus", 2),
+        ("wave", "floor", 1),
+        ("wave", "wall", 2),
+        ("wave", "cone", 2),
+        ("wave", "sphere", 2),
+        ("wave", "torus", 2),
+        ("skein", "floor", 2),
+        ("skein", "wall", 4),
+        ("skein", "cone", 4),
+        ("skein", "sphere", 2),
+        ("skein", "torus", 1),
+    ];
+    assert_eq!(
+        cases.len(),
+        f.recipe.pairs.len(),
+        "every pair of the fixture is pinned here"
+    );
+    for (a, b, count) in cases {
+        let r = intersect_curve_surface(&built.curves[*a], &built.surfaces[*b], tol())
+            .unwrap_or_else(|e| panic!("{a} vs {b}: {e}"));
+        let CurveSurfaceIntersection::Points(hits) = &r else {
+            panic!("{a} vs {b}: {r:?}")
+        };
+        assert_eq!(hits.len(), *count, "{a} vs {b}: {hits:?}");
+        assert!(hits.iter().all(|h| !h.tangent), "{a} vs {b}: {hits:?}");
     }
 }

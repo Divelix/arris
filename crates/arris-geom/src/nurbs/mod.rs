@@ -21,4 +21,5 @@ mod surface;
 pub use basis::MAX_DEGREE;
 pub use curve::{NurbsCurve, NurbsCurve2};
 pub use fit::{FitError, MAX_FIT_SPANS, fit_curve, fit_curve_periodic, fit_curve2};
+pub(crate) use spline::BezierSpan;
 pub use surface::NurbsSurface;

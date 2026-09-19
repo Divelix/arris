@@ -1,4 +1,5 @@
-//! Curve–surface intersection: the closed-form table.
+//! Curve–surface intersection: the closed-form table, and the arm that
+//! sends a NURBS curve to `crate::intersect_spline`.
 
 use core::f64::consts::{PI, TAU};
 
@@ -7,6 +8,7 @@ use arris_math::{Frame, Interval, Point2, Point3, Tolerance, Vec2, Vec3, wrap_an
 
 use crate::conic2::{Conic2, ConicMeet, conic_pair, trig2_roots};
 use crate::intersect::line_angle;
+use crate::intersect_spline::spline_surface;
 use crate::project::ellipse_distance;
 use crate::{Curve, CurveKind, GeomError, GeomKind, Surface};
 
@@ -17,7 +19,8 @@ use crate::{Curve, CurveKind, GeomError, GeomKind, Surface};
 /// where the curve crosses the surface, and within `tol.linear` for a
 /// `tangent` one, where the curve's nearest approach to the surface is
 /// that close and counts as a touch. `t` lies in the curve's domain: a
-/// periodic parameter in `[0, 2π)`.
+/// conic's in `[0, 2π)`, a periodic NURBS curve's in `[knots[p],
+/// knots[n])`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CurveSurfaceHit {
     /// The curve parameter.
@@ -30,7 +33,9 @@ pub struct CurveSurfaceHit {
     pub point: Point3,
     /// `true` when the curve touches the surface here without crossing
     /// it: the signed distance along the curve has an extremum within
-    /// `tol.linear` of zero. Two crossings that close are one touch.
+    /// `tol.linear` of zero. Two crossings that close are one touch. An
+    /// open NURBS curve that only ends within `tol.linear` of the
+    /// surface is a hit there and no touch.
     pub tangent: bool,
 }
 
@@ -45,10 +50,11 @@ pub enum CurveSurfaceIntersection {
     Coincident,
 }
 
-/// The intersection of a curve and a surface, by the case table of cycle
-/// 1: every pair with a closed form is computed exactly, every other pair
-/// is an explicit [`GeomError::Unsupported`] arm — no wildcard, no
-/// marcher.
+/// The intersection of a curve and a surface, by the case table: every
+/// pair with a closed form is computed exactly, a NURBS curve meets
+/// every analytic surface through the surface's implicit polynomial
+/// (ADR-0018), and every other pair is an explicit
+/// [`GeomError::Unsupported`] arm — no wildcard, no marcher.
 ///
 /// Guarantees: hits are sorted by `t`, each `t` is in the curve's domain,
 /// each hit's `uv` is the surface's own projection of the point — but at
@@ -96,6 +102,25 @@ pub enum CurveSurfaceIntersection {
 /// it meets the section, two conics in one plane by the quartic
 /// (`crate::conic2`): `Coincident`, or the touches and crossings as
 /// hits; a conic in any other plane is `Unsupported`.
+///
+/// A **NURBS curve** against a plane, a cylinder, an elliptic cylinder, a
+/// cone, a sphere or a torus: each span of the curve put into the
+/// surface's implicit polynomial is a polynomial in Bernstein form, of
+/// the span's degree times one, two or — for the torus — four. The sign
+/// changes of its derivative, isolated by subdivision on the variation of
+/// the coefficients' signs and polished in the bracket, are where the
+/// distance is looked at, with the curve's knots and, for a curve that
+/// is not periodic, its two ends; between two of them the polynomial
+/// crosses zero at most once. What is decided is decided on the exact
+/// signed distance, as above: an extremum of it within `tol.linear` is
+/// one `tangent` hit that absorbs the crossings beside it, every one
+/// within it is `Coincident` — a fitted section curve is, with both of
+/// its surfaces — and each other stretch whose ends differ in sign holds
+/// one crossing, by bracketed Newton on the distance. An open curve that
+/// only *ends* within `tol.linear` of the surface is a hit at that end
+/// and not `tangent`: a section edge ending on a face, not a graze. A
+/// closed curve that is not periodic has its two ends for two such hits.
+/// A NURBS curve against a NURBS surface is `Unsupported`.
 ///
 /// ```
 /// use arris_geom::{Curve, CurveSurfaceIntersection, Surface, intersect_curve_surface};
@@ -262,20 +287,20 @@ pub fn intersect_curve_surface(
             tol,
         ),
         (
-            Curve::Circle { .. } | Curve::Ellipse { .. },
-            Surface::Cone { .. } | Surface::Sphere { .. } | Surface::Torus { .. },
-        )
-        | (Curve::Line { .. } | Curve::Circle { .. } | Curve::Ellipse { .. }, Surface::Nurbs(_))
-        | (
-            Curve::Nurbs(_),
+            Curve::Nurbs(spline),
             Surface::Plane { .. }
             | Surface::Cylinder { .. }
             | Surface::EllipticCylinder { .. }
             | Surface::Cone { .. }
             | Surface::Sphere { .. }
-            | Surface::Torus { .. }
-            | Surface::Nurbs(_),
-        ) => Err(GeomError::Unsupported {
+            | Surface::Torus { .. },
+        ) => spline_surface(curve, spline, surface, tol),
+        (
+            Curve::Circle { .. } | Curve::Ellipse { .. },
+            Surface::Cone { .. } | Surface::Sphere { .. } | Surface::Torus { .. },
+        )
+        | (Curve::Line { .. } | Curve::Circle { .. } | Curve::Ellipse { .. }, Surface::Nurbs(_))
+        | (Curve::Nurbs(_), Surface::Nurbs(_)) => Err(GeomError::Unsupported {
             a: GeomKind::Curve(curve.kind()),
             b: GeomKind::Surface(surface.kind()),
         }),
@@ -286,7 +311,7 @@ pub fn intersect_curve_surface(
 /// its `uv` — except at a cone's apex, where the projection's `u` is
 /// ambiguous and the hit takes `u = 0` and the apex's `v`, `−R / sin α`,
 /// as a sphere's pole already takes `u = 0` from the projection.
-fn hit(
+pub(crate) fn hit(
     curve: &Curve,
     surface: &Surface,
     t: f64,
@@ -317,7 +342,7 @@ fn hit(
 }
 
 /// `hits` sorted by `t`; a total order, since every `t` is finite.
-fn points(mut hits: Vec<CurveSurfaceHit>) -> CurveSurfaceIntersection {
+pub(crate) fn points(mut hits: Vec<CurveSurfaceHit>) -> CurveSurfaceIntersection {
     hits.sort_by(|a, b| a.t.total_cmp(&b.t));
     CurveSurfaceIntersection::Points(hits)
 }

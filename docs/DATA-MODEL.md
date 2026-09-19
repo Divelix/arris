@@ -373,14 +373,16 @@ operand order.
 Points(Vec<CurveSurfaceHit>), Coincident}` for the pairs with a closed form
 — line–plane, line–cylinder, conic–plane and conic–cylinder, *conic*
 being a circle or an ellipse, and a line against a cone, a sphere or a
-torus — and `GeomError::Unsupported` naming the pair for every other (a
-conic against a cone, a sphere or a torus among them: no containment ray
-casts one). A hit is
+torus — for a `Nurbs` curve against every analytic surface (below), and
+`GeomError::Unsupported` naming the pair for every other (a conic
+against a cone, a sphere or a torus among them: no containment ray casts
+one; any curve against a `Nurbs` surface). A hit is
 `CurveSurfaceHit { t, uv, point, tangent }`: `point` is the curve's point
 at `t`, `uv` the surface's own projection of it — except at a cone's
 apex, whose projection is `Ambiguous`, where it is `u = 0` and the apex's
 `v = −R / sin α`, as a sphere's pole takes `u = 0` from the projection —
-hits ascending by `t` with a periodic `t` in `[0, 2π)`. A line is parallel to a plane or to a
+hits ascending by `t` with a periodic `t` in `[0, 2π)`, a periodic
+`Nurbs`'s in `[knots[p], knots[n])`. A line is parallel to a plane or to a
 cylinder's axis within `tol.angular`, and then coincident or clear within
 `tol.linear`; a circle is `Coincident` when it lies within `tol.linear`
 of the surface everywhere, which the extrema of its distance decide. A
@@ -421,6 +423,40 @@ conic in a plane across the axis within `tol.angular` meets the surface
 where it meets the section — the two-conic form above, the conic's own
 parameter kept — as `Coincident` or the touches and crossings as hits;
 a conic in any other plane is `Unsupported`.
+
+**A `Curve::Nurbs` against an analytic surface** (ADR-0018) is what the
+next boolean asks of a fitted section edge. Every analytic surface is
+the zero set of a polynomial `F` in its own frame — `z`; `x² + y² − R²`;
+`(x/a)² + (y/b)² − 1`; `cos²α (x² + y²) − sin²α h²` with `h` the height
+above the apex, both nappes; `x² + y² + z² − R²`; `(x² + y² + z² + R² −
+r²)² − 4R²(x² + y²)` — and a rational span `A(s) / w(s)` of degree `p`
+put into it and cleared of its denominator, `g = wᵈ F(A / w)`, is a
+polynomial of degree `d·p` with `F`'s sign along the span. `g` is built
+in **Bernstein form** from the span's homogeneous Bézier points (the
+spline's blossom at the span's ends, which reads a periodic curve's
+unclamped knots as any others) by products in that basis, never through
+power coefficients. It decides only where to look: the sign changes of
+`g′`, isolated by halving on the variation of the coefficients' signs
+and polished in the bracket, are the extrema of `g`, and between two of
+them `g` crosses zero at most once. A coefficient within `64ε` of the
+magnitude of the terms it was summed from is zero, and a stretch whose
+coefficients all are is looked at in its middle. What is decided there
+is decided in length, as the arms above decide it, on the exact signed
+distance `δ(t)` the line arms walk: of those parameters and the curve's
+distinct knots, the **stops** are where `δ` is an extremum among its
+neighbours, and the two ends of a curve that is not periodic. Every stop
+within `tol.linear` is `Coincident` — a fitted section curve is, with
+both of its surfaces; a stop within `tol.linear` is a hit that absorbs
+the crossings beside it, a run of such stops one hit at the one nearest
+the surface; two consecutive other stops of opposite sign hold one
+crossing, by bracketed Newton on `δ`, so a transversal hit is on the
+surface to rounding. A hit at a stop is `tangent` when its run holds an
+extremum inside the curve: a curve that only **ends** within
+`tol.linear` of the surface meets it there and is no touch — that is a
+section edge ending on a face, which makes a vertex. A closed curve that
+is not periodic has its two ends for two stops. A span of degree 25
+against a torus is a polynomial of degree 100, and is held to the line
+arm's hits by the property tests.
 
 `intersect_curves(a, b, tol)` returns `CurveIntersection::{
 Points(Vec<CurveCurveHit>), Coincident}`, a hit being `CurveCurveHit {

@@ -17,6 +17,7 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+mod bernstein;
 mod cone_section;
 mod conic2;
 mod curve;
@@ -26,6 +27,7 @@ pub mod integrate;
 mod intersect;
 mod intersect_curve;
 mod intersect_curves;
+mod intersect_spline;
 mod meridian;
 mod nurbs;
 mod pcurve;

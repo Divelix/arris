@@ -7,8 +7,10 @@ committed general pose), `c2-cylinder-pairs` (every pose of the
 cylinder–cylinder table in that pose), `c2-quadric-pairs` (the coaxial
 pairs with a cone, a sphere or a torus in them, and the pairs any sphere
 makes, in that pose), `c3-cylinder-pairs` (the cylinder pairs that
-meet in a quartic, in that pose) and `c3-quadric-pairs` (the pairs with
-a cone or a sphere in them that share no axis, in that pose). Plain Python, no Open CASCADE: the coordinates
+meet in a quartic, in that pose), `c3-quadric-pairs` (the pairs with
+a cone or a sphere in them that share no axis, in that pose) and
+`c3-nurbs-hits` (NURBS curves against every analytic surface the grammar
+has, in that pose). Plain Python, no Open CASCADE: the coordinates
 are the closed forms of `docs/DATA-MODEL.md` §Geometry written out in
 world space at full precision, so both sides read identical numbers.
 Rerun after editing, then `tools/oracle/expected.py` on each directory.
@@ -706,6 +708,78 @@ def c2_quadric_pairs():
     }
 
 
+# --- c3-nurbs-hits -------------------------------------------------------------------
+
+
+def c3_nurbs_hits():
+    f = POSES["tilt"]
+    z = f.z
+    a, across = f.around(0.6)
+    on_axis = lambda h: f.to_world([0.0, 0.0, h])
+    surfaces = {
+        "floor": {"type": "plane", **Frame(add(on_axis(0.5), mul(0.7, a)), z, a).spec()},
+        "wall": {"type": "cylinder", **Frame(on_axis(-2.0), z, a).spec(radius=2.0)},
+        "cone": {"type": "cone", **Frame(on_axis(1.5), z, a).spec(radius=2.0, half_angle_deg=30.0)},
+        "sphere": {"type": "sphere", **Frame(on_axis(-0.5), a, z).spec(radius=2.5)},
+        "torus": {"type": "torus", **Frame(on_axis(3.0), z, across).spec(major_radius=4.0, minor_radius=1.5)},
+    }
+    # An ellipse of radii 3.5 and 2 as four rational quadratic arcs, its
+    # plane standing along the axis and leaning off it: exact, clamped and closed, its seam
+    # clear of every surface.
+    centre = f.to_world([1.0, 0.5, 1.0])
+    ex = unit(f.vec([1.0, 0.2, 0.3]))
+    ey = unit(cross(ex, f.vec([0.2, 1.0, 0.1])))
+    w = math.sqrt(0.5)
+    corners = [(1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1), (0, -1), (1, -1), (1, 0)]
+    ring = {
+        "type": "nurbs",
+        "degree": 2,
+        "knots": [0.0, 0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 4.0],
+        "control_points": [add(centre, add(mul(3.5 * x, ex), mul(2.0 * y, ey))) for x, y in corners],
+        "weights": [1.0 if (x == 0) != (y == 0) else w for x, y in corners],
+    }
+    # A quintic of three spans weaving through all five, as a fitted
+    # section curve is a quintic of many.
+    wave = {
+        "type": "nurbs",
+        "degree": 5,
+        "knots": [0.0] * 6 + [1.0, 2.0] + [3.0] * 6,
+        "control_points": [
+            f.to_world(p)
+            for p in [[-5.0, -1.0, -1.0], [-3.0, 2.0, 3.0], [-1.0, -3.0, 0.0], [0.0, 3.0, 4.0], [2.0, -2.0, -2.0], [3.0, 1.0, 5.0], [5.0, -1.0, 1.0], [6.0, 2.0, 3.0]]
+        ],
+        "weights": [1.0] * 8,
+    }
+    # A rational cubic with a double knot inside, where it is only C¹.
+    skein = {
+        "type": "nurbs",
+        "degree": 3,
+        "knots": [0.0] * 4 + [1.0, 1.0, 2.0] + [3.0] * 4,
+        "control_points": [
+            f.to_world(p)
+            for p in [[4.0, -4.0, 5.0], [1.0, -1.0, 6.0], [-2.0, 2.0, 2.0], [3.0, 3.0, -1.0], [-3.0, -2.0, 1.0], [0.0, 4.0, 3.0], [-4.0, 1.0, 3.0]]
+        ],
+        "weights": [1.0, 0.6, 1.8, 0.9, 1.4, 0.7, 1.0],
+    }
+    curves = {"ring": ring, "wave": wave, "skein": skein}
+    # Each curve evaluated on its knots and between them, and projected
+    # onto from a point beside it: the parameter the hits are compared in.
+    samples = [
+        {"of": "ring", "params": [0.0, 0.37, 1.0, 2.5, 3.99], "points": [f.to_world([3.0, 1.0, 2.5])]},
+        {"of": "wave", "params": [0.0, 0.5, 1.0, 1.75, 2.0, 3.0], "points": [f.to_world([0.5, 0.2, 1.4])]},
+        {"of": "skein", "params": [0.25, 1.0, 1.5, 2.0, 2.9], "points": [f.to_world([0.0, 1.5, 3.0])]},
+    ]
+    pairs = [{"a": c, "b": s} for c in curves for s in surfaces]
+    return {
+        "kind": "geometry",
+        "description": "NURBS curves against a plane, a cylinder, a cone, a sphere and a torus around one axis in the tilt pose (ADR-0018): an ellipse as four rational quadratic arcs, a quintic of three spans, and a rational cubic with a double knot — each evaluated on and between its knots, projected onto, and met with every surface through Open CASCADE's general curve–surface intersector; written by generate.py",
+        "surfaces": surfaces,
+        "curves": curves,
+        "samples": samples,
+        "pairs": pairs,
+    }
+
+
 def write(name, recipe):
     directory = HERE / name
     directory.mkdir(exist_ok=True)
@@ -720,3 +794,4 @@ if __name__ == "__main__":
     write("c2-quadric-pairs", c2_quadric_pairs())
     write("c3-cylinder-pairs", c3_cylinder_pairs())
     write("c3-quadric-pairs", c3_quadric_pairs())
+    write("c3-nurbs-hits", c3_nurbs_hits())

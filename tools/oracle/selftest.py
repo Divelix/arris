@@ -185,8 +185,8 @@ SMOKES = [
 
 # A geometry recipe against closed forms: the world-frame cylinder of the
 # fixtures above evaluated, projected onto, and cut by a cap, an oblique
-# plane, a ruling and a ring — every kind of result the geometry oracle
-# writes (tests/fixtures/README.md, "kind": "geometry").
+# plane, a ruling, a ring and a NURBS arc — every kind of result the
+# geometry oracle writes (tests/fixtures/README.md, "kind": "geometry").
 S2 = math.sqrt(0.5)
 GEOMETRY_SMOKE = {
     "name": "geometry: cylinder r 2 evaluated, projected onto and cut",
@@ -203,10 +203,20 @@ GEOMETRY_SMOKE = {
             "ruling": {"type": "line", "origin": ["R", 0, 1], "direction": [0, 0, 1]},
             "chord": {"type": "line", "origin": [0, 0, 1], "direction": [1, 0, 0]},
             "ring": {"type": "circle", "origin": [0, 0, 0], "z": [0, 1, 0], "x": [1, 0, 0], "radius": 3},
+            # A quarter of the circle of radius 3 in the xz plane, as one
+            # rational quadratic arc.
+            "arc": {
+                "type": "nurbs",
+                "degree": 2,
+                "knots": [0, 0, 0, 1, 1, 1],
+                "control_points": [[3, 0, 0], [3, 0, 3], [0, 0, 3]],
+                "weights": [1, "sqrt(0.5)", 1],
+            },
         },
         "samples": [
             {"of": "wall", "params": [[0, 0], ["pi / 2", 3]], "points": [[0, -5, 3], [1, 0, 2]]},
             {"of": "ring", "params": ["pi"], "points": [[-4, 0, 0]]},
+            {"of": "arc", "params": [0.5], "points": [[4, 0, 4]]},
         ],
         "pairs": [
             {"a": "cap", "b": "wall"},
@@ -217,11 +227,12 @@ GEOMETRY_SMOKE = {
             {"a": "chord", "b": "wall"},
             {"a": "ring", "b": "wall"},
             {"a": "chord", "b": "cap"},
+            {"a": "arc", "b": "wall"},
         ],
     },
-    "evaluations": {"wall": [[2, 0, 0], [0, 2, 3]], "ring": [[-3, 0, 0]]},
+    "evaluations": {"wall": [[2, 0, 0], [0, 2, 3]], "ring": [[-3, 0, 0]], "arc": [[3 * S2, 0, 3 * S2]]},
     "derivatives": {"wall": [{"du": [0, 2, 0], "dv": [0, 0, 1], "duu": [-2, 0, 0]}]},
-    "projections": {"wall": [{"uv": [3 * PI / 2, 3], "distance": 3}, {"uv": [0, 2], "distance": 1}], "ring": [{"t": PI, "distance": 1}]},
+    "projections": {"wall": [{"uv": [3 * PI / 2, 3], "distance": 3}, {"uv": [0, 2], "distance": 1}], "ring": [{"t": PI, "distance": 1}], "arc": [{"t": 0.5, "distance": 4 / S2 - 3}]},
     "pairs": [
         ("circle", 1),
         ("ellipse", 1),
@@ -231,8 +242,11 @@ GEOMETRY_SMOKE = {
         ("points", 2),
         ("points", 4),
         ("points", 0),
+        ("points", 1),
     ],
     "ellipse_axes": (2 / S2, 2),
+    # Where the arc crosses the wall: x = R on the circle of radius 3.
+    "arc_hit": [2, 0, math.sqrt(5.0)],
 }
 
 
@@ -278,6 +292,10 @@ def check_geometry_smoke() -> bool:
         if abs((along / big) ** 2 + (p[1] / small) ** 2 - 1.0) > 1e-9 or abs(p[0] + p[2]) > 1e-9:
             print(f"  oblique section point {p} is off the closed-form ellipse")
             ok = False
+    hits = expected["pairs"][8].get("hits", [])
+    if len(hits) != 1 or not _close(hits[0]["point"], smoke["arc_hit"]):
+        print(f"  arc vs wall: {hits} differs from the closed form {smoke['arc_hit']}")
+        ok = False
     return ok
 
 

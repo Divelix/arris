@@ -867,8 +867,13 @@ pairs an extrude's faces make — against those on other axes, a cone or
 a sphere by the tracer, and is `Unsupported` against a torus; the pave
 model's quadric guard
 refuses a face on it as it refuses a cone, a sphere or a torus, so a
-boolean never widens onto it silently. The
-NURBS variant is one arm like the others; a NURBS–NURBS marcher, when it
+boolean never widens onto it silently. A
+`Curve::Nurbs` — the fitted section edge the next boolean meets — is
+decided against every analytic surface by its spans put into the
+surface's implicit polynomial in Bernstein form, the extrema isolated by
+subdivision and the verdict taken on the exact distance, as the closed
+forms take it (ADR-0018, `docs/DATA-MODEL.md` §Curves). The
+NURBS surface variant is one arm like the others; a NURBS–NURBS marcher, when it
 comes, is what that arm calls, and analytic pairs never route through
 it.
 

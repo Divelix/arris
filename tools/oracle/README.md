@@ -52,7 +52,9 @@ commit that says so (`.agents/rules/git.md`).
 - `oracle/geometry.py` — the geometry kind: `Geom_Plane`,
   `Geom_CylindricalSurface`, `Geom_ConicalSurface`,
   `Geom_SphericalSurface`, `Geom_ToroidalSurface`, `Geom_Line`,
-  `Geom_Circle` and `Geom_Ellipse` from named specs; `D2` at every
+  `Geom_Circle`, `Geom_Ellipse` and `Geom_BSplineCurve` (a `nurbs`
+  curve: flat knots, Cartesian control points, weights) from named
+  specs; `D2` at every
   parameter; `GeomAPI_ProjectPointOnSurf` / `OnCurve` for every point;
   `IntAna_QuadQuadGeo` for surface pairs (`unsolved` where it reports
   `NoGeometricSolution`, with `GeomAPI_IntSS`'s walked lines sampled and
@@ -61,8 +63,8 @@ commit that says so (`.agents/rules/git.md`).
   hyperbola's branches sampled at their own parameters, through the
   overload each kind pair has) and `IntAna_IntConicQuad` for a
   curve against a surface — `IntAna_IntLinTorus` for a line against a
-  torus — hits deduplicated within `Precision::Confusion` and dropped
-  (counted) when off either operand.
+  torus, `GeomAPI_IntCS` for a `nurbs` curve — hits deduplicated within
+  `Precision::Confusion` and dropped (counted) when off either operand.
 - `oracle/step.py` — STEP AP214 write and read, with OCCT's transfer
   banner silenced.
 - `oracle/mesh.py` — STL read through `RWStl`, and its triangle count,

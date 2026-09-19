@@ -108,6 +108,11 @@ those pairs instead of listing them unchecked; and `docs/DATA-MODEL.md`
   `fit_curve` and its periodic form beside `fit_curve2` (step 2); a named
   constant for the section fit's fraction of the tolerance, with the
   reason above in its comment (step 4).
+- **`arris_debug::fixtures::geom`** (step 6): `CurveSpec::Nurbs` — the
+  geometry grammar's `nurbs` curve, `NurbsCurve::new`'s arguments and
+  the oracle's `Geom_BSplineCurve` — and `BuildError::Geometry` for one
+  that is no curve; the oracle meets it with a surface through
+  `GeomAPI_IntCS`.
 - **`intersect_curve_surface` and `intersect_curves`** (steps 6–7): the
   `Curve::Nurbs` arms against every analytic surface and against a line,
   a circle and an ellipse stop being `Unsupported`; `curves_coincide`
@@ -186,7 +191,7 @@ bound has to be established here.
   where one arc's weight would run away. Fixture `geom/c3-quadric-pairs`
   against the oracle; the property test extended to every pair. After
   this step no quadric pair without a torus is `Unsupported`.
-- [ ] Step 6 **[3]** — `Curve::Nurbs` against every analytic surface in
+- [x] Step 6 **[3]** — `Curve::Nurbs` against every analytic surface in
   `intersect_curve_surface`. Each surface has an implicit polynomial; a
   rational span substituted into it is a polynomial in Bernstein form,
   its roots isolated by subdivision on sign variations and polished in
@@ -253,7 +258,8 @@ bound has to be established here.
 - `docs/BACKLOG.md` — new lines: `Nurbs`–`Nurbs` curve intersection
   (C4); the procedural `Curve::Intersection` on the fitted charts, with
   its two tripwires; a fit that reuses the tracer's samples across face
-  pairs if profiling asks.
+  pairs if profiling asks; a closed NURBS curve that is not periodic
+  met at its seam, reported at both ends (C7, with the STEP reader).
 - `AGENTS.md` current state — ADR-0018, and what C3's next plan is.
 
 ## Open questions
@@ -338,3 +344,42 @@ bound has to be established here.
     boxes, as step 4's pairs; `docs/DATA-MODEL.md`'s S5 row says so.
   - Two property tests of the closed-form table fail at 3000 cases and
     did before this plan; a backlog line records them.
+- Found by step 6, and done there:
+  - **The polynomial says where to look, the distance says what is
+    there.** A span in the implicit form is `g = φ·δ`, `φ > 0` near the
+    surface: the sign changes of `g′` (Bernstein subdivision, polished
+    in the bracket) and the knots split the curve into stretches where
+    `g` crosses zero at most once, and every verdict — touch,
+    `Coincident`, the crossing's Newton — is taken on the exact signed
+    distance `δ`, so a touch is `tol.linear` of *length* as in every
+    other arm and a crossing is on the surface to rounding. Deciding a
+    touch on `g` itself would have put `φ`, which is `R`-sized for a
+    quadric and `R²r`-sized for a torus, into the tolerance.
+  - **The robustness rests on one asymmetry**: a parameter that is no
+    extremum only splits a monotone stretch, so the isolation may
+    return too many and never too few. A stretch whose coefficients are
+    all within `64ε` of their terms' magnitude is looked at in its
+    middle, a cluster 48 halvings do not separate likewise, a halving
+    that lands on a zero is remembered. Held by: the line arm's hits
+    for a straight NURBS of degree 1, rational degree 2 and degree 25
+    (against a torus, a polynomial of degree 100) on all six surfaces;
+    the ellipse's own sign changes for an exact rational and a fitted
+    periodic ellipse; a random NURBS's sign changes; 5000 cases each,
+    and again under a second seed.
+  - **An open curve's end within `tol.linear` of the surface is a hit
+    and not `tangent`**, unless the run of stops it belongs to holds an
+    extremum inside the curve. A clamped curve has no parameter past
+    its end for the crossing to be found at, and the pave model makes
+    no vertex of a touch: step 8 reads an open branch ending on a face
+    as a vertex. A closed curve that is *not* periodic has its two ends
+    for two hits at one point; no curve the kernel makes is one (a
+    closed fit is periodic), a STEP reader's would be — a backlog line.
+  - **The `Curve::Ellipse` arm has a closed form against a plane and a
+    cylinder only**, so "agrees with the exact arm hit for hit" is held
+    there, and against the ellipse's own sampled distance on all six.
+  - **`geom/c3-nurbs-hits`**: an ellipse as four rational arcs, a
+    quintic of three spans and a rational cubic with a double knot
+    against a plane, a cylinder, a cone, a sphere and a torus — 15
+    pairs, 37 hits, points and parameters matching `GeomAPI_IntCS` to
+    1e-9 relative, and the curves' evaluations and projections with
+    them. No elliptic cylinder, as step 5 found of the grammar.

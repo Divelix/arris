@@ -13,7 +13,8 @@ intersections of named analytic surfaces and curves, for
                    "<name>": {"type": "torus",    "origin", "z", "x", "major_radius", "minor_radius"}},
       "curves":   {"<name>": {"type": "line",     "origin", "direction"},
                    "<name>": {"type": "circle",   "origin", "z", "x", "radius"},
-                   "<name>": {"type": "ellipse",  "origin", "z", "x", "major_radius", "minor_radius"}},
+                   "<name>": {"type": "ellipse",  "origin", "z", "x", "major_radius", "minor_radius"},
+                   "<name>": {"type": "nurbs",    "degree", "knots", "control_points", "weights"}},
       "samples":  [{"of": "<name>", "params": [[u, v], ...] | [t, ...], "points": [[x, y, z], ...]}],
       "pairs":    [{"a": "<name>", "b": "<name>"}]
     }
@@ -41,12 +42,21 @@ dropped and counted under `dropped` — or
 `IntAna_IntLinTorus` for a line against a torus: `coincident`, or
 `points` with every hit's point and conic parameter, duplicates within
 `Precision::Confusion` reported once (a tangent touch comes back twice).
+
+A `nurbs` curve is a `Geom_BSplineCurve` of the recipe's degree, knots
+(flat: each written as often as it repeats), Cartesian control points and
+weights, so its parameter is the recipe's. Against a surface it goes
+through `GeomAPI_IntCS`, the general curve–surface intersector: `points`
+with every hit's point and curve parameter, held to both operands and
+deduplicated as the conics' are. It has no `coincident`: a segment of the
+curve on the surface is an error here, since no fixture means one.
 """
 
 import math
 from typing import Any
 
 from OCP.Geom import (
+    Geom_BSplineCurve,
     Geom_Circle,
     Geom_ConicalSurface,
     Geom_CylindricalSurface,
@@ -58,7 +68,8 @@ from OCP.Geom import (
     Geom_SphericalSurface,
     Geom_ToroidalSurface,
 )
-from OCP.GeomAPI import GeomAPI_IntSS, GeomAPI_ProjectPointOnCurve, GeomAPI_ProjectPointOnSurf
+from OCP.collections import Array1_double, Array1_gp_Pnt, Array1_int
+from OCP.GeomAPI import GeomAPI_IntCS, GeomAPI_IntSS, GeomAPI_ProjectPointOnCurve, GeomAPI_ProjectPointOnSurf
 from OCP.gp import gp_Ax2, gp_Ax3, gp_Dir, gp_Pnt, gp_Vec
 from OCP.IntAna import IntAna_IntConicQuad, IntAna_IntLinTorus, IntAna_QuadQuadGeo, IntAna_Quadric, IntAna_ResultType
 from OCP.Precision import Precision
@@ -67,7 +78,7 @@ from . import OracleError
 from .recipe import number, resolve_params, vector
 
 SURFACE_TYPES = ("plane", "cylinder", "cone", "sphere", "torus")
-CURVE_TYPES = ("line", "circle", "ellipse")
+CURVE_TYPES = ("line", "circle", "ellipse", "nurbs")
 
 # Where a result curve is sampled: lines at these parameters from the
 # curve's own origin, closed curves at this many even steps of a turn.
@@ -148,6 +159,8 @@ def build_curve(name: str, spec: dict, params: dict[str, float]):
     kind = spec.get("type")
     if kind == "line":
         return Geom_Line(_pnt(vector(spec["origin"], params)), _dir(vector(spec["direction"], params), name))
+    if kind == "nurbs":
+        return _bspline(name, spec, params)
     ax = _ax3(spec, params, name)
     ax2 = gp_Ax2(ax.Location(), ax.Direction(), ax.XDirection())
     if kind == "circle":
@@ -159,6 +172,40 @@ def build_curve(name: str, spec: dict, params: dict[str, float]):
             raise OracleError(f"{name}: minor_radius must not exceed major_radius")
         return Geom_Ellipse(ax2, big, small)
     raise OracleError(f"{name}: unknown curve type {kind!r}")
+
+
+def _bspline(name: str, spec: dict, params: dict[str, float]):
+    """The `Geom_BSplineCurve` of a `nurbs` spec: the flat knots folded into
+    distinct values and multiplicities, which is how it takes them."""
+    degree = spec["degree"]
+    flat = [number(k, params) for k in spec["knots"]]
+    points = [vector(p, params) for p in spec["control_points"]]
+    weights = [number(w, params) for w in spec["weights"]]
+    if not isinstance(degree, int) or degree < 1:
+        raise OracleError(f"{name}: degree must be a positive integer")
+    if len(weights) != len(points) or len(flat) != len(points) + degree + 1:
+        raise OracleError(f"{name}: {len(flat)} knots and {len(weights)} weights for {len(points)} control points of degree {degree}")
+    if any(b < a for a, b in zip(flat, flat[1:])) or any(not w > 0.0 for w in weights):
+        raise OracleError(f"{name}: knots must not decrease and weights must be positive")
+    values: list[float] = []
+    counts: list[int] = []
+    for k in flat:
+        if values and values[-1] == k:
+            counts[-1] += 1
+        else:
+            values.append(k)
+            counts.append(1)
+    poles = Array1_gp_Pnt(1, len(points))
+    wts = Array1_double(1, len(points))
+    for i, (p, w) in enumerate(zip(points, weights)):
+        poles.SetValue(i + 1, _pnt(p))
+        wts.SetValue(i + 1, w)
+    knots = Array1_double(1, len(values))
+    mults = Array1_int(1, len(values))
+    for i, (k, m) in enumerate(zip(values, counts)):
+        knots.SetValue(i + 1, k)
+        mults.SetValue(i + 1, m)
+    return Geom_BSplineCurve(poles, wts, knots, mults, degree)
 
 
 def _xyz(p) -> list[float]:
@@ -361,8 +408,20 @@ def _polished(name_a: str, a, name_b: str, b, x: list[float]) -> list[float] | N
 def intersect_curve_surface(name_c: str, kind_c: str, curve, name_s: str, kind_s: str, surface) -> dict:
     """`IntAna_IntConicQuad` of the `gp` conic against the plane or the
     quadric, and `IntAna_IntLinTorus` of a line against a torus."""
-    conic = {"line": lambda c: c.Lin(), "circle": lambda c: c.Circ(), "ellipse": lambda c: c.Elips()}[kind_c](curve)
     out: dict[str, Any] = {"a": name_c, "b": name_s}
+    if kind_c == "nurbs":
+        r = GeomAPI_IntCS(curve, surface)
+        if not r.IsDone():
+            raise OracleError(f"{name_c} vs {name_s}: GeomAPI_IntCS not done")
+        if r.NbSegments() != 0:
+            raise OracleError(f"{name_c} vs {name_s}: a segment of the curve on the surface")
+        out["type"] = "points"
+        found = []
+        for i in range(r.NbPoints()):
+            _u, _v, t = r.Parameters(i + 1)
+            found.append((_xyz(r.Point(i + 1)), t))
+        return _hits(out, curve, surface, found)
+    conic = {"line": lambda c: c.Lin(), "circle": lambda c: c.Circ(), "ellipse": lambda c: c.Elips()}[kind_c](curve)
     if kind_s == "torus":
         if kind_c != "line":
             raise OracleError(f"{name_c} vs {name_s}: no intersector for {kind_c}–torus")

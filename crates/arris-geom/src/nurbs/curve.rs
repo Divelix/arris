@@ -2,7 +2,7 @@
 
 use arris_math::{Interval, Isometry, Point2, Point3, Vec2};
 
-use super::spline::Spline;
+use super::spline::{BezierSpan, Spline};
 use crate::{Curve2Eval, Curve2Kind, CurveEval, CurveKind, GeomError, GeomKind};
 
 /// A rational B-spline curve in 3D (`docs/DATA-MODEL.md` §NURBS):
@@ -229,6 +229,13 @@ impl NurbsCurve {
             .insert_knot(t, times)
             .map(|spline| NurbsCurve { spline })
             .map_err(degenerate(GeomKind::Curve(CurveKind::Nurbs)))
+    }
+
+    /// The curve's polynomial pieces in Bernstein form, one per
+    /// non-empty span, ascending: what a curve substituted into an
+    /// implicit surface is built from (`crate::intersect_spline`).
+    pub(crate) fn bezier_spans(&self) -> Vec<BezierSpan<3>> {
+        self.spline.bezier_spans()
     }
 
     /// The parameter of the nearest point to `p`: the best of `2p + 2`
