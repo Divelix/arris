@@ -229,7 +229,7 @@ bound has to be established here.
   first tripwire, kept as an assertion. M4's identities (volume
   additivity, cut-then-fuse, commutativity) over unequal cylinders on
   crossing and skew axes at random poses in `boolean_prop.rs`.
-- [ ] Step 10 **[2]** — S5 and B1 decide every pair steps 4 and 5 added:
+- [x] Step 10 **[2]** — S5 and B1 decide every pair steps 4 and 5 added:
   the region from the two faces' boxes, curves and points held to the
   existing interior-to-both rule. `blend_prop.rs` with nothing unchecked
   for two blends' cylinders on skew axes and a corner's sphere against a
@@ -515,3 +515,14 @@ bound has to be established here.
     identities reach; the shrunk cases are a test beside the property,
     which passes at 1000 cases with every other property of `arris-geom`,
     `arris-ops` and `arris`.
+- Found by step 10, and done there:
+  - **Nothing was left for S5 and B1 to learn**: both run `faces_meet`,
+    which has passed the overlap of the two faces' boxes as the region
+    since step 4, and step 9 made the traced branch it clips affordable.
+    The step is `blend_prop.rs` holding every result to nothing
+    unchecked, at rest and posed — fillets and chamfers, 1000 cases each
+    — with the exemption for skew blend cylinders and a corner's sphere
+    against a blend cylinder deleted, and the S5 and B1 rows and
+    `Unchecked::FacePair`'s doc restated to what is left: a torus in a
+    pose sharing no axis with the other surface, and the tracer's
+    refusals.

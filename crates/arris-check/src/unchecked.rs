@@ -16,9 +16,10 @@ use arris_topo::{BodyId, EntityId, FaceId, ShellId};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[non_exhaustive]
 pub enum Unchecked {
-    /// **S5** — the intersector has no closed form for this pair of
-    /// surfaces, so whether the two faces meet away from their shared
-    /// edges is not known.
+    /// **S5** — the intersector does not decide this pair of surfaces —
+    /// a torus in a pose sharing no axis with the other, or a pose the
+    /// tracer refuses (ADR-0018) — so whether the two faces meet away
+    /// from their shared edges is not known.
     FacePair {
         /// The shell holding both faces.
         shell: ShellId,

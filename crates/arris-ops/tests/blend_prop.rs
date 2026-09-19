@@ -11,15 +11,11 @@
 
 use arris_debug::testing::{REL, close_to, fail, fitted_rel};
 use arris_debug::{dump_text, prop, prop_shards};
-use arris_ops::arris_check::arris_topo::arris_geom::{
-    Profile, ProfileLoop, ProfileSegment, Surface, SurfaceKind,
-};
+use arris_ops::arris_check::arris_topo::arris_geom::{Profile, ProfileLoop, ProfileSegment};
 use arris_ops::arris_check::arris_topo::arris_math::{Frame, Isometry, Point2, Point3, Vec3};
 use arris_ops::arris_check::arris_topo::provenance::audit;
-use arris_ops::arris_check::arris_topo::{
-    Body, Edge, EntityId, FaceId, Model, Orientation, Provenance, Shape,
-};
-use arris_ops::arris_check::{Level, Report, Unchecked, check};
+use arris_ops::arris_check::arris_topo::{Body, Edge, Model, Provenance};
+use arris_ops::arris_check::{Level, Report, check};
 use arris_ops::measure::mass_properties;
 use arris_ops::{OpError, chamfer, extrude, fillet, primitive_box, transform};
 use core::f64::consts::{FRAC_PI_2, FRAC_PI_4, PI};
@@ -340,117 +336,24 @@ fn edge_near(m: &Model, body: Body, at: Point3) -> Result<Edge, TestCaseError> {
     }
 }
 
-/// The blend faces of a record: the faces it generated from the edges,
-/// each recorded against the edge's `Forward` shape.
-fn blend_faces(p: &Provenance, edges: &[Edge]) -> Vec<FaceId> {
-    edges
-        .iter()
-        .flat_map(|e| p.generated_from(Shape::new(e.id, Orientation::Forward)))
-        .filter_map(|s| match s.id {
-            EntityId::Face(id) => Some(id),
-            _ => None,
-        })
-        .collect()
-}
-
-/// `report` has no violation, and every unchecked row is S5 between two
-/// blend cylinders of `m` whose axes are skew and closer than the sum of
-/// their radii — the one quartic pose two fillets make — or between a
-/// corner's sphere and a blend cylinder whose axis misses its centre, a
-/// pair S5 has no closed form for whether the two meet or lie apart, which
-/// world-aligned boxes grown by the pose bring together; never one of a
-/// chamfer's, of parallel blends, of a miter's crossing pair or of a
-/// sphere and its own cylinders; at the identity
-/// pose, where every face box of a blend away from a corner is clear of
-/// every other's, there is none.
-fn assert_checked(
-    m: &Model,
-    report: &Report,
-    kind: Blend,
-    blends: &[FaceId],
-    at_rest: bool,
-) -> Result<(), TestCaseError> {
+/// `report` has no violation and nothing unchecked: every face pair a
+/// blend makes without a torus is decided by S5 and B1, the skew blend
+/// cylinders two fillets meet in and a corner's sphere against a blend
+/// cylinder off its centre among them, traced over the overlap of the
+/// two faces' boxes (ADR-0018).
+fn assert_checked(report: &Report) -> Result<(), TestCaseError> {
     prop_assert!(report.is_ok(), "{}", report);
-    let tol = m.precision().tolerance();
-    let cylinder = |f: FaceId| match m.face(f).ok().and_then(|x| m.surface(x.surface()).ok()) {
-        Some(Surface::Cylinder { frame, radius }) => Some((*frame, *radius)),
-        _ => None,
-    };
-    let mut rows = 0;
-    for row in report.unchecked() {
-        let skew_blends = match row {
-            Unchecked::FacePair {
-                face_a,
-                face_b,
-                kinds: (SurfaceKind::Cylinder, SurfaceKind::Cylinder),
-                ..
-            } if blends.contains(face_a) && blends.contains(face_b) => {
-                match (cylinder(*face_a), cylinder(*face_b)) {
-                    (Some((a, ra)), Some((b, rb))) => {
-                        let across = a.z().cross(&b.z());
-                        let parallel = across.norm().atan2(a.z().dot(&b.z()).abs()) <= tol.angular;
-                        let gap = if parallel {
-                            0.0
-                        } else {
-                            across.normalize().dot(&(b.origin() - a.origin())).abs()
-                        };
-                        !parallel && gap > tol.linear && gap <= ra + rb + tol.linear
-                    }
-                    _ => false,
-                }
-            }
-            _ => false,
-        };
-        let sphere = |f: FaceId| match m.face(f).ok().and_then(|x| m.surface(x.surface()).ok()) {
-            Some(Surface::Sphere { frame, .. }) => Some(frame.origin()),
-            _ => None,
-        };
-        let off_axis_sphere = match row {
-            Unchecked::FacePair {
-                face_a,
-                face_b,
-                kinds:
-                    (SurfaceKind::Sphere, SurfaceKind::Cylinder)
-                    | (SurfaceKind::Cylinder, SurfaceKind::Sphere),
-                ..
-            } if blends.contains(face_a) && blends.contains(face_b) => {
-                let (s, c) = if sphere(*face_a).is_some() {
-                    (*face_a, *face_b)
-                } else {
-                    (*face_b, *face_a)
-                };
-                match (sphere(s), cylinder(c)) {
-                    (Some(centre), Some((axis, _))) => {
-                        let w = centre - axis.origin();
-                        let z = axis.z().into_inner();
-                        (w - w.dot(&z) * z).norm() > tol.linear
-                    }
-                    _ => false,
-                }
-            }
-            _ => false,
-        };
-        prop_assert!(
-            kind == Blend::Fillet && (skew_blends || off_axis_sphere),
-            "{} (blend faces {:?})\n{}",
-            row,
-            blends,
-            report
-        );
-        rows += 1;
-    }
-    if at_rest {
-        prop_assert_eq!(rows, 0, "nothing unchecked at rest\n{}", report);
-    }
+    prop_assert!(
+        report.unchecked().is_empty(),
+        "nothing unchecked\n{}",
+        report
+    );
     Ok(())
 }
 
 /// The blend of `case` in a fresh model, the prism moved to its pose
-/// first: the result, its record, the edges it took and the input.
-fn posed(
-    case: &Case,
-    kind: Blend,
-) -> Result<(Model, Body, Body, Vec<Edge>, Provenance), TestCaseError> {
+/// first: the model, the input, the result and its record.
+fn posed(case: &Case, kind: Blend) -> Result<(Model, Body, Body, Provenance), TestCaseError> {
     let mut m = Model::default();
     let prism = case.prism.build(&mut m).map_err(fail)?;
     let (moved, _) = transform(&mut m, prism, &case.pose).map_err(fail)?;
@@ -461,14 +364,14 @@ fn posed(
         .collect::<Result<Vec<_>, _>>()?;
     let (blended, p) = op(kind)(&mut m, moved, &edges, case.size)
         .map_err(|e| fail(format!("{kind:?} of the posed prism: {e}")))?;
-    Ok((m, moved, blended, edges, p))
+    Ok((m, moved, blended, p))
 }
 
 fn blends_as_their_closed_forms(case: Case, kind: Blend) -> Result<(), TestCaseError> {
     // Moved, then blended.
-    let (m, moved, blended, edges, p) = posed(&case, kind)?;
+    let (m, moved, blended, p) = posed(&case, kind)?;
     let report = check(&m, blended, Level::Full);
-    assert_checked(&m, &report, kind, &blend_faces(&p, &edges), false)?;
+    assert_checked(&report)?;
     audit(&m, &[moved], blended, &p).map_err(|e| fail(format!("provenance: {e}")))?;
     let props = mass_properties(&m, blended).map_err(fail)?;
     // A fillet miter's ellipse has a fitted pcurve on each cylinder, which
@@ -497,13 +400,7 @@ fn blends_as_their_closed_forms(case: Case, kind: Blend) -> Result<(), TestCaseE
     let (rest, rest_p) = op(kind)(&mut here, prism, &at_rest, case.size)
         .map_err(|e| fail(format!("{kind:?} at rest: {e}")))?;
     let rest_report = check(&here, rest, Level::Full);
-    assert_checked(
-        &here,
-        &rest_report,
-        kind,
-        &blend_faces(&rest_p, &at_rest),
-        true,
-    )?;
+    assert_checked(&rest_report)?;
     audit(&here, &[prism], rest, &rest_p).map_err(|e| fail(format!("provenance at rest: {e}")))?;
     let (then_moved, _) = transform(&mut here, rest, &case.pose).map_err(fail)?;
     let other = mass_properties(&here, then_moved).map_err(fail)?;
@@ -520,7 +417,7 @@ fn blends_as_their_closed_forms(case: Case, kind: Blend) -> Result<(), TestCaseE
     );
 
     // Deterministic.
-    let (again, _, twice, _, again_p) = posed(&case, kind)?;
+    let (again, _, twice, again_p) = posed(&case, kind)?;
     prop_assert_eq!(
         dump_text(&again, twice).map_err(fail)?,
         dump_text(&m, blended).map_err(fail)?
@@ -531,8 +428,10 @@ fn blends_as_their_closed_forms(case: Case, kind: Blend) -> Result<(), TestCaseE
 
 prop_shards! {
     /// Fillets of a random pick of a box's or an L's edges at a random
-    /// pose: clean at `Full` but for S5 between blend cylinders, audited,
-    /// at the closed-form volume, pose-independent and deterministic.
+    /// pose: clean at `Full` with nothing unchecked — two blend cylinders
+    /// on skew axes and a corner's sphere against a blend cylinder are
+    /// traced (ADR-0018) — audited, at the closed-form volume,
+    /// pose-independent and deterministic.
     fillets_match_their_closed_forms
         [shard_0 shard_1 shard_2 shard_3 shard_4 shard_5 shard_6 shard_7]
         (case) = case() => {
