@@ -33,8 +33,9 @@ shapes pass the corpus in its own units: closed-form blends (ADR-0007),
 lumps of one `Solid` (ADR-0006), cylinder–cylinder booleans, quadric faces
 on a shared axis (ADR-0008), the facade decisions (ADR-0009 to 0011), mesh
 corners, STL/OBJ and elliptic profiles (ADR-0012 to 0014); the swap is the
-consumer's (ADR-0017). **Next:** C3, every quadric pair — `/idea` on the
-quadric-curve `⚠ OPEN` (`docs/DATA-MODEL.md` §Curves), then `/plan`.
+consumer's (ADR-0017). **Next:** C3, every quadric pair — `/work` on
+`docs/plans/quadric-intersection-curves.md` (fitted section curves, one
+`Meets` result).
 
 ## Rules that are not derivable from the code
 
