@@ -142,6 +142,46 @@ fn skew_axes_meet_in_two_loops_when_the_smaller_pipe_stays_inside() {
     assert!(worst_off(&trace, &main, &branch) < 1e-12);
 }
 
+/// `geom/c2-cylinder-pairs`' skew pose, where a turning point of the loop
+/// lies on the walked cylinder's base circle to rounding: `b`, `√D` and
+/// `c` all vanish there, and the root has to be taken in the form whose
+/// rounding does not divide by them. The loop starts at that turn, so its
+/// seam is where it showed: half a unit off the larger cylinder.
+#[test]
+fn a_turning_point_on_the_walked_base_circle_is_on_both_surfaces() {
+    let main = Surface::Cylinder {
+        frame: Frame::new(
+            Point3::new(-2.5, 1.75, 0.5),
+            Vec3::new(2.0, 3.0, 6.0),
+            Vec3::new(3.0, -6.0, 2.0),
+        )
+        .unwrap(),
+        radius: 2.0,
+    };
+    let drill = Surface::Cylinder {
+        frame: Frame::new(
+            Point3::new(-1.3732672280129359, 3.4725413007549086, 1.0131517589601917),
+            Vec3::new(
+                0.8376945264427496,
+                -0.5461041060954285,
+                -0.006179455766535667,
+            ),
+            Vec3::new(2.0, 3.0, 6.0),
+        )
+        .unwrap(),
+        radius: 1.2,
+    };
+    let trace = trace_quadrics(&main, &drill, &cube(20.0), tol()).unwrap();
+    assert_eq!(trace.branches().len(), 1);
+    let b = &trace.branches()[0];
+    assert!(b.is_closed());
+    assert!(worst_off(&trace, &main, &drill) < 1e-12);
+    let step = 1e-9 * b.domain().length();
+    for t in [0.0, b.domain().hi()] {
+        assert!((b.point(t) - b.point(t + step)).norm() < 1e-6, "at {t}");
+    }
+}
+
 #[test]
 fn pipes_apart_do_not_meet() {
     let (main, branch) = pipes(4.0);

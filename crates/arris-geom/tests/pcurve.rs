@@ -26,6 +26,15 @@ fn tol() -> Tolerance {
     Precision::DEFAULT.tolerance()
 }
 
+/// A region every traced section of these tests lies in; the closed
+/// forms ignore it.
+fn within() -> arris_math::Aabb {
+    arris_math::Aabb {
+        min: [-100.0; 3],
+        max: [100.0; 3],
+    }
+}
+
 /// Which analytic curve to build in the plane.
 #[derive(Debug, Clone, Copy)]
 enum Flat {
@@ -234,7 +243,7 @@ fn every_section_of_a_cylinder_has_a_pcurve_on_it() {
             let plane = Surface::Plane {
                 frame: Frame::from_z(origin, normal).unwrap(),
             };
-            let r = intersect_surfaces(&plane, &s, tol()).unwrap();
+            let r = intersect_surfaces(&plane, &s, &within(), tol()).unwrap();
             let crossing = r.points().is_empty()
                 && !r.curves().is_empty()
                 && r.curves().iter().all(|m| m.kind == MeetKind::Crossing);

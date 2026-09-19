@@ -86,7 +86,7 @@ fn plane_cylinder_sections_render() {
     let mut kinds = Vec::new();
     for frame in planes {
         let plane = Surface::Plane { frame };
-        let r = intersect_surfaces(&plane, &cyl, tol).unwrap();
+        let r = intersect_surfaces(&plane, &cyl, &within(), tol).unwrap();
         assert!(
             !r.curves().is_empty() && r.curves().iter().all(|m| m.kind == MeetKind::Crossing),
             "every section here is transversal: {r:?}"
@@ -171,5 +171,14 @@ fn traced_quadric_sections_render() {
             .map(|p| Highlight::Point(p.point.coords.into()));
         let path = render_png(&TriMesh::new(), &lines, View::Iso, at, name).unwrap();
         assert!(path.exists());
+    }
+}
+
+/// A region every traced section of these tests lies in; the closed
+/// forms ignore it.
+fn within() -> arris_math::Aabb {
+    arris_math::Aabb {
+        min: [-100.0; 3],
+        max: [100.0; 3],
     }
 }

@@ -7,19 +7,20 @@
 //! meet (ADR-0008): every circle is centred on the axis and is a genuine
 //! crossing of the meridians, no crossing a sampled meridian sees is
 //! missed, constructed touches are touching curves and constructed
-//! apexes and poles are points alone. Every other surface pair — two cylinders in a
-//! quartic pose, a plane oblique to a cone's axis, two tori on different
-//! axes — is `Unsupported`.
+//! apexes and poles are points alone. Two cylinders in a quartic pose
+//! meet in fitted curves on both surfaces, bit for bit under a swap
+//! (ADR-0018). Every other surface pair — a plane oblique to a cone's
+//! axis, two tori on different axes — is `Unsupported`.
 
 use core::f64::consts::{FRAC_PI_2, TAU};
 
 use arris_debug::prop::geom::{HALF_ANGLE_RANGE, RADIUS_RANGE, cylinder, plane, surface};
 use arris_debug::prop::{DEFAULT_SCALE, check, finite_f64, frame, point_in_box, unit_vec3};
 use arris_geom::{
-    Curve, GeomError, GeomKind, MeetKind, Surface, SurfaceIntersection, SurfaceKind,
-    intersect_surfaces,
+    Curve, GeomError, GeomKind, MeetKind, SECTION_FIT_FRACTION, Surface, SurfaceIntersection,
+    SurfaceKind, intersect_surfaces,
 };
-use arris_math::{Frame, Point3, Precision, Tolerance, UnitVec3, Vec3};
+use arris_math::{Aabb, Frame, Point3, Precision, Tolerance, UnitVec3, Vec3};
 use proptest::prelude::*;
 
 /// Points on the result curves against both surfaces, and the closed
@@ -30,6 +31,16 @@ const SAMPLES: usize = 17;
 
 fn tol() -> Tolerance {
     Precision::DEFAULT.tolerance()
+}
+
+/// A region every traced section of these tests lies in — two cylinders
+/// in a quartic pose meet within their radii of both axes, at most a few
+/// hundred [`DEFAULT_SCALE`]s from the origin; the closed forms ignore it.
+fn within() -> Aabb {
+    Aabb {
+        min: [-1e4; 3],
+        max: [1e4; 3],
+    }
 }
 
 /// The signed distance from `p` to the surface by its implicit form:
@@ -183,7 +194,8 @@ fn seen(r: &SurfaceIntersection) -> Seen {
 /// first, a coaxial pair its circles along the first's axis),
 /// determinism.
 fn common_properties(a: &Surface, b: &Surface) -> Result<SurfaceIntersection, TestCaseError> {
-    let r = intersect_surfaces(a, b, tol()).map_err(|e| TestCaseError::fail(e.to_string()))?;
+    let r = intersect_surfaces(a, b, &within(), tol())
+        .map_err(|e| TestCaseError::fail(e.to_string()))?;
     for c in curves_of(&r) {
         on_both(c, a, b)?;
     }
@@ -194,8 +206,8 @@ fn common_properties(a: &Surface, b: &Surface) -> Result<SurfaceIntersection, Te
             "{p} is off by {da} from {a:?} and {db} from {b:?}"
         );
     }
-    let swapped =
-        intersect_surfaces(b, a, tol()).map_err(|e| TestCaseError::fail(e.to_string()))?;
+    let swapped = intersect_surfaces(b, a, &within(), tol())
+        .map_err(|e| TestCaseError::fail(e.to_string()))?;
     prop_assert_eq!(
         core::mem::discriminant(&swapped),
         core::mem::discriminant(&r),
@@ -231,7 +243,8 @@ fn common_properties(a: &Surface, b: &Surface) -> Result<SurfaceIntersection, Te
             taken[i] = true;
         }
     }
-    let again = intersect_surfaces(a, b, tol()).map_err(|e| TestCaseError::fail(e.to_string()))?;
+    let again = intersect_surfaces(a, b, &within(), tol())
+        .map_err(|e| TestCaseError::fail(e.to_string()))?;
     prop_assert_eq!(&again, &r, "two runs differ");
     Ok(r)
 }
@@ -526,15 +539,15 @@ fn coaxial(a: &Surface, b: &Surface) -> bool {
 #[test]
 fn every_other_pair_is_unsupported() {
     check((surface(), surface()), |(a, b)| {
-        let closed_form = |k| matches!(k, SurfaceKind::Plane | SurfaceKind::Cylinder);
-        let two_cylinders = a.kind() == SurfaceKind::Cylinder && b.kind() == SurfaceKind::Cylinder;
+        let decided = |k| matches!(k, SurfaceKind::Plane | SurfaceKind::Cylinder);
         let elliptic = |k| k == SurfaceKind::EllipticCylinder;
         let parallel =
             |x: &UnitVec3, y: &UnitVec3| x.cross(y).norm().atan2(x.dot(y).abs()) <= tol().angular;
-        // Two cylinders in random poses are almost always skew, apart or
-        // within the radii, and a pair with a cone, a sphere or a torus
-        // in it is almost never coaxial; the property decides the pose
-        // rather than relying on that. An elliptic cylinder is decided
+        // Planes and cylinders are decided in every pose — two cylinders
+        // in a quartic one by the tracer (ADR-0018) — and a pair with a
+        // cone, a sphere or a torus in it is almost never coaxial; the
+        // property decides the pose rather than relying on that. An
+        // elliptic cylinder is decided
         // against a plane in every pose and against a cylinder or an
         // elliptic cylinder when the axes are parallel (ADR-0014).
         let supported = if elliptic(a.kind()) || elliptic(b.kind()) {
@@ -544,12 +557,12 @@ fn every_other_pair_is_unsupported() {
             a.kind() == SurfaceKind::Plane
                 || b.kind() == SurfaceKind::Plane
                 || (cylindrical(a.kind()) && cylindrical(b.kind()) && parallel(&fa.z(), &fb.z()))
-        } else if closed_form(a.kind()) && closed_form(b.kind()) {
-            !two_cylinders || !pose(&a, &b).is_quartic()
+        } else if decided(a.kind()) && decided(b.kind()) {
+            true
         } else {
             coaxial(&a, &b)
         };
-        match intersect_surfaces(&a, &b, tol()) {
+        match intersect_surfaces(&a, &b, &within(), tol()) {
             Ok(_) => prop_assert!(supported, "{a:?} vs {b:?} should be unsupported"),
             Err(GeomError::Unsupported { a: ka, b: kb }) => {
                 prop_assert!(!supported, "{a:?} vs {b:?} has a closed form");
@@ -600,13 +613,14 @@ fn through_hole_faces_against_the_hole() {
         (Point3::new(0.0, 30.0, 0.0), Vec3::y()),
     ] {
         assert_eq!(
-            intersect_surfaces(&wall(origin, normal), &hole, tol()).unwrap(),
+            intersect_surfaces(&wall(origin, normal), &hole, &within(), tol()).unwrap(),
             SurfaceIntersection::Empty
         );
     }
     for (z, normal) in [(0.0, -Vec3::z()), (10.0, Vec3::z())] {
         let cap = wall(Point3::new(0.0, 0.0, z), normal);
-        let Seen::Crossing(c) = seen(&intersect_surfaces(&cap, &hole, tol()).unwrap()) else {
+        let Seen::Crossing(c) = seen(&intersect_surfaces(&cap, &hole, &within(), tol()).unwrap())
+        else {
             panic!()
         };
         let [Curve::Circle { frame, radius }] = c.as_slice() else {
@@ -663,7 +677,8 @@ fn coaxial_cylinders_are_coincident_or_empty_by_their_radii() {
             SurfaceIntersection::Empty
         };
         prop_assert_eq!(
-            intersect_surfaces(&a, &b, tol()).map_err(|e| TestCaseError::fail(e.to_string()))?,
+            intersect_surfaces(&a, &b, &within(), tol())
+                .map_err(|e| TestCaseError::fail(e.to_string()))?,
             expected.clone(),
             "{:?} vs {:?}",
             a,
@@ -671,7 +686,8 @@ fn coaxial_cylinders_are_coincident_or_empty_by_their_radii() {
         );
         // Symmetric, and the same on a second run.
         prop_assert_eq!(
-            intersect_surfaces(&b, &a, tol()).map_err(|e| TestCaseError::fail(e.to_string()))?,
+            intersect_surfaces(&b, &a, &within(), tol())
+                .map_err(|e| TestCaseError::fail(e.to_string()))?,
             expected
         );
         Ok(())
@@ -689,7 +705,8 @@ enum Pose {
 }
 
 impl Pose {
-    /// The poses whose curve is a quartic, with no closed form.
+    /// The poses whose curve is a quartic, with no closed form: traced and
+    /// fitted.
     fn is_quartic(self) -> bool {
         matches!(self, Pose::CrossingUnequal | Pose::SkewClose)
     }
@@ -907,7 +924,7 @@ fn equal_cylinders_crossing_meet_in_the_two_bisecting_ellipses() {
         }
         // Either operand order: the same two ellipses bit for bit, in the
         // same order, so a boolean fits each pcurve once whichever it is.
-        let swapped = intersect_surfaces(&b, &a, Precision::DEFAULT.tolerance())
+        let swapped = intersect_surfaces(&b, &a, &within(), Precision::DEFAULT.tolerance())
             .map_err(|e| TestCaseError::fail(e.to_string()))?;
         prop_assert_eq!(&swapped, &r, "swapping the operands");
         Ok(())
@@ -986,19 +1003,71 @@ fn quartic_pair() -> impl Strategy<Value = (Surface, Surface)> {
         )
 }
 
+/// Parameters a fitted section curve is sampled at, both ends included:
+/// several per span of the densest fits, so the curve is held to both
+/// surfaces between the fit's own check parameters too.
+const DENSE: usize = 2001;
+
+/// Two cylinders in a quartic pose meet in fitted curves (ADR-0018): each
+/// a crossing `Curve::Nurbs`, periodic and closed when it is a loop, an
+/// open one ending at a singular point of the result; densely sampled,
+/// within the fit's fraction of the tolerance of both surfaces — beyond
+/// the tolerance the tracer allows within a singular point's reach, when
+/// there is one; each point on both within the tolerance; and swapping
+/// the operands, or asking again, gives the result bit for bit.
 #[test]
-fn cylinders_in_a_quartic_pose_are_unsupported_naming_the_pair() {
+fn cylinders_in_a_quartic_pose_meet_in_fitted_curves_on_both_surfaces() {
     check(quartic_pair(), |(a, b)| {
         prop_assert!(pose(&a, &b).is_quartic(), "{a:?} vs {b:?}");
-        for (x, y) in [(&a, &b), (&b, &a)] {
-            match intersect_surfaces(x, y, tol()) {
-                Err(GeomError::Unsupported { a: ka, b: kb }) => {
-                    prop_assert_eq!(ka, GeomKind::Surface(SurfaceKind::Cylinder));
-                    prop_assert_eq!(kb, GeomKind::Surface(SurfaceKind::Cylinder));
+        let r = intersect_surfaces(&a, &b, &within(), tol())
+            .map_err(|e| TestCaseError::fail(format!("{a:?} vs {b:?}: {e}")))?;
+        prop_assert!(!r.curves().is_empty() || !r.points().is_empty(), "{r:?}");
+        let singular = if r.points().is_empty() {
+            0.0
+        } else {
+            tol().linear
+        };
+        let bound = |p: Point3| {
+            singular + SECTION_FIT_FRACTION * tol().linear + 1e-11 * (1.0 + p.coords.norm())
+        };
+        for m in r.curves() {
+            prop_assert_eq!(m.kind, MeetKind::Crossing);
+            let Curve::Nurbs(c) = &m.curve else {
+                return Err(TestCaseError::fail(format!("not fitted: {:?}", m.curve)));
+            };
+            let domain = c.domain();
+            match c.period() {
+                Some(period) => {
+                    prop_assert_eq!(period, domain.length());
+                    let gap = (c.eval(domain.lo()).point - c.eval(domain.hi()).point).norm();
+                    prop_assert!(gap <= EXACT, "a loop open by {gap}");
                 }
-                other => return Err(TestCaseError::fail(format!("{x:?} vs {y:?}: {other:?}"))),
+                None => {
+                    for end in [domain.lo(), domain.hi()] {
+                        let p = c.eval(end).point;
+                        prop_assert!(
+                            r.points().iter().any(|q| (q.point - p).norm() <= EXACT),
+                            "an open branch ends at {p}, at no singular point"
+                        );
+                    }
+                }
+            }
+            for i in 0..DENSE {
+                let p = c.eval(domain.lerp(i as f64 / (DENSE - 1) as f64)).point;
+                let off = implicit_distance(&a, p).max(implicit_distance(&b, p));
+                prop_assert!(off <= bound(p), "{p} is {off} off a surface");
             }
         }
+        for p in r.points() {
+            let off = implicit_distance(&a, p.point).max(implicit_distance(&b, p.point));
+            prop_assert!(off <= tol().linear, "{:?} is {off} off a surface", p);
+        }
+        let swapped = intersect_surfaces(&b, &a, &within(), tol())
+            .map_err(|e| TestCaseError::fail(e.to_string()))?;
+        prop_assert!(swapped == r, "the swap changed the result");
+        let again = intersect_surfaces(&a, &b, &within(), tol())
+            .map_err(|e| TestCaseError::fail(e.to_string()))?;
+        prop_assert!(again == r, "a second run changed the result");
         Ok(())
     });
 }
@@ -1533,7 +1602,7 @@ fn a_plane_through_the_axis_cuts_the_meridian() {
                 };
                 prop_assert_eq!(c.len(), 2, "{:?}: {:?}", kind, r);
                 prop_assert_eq!(
-                    &intersect_surfaces(&carrier, &plane, tol()).unwrap(),
+                    &intersect_surfaces(&carrier, &plane, &within(), tol()).unwrap(),
                     &r,
                     "either order"
                 );
@@ -1585,7 +1654,7 @@ fn a_plane_through_the_axis_cuts_the_meridian() {
                         .unwrap()
                         .with_origin(anchor + (pb.r2 + 0.5) * around),
                 };
-                let apart = intersect_surfaces(&off, &carrier, tol());
+                let apart = intersect_surfaces(&off, &carrier, &within(), tol());
                 prop_assert!(
                     matches!(apart, Err(GeomError::Unsupported { .. })),
                     "a plane off the axis: {:?}",
@@ -1677,7 +1746,7 @@ fn every_non_coaxial_quadric_pose_is_unsupported() {
             // carries the axis here only against an off-centre sphere.
             prop_assume!(kind != Coaxial::Cylinder || pose == Apart::OffCentre);
             for (x, y) in [(&carrier, &other), (&other, &carrier)] {
-                match intersect_surfaces(x, y, tol()) {
+                match intersect_surfaces(x, y, &within(), tol()) {
                     Err(GeomError::Unsupported { a, b }) => {
                         prop_assert_eq!(a, GeomKind::Surface(x.kind()));
                         prop_assert_eq!(b, GeomKind::Surface(y.kind()));

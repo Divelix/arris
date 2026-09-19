@@ -18,7 +18,7 @@ use arris_check::arris_topo::arris_geom::{
     intersect_curves, intersect_surfaces, pcurve_on,
 };
 use arris_check::arris_topo::arris_math::{
-    Interval, Point2, Point3, Precision, Tolerance, Vec2, period_end, wrap_angle,
+    Aabb, Interval, Point2, Point3, Precision, Tolerance, Vec2, period_end, wrap_angle,
 };
 use arris_check::arris_topo::{
     Body, EdgeId, FaceId, Model, Shape, Vertex as VertexHandle, VertexId,
@@ -109,6 +109,9 @@ struct Build<'m> {
     b: Body,
     faces: [Vec<FaceInfo<'m>>; 2],
     edges: [Vec<EdgeInfo<'m>>; 2],
+    /// The one region every face pair's traced section is clipped to
+    /// ([`region`]).
+    within: Aabb,
     pairs: Vec<FacePair>,
     /// Per pair, the indices of its faces in `faces`.
     pair_faces: Vec<(usize, usize)>,
@@ -136,6 +139,7 @@ struct Build<'m> {
 pub(super) fn build(m: &Model, a: Body, b: Body) -> Result<Interferences, OpError> {
     let faces = [FaceInfo::of_body(m, a)?, FaceInfo::of_body(m, b)?];
     let edges = [EdgeInfo::of_body(m, a)?, EdgeInfo::of_body(m, b)?];
+    let within = region(&faces);
     let mut build = Build {
         m,
         precision: m.precision(),
@@ -143,6 +147,7 @@ pub(super) fn build(m: &Model, a: Body, b: Body) -> Result<Interferences, OpErro
         b,
         faces,
         edges,
+        within,
         pairs: Vec::new(),
         pair_faces: Vec::new(),
         hits: Vec::new(),
@@ -172,6 +177,32 @@ pub(super) fn build(m: &Model, a: Body, b: Body) -> Result<Interferences, OpErro
     build.contacts()?;
     build.coincident()?;
     Ok(build.finish())
+}
+
+/// The region every face pair of the boolean is intersected in: the
+/// overlap of the two operands' boxes, grown on every side by its own
+/// diagonal. A section interior to both faces of a pair is inside both
+/// operands' boxes, so the overlap bounds everything the boolean keeps;
+/// the growth keeps the clip of a traced section well away from any
+/// face, since it only has to bound what runs to infinity. One region
+/// for the whole boolean, so every face pair on the same two surfaces
+/// gets the same curve bit for bit (ADR-0018). Operands whose boxes are
+/// apart have no candidate pair, and their region is never read.
+fn region(faces: &[Vec<FaceInfo<'_>>; 2]) -> Aabb {
+    let [a, b] = faces.each_ref().map(|side| {
+        side.iter()
+            .map(|f| f.bounds)
+            .reduce(Aabb::union)
+            .unwrap_or(Aabb::of_point(Point3::origin()))
+    });
+    let overlap = Aabb {
+        min: [0, 1, 2].map(|i| a.min[i].max(b.min[i])),
+        max: [0, 1, 2].map(|i| a.max[i].min(b.max[i])),
+    };
+    if (0..3).any(|i| overlap.min[i] > overlap.max[i]) {
+        return a.union(b);
+    }
+    overlap.inflated(overlap.diagonal())
 }
 
 fn shape_of(body: Body) -> Shape {
@@ -272,8 +303,25 @@ impl<'m> Build<'m> {
                 });
             }
             let tol = tolerance_of(&self.precision, fa.tolerance, fb.tolerance);
-            intersect_surfaces(fa.surface, fb.surface, tol)
-                .map_err(|e| geometry(e, fa.shape(), fb.shape()))
+            let intersection = intersect_surfaces(fa.surface, fb.surface, &self.within, tol)
+                .map_err(|e| geometry(e, fa.shape(), fb.shape()))?;
+            // A traced section — two cylinders on crossing axes of unequal
+            // radii or on skew ones — is a fitted curve or a singular
+            // point, neither of which the pave model reads before plan
+            // step 8 (`quadric-intersection-curves`): refused as the pair
+            // was while the intersector had no arm for it.
+            let traced = !intersection.points().is_empty()
+                || intersection
+                    .curves()
+                    .iter()
+                    .any(|c| matches!(c.curve, Curve::Nurbs(_)));
+            if traced {
+                return Err(OpError::Unsupported {
+                    a: (GeomKind::Surface(fa.surface.kind()), fa.shape()),
+                    b: (GeomKind::Surface(fb.surface.kind()), fb.shape()),
+                });
+            }
+            Ok(intersection)
         };
         #[cfg(feature = "parallel")]
         {
@@ -939,8 +987,9 @@ impl<'m> Build<'m> {
         for pi in 0..self.pairs.len() {
             let intersection = &self.pairs[pi].intersection;
             // Only a pair with a cone, a sphere, a torus or an elliptic
-            // cylinder meets in points or in both kinds at once, and the
-            // quadric guard refuses those before the intersector is asked.
+            // cylinder meets in both kinds at once, and the quadric guard
+            // refuses those before the intersector is asked; a traced
+            // section's points are refused with it (`intersect_pairs`).
             let mixed = intersection
                 .curves()
                 .windows(2)

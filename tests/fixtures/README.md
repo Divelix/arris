@@ -284,13 +284,24 @@ oracle's sampled points on Arris's curves to 1e-9.
   through an apex, two spheres touching; a plane through a cone's and a
   torus's axis, two rulings and two tube circles; and lines against the
   three — chords, grazes, a ruling, a line through the apex, the poles,
-  a torus's four crossings and its inner and outer equators grazed).
+  a torus's four crossings and its inner and outer equators grazed) and
+  `c3-cylinder-pairs` (the cylinder pairs that meet in a quartic:
+  crossing axes of unequal radii, skew axes within the radii breaking
+  out of the larger cylinder or staying inside it, one pair swapped).
 - A surface pair Open CASCADE finds no conic for is `"type": "unsolved"`
-  (`IntAna_NoGeometricSolution`). The oracle test holds Arris to
-  `Unsupported` or to a closed-form `Empty` against it — or, where Arris
-  has a closed form the oracle's own case analysis let go, holds Arris's
-  curves to both surfaces — and `oracle.rs` pins which one each pair is
-  by name. A pair meeting in isolated points is `"type": "point"` with
+  (`IntAna_NoGeometricSolution`), with the lines `GeomAPI_IntSS` walks
+  for it as curves of type `section`: 17 samples each, every one polished
+  onto both surfaces by Newton steps, since the walked line is only
+  within about 1e-8 of them; a line along which the surfaces touch has
+  nothing to polish onto and is dropped and counted under `dropped`. The
+  oracle test holds Arris to `Unsupported` or to a closed-form `Empty`
+  against it, or holds Arris's curves to both surfaces — a fitted one to
+  `SECTION_FIT_FRACTION` of the tolerance (ADR-0018) — and every walked
+  sample to one of them within that fraction, each curve carrying some
+  and none reaching past them; `oracle.rs` pins which one each pair is
+  by name. The walk splits a loop into one line or two, so its count is
+  not compared. Open CASCADE answers two ellipses for skew cylinders of
+  equal radii (below), so the corpus has no such pair. A pair meeting in isolated points is `"type": "point"` with
   its `points`; Arris's points of a meeting in points alone are held to
   them exactly.
 - The corpus lint checks presence, hash and shape for this kind (every

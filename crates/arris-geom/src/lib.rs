@@ -31,6 +31,7 @@ mod pcurve;
 pub mod profile;
 mod project;
 pub mod region2;
+mod section;
 mod surface;
 mod trace;
 
@@ -47,6 +48,7 @@ pub use nurbs::{
 pub use pcurve::{PCURVE_FIT_DEGREE, PCURVE_SAMPLES, pcurve_on, project_to_plane};
 pub use profile::{Profile, ProfileEdge, ProfileError, ProfileLoop, ProfileSegment};
 pub use project::{CurveProjection, SurfaceProjection};
+pub use section::{SECTION_FIT_DEGREE, SECTION_FIT_FRACTION};
 pub use surface::{Surface, SurfaceEval, SurfaceKind};
 pub use trace::{
     BranchEnd, SectionBranch, SectionFault, SectionPoint, SectionTrace, trace_quadrics,

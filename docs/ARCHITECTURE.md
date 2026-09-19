@@ -250,7 +250,13 @@ sphere or a torus is refused before any intersector is asked — the
 *quadric guard*, `OpError::Unsupported` naming the pair exactly as the
 intersector named it before the coaxial arm existed (ADR-0008) — so a
 new intersector arm widens no boolean silently; booleans with quadric
-operand faces are C3's, with their corpus. It holds every face pair
+operand faces are C3's, with their corpus. Every face pair is
+intersected in one region for the whole boolean — the overlap of the
+operands' boxes grown by its own diagonal — so pairs on the same two
+surfaces get the same traced curve; two cylinders whose section is
+traced, a fitted curve or a singular point, are refused as the same
+`OpError::Unsupported` until the pave model reads them (the plan
+`quadric-intersection-curves`, step 8). It holds every face pair
 whose boxes overlap with its `SurfaceIntersection` — a *crossing
 pair* when its `Meets` curves all cross, a *touching pair* when they
 all touch, and a pair past the quadric guard is always one or the
@@ -836,9 +842,11 @@ may be supported in part: two cylinders meet by closed form when their
 axes are parallel (rulings, or `Coincident` or `Empty` when coaxial),
 when their axes cross at equal radii (two ellipses), and when skew axes
 are further apart than the two radii (`Empty`); crossing axes of unequal
-radii and skew axes within the radii are `Unsupported`, since the curve
-is a quartic and C3's — which is still a named arm in the pose analysis,
-not a wildcard (`docs/DATA-MODEL.md` §Curves has the table). Every pair
+radii and skew axes within the radii meet in a quartic no variant
+carries, which `trace_quadrics` traces exactly by the rulings of one
+cylinder and the intersector fits to `Curve::Nurbs` within a fraction of
+the tolerance, clipped to the region the caller passes (ADR-0018,
+`docs/DATA-MODEL.md` §Curves has the table). Every pair
 with a cone, a sphere or a torus in it is supported where the two share
 an axis — a plane perpendicular to it, a cylinder, cone or torus on it, a
 sphere centred on it, and every plane–sphere and sphere–sphere pair — by
@@ -849,8 +857,7 @@ or a torus's axis, its meridian: two rulings through the apex, or two
 tube circles, a partial revolve's flat ends. The general positions — a
 plane oblique to a cone's or a torus's axis or parallel to it and off
 it, two tori on different axes, a sphere off the axis — are
-`Unsupported` and C3's, as is a result that
-would mix a circle with a point, whose type is decided with C3's ADR. The
+`Unsupported` and C3's. The
 elliptic cylinder an extruded elliptic segment sweeps (ADR-0014) is
 decided against a plane in every pose and against a cylinder or another
 elliptic cylinder with a parallel axis, through the two sections in the

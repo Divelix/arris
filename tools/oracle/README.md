@@ -55,8 +55,10 @@ commit that says so (`.agents/rules/git.md`).
   `Geom_Circle` and `Geom_Ellipse` from named specs; `D2` at every
   parameter; `GeomAPI_ProjectPointOnSurf` / `OnCurve` for every point;
   `IntAna_QuadQuadGeo` for surface pairs (`unsolved` where it reports
-  `NoGeometricSolution`, `point` where it reports `IntAna_Point`, through
-  the overload each kind pair has) and `IntAna_IntConicQuad` for a
+  `NoGeometricSolution`, with `GeomAPI_IntSS`'s walked lines sampled and
+  polished onto both surfaces by Newton steps as `section` curves;
+  `point` where it reports `IntAna_Point`, through the overload each kind
+  pair has) and `IntAna_IntConicQuad` for a
   curve against a surface — `IntAna_IntLinTorus` for a line against a
   torus — hits deduplicated within `Precision::Confusion` and dropped
   (counted) when off either operand.

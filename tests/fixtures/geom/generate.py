@@ -4,9 +4,10 @@ directory: `analytic-eval` (every analytic variant in three poses,
 parameters on and off the seam, projections from both sides),
 `c1-intersections` (every case of the cycle-1 intersection table in one
 committed general pose), `c2-cylinder-pairs` (every pose of the
-cylinder–cylinder table in that pose) and `c2-quadric-pairs` (the coaxial
+cylinder–cylinder table in that pose), `c2-quadric-pairs` (the coaxial
 pairs with a cone, a sphere or a torus in them, and the pairs any sphere
-makes, in that pose). Plain Python, no Open CASCADE: the coordinates
+makes, in that pose) and `c3-cylinder-pairs` (the cylinder pairs that
+meet in a quartic, in that pose). Plain Python, no Open CASCADE: the coordinates
 are the closed forms of `docs/DATA-MODEL.md` §Geometry written out in
 world space at full precision, so both sides read identical numbers.
 Rerun after editing, then `tools/oracle/expected.py` on each directory.
@@ -429,6 +430,50 @@ def c2_cylinder_pairs():
     }
 
 
+# --- c3-cylinder-pairs --------------------------------------------------------------
+
+
+def c3_cylinder_pairs():
+    f = POSES["tilt"]
+    R = 2.0
+    z = f.z
+    surfaces = {"cyl": {"type": "cylinder", **f.spec(radius=R)}}
+    pairs = []
+
+    def cylinder(name, origin, axis, x_hint, radius):
+        surfaces[name] = {"type": "cylinder", **Frame(origin, axis, x_hint).spec(radius=radius)}
+        pairs.append({"a": "cyl", "b": name})
+
+    a, across = f.around(1.1)
+    on_axis = f.to_world([0.0, 0.0, -0.8])
+
+    def tilted(deg):
+        t = math.radians(deg)
+        return add(mul(math.cos(t), z), mul(math.sin(t), a))
+
+    # Crossing axes of unequal radii: a smaller cylinder through the first
+    # at 90° and at 40°, and a larger one around it — two loops each.
+    cylinder("cross_90", add(on_axis, mul(0.6, a)), a, z, 1.2)
+    cylinder("cross_40", add(on_axis, mul(-0.9, tilted(40.0))), tilted(40.0), across, 1.5)
+    cylinder("cross_larger", add(on_axis, mul(1.3, tilted(70.0))), tilted(70.0), across, 3.0)
+    # Skew axes within the radii, the common perpendicular along `across`:
+    # the smaller one breaking out of the first (one loop) and staying
+    # inside it (two loops), at 90° and at 55°.
+    cylinder("skew_out", add(on_axis, mul(1.5, across)), a, z, 1.2)
+    cylinder("skew_in", add(on_axis, mul(-0.5, across)), a, z, 1.2)
+    cylinder("skew_55", add(on_axis, mul(1.1, across)), tilted(55.0), across, 1.0)
+    # One the other way round: the walked cylinder is the smaller either way.
+    pairs.append({"a": "skew_out", "b": "cyl"})
+    return {
+        "kind": "geometry",
+        "description": "the cylinder pairs that meet in a quartic around one cylinder in the tilt pose, which Arris traces and fits (ADR-0018) and Open CASCADE leaves unsolved in IntAna_QuadQuadGeo and walks in GeomAPI_IntSS: crossing axes of unequal radii at 90° and 40° and around a larger cylinder, two loops each; skew axes within the radii breaking out (one loop), staying inside (two loops) and at 55°; one pair swapped; written by generate.py",
+        "surfaces": surfaces,
+        "curves": {},
+        "samples": [],
+        "pairs": pairs,
+    }
+
+
 # --- c2-quadric-pairs --------------------------------------------------------------
 
 
@@ -610,3 +655,4 @@ if __name__ == "__main__":
     write("c1-intersections", c1_intersections())
     write("c2-cylinder-pairs", c2_cylinder_pairs())
     write("c2-quadric-pairs", c2_quadric_pairs())
+    write("c3-cylinder-pairs", c3_cylinder_pairs())

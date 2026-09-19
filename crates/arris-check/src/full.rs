@@ -185,8 +185,12 @@ impl<'m> Checker<'m> {
         let (Ok(sa), Ok(sb)) = (model.surface(fa.surface()), model.surface(fb.surface())) else {
             return Ok(false);
         };
-        if let (Some(Some(ba)), Some(Some(bb))) = (boxes.get(&a), boxes.get(&b)) {
-            if !ba.intersects(bb) {
+        let (ba, bb) = (
+            boxes.get(&a).copied().flatten(),
+            boxes.get(&b).copied().flatten(),
+        );
+        if let (Some(ba), Some(bb)) = (ba, bb) {
+            if !ba.intersects(&bb) {
                 return Ok(false);
             }
         }
@@ -195,7 +199,22 @@ impl<'m> Checker<'m> {
         // between them would decide it.
         let tolerance = fa.tolerance().max(fb.tolerance());
         let query = Tolerance::new(tolerance, self.precision.angular_tolerance);
-        Ok(match intersect_surfaces(sa, sb, query) {
+        // A point interior to both faces is in both boxes, so their
+        // overlap — or the one box there is — bounds every traced section
+        // S5 can find; the closed forms ignore it. With neither, no face
+        // has a bounded domain to place a point in, and the pair meets
+        // nowhere here — L1's and E1's to report.
+        let overlap = match (ba, bb) {
+            (Some(ba), Some(bb)) => Some(Aabb {
+                min: [0, 1, 2].map(|i| ba.min[i].max(bb.min[i])),
+                max: [0, 1, 2].map(|i| ba.max[i].min(bb.max[i])),
+            }),
+            (one, other) => one.or(other),
+        };
+        let Some(within) = overlap.map(|b| b.inflated(tolerance)) else {
+            return Ok(false);
+        };
+        Ok(match intersect_surfaces(sa, sb, &within, query) {
             Err(_) => return Err((sa.kind(), sb.kind())),
             Ok(SurfaceIntersection::Empty) => false,
             Ok(SurfaceIntersection::Coincident) => self.regions_overlap(a, sa, b, sb, tolerance),

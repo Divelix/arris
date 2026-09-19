@@ -170,7 +170,7 @@ bound has to be established here.
   elliptic cylinders that both touch and cross — are returned, each with
   a test, and the pave model keeps refusing them by name until step 8
   reads them. Commit body names the changed type.
-- [ ] Step 4 **[2]** — Two cylinders in a quartic pose. The `within`
+- [x] Step 4 **[2]** — Two cylinders in a quartic pose. The `within`
   region on `intersect_surfaces`, every caller passing one; the tracer's
   branches fitted (periodic when closed) with deviation "the farther of
   the two surfaces" and the named fraction of `tol.linear`; singular
@@ -286,7 +286,35 @@ bound has to be established here.
   per loop is expected on both sides; if its seam placement splits a loop
   differently, the fixture says so in `analytic.counts_differ` with the
   reason. Agent, step 8.
-- `⚠ OPEN:` the degree of the 3D fit. `PCURVE_FIT_DEGREE` is 5 for a
-  reason measured on pcurves; step 4 measures span counts at the
-  micrometre default on the metre-scale probes before choosing. Agent,
-  step 4.
+- Closed by step 4: **the degree of the 3D fit is 5**
+  (`SECTION_FIT_DEGREE`). On metre-scale cylinder pairs (radii 1 to 2,
+  crossing, skew, tilted) at the default tolerance a loop takes 200 to
+  390 control points at degree 3, 70 to 160 at 4 and 60 to 120 at 5.
+- Found by step 4, and done there:
+  - **The tracer took a root in the wrong form** at a turning point on
+    the walked ruling's base circle, where `b`, `√D` and `c` all vanish:
+    `2c / (−b ∓ √D)` divided `c`'s rounding by them, and
+    `c2-cylinder-pairs`' skew loop was half a unit off at its seam. The
+    form is now chosen by its error bound (`trace.rs`, `Pencil::root`),
+    with the pose as a hand case in `tests/trace.rs`.
+  - **The fit's deviation** is each surface's distance from the fitted
+    point *beyond the exact branch's own*, which is rounding except
+    within a singular point's reach, where the tracer lets a branch be
+    `tol.linear` off the other surface; measured from the surfaces alone
+    a near-singular pose could never fit.
+  - **The oracle walks what it cannot solve.** `IntAna_QuadQuadGeo` has
+    no quartic, so an `unsolved` pair carries `GeomAPI_IntSS`'s lines,
+    each sample polished onto both surfaces by Newton steps (the walk
+    is only within 1e-8); `c2-cylinder-pairs` and `c2-quadric-pairs`
+    were regenerated for it, their other answers unchanged. Its points
+    lie within 1.1e-8 of Arris's loops, against a bound of 2.5e-8.
+  - **The pave model refuses a traced section** — a fitted curve or a
+    singular point — as `OpError::Unsupported` naming the pair, as it
+    did while the intersector had none, and its one region per boolean
+    (the operands' boxes' overlap grown by its diagonal) landed here,
+    since every caller passes a region. Step 8 lifts the refusal.
+  - **S5 and B1 already decide two cylinders in a quartic pose**, over
+    the overlap of the two faces' boxes, since the intersector answers
+    them; `docs/DATA-MODEL.md`'s S5 row says so. Step 10 is left the
+    pairs step 5 adds, the blend property tests with nothing unchecked
+    and the rows restated.

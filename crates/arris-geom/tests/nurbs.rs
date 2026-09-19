@@ -374,14 +374,14 @@ fn every_cycle_one_query_on_a_nurbs_is_unsupported_by_name() {
         prop_assert_eq!(surface.kind(), SurfaceKind::Nurbs);
         prop_assert!(surface.frame().is_none());
         prop_assert_eq!(
-            intersect_surfaces(&surface, &p, tol),
+            intersect_surfaces(&surface, &p, &within(), tol),
             Err(GeomError::Unsupported {
                 a: GeomKind::Surface(SurfaceKind::Nurbs),
                 b: GeomKind::Surface(SurfaceKind::Plane),
             })
         );
         prop_assert_eq!(
-            intersect_surfaces(&p, &surface, tol).unwrap_err(),
+            intersect_surfaces(&p, &surface, &within(), tol).unwrap_err(),
             GeomError::Unsupported {
                 a: GeomKind::Surface(SurfaceKind::Plane),
                 b: GeomKind::Surface(SurfaceKind::Nurbs),
@@ -418,4 +418,13 @@ fn every_cycle_one_query_on_a_nurbs_is_unsupported_by_name() {
         prop_assert!(curve.domain().length() >= 1.0);
         Ok(())
     });
+}
+
+/// A region every traced section of these tests lies in; the closed
+/// forms ignore it.
+fn within() -> arris_math::Aabb {
+    arris_math::Aabb {
+        min: [-100.0; 3],
+        max: [100.0; 3],
+    }
 }

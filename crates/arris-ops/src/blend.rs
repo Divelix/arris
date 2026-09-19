@@ -22,7 +22,7 @@ use arris_check::arris_topo::arris_geom::{
     intersect_surfaces, pcurve_on,
 };
 use arris_check::arris_topo::arris_math::{
-    Frame, Interval, Point2, Point3, Tolerance, UnitVec2, UnitVec3, Vec2, Vec3, wrap_angle,
+    Aabb, Frame, Interval, Point2, Point3, Tolerance, UnitVec2, UnitVec3, Vec2, Vec3, wrap_angle,
 };
 use arris_check::arris_topo::builder::{EdgeKey, EdgeSpec, VertexKey, VertexSpec};
 use arris_check::arris_topo::entity::EdgeGeometry;
@@ -879,7 +879,13 @@ fn face_end(
             axis_origin,
             radius,
         } => {
-            let cut = intersect_surfaces(&s.surface, surface3, tol)
+            // The arc joins the two trim points round the blend's axis, so
+            // it lies within a diameter of either; the plane's closed form
+            // ignores the region anyway.
+            let within = Aabb::of_point(points[0])
+                .union(Aabb::of_point(points[1]))
+                .inflated(2.0 * radius);
+            let cut = intersect_surfaces(&s.surface, surface3, &within, tol)
                 .map_err(|g| OpError::Internal(Fault::Geometry(g)))?;
             let arc_curve = match cut {
                 SurfaceIntersection::Meets { mut curves, points }

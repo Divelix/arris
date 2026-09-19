@@ -29,7 +29,13 @@ its parameters, the distance). Per pair: `IntAna_QuadQuadGeo` for two
 surfaces — the type (`empty`, `coincident`, `point`, `line`, `circle`,
 `ellipse`, or `unsolved` where it finds no conic,
 `IntAna_NoGeometricSolution`) and, for every curve it returns, its type
-and sampled points, or for a `point` result its points — or
+and sampled points, or for a `point` result its points; an `unsolved`
+pair also carries the lines `GeomAPI_IntSS` walks, as curves of type
+`section`, each sampled and every sample polished onto both surfaces by
+Newton steps; a line along which the surfaces are tangent at a sample
+has no crossing to polish onto, and the walk of a touch is no ground
+truth (1e-4 off the touching circle of a sphere in a cylinder), so it is
+dropped and counted under `dropped` — or
 `IntAna_IntConicQuad` for a curve against a surface, or
 `IntAna_IntLinTorus` for a line against a torus: `coincident`, or
 `points` with every hit's point and conic parameter, duplicates within
@@ -49,7 +55,7 @@ from OCP.Geom import (
     Geom_SphericalSurface,
     Geom_ToroidalSurface,
 )
-from OCP.GeomAPI import GeomAPI_ProjectPointOnCurve, GeomAPI_ProjectPointOnSurf
+from OCP.GeomAPI import GeomAPI_IntSS, GeomAPI_ProjectPointOnCurve, GeomAPI_ProjectPointOnSurf
 from OCP.gp import gp_Ax2, gp_Ax3, gp_Dir, gp_Pnt, gp_Vec
 from OCP.IntAna import IntAna_IntConicQuad, IntAna_IntLinTorus, IntAna_QuadQuadGeo, IntAna_Quadric, IntAna_ResultType
 from OCP.Precision import Precision
@@ -64,6 +70,20 @@ CURVE_TYPES = ("line", "circle", "ellipse")
 # curve's own origin, closed curves at this many even steps of a turn.
 LINE_SAMPLES = (-3.0, -1.0, 0.0, 1.0, 3.0)
 TURN_SAMPLES = 8
+
+# A walked section line of `GeomAPI_IntSS` is sampled at this many even
+# steps of its parameter, both ends included, and each sample is polished
+# onto both surfaces by at most `POLISH_STEPS` Newton steps, until it is
+# within `POLISHED` of each (the walked line itself is only within its
+# approximation tolerance, about 1e-8 here, which is no ground truth for a
+# curve held to a fraction of 1e-7).
+SECTION_SAMPLES = 17
+POLISH_STEPS = 20
+POLISHED = 1e-14
+# `1 − (nₐ·n_b)²` at or below which the normals are parallel: `sin²` of an
+# angle of 1e-6, where a Newton step would move a point by the distances
+# over 1e-12.
+TANGENT = 1e-12
 
 
 def _pnt(v: list[float]) -> gp_Pnt:
@@ -206,7 +226,8 @@ _OVERLOADS = {
 
 
 def intersect_surfaces(name_a: str, kind_a: str, a, name_b: str, kind_b: str, b) -> dict:
-    """`IntAna_QuadQuadGeo` on the two `gp` quadrics."""
+    """`IntAna_QuadQuadGeo` on the two `gp` quadrics, and `GeomAPI_IntSS` on
+    the two surfaces where it finds no conic."""
     qa, qb = _QUADRIC_OF[kind_a](a), _QUADRIC_OF[kind_b](b)
     if (kind_a, kind_b) in _OVERLOADS:
         tolerances = _OVERLOADS[(kind_a, kind_b)]
@@ -246,9 +267,77 @@ def intersect_surfaces(name_a: str, kind_a: str, a, name_b: str, kind_b: str, b)
         out["curves"] = [_sample_closed("ellipse", r.Ellipse(i + 1)) for i in range(r.NbSolutions())]
     elif t == IntAna_ResultType.IntAna_NoGeometricSolution:
         out["type"] = "unsolved"
+        sections, dropped = _walked_sections(name_a, a, name_b, b)
+        if sections:
+            out["curves"] = sections
+        if dropped:
+            out["dropped"] = dropped
     else:
         raise OracleError(f"{name_a} vs {name_b}: unexpected IntAna result {t}")
     return out
+
+
+def _walked_sections(name_a: str, a, name_b: str, b) -> tuple[list[dict], int]:
+    """`GeomAPI_IntSS` on the two surfaces: every line it walks, sampled at
+    `SECTION_SAMPLES` parameters and each sample polished onto both
+    surfaces, as a curve of type `section`; and how many lines were
+    dropped for a touch along them."""
+    r = GeomAPI_IntSS(a, b, Precision.Confusion_s())
+    if not r.IsDone():
+        raise OracleError(f"{name_a} vs {name_b}: GeomAPI_IntSS not done")
+    out = []
+    dropped = 0
+    for i in range(r.NbLines()):
+        line = r.Line(i + 1)
+        t0, t1 = line.FirstParameter(), line.LastParameter()
+        if not (math.isfinite(t0) and math.isfinite(t1)):
+            raise OracleError(f"{name_a} vs {name_b}: an unbounded walked line")
+        walked = []
+        for k in range(SECTION_SAMPLES):
+            p = line.Value(t0 + (t1 - t0) * k / (SECTION_SAMPLES - 1))
+            walked.append([p.X(), p.Y(), p.Z()])
+        polished = [_polished(name_a, a, name_b, b, x) for x in walked]
+        if any(x is None for x in polished):
+            dropped += 1
+        else:
+            out.append({"type": "section", "points": polished})
+    return out, dropped
+
+
+def _signed(surface, x: list[float]) -> tuple[float, list[float]]:
+    """The signed distance of `x` from `surface` along its unit normal at
+    the nearest point, and that normal."""
+    proj = GeomAPI_ProjectPointOnSurf(_pnt(x), surface)
+    if proj.NbPoints() == 0:
+        raise OracleError(f"projection of {x} found no point")
+    u, v = proj.LowerDistanceParameters()
+    p, du, dv = gp_Pnt(), gp_Vec(), gp_Vec()
+    surface.D1(u, v, p, du, dv)
+    n = du.Crossed(dv)
+    n.Normalize()
+    normal = [n.X(), n.Y(), n.Z()]
+    return sum((x[i] - _xyz(p)[i]) * normal[i] for i in range(3)), normal
+
+
+def _polished(name_a: str, a, name_b: str, b, x: list[float]) -> list[float] | None:
+    """`x` moved onto both surfaces by Newton steps on their signed
+    distances: each step the smallest move that zeroes both to first
+    order, `δ = −[nₐ n_b] G⁻¹ [fₐ f_b]` with `G` the normals' Gram
+    matrix. `None` where the normals are parallel: the surfaces touch
+    there, and a touch has no crossing to converge onto."""
+    for _ in range(POLISH_STEPS):
+        fa, na = _signed(a, x)
+        fb, nb = _signed(b, x)
+        if abs(fa) <= POLISHED and abs(fb) <= POLISHED:
+            return x
+        c = sum(na[i] * nb[i] for i in range(3))
+        det = 1.0 - c * c
+        if det <= TANGENT:
+            return None
+        ka = (fa - c * fb) / det
+        kb = (fb - c * fa) / det
+        x = [x[i] - ka * na[i] - kb * nb[i] for i in range(3)]
+    raise OracleError(f"{name_a} vs {name_b}: a walked point did not polish onto both surfaces: {x}")
 
 
 def intersect_curve_surface(name_c: str, kind_c: str, curve, name_s: str, kind_s: str, surface) -> dict:

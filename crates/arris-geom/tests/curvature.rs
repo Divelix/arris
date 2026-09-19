@@ -16,6 +16,15 @@ fn tol() -> Tolerance {
     Precision::DEFAULT.tolerance()
 }
 
+/// A region every traced section of these tests lies in; the closed
+/// forms ignore it.
+fn within() -> arris_math::Aabb {
+    arris_math::Aabb {
+        min: [-100.0; 3],
+        max: [100.0; 3],
+    }
+}
+
 /// A frame off every axis, so no closed form is helped by the world's.
 fn posed() -> Frame {
     Frame::from_z(Point3::new(1.0, -2.0, 0.5), Vec3::new(1.0, 2.0, 3.0)).unwrap()
@@ -197,7 +206,7 @@ fn a_tangent_cylinder_pair_never_ties_its_curvatures() {
         (cylinder(0.0, 1.0), cylinder(3.0, 2.0)),
         (cylinder(0.0, 2.0), cylinder(1.0, 1.0)),
     ] {
-        let r = intersect_surfaces(&a, &b, tol()).unwrap();
+        let r = intersect_surfaces(&a, &b, &within(), tol()).unwrap();
         let [meet] = r.curves() else {
             panic!("one ruling: {r:?}");
         };
@@ -215,7 +224,7 @@ fn a_tangent_cylinder_pair_never_ties_its_curvatures() {
         assert_ne!(ka, kb, "{a:?} and {b:?}");
     }
     assert_eq!(
-        intersect_surfaces(&cylinder(0.0, 1.0), &cylinder(0.0, 1.0), tol()).unwrap(),
+        intersect_surfaces(&cylinder(0.0, 1.0), &cylinder(0.0, 1.0), &within(), tol()).unwrap(),
         SurfaceIntersection::Coincident
     );
 }

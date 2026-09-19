@@ -13,8 +13,8 @@ use arris_debug::fixtures::geom::{
 use arris_debug::fixtures::{Kind, corpus, kind_of};
 use arris_debug::testing::{REL, close, close_param};
 use arris_geom::{
-    Curve, CurveSurfaceIntersection, GeomError, MeetKind, Surface, SurfaceIntersection,
-    SurfaceKind, intersect_curve_surface, intersect_surfaces,
+    Curve, CurveSurfaceIntersection, GeomError, MeetKind, SECTION_FIT_FRACTION, Surface,
+    SurfaceIntersection, SurfaceKind, intersect_curve_surface, intersect_surfaces,
 };
 use arris_math::{Point3, Precision, Tolerance, Vec3};
 
@@ -28,6 +28,15 @@ const TOUCH: f64 = 1e-6;
 
 fn tol() -> Tolerance {
     Precision::DEFAULT.tolerance()
+}
+
+/// A region every traced section of these tests lies in; the closed
+/// forms ignore it.
+fn within() -> arris_math::Aabb {
+    arris_math::Aabb {
+        min: [-100.0; 3],
+        max: [100.0; 3],
+    }
 }
 
 fn p3(a: &[f64; 3]) -> Point3 {
@@ -207,17 +216,29 @@ fn only_points(r: &SurfaceIntersection) -> Vec<Point3> {
     }
 }
 
+/// How far a fitted section curve may be from each surface: the fit's
+/// fraction of the tolerance, plus rounding.
+fn fitted_bound(p: Point3) -> f64 {
+    SECTION_FIT_FRACTION * tol().linear + REL * p.coords.norm().max(1.0)
+}
+
 /// Every sampled point of `c` within `REL` of both surfaces by their own
-/// projections: what a curve of Arris's is held to where the oracle is
-/// silent.
+/// projections — a fitted curve within [`fitted_bound`]: what a curve of
+/// Arris's is held to where the oracle is silent, and beside the
+/// oracle's walked sections.
 fn on_both_surfaces(c: &Curve, a: &Surface, b: &Surface) -> bool {
+    let domain = c.domain();
     (0..8).all(|i| {
         let t = match c.period() {
             Some(p) => p * i as f64 / 8.0,
+            None if domain.is_bounded() => domain.lerp(i as f64 / 7.0),
             None => -3.0 + i as f64,
         };
         let p = c.point(t);
-        let bound = REL * p.coords.norm().max(1.0);
+        let bound = match c {
+            Curve::Nurbs(_) => fitted_bound(p),
+            _ => REL * p.coords.norm().max(1.0),
+        };
         [a, b].iter().all(|s| {
             s.project(p)
                 .map(|proj| proj.distance <= bound)
@@ -229,29 +250,32 @@ fn on_both_surfaces(c: &Curve, a: &Surface, b: &Surface) -> bool {
 fn check_surface_pair(a: &Surface, b: &Surface, res: &PairResult, errors: &mut Vec<String>) {
     let label = format!("{} vs {}", res.a, res.b);
     if res.kind == "unsolved" {
-        // The oracle found no conic: a quartic Arris refuses too, a pair
+        // The oracle found no conic: a pair Arris refuses too, a pair
         // Arris decides empty by its closed form (skew axes further apart
-        // than the radii), which the oracle has no case for, or a coaxial
-        // sphere the oracle's exact test on its own axis lets go — whose
-        // curves are then held to both surfaces here, since the oracle
-        // says nothing about them. Which one each pair is, is pinned by
-        // name below.
-        match intersect_surfaces(a, b, tol()) {
-            Err(GeomError::Unsupported { .. }) | Ok(SurfaceIntersection::Empty) => {}
+        // than the radii), which the oracle has no case for, a coaxial
+        // sphere the oracle's exact test on its own axis lets go, or a
+        // quartic Arris traces and fits. Its curves are held to both
+        // surfaces, and to the lines the oracle walks where it walked
+        // any. Which one each pair is, is pinned by name below.
+        match intersect_surfaces(a, b, &within(), tol()) {
+            Err(GeomError::Unsupported { .. }) => {}
+            Ok(SurfaceIntersection::Empty) if res.curves.is_empty() => {}
             Ok(r) => {
-                for c in surface_type(&r).1 {
+                let curves = surface_type(&r).1;
+                for c in &curves {
                     if !on_both_surfaces(c, a, b) {
-                        errors.push(format!(
-                            "{label}: {c:?} is not on both surfaces, and the oracle is silent"
-                        ));
+                        errors.push(format!("{label}: {c:?} is not on both surfaces"));
                     }
+                }
+                if !res.curves.is_empty() {
+                    check_walked(&label, &curves, res, errors);
                 }
             }
             Err(e) => errors.push(format!("{label}: {e} vs oracle unsolved")),
         }
         return;
     }
-    let r = match intersect_surfaces(a, b, tol()) {
+    let r = match intersect_surfaces(a, b, &within(), tol()) {
         Ok(r) => r,
         Err(e) => {
             errors.push(format!("{label}: {e}"));
@@ -353,6 +377,71 @@ fn check_surface_pair(a: &Surface, b: &Surface, res: &PairResult, errors: &mut V
     }
 }
 
+/// Arris's curves against the lines the oracle walked for a pair it found
+/// no conic for: every polished sample on one of Arris's curves within
+/// the fit's fraction of the tolerance ([`fitted_bound`]) — the samples
+/// are on both surfaces to rounding, and at these transversal poses a
+/// point within the fraction of both is as near the section (the
+/// corpus's worst is 1.1e-8 against 2.5e-8) — and every
+/// curve of Arris's carrying at least one sample and never farther from
+/// the samples than they are spaced, so no curve is spurious or longer
+/// than the section.
+fn check_walked(label: &str, curves: &[&Curve], res: &PairResult, errors: &mut Vec<String>) {
+    let samples: Vec<(Point3, f64)> = res
+        .curves
+        .iter()
+        .flat_map(|walked| walked.points.iter().map(|p| (p3(p), fitted_bound(p3(p)))))
+        .collect();
+    let off = |c: &Curve, p: Point3| c.project(p).map_or(f64::INFINITY, |proj| proj.distance);
+    let mut carried = vec![false; curves.len()];
+    for &(p, bound) in &samples {
+        match curves.iter().position(|c| off(c, p) <= bound) {
+            Some(i) => carried[i] = true,
+            None => errors.push(format!(
+                "{label}: the oracle's walked point {p} is on none of {} curves, nearest {}",
+                curves.len(),
+                curves
+                    .iter()
+                    .map(|c| off(c, p))
+                    .fold(f64::INFINITY, f64::min)
+            )),
+        }
+    }
+    // The largest gap between a walked sample and its nearest neighbour
+    // bounds how far a point of the section is from every sample.
+    let spacing = samples
+        .iter()
+        .map(|&(p, _)| {
+            samples
+                .iter()
+                .map(|&(q, _)| (p - q).norm())
+                .filter(|&d| d > 0.0)
+                .fold(f64::INFINITY, f64::min)
+        })
+        .fold(0.0, f64::max);
+    for (c, carried) in curves.iter().zip(carried) {
+        if !carried {
+            errors.push(format!(
+                "{label}: {c:?} carries none of the oracle's walked points"
+            ));
+        }
+        let domain = c.domain();
+        for i in 0..=64 {
+            let p = c.point(domain.lerp(i as f64 / 64.0));
+            let near = samples
+                .iter()
+                .map(|&(q, _)| (p - q).norm())
+                .fold(f64::INFINITY, f64::min);
+            if near > spacing {
+                errors.push(format!(
+                    "{label}: {p} of a curve is {near} from every walked point, spaced {spacing}"
+                ));
+                break;
+            }
+        }
+    }
+}
+
 fn check_curve_pair(c: &Curve, s: &Surface, res: &PairResult, errors: &mut Vec<String>) {
     let label = format!("{} vs {}", res.a, res.b);
     let r = match intersect_curve_surface(c, s, tol()) {
@@ -435,8 +524,8 @@ fn turn_diff(a: f64, b: f64, c: &Curve) -> f64 {
 fn every_geometry_fixture_matches_the_oracle() {
     let fixtures = geometry_fixtures();
     assert!(
-        fixtures.len() >= 4,
-        "expected geom/analytic-eval, geom/c1-intersections, geom/c2-cylinder-pairs and geom/c2-quadric-pairs"
+        fixtures.len() >= 5,
+        "expected geom/analytic-eval, geom/c1-intersections, geom/c2-cylinder-pairs, geom/c2-quadric-pairs and geom/c3-cylinder-pairs"
     );
     let mut errors = Vec::new();
     for f in &fixtures {
@@ -540,7 +629,8 @@ fn the_c1_intersection_cases_classify_as_built() {
         "every pair of the fixture is pinned here"
     );
     for (a, b, kind, count) in surface_cases {
-        let r = intersect_surfaces(&built.surfaces[*a], &built.surfaces[*b], tol()).unwrap();
+        let r =
+            intersect_surfaces(&built.surfaces[*a], &built.surfaces[*b], &within(), tol()).unwrap();
         let (got, curves) = surface_type(&r);
         let got = if touching(&r) {
             format!("tangent {got}")
@@ -567,8 +657,10 @@ fn the_c1_intersection_cases_classify_as_built() {
 }
 
 /// What Arris says about every pair of `geom/c2-cylinder-pairs`, by name.
-/// The oracle's `unsolved` admits both a refusal and a closed-form empty,
-/// and a tangent ruling reads as a line there, so the case is pinned here.
+/// The oracle's `unsolved` admits a closed-form empty and a traced
+/// quartic, and a tangent ruling reads as a line there, so the case is
+/// pinned here: crossing axes of unequal radii meet in two fitted loops,
+/// the skew pair within the radii in one.
 #[test]
 fn the_c2_cylinder_pairs_classify_as_built() {
     let f = geometry_fixtures()
@@ -584,9 +676,9 @@ fn the_c2_cylinder_pairs_classify_as_built() {
         ("cyl", "nested", "empty", 0),
         ("cyl", "cross_90", "ellipse", 2),
         ("cyl", "cross_50", "ellipse", 2),
-        ("cyl", "cross_unequal", "unsupported", 0),
+        ("cyl", "cross_unequal", "NURBS", 2),
         ("cyl", "skew_apart", "empty", 0),
-        ("cyl", "skew_close", "unsupported", 0),
+        ("cyl", "skew_close", "NURBS", 1),
         ("two", "cyl", "line", 2),
         ("cross_50", "cyl", "ellipse", 2),
     ];
@@ -596,19 +688,20 @@ fn the_c2_cylinder_pairs_classify_as_built() {
         "every pair of the fixture is pinned here"
     );
     for (a, b, kind, count) in cases {
-        let got = match intersect_surfaces(&built.surfaces[*a], &built.surfaces[*b], tol()) {
-            Err(GeomError::Unsupported { .. }) => ("unsupported".to_owned(), 0),
-            Err(e) => panic!("{a} vs {b}: {e}"),
-            Ok(r) => {
-                let (got, curves) = surface_type(&r);
-                let got = if touching(&r) {
-                    format!("tangent {got}")
-                } else {
-                    got
-                };
-                (got, curves.len())
-            }
-        };
+        let got =
+            match intersect_surfaces(&built.surfaces[*a], &built.surfaces[*b], &within(), tol()) {
+                Err(GeomError::Unsupported { .. }) => ("unsupported".to_owned(), 0),
+                Err(e) => panic!("{a} vs {b}: {e}"),
+                Ok(r) => {
+                    let (got, curves) = surface_type(&r);
+                    let got = if touching(&r) {
+                        format!("tangent {got}")
+                    } else {
+                        got
+                    };
+                    (got, curves.len())
+                }
+            };
         assert_eq!((got.0.as_str(), got.1), (*kind, *count), "{a} vs {b}");
     }
 }
@@ -687,7 +780,7 @@ fn the_c2_quadric_pairs_classify_as_built() {
         assert_eq!(got, *expected, "{a} vs {b}: {r:?}");
     }
     for (a, b, kind, count) in cases {
-        let r = intersect_surfaces(&built.surfaces[*a], &built.surfaces[*b], tol())
+        let r = intersect_surfaces(&built.surfaces[*a], &built.surfaces[*b], &within(), tol())
             .unwrap_or_else(|e| panic!("{a} vs {b}: {e}"));
         let (got, curves) = surface_type(&r);
         let got = if touching(&r) {
@@ -702,5 +795,45 @@ fn the_c2_quadric_pairs_classify_as_built() {
             (*kind, *count),
             "{a} vs {b}: {r:?}"
         );
+    }
+}
+
+/// What Arris says about every pair of `geom/c3-cylinder-pairs`, by name:
+/// the loops each quartic was built with, fitted and closed. The oracle
+/// walks a loop in one line or in two, so its count says nothing, and
+/// the comparison above holds its points to these curves.
+#[test]
+fn the_c3_cylinder_pairs_meet_in_the_loops_they_were_built_with() {
+    let f = geometry_fixtures()
+        .into_iter()
+        .find(|f| f.name == "geom/c3-cylinder-pairs")
+        .expect("geom/c3-cylinder-pairs");
+    let built = build(&f);
+    let cases: &[(&str, &str, usize)] = &[
+        ("cyl", "cross_90", 2),
+        ("cyl", "cross_40", 2),
+        ("cyl", "cross_larger", 2),
+        ("cyl", "skew_out", 1),
+        ("cyl", "skew_in", 2),
+        ("cyl", "skew_55", 1),
+        ("skew_out", "cyl", 1),
+    ];
+    assert_eq!(
+        cases.len(),
+        f.recipe.pairs.len(),
+        "every pair of the fixture is pinned here"
+    );
+    for (a, b, loops) in cases {
+        let r = intersect_surfaces(&built.surfaces[*a], &built.surfaces[*b], &within(), tol())
+            .unwrap_or_else(|e| panic!("{a} vs {b}: {e}"));
+        assert!(r.points().is_empty(), "{a} vs {b}: {r:?}");
+        assert_eq!(r.curves().len(), *loops, "{a} vs {b}");
+        for m in r.curves() {
+            assert_eq!(m.kind, MeetKind::Crossing, "{a} vs {b}");
+            assert!(
+                matches!(&m.curve, Curve::Nurbs(c) if c.period().is_some()),
+                "{a} vs {b}: not a periodic fit"
+            );
+        }
     }
 }

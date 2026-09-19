@@ -30,6 +30,15 @@ fn tol() -> Tolerance {
     Precision::DEFAULT.tolerance()
 }
 
+/// A region every traced section of these tests lies in; the closed
+/// forms ignore it.
+fn within() -> arris_math::Aabb {
+    arris_math::Aabb {
+        min: [-100.0; 3],
+        max: [100.0; 3],
+    }
+}
+
 /// The signed distance from `p` to the surface by its implicit form:
 /// negative behind a plane, inside a cylinder, a nappe of a cone, a
 /// sphere or a torus's tube.
@@ -851,7 +860,7 @@ fn oblique_section() -> impl Strategy<Value = (Surface, Curve)> {
                 let plane = Surface::Plane {
                     frame: Frame::from_z(origin, normal).ok()?,
                 };
-                match arris_geom::intersect_surfaces(&plane, &cyl, tol()) {
+                match arris_geom::intersect_surfaces(&plane, &cyl, &within(), tol()) {
                     Ok(r) => match r.curves().first() {
                         Some(arris_geom::MeetCurve {
                             curve: e @ Curve::Ellipse { .. },

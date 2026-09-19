@@ -426,19 +426,28 @@ impl Pencil {
         (raw - self.correction(s)).max(0.0)
     }
 
-    /// The root `label` names on the ruling at `s`. Away from a singular
-    /// point the root is taken in the form that does not cancel, so it
-    /// stays finite and accurate where `a → 0` sends the other root to
-    /// infinity; inside a correction's reach, where `4ac` is no longer
-    /// `b² − D`, it is the midpoint plus or minus the half-width.
+    /// The root `label` names on the ruling at `s`, in whichever of its
+    /// two forms rounds less. `(−b ± √D) / 2a` loses the digits of `b`
+    /// and `√D` when they cancel, an error of about `ε(|b| + √D) / |a|`;
+    /// `2c / (−b ∓ √D)` never cancels but carries `c`'s own rounding,
+    /// `ε·C` for `C` the magnitude `c` is summed from, over `|b| + √D`.
+    /// The second is taken where it is the smaller — where `a → 0` sends
+    /// the other root to infinity — and the first everywhere else: at a
+    /// turning point whose root is the ruling's base point, `b`, `√D`
+    /// and `c` all vanish and `c`'s rounding over them is anything.
+    /// Inside a correction's reach, where `4ac` is no longer `b² − D`, it
+    /// is always the midpoint plus or minus the half-width.
     fn root(&self, s: f64, anchor: Option<(f64, f64)>, label: Label) -> (f64, Vec3, Vec3) {
         let (a, b, c, p, d) = self.at(s);
         let r = self.discriminant(s, anchor).sqrt();
         let corrected = self.correction(s) != 0.0;
+        let sum = b.abs() + r;
+        let scale = self.quadric.abs().value(p.abs());
+        let direct = corrected || sum * sum <= 4.0 * a.abs() * scale;
         let w = match label {
-            Label::Plus if b <= 0.0 || corrected => (-b + r) / (2.0 * a),
+            Label::Plus if b <= 0.0 || direct => (-b + r) / (2.0 * a),
             Label::Plus => 2.0 * c / (-b - r),
-            Label::Minus if b >= 0.0 || corrected => (-b - r) / (2.0 * a),
+            Label::Minus if b >= 0.0 || direct => (-b - r) / (2.0 * a),
             Label::Minus => 2.0 * c / (-b + r),
         };
         (w, p, d)
