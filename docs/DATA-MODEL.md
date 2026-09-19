@@ -662,7 +662,19 @@ result meets it between the checks too). The deviation is the caller's
 measure in the caller's units: for a pcurve, the 3D distance between the
 surface at the fitted point and the true curve. Refinement is bounded by
 `MAX_FIT_SPANS` (1024): beyond it the result is `FitError::Diverged`
-(`GeomError::Fit`), never a loop.
+(`GeomError::Fit`), never a loop. `fit_curve` is the same fit of a 3D
+curve `t ↦ P` into a `NurbsCurve`, for the section curves no exact
+`Curve` variant carries. `fit_curve_periodic` fits a closed one over
+one period `range` with a *periodic* knot vector instead of a clamped
+one: `m` spans, `m` free control points, control point `i` being free
+point `i mod m`, so the result's `period()` is `range.length()`, its
+image is closed and `C^(p−1)` across the seam by construction, and no
+point of the loop is singled out as a joint — nothing is interpolated.
+Its normal equations are a band with corners (each free point is
+coupled to its `p` neighbours cyclically), solved by the same Cholesky
+factorisation kept to the matrix's envelope, whose fill stays inside
+it. A curve whose start does not reach its end within the fit's margin
+is refused as `FitError::Degenerate` before anything is fitted.
 
 ### Profiles
 

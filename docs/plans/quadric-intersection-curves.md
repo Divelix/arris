@@ -156,7 +156,7 @@ bound has to be established here.
   skew and partly inside: one loop; axes `R − r` apart: a figure eight,
   one singular point; clear: none; a cone pair with unbounded branches
   clipped to a box); Viviani's curve against its closed form.
-- [ ] Step 2 **[2]** — `fit_curve` in 3D beside `fit_curve2`, same
+- [x] Step 2 **[2]** — `fit_curve` in 3D beside `fit_curve2`, same
   contract (caller's parametrisation, caller's deviation, refinement,
   `Diverged`), and a periodic form whose result's `period()` is `Some`
   and whose image is closed to rounding. Tests mirror `fit_curve2`'s: a

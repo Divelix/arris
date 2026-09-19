@@ -138,6 +138,11 @@ fn degenerate(kind: GeomKind) -> impl Fn(String) -> GeomError {
 }
 
 impl NurbsCurve {
+    /// The curve over a spline its producer already validated.
+    pub(super) fn from_spline(spline: Spline<3>) -> Self {
+        NurbsCurve { spline }
+    }
+
     /// A validated curve. Errors: [`GeomError::Degenerate`] naming what is
     /// wrong — a degree outside `1..=MAX_DEGREE`, the wrong number of
     /// knots or weights, decreasing or non-finite knots, an empty domain,
@@ -247,6 +252,11 @@ impl NurbsCurve {
 }
 
 impl NurbsCurve2 {
+    /// The curve over a spline its producer already validated.
+    pub(super) fn from_spline(spline: Spline<2>) -> Self {
+        NurbsCurve2 { spline }
+    }
+
     /// A validated curve; errors as [`NurbsCurve::new`].
     pub fn new(
         degree: usize,

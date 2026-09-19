@@ -41,7 +41,8 @@ pub use intersect::{SurfaceIntersection, intersect_surfaces};
 pub use intersect_curve::{CurveSurfaceHit, CurveSurfaceIntersection, intersect_curve_surface};
 pub use intersect_curves::{CurveCurveHit, CurveIntersection, curves_coincide, intersect_curves};
 pub use nurbs::{
-    FitError, MAX_DEGREE, MAX_FIT_SPANS, NurbsCurve, NurbsCurve2, NurbsSurface, fit_curve2,
+    FitError, MAX_DEGREE, MAX_FIT_SPANS, NurbsCurve, NurbsCurve2, NurbsSurface, fit_curve,
+    fit_curve_periodic, fit_curve2,
 };
 pub use pcurve::{PCURVE_FIT_DEGREE, PCURVE_SAMPLES, pcurve_on, project_to_plane};
 pub use profile::{Profile, ProfileEdge, ProfileError, ProfileLoop, ProfileSegment};

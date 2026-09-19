@@ -160,7 +160,8 @@ pub enum GeomError {
         /// What is degenerate about it.
         fault: SectionFault,
     },
-    /// A NURBS fit ([`crate::fit_curve2`]) did not produce a curve.
+    /// A NURBS fit ([`crate::fit_curve2`], [`crate::fit_curve`],
+    /// [`crate::fit_curve_periodic`]) did not produce a curve.
     #[error("fit: {0}")]
     Fit(#[from] FitError),
 }
