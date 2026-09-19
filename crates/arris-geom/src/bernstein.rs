@@ -19,7 +19,20 @@ use arris_math::roots::newton_in_interval;
 /// left of a cluster of sign changes for one parameter: `2⁻⁴⁸` of a span
 /// is a few ulps of any parameter inside it, and no evaluation tells two
 /// parameters that close apart. A structural bound, not a tolerance.
-const MAX_DEPTH: usize = 48;
+pub(crate) const MAX_DEPTH: usize = 48;
+
+/// The arithmetic a substitution into an implicit form
+/// (`crate::implicit`) needs of polynomials in Bernstein form: the
+/// product and the linear combination, in however many variables. Both
+/// are sums of products with positive factors, which is what the
+/// rounding floor of the result counts on.
+pub(crate) trait BernsteinAlgebra<P> {
+    /// The product, of the degrees' sum.
+    fn mul(&self, a: &P, b: &P) -> P;
+
+    /// `Σ kᵢ · pᵢ` over polynomials of one degree.
+    fn combine(&self, terms: &[(f64, &P)]) -> P;
+}
 
 /// Pascal's triangle as `f64`, up to the largest degree a caller
 /// multiplies to. `C(100, 50) ≈ 1e29` is far inside `f64`'s range, and a
@@ -45,7 +58,7 @@ impl Binomials {
     }
 
     /// `C(n, k)`; zero outside the table, which no caller reaches.
-    fn get(&self, n: usize, k: usize) -> f64 {
+    pub(crate) fn get(&self, n: usize, k: usize) -> f64 {
         self.rows
             .get(n)
             .and_then(|row| row.get(k))
@@ -79,6 +92,17 @@ pub(crate) fn combine(terms: &[(f64, &[f64])]) -> Vec<f64> {
                 .sum()
         })
         .collect()
+}
+
+impl BernsteinAlgebra<Vec<f64>> for Binomials {
+    fn mul(&self, a: &Vec<f64>, b: &Vec<f64>) -> Vec<f64> {
+        mul(a, b, self)
+    }
+
+    fn combine(&self, terms: &[(f64, &Vec<f64>)]) -> Vec<f64> {
+        let terms: Vec<(f64, &[f64])> = terms.iter().map(|(k, p)| (*k, p.as_slice())).collect();
+        combine(&terms)
+    }
 }
 
 /// The derivative, of degree `n − 1`: `n (c_{i+1} − c_i)`. A constant's

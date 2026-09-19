@@ -77,16 +77,23 @@ with only the tracers' named refusals left unchecked.
   the operand rule for two tori, the subdivision depths measured on
   metre-scale tori, the refusals by name. Names the modules read in the
   reference trees.
-- **New in `arris-geom`, crate-private** (step 1): `bernstein2` — tensor
-  Bernstein polynomials on `[0, 1]²`: product, partial derivatives, de
-  Casteljau subdivision in either direction, exclusion of a box by its
+- **New in `arris-geom`, crate-private** (step 1, landed): `bernstein2` —
+  tensor Bernstein polynomials on `[0, 1]²`: product, partial derivatives,
+  de Casteljau subdivision in either direction, exclusion of a box by its
   coefficients' signs against a rounding floor, and the isolation of the
-  common zeros of two or three of them, each certified in its box. And
-  the substitution: `intersect_spline.rs`'s `Implicit` (all six analytic
-  surfaces, with its exact signed `distance` and `gradient`) moves to a
-  module of its own and gains the tensor form of a torus patch in it,
-  half-angle parameters, denominators cleared and positive — bidegree
-  (2, 2) for a plane, (4, 4) for a quadric, (8, 8) for a torus.
+  common zeros of two of them, each certified alone in its box by the
+  Krawczyk test on the box grown by an eighth (step 1's record says why
+  two and not three, and why Krawczyk). `intersect_spline.rs`'s `Implicit`
+  (all six analytic surfaces, with its exact signed `distance` and
+  `gradient`) is a module of its own, `implicit`, its substitution generic
+  over the Bernstein arithmetic in one variable or two, with `steepness`,
+  the bound that states a tolerance in length on the polynomial. The
+  torus patch is `trace_torus::PatchedSection`: sixteen quarter-turn
+  patches, half-angle parameters about each quarter's middle, the weight
+  between `cos² π/8` and one — bidegree (2, 2) for a plane, (4, 4) for a
+  quadric, (8, 8) for a torus — with `turning_points` and
+  `critical_points` over the whole torus, in angles, merged across patch
+  edges and seams.
 - **New public API in `arris-geom`** (step 2): `trace_torus(a, b, tol) ->
   Result<SectionTrace, GeomError>`, no `within`. It returns ADR-0018's
   `SectionTrace`; **`SectionBranch` holds either kind of branch behind
@@ -133,7 +140,7 @@ mechanical; **[2]** careful — a geometric or numeric case to get right
 within a given design; **[3]** unproven — an algorithm whose robustness or
 bound has to be established here.
 
-- [ ] Step 1 **[3]** — The bivariate isolation, and the go/no-go of the
+- [x] Step 1 **[3]** — The bivariate isolation, and the go/no-go of the
   whole method. `bernstein2` and the torus patch substituted into
   `Implicit`, crate-private, wired to nothing. For each of the sixteen
   quarter-turn patches: the common zeros of `(f, f_v)` and of
@@ -229,6 +236,84 @@ bound has to be established here.
   lands here. `blend_prop.rs`'s and `Unchecked`'s docs and the S5 and B1
   rows of `docs/DATA-MODEL.md` §Invariants restated in the same commit.
 
+## Step 1's record (the gate)
+
+**Go.** Measured at `Precision::DEFAULT` on tori of `(R, r)` = (0.011,
+0.01), (1, 0.01), (10, 9), (10, 0.1), (0.05, 0.02), (2, 0.5):
+
+- **Posed pairs** — twelve partners (each of the six kinds through the
+  tube and at the ring's own size) × three placements (at rest, turned,
+  turned 1e3 away), 216 sections: every turning point certified, none
+  missed by a 128² scan refined twice by 8² wherever the distance and its
+  `v`-slope both change sign. Depth ≤ 25 halvings (a torus a hundred tubes
+  across; ≤ 18 otherwise), ≤ 740 boxes for the sixteen patches together.
+- **Tangencies** — each of the six kinds (and a sphere inside the tube)
+  touching the torus at a convex point and at a saddle, with a gap of 0,
+  ±½ and ±100 tolerances, 420 sections: at 0 and ±½ exactly one certified
+  critical point within `tol.linear` of the other surface, at the point
+  of tangency; at ±100 none, and every turning point certified, the pair
+  either side of a saddle included. ≤ 1508 boxes; the depth is that of
+  following a zero that is not simple down to where `f` is flat, 40 to 66
+  halvings.
+- **Spiric sections** of a plane parallel to the axis: 4, 2, 2 + the
+  figure eight's crossing, a touch, none — at the closed-form angles to
+  1e-12.
+- **Cost** (dev profile, this machine): both isolations of a pair, the
+  patches' construction included, median 0.39 ms, mean 0.52 ms, worst
+  1.9 ms (two tori); release 0.36 / 0.47 / 1.8 ms. `trace_quadrics` on a
+  quartic pose is 6.6 µs, closed form as it is, and `intersect_surfaces`
+  on the same pose — the trace *and its fit*, which a torus pair pays as
+  well — 3.3 ms. **The reading of the gate taken:** "a ruled pair's trace"
+  is what the intersector spends on a ruled pair, 3.3 ms, of which the
+  isolation is a sixth at the median and under two thirds at the worst;
+  against the 6.6 µs of the closed-form stage alone it is 60× at the
+  median and 290× at the worst, which on the letter fails for two tori
+  and for thin ones. The fallback that reading would trigger moves four
+  pairs to C4 over two milliseconds a pair, so the agent went on — **the
+  human can overrule this under ⚠ OPEN 1**, which stays open until step 2
+  has the whole trace's cost.
+
+What the step found that the plan did not have:
+
+- **Two polynomials, never three.** The singular points are not the
+  zeros of `(f, f_u, f_v)` but the critical points of `F(P(u, v))` that
+  `f` does not rule out: the zeros of `w·f_s − d·w_s·f` and its `t` twin,
+  which equal `w^(d+1)·∂F/∂s` and so are free of the patch's weight *off*
+  the section too — a near miss is the same point from either side of a
+  patch edge, which `(f_s, f_t)` is not. `f` only gates, at `steepness ·
+  tol.linear` above its rounding; the distance decides. A simple zero of
+  that system is a crossing or an isolated point; as a zero of `(f, f_v)`
+  the same point is not simple and comes back as an uncertified box.
+- **Krawczyk, not a determinant of ranges**: a plain interval Newton
+  needs the gradients' *components* apart over the box, and took nine
+  quarterings on two circles and a line. The box is grown by an eighth
+  before the test, so a zero on the line between two boxes — where every
+  symmetric pose puts them — is inside both and merged after, rather than
+  followed to the bottom.
+- **Halving, not quartering**, along the direction the system varies
+  more along while a box is being excluded, and along the one that
+  narrows `Y·[J]` most once it is within reach of the certificate. A
+  drill through a tube a hundredth of the ring across went from 11 104
+  boxes to 254.
+- **"Flat" is two floors, "excluded" is one**: with one bound for both,
+  the boxes along the curve where `f` *equals* its floor are neither, to
+  the bottom.
+- **The operand rule for two tori is numerical, not only a tie-break**:
+  a torus's quartic at points a hundred of its sizes away cancels to
+  `100⁴·ε`, and the turning points of a 1e-5 overlap were left
+  uncertified with the large torus walked. The smaller tube is walked —
+  step 4's rule as written — and step 2's property should pose two tori
+  of very different sizes to hold it.
+- **A tube circle on the other surface is not a `Continuum`** but an
+  uncertified box a whole turn long in `v` and a sliver in `u` (1e-5 to
+  3e-3 wide), beside the certified turning points of whatever else the
+  pair meets in: ~470 boxes for the elbow, ~7 300 for a sphere crossing
+  along the circle (and its mirror image, which it also holds).
+  `Continuum` is left for a curve of turning points oblique to both
+  parameters. Step 2 refuses, and step 3 detects, on the box's shape.
+- Depths are in **halvings**, two to a quartering; `MAX_DEPTH` is per
+  direction.
+
 ## Acceptance
 
 - `ARRIS_PROPTEST_CASES=1000 cargo nextest run --workspace` green: the
@@ -270,7 +355,9 @@ bound has to be established here.
 
 ## Open questions
 
-- ⚠ OPEN 1 — **the fallback if step 1's gate fails** (human, at step 1):
+- ⚠ OPEN 1 — **the fallback if step 1's gate fails** (human, at step 1;
+  certification passed, the cost clause was read as step 1's record says
+  and is the human's to overrule):
   the idea's answer is option A — tube circles as the family, for a plane
   and a sphere only — with the other four pairs moved to C4 and the
   roadmap amended. Not planned here; the plan is rewritten if it comes

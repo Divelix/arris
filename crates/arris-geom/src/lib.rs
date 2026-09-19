@@ -18,11 +18,17 @@
 #![warn(missing_docs)]
 
 mod bernstein;
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "the torus tracer is its first caller")
+)]
+mod bernstein2;
 mod cone_section;
 mod conic2;
 mod curve;
 mod curve2;
 mod error;
+mod implicit;
 pub mod integrate;
 mod intersect;
 mod intersect_curve;
@@ -37,6 +43,14 @@ pub mod region2;
 mod section;
 mod surface;
 mod trace;
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "the isolation only; the tracer on it is not written yet"
+    )
+)]
+mod trace_torus;
 
 pub use cone_section::HYPERBOLA_HALF_SPAN;
 pub use curve::{Curve, CurveEval, CurveKind};
