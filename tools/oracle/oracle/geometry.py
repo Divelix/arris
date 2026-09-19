@@ -20,8 +20,9 @@ intersections of named analytic surfaces and curves, for
     }
 
 Frames are `gp_Ax3(origin, z, x)`: `x` is projected perpendicular to `z`
-and both are normalised, `y = z × x`. A pair is two surfaces or a curve
-`a` against a surface `b`. Every number may be an expression over
+and both are normalised, `y = z × x`. A pair is two surfaces, a curve
+`a` against a surface `b`, or two curves with a `nurbs` one among them.
+Every number may be an expression over
 `params` as in the solid kind.
 
 The result per sample: `Geom_*::D2` at every parameter and
@@ -50,6 +51,16 @@ through `GeomAPI_IntCS`, the general curve–surface intersector: `points`
 with every hit's point and curve parameter, held to both operands and
 deduplicated as the conics' are. It has no `coincident`: a segment of the
 curve on the surface is an error here, since no fixture means one.
+
+A pair may also be two curves, one of them a `nurbs` one: Open CASCADE has
+no 3D curve–curve intersector, so its `GeomAPI_ExtremaCurveCurve` over
+the two curves' domains — a line's over `LINE_REACH` either side of its
+origin, a B-spline's span by span, since over the whole domain the search
+misses crossings — stands in, every extremum within `Precision::Confusion` a hit:
+`points` with each hit's point (the first curve's), its parameter `t` on
+the first curve and `tb` on the second, deduplicated as above. It has no
+`coincident`: extrema say nothing of two curves that are one, and no
+fixture means one.
 """
 
 import math
@@ -69,7 +80,13 @@ from OCP.Geom import (
     Geom_ToroidalSurface,
 )
 from OCP.collections import Array1_double, Array1_gp_Pnt, Array1_int
-from OCP.GeomAPI import GeomAPI_IntCS, GeomAPI_IntSS, GeomAPI_ProjectPointOnCurve, GeomAPI_ProjectPointOnSurf
+from OCP.GeomAPI import (
+    GeomAPI_ExtremaCurveCurve,
+    GeomAPI_IntCS,
+    GeomAPI_IntSS,
+    GeomAPI_ProjectPointOnCurve,
+    GeomAPI_ProjectPointOnSurf,
+)
 from OCP.gp import gp_Ax2, gp_Ax3, gp_Dir, gp_Pnt, gp_Vec
 from OCP.IntAna import IntAna_IntConicQuad, IntAna_IntLinTorus, IntAna_QuadQuadGeo, IntAna_Quadric, IntAna_ResultType
 from OCP.Precision import Precision
@@ -79,6 +96,10 @@ from .recipe import number, resolve_params, vector
 
 SURFACE_TYPES = ("plane", "cylinder", "cone", "sphere", "torus")
 CURVE_TYPES = ("line", "circle", "ellipse", "nurbs")
+
+# How far either side of its origin a line is searched for its extrema
+# with another curve: past every curve of a fixture's box.
+LINE_REACH = 100.0
 
 # Where a result curve is sampled: lines at these parameters from the
 # curve's own origin, closed curves at this many even steps of a turn.
@@ -447,6 +468,46 @@ def intersect_curve_surface(name_c: str, kind_c: str, curve, name_s: str, kind_s
     return _hits(out, curve, surface, found)
 
 
+def _ranges(kind: str, curve) -> list[tuple[float, float]]:
+    """Where a curve is searched: a line `LINE_REACH` either side of its
+    origin, a closed conic one turn, a B-spline span by span — over its
+    whole domain at once the extrema search misses crossings."""
+    if kind == "line":
+        return [(-LINE_REACH, LINE_REACH)]
+    if kind == "nurbs":
+        knots = [curve.Knot(i + 1) for i in range(curve.NbKnots())]
+        return list(zip(knots, knots[1:]))
+    return [(curve.FirstParameter(), curve.LastParameter())]
+
+
+def intersect_curves(name_a: str, kind_a: str, a, name_b: str, kind_b: str, b) -> dict:
+    """`GeomAPI_ExtremaCurveCurve` of two curves, one of them a B-spline:
+    the extrema within `Precision::Confusion` as `points`."""
+    out: dict[str, Any] = {"a": name_a, "b": name_b}
+    if "nurbs" not in (kind_a, kind_b):
+        raise OracleError(f"{name_a} vs {name_b}: a curve pair needs a nurbs curve in it")
+    found = []
+    for a_lo, a_hi in _ranges(kind_a, a):
+        for b_lo, b_hi in _ranges(kind_b, b):
+            r = GeomAPI_ExtremaCurveCurve(a, b, a_lo, a_hi, b_lo, b_hi)
+            for i in range(r.NbExtrema()):
+                if r.Distance(i + 1) > Precision.Confusion_s():
+                    continue
+                ta, tb = r.Parameters(i + 1)
+                pa, pb = gp_Pnt(), gp_Pnt()
+                r.Points(i + 1, pa, pb)
+                found.append((_xyz(pa), ta, tb))
+    hits: list[dict] = []
+    for p, ta, tb in found:
+        if any(math.dist(p, h["point"]) <= Precision.Confusion_s() for h in hits):
+            continue
+        hits.append({"point": p, "t": ta, "tb": tb})
+    hits.sort(key=lambda h: h["t"])
+    out["type"] = "points"
+    out["hits"] = hits
+    return out
+
+
 def _hits(out: dict, curve, surface, found: list) -> dict:
     """`found` as the pair's `hits`: each `(point, t)` on both operands
     within `Precision::Confusion` and not a duplicate of one already kept,
@@ -513,6 +574,10 @@ def compute_geometry(fixture: dict) -> dict:
     pairs = []
     for i, pair in enumerate(fixture.get("pairs", [])):
         a, b = pair.get("a"), pair.get("b")
+        if a in built_c and b in built_c:
+            (ka, ca), (kb, cb) = built_c[a], built_c[b]
+            pairs.append(intersect_curves(a, ka, ca, b, kb, cb))
+            continue
         if b not in built_s:
             raise OracleError(f"pair {i}: b {b!r} is not a surface")
         kb, sb = built_s[b]

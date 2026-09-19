@@ -185,8 +185,9 @@ SMOKES = [
 
 # A geometry recipe against closed forms: the world-frame cylinder of the
 # fixtures above evaluated, projected onto, and cut by a cap, an oblique
-# plane, a ruling, a ring and a NURBS arc — every kind of result the
-# geometry oracle writes (tests/fixtures/README.md, "kind": "geometry").
+# plane, a ruling, a ring and a NURBS arc, and the arc against the chord
+# — every kind of result the geometry oracle writes
+# (tests/fixtures/README.md, "kind": "geometry").
 S2 = math.sqrt(0.5)
 GEOMETRY_SMOKE = {
     "name": "geometry: cylinder r 2 evaluated, projected onto and cut",
@@ -228,6 +229,7 @@ GEOMETRY_SMOKE = {
             {"a": "ring", "b": "wall"},
             {"a": "chord", "b": "cap"},
             {"a": "arc", "b": "wall"},
+            {"a": "arc", "b": "chord"},
         ],
     },
     "evaluations": {"wall": [[2, 0, 0], [0, 2, 3]], "ring": [[-3, 0, 0]], "arc": [[3 * S2, 0, 3 * S2]]},
@@ -243,10 +245,14 @@ GEOMETRY_SMOKE = {
         ("points", 4),
         ("points", 0),
         ("points", 1),
+        ("points", 1),
     ],
     "ellipse_axes": (2 / S2, 2),
     # Where the arc crosses the wall: x = R on the circle of radius 3.
     "arc_hit": [2, 0, math.sqrt(5.0)],
+    # Where the arc crosses the chord, at z = 1, and the chord's parameter
+    # there, the distance from its origin on the axis.
+    "arc_chord": ([math.sqrt(8.0), 0, 1], math.sqrt(8.0)),
 }
 
 
@@ -295,6 +301,11 @@ def check_geometry_smoke() -> bool:
     hits = expected["pairs"][8].get("hits", [])
     if len(hits) != 1 or not _close(hits[0]["point"], smoke["arc_hit"]):
         print(f"  arc vs wall: {hits} differs from the closed form {smoke['arc_hit']}")
+        ok = False
+    hits = expected["pairs"][9].get("hits", [])
+    point, tb = smoke["arc_chord"]
+    if len(hits) != 1 or not _close(hits[0]["point"], point) or not _close([hits[0]["tb"]], [tb]):
+        print(f"  arc vs chord: {hits} differs from the closed form {point} at tb = {tb}")
         ok = False
     return ok
 

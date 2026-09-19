@@ -2,15 +2,16 @@
 //!
 //! Two curves meet in points, and every pair a boolean needs is decided
 //! through a plane one of them already lies in: a conic's own plane
-//! (ADR-0004). The one pair with no plane to use — two lines — has a
-//! closed form of its own, and the coplanar cases, where the plane says
-//! nothing, have theirs.
+//! (ADR-0004), or for a NURBS curve against a line two planes through
+//! the line (ADR-0018). The one pair with no plane to use — two lines —
+//! has a closed form of its own, and the coplanar cases, where the plane
+//! says nothing, have theirs.
 
 use arris_math::{Frame, Point3, Tolerance, Vec2, Vec3, wrap_angle};
 
 use crate::{
-    Curve, CurveKind, CurveSurfaceIntersection, GeomError, GeomKind, Surface,
-    intersect_curve_surface,
+    Curve, CurveKind, CurveSurfaceHit, CurveSurfaceIntersection, GeomError, GeomKind, NurbsCurve,
+    Surface, intersect_curve_surface,
 };
 
 /// One point two curves have in common.
@@ -67,8 +68,21 @@ pub enum CurveIntersection {
 /// two are the same conic — the centres, the radii and the major axes
 /// agreeing within the tolerance, which is what two booleans in a row
 /// make — and otherwise `Unsupported`: the quartic that finds where two
-/// distinct such conics meet is cycle 3's. Any NURBS operand is
-/// `Unsupported`.
+/// distinct such conics meet is cycle 3's.
+///
+/// A **NURBS curve** (ADR-0018) goes through the same planes, its hits on
+/// them from [`intersect_curve_surface`]'s NURBS arm. Against a circle or
+/// an ellipse, through the conic's plane as above; a NURBS curve in that
+/// plane meets the conic where it meets the cylinder the conic is the
+/// section of — circular or elliptic, the conic's frame and radii — so
+/// the touch is decided in `tol.linear` of length by that arm, and a
+/// curve on the cylinder too is `Coincident`. Against a line, through two
+/// planes that hold the line, square to each other: the hits on either
+/// within `tol.linear` of the line, one per point, a crossing of one
+/// plane before a touch of the other, since the curve is tangent to the
+/// line only where it touches every plane through it; a curve in one of
+/// the planes is the coplanar case, and one in both lies along the line,
+/// `Coincident`. Two NURBS curves are `Unsupported`: that is a marcher's.
 ///
 /// ```
 /// use arris_geom::{Curve, CurveIntersection, intersect_curves};
@@ -113,16 +127,23 @@ pub fn intersect_curves(
         (Curve::Circle { .. } | Curve::Ellipse { .. }, Curve::Line { .. }) => {
             Ok(swapped(through_plane(b, a, tol)?))
         }
-        (
-            Curve::Nurbs(_),
-            Curve::Line { .. } | Curve::Circle { .. } | Curve::Ellipse { .. } | Curve::Nurbs(_),
-        )
-        | (Curve::Line { .. } | Curve::Circle { .. } | Curve::Ellipse { .. }, Curve::Nurbs(_)) => {
-            Err(GeomError::Unsupported {
-                a: GeomKind::Curve(a.kind()),
-                b: GeomKind::Curve(b.kind()),
-            })
+        (Curve::Nurbs(_), &Curve::Line { origin, direction }) => {
+            nurbs_line(a, origin, direction.into_inner(), tol)
         }
+        (&Curve::Line { origin, direction }, Curve::Nurbs(_)) => {
+            Ok(swapped(nurbs_line(b, origin, direction.into_inner(), tol)?))
+        }
+        (Curve::Nurbs(_), Curve::Circle { .. } | Curve::Ellipse { .. }) => through_plane(a, b, tol),
+        (Curve::Circle { .. } | Curve::Ellipse { .. }, Curve::Nurbs(_)) => {
+            Ok(swapped(through_plane(b, a, tol)?))
+        }
+        // Two fitted curves meet where a marcher finds them, C4's; the
+        // pave model reads the crossings of one pair's traced curves from
+        // the tracer's points instead (ADR-0018).
+        (Curve::Nurbs(_), Curve::Nurbs(_)) => Err(GeomError::Unsupported {
+            a: GeomKind::Curve(a.kind()),
+            b: GeomKind::Curve(b.kind()),
+        }),
     }
 }
 
@@ -140,8 +161,18 @@ pub fn intersect_curves(
 /// each other; a line never coincides with a conic; two conics coincide
 /// when the first lies in the second's plane and they are the same conic
 /// — the centres, the radii and, for an ellipse, the major axes agreeing
-/// within the tolerance. Any NURBS operand is
-/// [`GeomError::Unsupported`] naming the pair.
+/// within the tolerance. A NURBS curve coincides with a line or a conic
+/// by [`intersect_curves`]' arms — it lies within `tol.linear` of both
+/// planes through the line, or of the conic's plane and its cylinder —
+/// and with a second NURBS curve when the two are the same spline,
+/// every control point within `tol.linear` of its twin over the same
+/// degree, knots and weights: the same section made twice. Two NURBS
+/// curves are not the same when a point of either at an end, a knot or
+/// halfway between two has no hit of the other within `tol.linear` on
+/// the plane square to it there; any
+/// other pair of them — one curve over two sets of knots, say — is
+/// [`GeomError::Unsupported`] naming the pair, which only a marcher
+/// could decide.
 ///
 /// ```
 /// use arris_geom::{Curve, curves_coincide, intersect_curves};
@@ -204,12 +235,35 @@ pub fn curves_coincide(a: &Curve, b: &Curve, tol: Tolerance) -> Result<bool, Geo
                 Ok(conics_coincide(fa, ra, fb, rb, tol))
             }
         }
-        (
-            Curve::Nurbs(_),
-            Curve::Line { .. } | Curve::Circle { .. } | Curve::Ellipse { .. } | Curve::Nurbs(_),
-        )
-        | (Curve::Line { .. } | Curve::Circle { .. } | Curve::Ellipse { .. }, Curve::Nurbs(_)) => {
-            Err(unsupported())
+        (Curve::Nurbs(_), &Curve::Line { origin, direction })
+        | (&Curve::Line { origin, direction }, Curve::Nurbs(_)) => {
+            let spline = if let Curve::Nurbs(_) = a { a } else { b };
+            Ok(nurbs_line(spline, origin, direction.into_inner(), tol)?
+                == CurveIntersection::Coincident)
+        }
+        (Curve::Nurbs(_), Curve::Circle { .. } | Curve::Ellipse { .. })
+        | (Curve::Circle { .. } | Curve::Ellipse { .. }, Curve::Nurbs(_)) => {
+            let (spline, conic) = if let Curve::Nurbs(_) = a {
+                (a, b)
+            } else {
+                (b, a)
+            };
+            // As `through_plane` and then `coplanar` decide it: in the
+            // conic's plane, and on the conic's cylinder there.
+            let Some((frame, _)) = conic_frame(conic) else {
+                return Err(unsupported());
+            };
+            let plane = Surface::Plane { frame: *frame };
+            Ok(matches!(
+                intersect_curve_surface(spline, &plane, tol)?,
+                CurveSurfaceIntersection::Coincident
+            ) && matches!(
+                intersect_curve_surface(spline, &wall_of(conic).ok_or_else(unsupported)?, tol)?,
+                CurveSurfaceIntersection::Coincident
+            ))
+        }
+        (Curve::Nurbs(na), Curve::Nurbs(nb)) => {
+            nurbs_nurbs_coincide(na, nb, tol)?.ok_or_else(unsupported)
         }
     }
 }
@@ -357,7 +411,10 @@ fn coplanar(a: &Curve, b: &Curve, tol: Tolerance) -> Result<CurveIntersection, G
                 b: GeomKind::Curve(b.kind()),
             })
         }
-        (Curve::Nurbs(_), _)
+        (Curve::Nurbs(_), Curve::Circle { .. } | Curve::Ellipse { .. }) => {
+            nurbs_conic_coplanar(a, b, tol)
+        }
+        (Curve::Nurbs(_), Curve::Line { .. } | Curve::Nurbs(_))
         | (Curve::Circle { .. } | Curve::Ellipse { .. }, Curve::Line { .. } | Curve::Nurbs(_)) => {
             Err(GeomError::Unsupported {
                 a: GeomKind::Curve(a.kind()),
@@ -365,6 +422,208 @@ fn coplanar(a: &Curve, b: &Curve, tol: Tolerance) -> Result<CurveIntersection, G
             })
         }
     }
+}
+
+/// The cylinder a conic is the section of across its axis: the conic's
+/// frame, its radii. A curve in the conic's plane meets the conic exactly
+/// where it meets that cylinder, and its distance from the conic in the
+/// plane is its distance from the cylinder.
+fn wall_of(conic: &Curve) -> Option<Surface> {
+    match *conic {
+        Curve::Circle { frame, radius } => Some(Surface::Cylinder { frame, radius }),
+        Curve::Ellipse {
+            frame,
+            major_radius,
+            minor_radius,
+        } => Some(Surface::EllipticCylinder {
+            frame,
+            major_radius,
+            minor_radius,
+        }),
+        Curve::Line { .. } | Curve::Nurbs(_) => None,
+    }
+}
+
+/// A NURBS curve in the conic `b`'s plane: the curve against the conic's
+/// cylinder ([`wall_of`]), which decides the touches in `tol.linear` of
+/// length by the NURBS arm that already exists, and `Coincident` when
+/// the curve lies on the cylinder too.
+fn nurbs_conic_coplanar(
+    a: &Curve,
+    b: &Curve,
+    tol: Tolerance,
+) -> Result<CurveIntersection, GeomError> {
+    let wall = wall_of(b).ok_or(GeomError::Unsupported {
+        a: GeomKind::Curve(a.kind()),
+        b: GeomKind::Curve(b.kind()),
+    })?;
+    let hits = match intersect_curve_surface(a, &wall, tol)? {
+        CurveSurfaceIntersection::Coincident => return Ok(CurveIntersection::Coincident),
+        CurveSurfaceIntersection::Points(hits) => hits,
+    };
+    let mut out = Vec::with_capacity(hits.len());
+    for h in hits {
+        let projection = match b.project(h.point) {
+            Ok(p) => p,
+            // The centre, which no point of the cylinder is.
+            Err(GeomError::Ambiguous { .. }) => continue,
+            Err(e) => return Err(e),
+        };
+        out.push(CurveCurveHit {
+            ta: h.t,
+            tb: projection.t,
+            point: h.point,
+            tangent: h.tangent,
+        });
+    }
+    Ok(points(out))
+}
+
+/// A NURBS curve against a line, through two planes that hold the line
+/// and are square to each other: every common point is on both, so the
+/// curve's hits on either within `tol.linear` of the line are the
+/// candidates. A crossing of the line is transversal to at least one of
+/// the two planes unless the curve runs along the line there, so it is
+/// found to rounding by that one; the candidates of one point are one
+/// hit, a crossing of a plane before a touch of the other — the curve is
+/// tangent to the line only where it touches every plane through it —
+/// then the one nearest the line. A curve in one of the planes is the
+/// coplanar case, the other plane's hits being the answer as a line and
+/// a coplanar conic are; a curve in both lies along the line,
+/// `Coincident`.
+fn nurbs_line(
+    a: &Curve,
+    origin: Point3,
+    direction: Vec3,
+    tol: Tolerance,
+) -> Result<CurveIntersection, GeomError> {
+    let degenerate = |_| GeomError::Degenerate {
+        kind: GeomKind::Curve(CurveKind::Line),
+        reason: "a line whose direction is not a direction".to_string(),
+    };
+    let across = Frame::from_z(origin, direction).map_err(degenerate)?;
+    let mut found = Vec::with_capacity(2);
+    for normal in [across.x(), across.y()] {
+        let frame = Frame::from_z(origin, normal.into_inner()).map_err(degenerate)?;
+        found.push(intersect_curve_surface(a, &Surface::Plane { frame }, tol)?);
+    }
+    let on_line = |h: &CurveSurfaceHit| CurveCurveHit {
+        ta: h.t,
+        tb: (h.point - origin).dot(&direction),
+        point: h.point,
+        tangent: h.tangent,
+    };
+    let (first, second) = match (&found[0], &found[1]) {
+        (CurveSurfaceIntersection::Coincident, CurveSurfaceIntersection::Coincident) => {
+            return Ok(CurveIntersection::Coincident);
+        }
+        (CurveSurfaceIntersection::Coincident, CurveSurfaceIntersection::Points(hits))
+        | (CurveSurfaceIntersection::Points(hits), CurveSurfaceIntersection::Coincident) => {
+            return Ok(points(hits.iter().map(on_line).collect()));
+        }
+        (CurveSurfaceIntersection::Points(first), CurveSurfaceIntersection::Points(second)) => {
+            (first, second)
+        }
+    };
+    let off_line = |p: Point3| {
+        let v = p - origin;
+        (v - v.dot(&direction) * direction).norm()
+    };
+    let mut candidates: Vec<(f64, CurveCurveHit)> = first
+        .iter()
+        .chain(second)
+        .map(|h| (off_line(h.point), on_line(h)))
+        .filter(|(off, _)| *off <= tol.linear)
+        .collect();
+    // Stable, so the first plane's candidate wins a tie.
+    candidates.sort_by(|x, y| x.1.tangent.cmp(&y.1.tangent).then(x.0.total_cmp(&y.0)));
+    let mut kept: Vec<CurveCurveHit> = Vec::with_capacity(candidates.len());
+    for (_, candidate) in candidates {
+        match kept
+            .iter_mut()
+            .find(|k| (k.point - candidate.point).norm() <= tol.linear)
+        {
+            // A crossing of either plane there says the curve crosses.
+            Some(k) => k.tangent &= candidate.tangent,
+            None => kept.push(candidate),
+        }
+    }
+    Ok(points(kept))
+}
+
+/// Whether two NURBS curves are the same curve, where that has an
+/// answer: `Some(true)` when they are the same spline — degree, knots
+/// and weights equal and every control point within `tol.linear` of its
+/// twin, so the two are within it at every parameter, the weights being
+/// equal — which is what the same section made twice is; `Some(false)`
+/// when a point of either, at an end or a knot or halfway between two,
+/// is not within `tol.linear` of the other; `None` otherwise, a curve
+/// made again over other knots or weights, which only a curve–curve
+/// marcher could tell from a near one.
+///
+/// "Within `tol.linear` of the other" is decided by the NURBS arm of
+/// [`intersect_curve_surface`], not by a projection, whose sampling can
+/// settle on a farther local minimum: a curve the same as the first
+/// runs along it at the point, so it crosses the plane square to the
+/// first curve there within `tol.linear` of the point — the part of
+/// their offset across the curve — and a curve with no hit on that plane
+/// so near is not the same curve.
+fn nurbs_nurbs_coincide(
+    a: &NurbsCurve,
+    b: &NurbsCurve,
+    tol: Tolerance,
+) -> Result<Option<bool>, GeomError> {
+    let same_spline = a.degree() == b.degree()
+        && a.knots() == b.knots()
+        && a.weights() == b.weights()
+        && a.control_points()
+            .iter()
+            .zip(b.control_points())
+            .all(|(p, q)| (p - q).norm() <= tol.linear);
+    if same_spline {
+        return Ok(Some(true));
+    }
+    for (x, y) in [(a, b), (b, a)] {
+        let other = Curve::Nurbs(y.clone());
+        for t in probes(x) {
+            let at = x.eval(t);
+            // A stationary point has no plane square to the curve; the
+            // other probes decide.
+            let Ok(frame) = Frame::from_z(at.point, at.d1) else {
+                continue;
+            };
+            let near = match intersect_curve_surface(&other, &Surface::Plane { frame }, tol)? {
+                CurveSurfaceIntersection::Coincident => false,
+                CurveSurfaceIntersection::Points(hits) => hits
+                    .iter()
+                    .any(|h| (h.point - at.point).norm() <= tol.linear),
+            };
+            if !near {
+                return Ok(Some(false));
+            }
+        }
+    }
+    Ok(None)
+}
+
+/// The parameters a curve is probed at: its distinct knots in the domain
+/// and the midpoint of every span between them.
+fn probes(c: &NurbsCurve) -> Vec<f64> {
+    let domain = c.domain();
+    let mut knots: Vec<f64> = c
+        .knots()
+        .iter()
+        .copied()
+        .filter(|&k| domain.contains(k))
+        .collect();
+    knots.dedup();
+    let mut out = Vec::with_capacity(2 * knots.len());
+    for w in knots.windows(2) {
+        out.push(w[0]);
+        out.push(0.5 * (w[0] + w[1]));
+    }
+    out.extend(knots.last());
+    out
 }
 
 /// `true` when two coplanar conics are the same point set: the centres

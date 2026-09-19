@@ -117,6 +117,9 @@ those pairs instead of listing them unchecked; and `docs/DATA-MODEL.md`
   `Curve::Nurbs` arms against every analytic surface and against a line,
   a circle and an ellipse stop being `Unsupported`; `curves_coincide`
   answers for a `Nurbs` operand. No wildcard arm is added.
+- **`arris_debug::fixtures::geom`** (step 7): `Hit::tb`, the second
+  curve's parameter of a curve–curve pair, and a `Pair` of two curves;
+  the oracle meets them through `GeomAPI_ExtremaCurveCurve`.
 - **The pave model** (step 8): section crossings of a traced pair come
   from the result's `points`, not from `intersect_curves` on two NURBS;
   one region per boolean. `Interferences`' public shape follows `Meets`
@@ -202,7 +205,7 @@ bound has to be established here.
   against each surface agrees with the exact `Curve::Ellipse` arm hit
   for hit within the fit's tolerance, at random poses; touches; a curve
   lying on the surface; a geometry fixture against the oracle.
-- [ ] Step 7 **[2]** — `Curve::Nurbs` against a line, a circle and an
+- [x] Step 7 **[2]** — `Curve::Nurbs` against a line, a circle and an
   ellipse in `intersect_curves`, through step 6 and the conic's plane as
   the existing conic arms go, and `curves_coincide` with a `Nurbs`
   operand. `Nurbs`–`Nurbs` stays an explicit `Unsupported` arm. Tests
@@ -383,3 +386,34 @@ bound has to be established here.
     pairs, 37 hits, points and parameters matching `GeomAPI_IntCS` to
     1e-9 relative, and the curves' evaluations and projections with
     them. No elliptic cylinder, as step 5 found of the grammar.
+- Found by step 7, and done there:
+  - **A NURBS curve against a line goes through two planes**, both
+    holding the line and square to each other: a crossing of the line
+    is transversal to one of them unless the curve runs along the line,
+    so it is found to rounding; candidates within `tol.linear` of each
+    other are one hit, a plane's crossing before the other's touch. **In
+    a conic's plane it goes through the conic's cylinder**, circular or
+    elliptic, so the coplanar NURBS–ellipse pair the closed-form table
+    still refuses for two conics is answered, and a touch is decided in
+    length by step 6's arm.
+  - **Two NURBS curves coincide** when they are the same spline (control
+    points within `tol.linear` over the same degree, knots and weights —
+    the same section made twice), are apart when a point of either at
+    an end, a knot or a span's middle has no hit of the other within
+    `tol.linear` on the plane square to it there, and are `Unsupported`
+    otherwise (one curve over two knot vectors). The plane and not
+    `project_parameter` decides "apart": the projection is a sampled
+    local search, and on a sharp random curve it settles on a local
+    minimum metres from a point that lies on the curve.
+  - **`project_parameter` lost a minimum beside a C⁰ knot**: its Newton
+    bracket ending on the knot was read on the next piece, where the
+    distance's derivative has jumped and the sign change is gone. Each
+    bracket is now read on the one polynomial piece it lies in, and one
+    across a knot is left to its halves (`nurbs/spline.rs`, with a
+    polyline's corner as a test in `tests/nurbs.rs`); no fixture moved.
+  - **The oracle is `GeomAPI_ExtremaCurveCurve` span by span**: Open
+    CASCADE has no 3D curve–curve intersector, and its extrema over a
+    whole B-spline's domain missed the second crossing of a chord. The
+    fixture is `geom/c3-nurbs-crossings`, 15 pairs, every hit matched in
+    its point and both parameters to 1e-9 relative, the touch pinned by
+    name in `oracle.rs`.

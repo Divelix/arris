@@ -64,7 +64,11 @@ commit that says so (`.agents/rules/git.md`).
   overload each kind pair has) and `IntAna_IntConicQuad` for a
   curve against a surface — `IntAna_IntLinTorus` for a line against a
   torus, `GeomAPI_IntCS` for a `nurbs` curve — hits deduplicated within
-  `Precision::Confusion` and dropped (counted) when off either operand.
+  `Precision::Confusion` and dropped (counted) when off either operand;
+  and for two curves with a `nurbs` one among them, which Open CASCADE
+  has no intersector for, `GeomAPI_ExtremaCurveCurve` span by span of
+  the B-spline, a line within `LINE_REACH` of its origin, every extremum
+  within `Precision::Confusion` a hit.
 - `oracle/step.py` — STEP AP214 write and read, with OCCT's transfer
   banner silenced.
 - `oracle/mesh.py` — STL read through `RWStl`, and its triangle count,
@@ -133,7 +137,8 @@ curves: `IntAna_NoGeometricSolution`), with every result curve sampled
 (five points along a line, eight around a closed curve); a curve–surface
 pair's is `coincident` or `points`, hits ascending by the conic
 parameter, plus `dropped` when the intersector reported a point that
-lies on neither operand. `IntAna_QuadQuadGeo` has one overload per
+lies on neither operand; a curve–curve pair's is `points`, each hit
+carrying the second curve's parameter as `tb` beside the first's `t`. `IntAna_QuadQuadGeo` has one overload per
 unordered kind pair, in its own operand order and with its own tolerance
 signature (an angle and a distance, a distance, or none);
 `geometry.py` swaps a pair into that order, since the result does not

@@ -349,6 +349,37 @@ fn projection_onto_the_nurbs_circle_agrees_with_the_analytic_circle() {
     );
 }
 
+/// A polyline's corner is a kink of the distance's derivative: a point
+/// on a leg, beside the corner and nearest a sample on the other side
+/// of it, projects onto itself — the bracket that ends on the knot is
+/// read on its own leg's piece, where the sign change is.
+#[test]
+fn a_point_beside_a_polylines_corner_projects_onto_its_own_leg() {
+    let corner = |t: f64| {
+        let legs = NurbsCurve::new(
+            1,
+            vec![0.0, 0.0, 1.0, 2.0, 2.0],
+            vec![
+                Point3::origin(),
+                Point3::new(0.0, 0.0, -87.5),
+                Point3::new(0.0, 87.8, 0.0),
+            ],
+            vec![0.5; 3],
+        )
+        .unwrap();
+        let p = legs.eval(t).point;
+        let back = legs.project_parameter(p);
+        (back, (legs.eval(back).point - p).norm())
+    };
+    for t in [0.87, 0.95, 1.05, 1.13] {
+        let (back, off) = corner(t);
+        assert!(
+            (back - t).abs() <= 1e-12 && off <= EXACT,
+            "{t} projects to {back}, {off} away"
+        );
+    }
+}
+
 #[test]
 fn a_moved_nurbs_curve_is_the_curve_moved() {
     check(

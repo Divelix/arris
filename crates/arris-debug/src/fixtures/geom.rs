@@ -155,13 +155,13 @@ pub struct Sample {
     pub points: Vec<[Num; 3]>,
 }
 
-/// Two names to intersect: two surfaces, or a curve `a` against a surface
-/// `b`.
+/// Two names to intersect: two surfaces, a curve `a` against a surface
+/// `b`, or two curves.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Pair {
     /// A surface or a curve.
     pub a: String,
-    /// A surface.
+    /// A surface, or a curve when `a` is one.
     pub b: String,
 }
 
@@ -565,13 +565,16 @@ pub struct CurveSample {
     pub points: Vec<[f64; 3]>,
 }
 
-/// A hit of a curve against a surface.
+/// A hit of a curve against a surface, or of two curves.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Hit {
-    /// The point.
+    /// The point: the first curve's, for two curves.
     pub point: [f64; 3],
-    /// The curve parameter.
+    /// The (first) curve's parameter.
     pub t: f64,
+    /// The second curve's parameter, for two curves.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tb: Option<f64>,
 }
 
 /// The oracle's answer for one pair: `IntAna_QuadQuadGeo` for two
@@ -579,7 +582,8 @@ pub struct Hit {
 /// curves sampled), `IntAna_IntConicQuad` for a curve against a surface
 /// (`coincident`, or `points` with the hits, duplicates within
 /// `Precision::Confusion` reported once and hits off either operand
-/// dropped and counted).
+/// dropped and counted), `GeomAPI_ExtremaCurveCurve` for two curves
+/// (`points`, the extrema within `Precision::Confusion`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PairResult {
     /// The first name.
@@ -596,7 +600,7 @@ pub struct PairResult {
     /// The isolated points of a surface pair that meets in points.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub points: Vec<[f64; 3]>,
-    /// The hits of a curve against a surface.
+    /// The hits of a curve against a surface or of two curves.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub hits: Vec<Hit>,
     /// Hits the oracle reported and then found off an operand.
@@ -734,9 +738,10 @@ pub fn lint(dir: &Path) -> Vec<String> {
         ));
     }
     for (i, p) in r.pairs.iter().enumerate() {
-        if !known(&p.a) || !r.surfaces.contains_key(&p.b) {
+        let two_curves = r.curves.contains_key(&p.a) && r.curves.contains_key(&p.b);
+        if !(two_curves || known(&p.a) && r.surfaces.contains_key(&p.b)) {
             problem(format!(
-                "pair {i} ({:?}, {:?}) is not a surface or curve against a surface",
+                "pair {i} ({:?}, {:?}) is not a surface or curve against a surface, or two curves",
                 p.a, p.b
             ));
         }

@@ -10,7 +10,8 @@ makes, in that pose), `c3-cylinder-pairs` (the cylinder pairs that
 meet in a quartic, in that pose), `c3-quadric-pairs` (the pairs with
 a cone or a sphere in them that share no axis, in that pose) and
 `c3-nurbs-hits` (NURBS curves against every analytic surface the grammar
-has, in that pose). Plain Python, no Open CASCADE: the coordinates
+has, in that pose) and `c3-nurbs-crossings` (the same curves against
+lines, circles and ellipses, in that pose). Plain Python, no Open CASCADE: the coordinates
 are the closed forms of `docs/DATA-MODEL.md` §Geometry written out in
 world space at full precision, so both sides read identical numbers.
 Rerun after editing, then `tools/oracle/expected.py` on each directory.
@@ -780,6 +781,95 @@ def c3_nurbs_hits():
     }
 
 
+# --- c3-nurbs-crossings --------------------------------------------------------------
+
+
+def nurbs_point(spec, t):
+    """A `nurbs` spec's point at `t`: de Boor on the homogeneous control
+    points (*The NURBS Book* A4.1), on the span holding `t`, the last one
+    at the domain's end."""
+    p, knots = spec["degree"], spec["knots"]
+    n = len(spec["control_points"])
+    k = max(i for i in range(p, n) if knots[i] <= t)
+    d = [mul(w, pt) + [w] for pt, w in zip(spec["control_points"][k - p : k + 1], spec["weights"][k - p : k + 1])]
+    for r in range(1, p + 1):
+        for j in range(p, r - 1, -1):
+            i = k - p + j
+            alpha = (t - knots[i]) / (knots[i + p + 1 - r] - knots[i])
+            d[j] = [(1.0 - alpha) * x + alpha * y for x, y in zip(d[j - 1], d[j])]
+    return mul(1.0 / d[p][3], d[p][:3])
+
+
+def c3_nurbs_crossings():
+    f = POSES["tilt"]
+    hits = c3_nurbs_hits()
+    ring, wave, skein = (hits["curves"][n] for n in ("ring", "wave", "skein"))
+    # The ring's own frame: the ellipse of radii 3.5 and 2 that c3-nurbs-hits
+    # built as four rational arcs, at its own angle.
+    centre = f.to_world([1.0, 0.5, 1.0])
+    ex = unit(f.vec([1.0, 0.2, 0.3]))
+    ey = unit(cross(ex, f.vec([0.2, 1.0, 0.1])))
+    normal = cross(ex, ey)
+    on_ring = lambda th: add(centre, add(mul(3.5 * math.cos(th), ex), mul(2.0 * math.sin(th), ey)))
+    ring_tangent = lambda th: unit(add(mul(-3.5 * math.sin(th), ex), mul(2.0 * math.cos(th), ey)))
+    curves = {"ring": ring, "wave": wave, "skein": skein}
+    pairs = []
+
+    def line(name, through, direction, back=1.5):
+        direction = unit(direction)
+        curves[name] = {"type": "line", "origin": sub(through, mul(back, direction)), "direction": direction}
+
+    def conic(name, kind, through, z, x_hint, radii, phase):
+        """A circle or an ellipse through `through`, at its own angle
+        `phase` there, in the plane of normal `z`."""
+        frame = Frame([0.0, 0.0, 0.0], z, x_hint)
+        a, b = radii
+        offset = add(mul(a * math.cos(phase), frame.x), mul(b * math.sin(phase), frame.y))
+        origin = sub(through, offset)
+        if kind == "circle":
+            curves[name] = {"type": "circle", "origin": origin, "z": frame.z, "x": frame.x, "radius": a}
+        else:
+            curves[name] = {"type": "ellipse", "origin": origin, "z": frame.z, "x": frame.x, "major_radius": a, "minor_radius": b}
+
+    # The ring against a line through it off its plane (one crossing), a
+    # chord in its plane (two), a tangent in its plane (one touch) and the
+    # tangent lifted off the plane (none); a circle and an ellipse through
+    # it across its plane (one each), and a circle in its plane about its
+    # centre between the radii (four). Every hit is clear of the seam, at
+    # the major vertex.
+    line("pierce", on_ring(1.0), add(normal, mul(0.4, ex)))
+    line("chord", on_ring(0.8), sub(on_ring(2.9), on_ring(0.8)))
+    line("tangent", on_ring(2.2), ring_tangent(2.2), back=2.0)
+    curves["lifted"] = dict(curves["tangent"], origin=add(curves["tangent"]["origin"], mul(0.05, normal)))
+    conic("hoop", "circle", on_ring(4.0), add(ex, mul(0.6, normal)), ey, (1.3, 1.3), 2.0)
+    conic("oval", "ellipse", on_ring(5.2), add(ey, mul(0.8, normal)), add(ex, mul(0.3, normal)), (2.2, 0.9), 0.7)
+    curves["round"] = {"type": "circle", "origin": centre, "z": normal, "x": ex, "radius": 2.7}
+    for other in ["pierce", "chord", "tangent", "lifted", "hoop", "oval", "round"]:
+        pairs.append({"a": "ring", "b": other})
+    # The quintic against a line, a circle and an ellipse through it, and
+    # the line moved off it (none); the rational cubic against a line
+    # through its double knot and a circle through it.
+    line("wave_line", nurbs_point(wave, 1.3), f.vec([0.3, -1.0, 0.6]))
+    curves["wave_miss"] = dict(curves["wave_line"], origin=add(curves["wave_line"]["origin"], unit(f.vec([1.0, 0.0, 0.2]))))
+    conic("wave_hoop", "circle", nurbs_point(wave, 0.6), f.vec([0.2, 0.5, 1.0]), f.vec([1.0, 0.0, 0.0]), (1.8, 1.8), 4.1)
+    conic("wave_oval", "ellipse", nurbs_point(wave, 2.4), f.vec([1.0, -0.4, 0.3]), f.vec([0.0, 1.0, 0.0]), (2.5, 1.1), 1.9)
+    line("skein_line", nurbs_point(skein, 1.0), f.vec([1.0, 1.0, -0.5]))
+    conic("skein_hoop", "circle", nurbs_point(skein, 2.5), f.vec([0.6, -0.3, 1.0]), f.vec([0.0, 1.0, 0.0]), (1.4, 1.4), 0.4)
+    for a, b in [("wave", "wave_line"), ("wave", "wave_miss"), ("wave", "wave_hoop"), ("wave", "wave_oval"), ("skein", "skein_line"), ("skein", "skein_hoop")]:
+        pairs.append({"a": a, "b": b})
+    # Two pairs the other way round.
+    pairs.append({"a": "hoop", "b": "ring"})
+    pairs.append({"a": "wave_line", "b": "wave"})
+    return {
+        "kind": "geometry",
+        "description": "NURBS curves against lines, circles and ellipses in the tilt pose (ADR-0018): the ellipse of c3-nurbs-hits as four rational arcs against a line through it off its plane, a chord and a tangent in its plane, the tangent lifted off it, a circle and an ellipse through it across its plane and a circle in its plane crossing it four times; the quintic against a line, a circle and an ellipse through it and a line beside it; the rational cubic against a line through its double knot and a circle through it; two pairs swapped — met through Open CASCADE's curve–curve extrema; written by generate.py",
+        "surfaces": {},
+        "curves": curves,
+        "samples": [],
+        "pairs": pairs,
+    }
+
+
 def write(name, recipe):
     directory = HERE / name
     directory.mkdir(exist_ok=True)
@@ -795,3 +885,4 @@ if __name__ == "__main__":
     write("c3-cylinder-pairs", c3_cylinder_pairs())
     write("c3-quadric-pairs", c3_quadric_pairs())
     write("c3-nurbs-hits", c3_nurbs_hits())
+    write("c3-nurbs-crossings", c3_nurbs_crossings())

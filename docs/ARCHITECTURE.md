@@ -872,7 +872,11 @@ boolean never widens onto it silently. A
 decided against every analytic surface by its spans put into the
 surface's implicit polynomial in Bernstein form, the extrema isolated by
 subdivision and the verdict taken on the exact distance, as the closed
-forms take it (ADR-0018, `docs/DATA-MODEL.md` §Curves). The
+forms take it (ADR-0018, `docs/DATA-MODEL.md` §Curves), and against a
+line, a circle or an ellipse through the same arm on a plane — the
+conic's, or two through the line — and in a conic's plane on the
+cylinder the conic is the section of; two fitted curves are
+`Unsupported`, the tracer's points saying where one pair's meet. The
 NURBS surface variant is one arm like the others; a NURBS–NURBS marcher, when it
 comes, is what that arm calls, and analytic pairs never route through
 it.

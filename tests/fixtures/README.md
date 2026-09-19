@@ -273,8 +273,8 @@ oracle's sampled points on Arris's curves to 1e-9.
   made perpendicular to `z`, both normalised, `y = z × x`. Numbers may be
   expressions as in a solid recipe.
 - A sample's `params` are `[u, v]` pairs for a surface and `t` values for
-  a curve; `points` are projected. A pair is two surfaces, or a curve `a`
-  against a surface `b`.
+  a curve; `points` are projected. A pair is two surfaces, a curve `a`
+  against a surface `b`, or two curves with a `nurbs` one among them.
 - The fixtures here are written by `geom/generate.py` (closed forms at
   full precision in committed poses) — edit and rerun it, then
   `expected.py`, rather than the numbers: `analytic-eval`,
@@ -295,7 +295,10 @@ oracle's sampled points on Arris's curves to 1e-9.
   one; a pipe, a ball and a narrow cone against a cone, a post through
   the ball) and `c3-nurbs-hits` (an ellipse as four rational quadratic
   arcs, a quintic of three spans and a rational cubic with a double
-  knot, each against a plane, a cylinder, a cone, a sphere and a torus).
+  knot, each against a plane, a cylinder, a cone, a sphere and a torus)
+  and `c3-nurbs-crossings` (the same three against lines, circles and
+  ellipses: through them across their planes, a chord, a tangent and a
+  concentric circle in the ellipse's plane, a line beside them).
   An oracle parabola or hyperbola, sampled at its own
   parameters in `[−2, 2]` a branch per curve, is held against Arris's
   exact rational quadratic NURBS. The geometry grammar has no elliptic
@@ -307,7 +310,13 @@ oracle's sampled points on Arris's curves to 1e-9.
   `GeomAPI_IntCS`, Open CASCADE's general curve–surface intersector,
   whose hits are held to both operands and deduplicated as the conics'
   are; it has no `coincident`, and a segment of the curve on the surface
-  is an error of the recipe.
+  is an error of the recipe. Against a line, a circle or an ellipse,
+  Open CASCADE has no 3D curve–curve intersector, so the oracle is
+  `GeomAPI_ExtremaCurveCurve` span by span of the B-spline (over its
+  whole domain the search misses crossings): every extremum within
+  `Precision::Confusion` is a hit with both parameters, `t` and `tb`,
+  and the oracle test holds Arris's hits to them as it holds a curve
+  against a surface, a touch to 1e-6.
 - A surface pair Open CASCADE finds no conic for is `"type": "unsolved"`
   (`IntAna_NoGeometricSolution`), with the lines `GeomAPI_IntSS` walks
   for it as curves of type `section`: 17 samples each, every one polished

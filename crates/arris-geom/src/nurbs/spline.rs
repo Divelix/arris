@@ -128,7 +128,13 @@ impl<const D: usize> Spline<D> {
     #[allow(clippy::needless_range_loop)] // `j` indexes the basis rows and the control points
     fn homogeneous(&self, t: f64) -> ([SVector<f64, D>; ORDERS], [f64; ORDERS]) {
         let n = self.points.len();
-        let span = basis::span(self.degree, &self.knots, n, t);
+        self.homogeneous_on(basis::span(self.degree, &self.knots, n, t), t)
+    }
+
+    /// [`Self::homogeneous`] of the polynomial piece of `span`, at any
+    /// `t`: at a knot, the piece on the chosen side.
+    #[allow(clippy::needless_range_loop)] // `j` indexes the basis rows and the control points
+    fn homogeneous_on(&self, span: usize, t: f64) -> ([SVector<f64, D>; ORDERS], [f64; ORDERS]) {
         let ders = basis::derivatives(self.degree, &self.knots, span, t);
         let mut a = [SVector::<f64, D>::zeros(); ORDERS];
         let mut w = [0.0; ORDERS];
@@ -148,6 +154,12 @@ impl<const D: usize> Spline<D> {
     /// first, any other evaluates the polynomial piece nearest `t`.
     pub(crate) fn eval(&self, t: f64) -> Derivatives<D> {
         let (a, w) = self.homogeneous(self.wrap(t));
+        Self::quotient(a, w)
+    }
+
+    /// The point and its derivatives from the weighted sums, by the
+    /// quotient rule.
+    fn quotient(a: [SVector<f64, D>; ORDERS], w: [f64; ORDERS]) -> Derivatives<D> {
         let point = a[0] / w[0];
         let d1 = (a[1] - w[1] * point) / w[0];
         let d2 = (a[2] - 2.0 * w[1] * d1 - w[2] * point) / w[0];
@@ -362,18 +374,44 @@ impl<const D: usize> Spline<D> {
                 }
             }
         }
-        let g = |t: f64| {
-            let e = self.eval(t);
-            (e.point - q).dot(&e.d1)
-        };
-        let dg = |t: f64| {
-            let e = self.eval(t);
-            e.d1.norm_squared() + (e.point - q).dot(&e.d2)
+        // Newton runs on one polynomial piece: where the curve is only C⁰
+        // at a knot, the derivative of the distance jumps there, and a
+        // bracket ending on the knot read on the next piece can lose its
+        // sign change. So a bracket across a knot is left to its halves,
+        // and each is read on the piece its middle is on — wrapped, with
+        // the shift that wrapping it took, for a bracket past a seam.
+        let (k_lo, k_hi) = (self.knots[p], self.knots[n]);
+        let knot_scale = k_lo.abs().max(k_hi.abs());
+        let crosses_knot = |a: f64, b: f64| {
+            self.knots[p..=n].iter().any(|&k| {
+                k > a
+                    && k < b
+                    && !is_negligible(k - a, knot_scale)
+                    && !is_negligible(b - k, knot_scale)
+            })
         };
         let mut candidate = best;
         for (lo, hi) in brackets {
             let Ok(interval) = Interval::new(lo, hi) else {
                 continue;
+            };
+            let mid = interval.midpoint();
+            let shift = self.wrap(mid) - mid;
+            if crosses_knot(lo + shift, hi + shift) {
+                continue;
+            }
+            let span = basis::span(p, &self.knots, n, mid + shift);
+            let on_piece = |t: f64| {
+                let (a, w) = self.homogeneous_on(span, t + shift);
+                Self::quotient(a, w)
+            };
+            let g = |t: f64| {
+                let e = on_piece(t);
+                (e.point - q).dot(&e.d1)
+            };
+            let dg = |t: f64| {
+                let e = on_piece(t);
+                e.d1.norm_squared() + (e.point - q).dot(&e.d2)
             };
             if let Ok(t) = newton_in_interval(g, dg, interval, 0.0) {
                 let d = dist2(t);

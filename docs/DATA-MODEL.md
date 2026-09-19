@@ -179,9 +179,11 @@ ellipse's major axis inside its evolute (two mirror-image nearest points)
 is `GeomError::Ambiguous` naming the locus. A NURBS curve projects by
 sampling every span (`2p + 2` parameters each) and bracketed Newton on
 the derivative of the squared distance around the best sample, across
-the seam of a closed or periodic curve: the nearest *local* minimum from
-that sample, never `Ambiguous` and never a guarantee against a nearer
-point the sampling missed.
+the seam of a closed or periodic curve, each bracket read on the one
+polynomial piece it lies in — at a knot where the curve is only C⁰ that
+derivative jumps, and a bracket across it is left to its halves: the
+nearest *local* minimum from that sample, never `Ambiguous` and never a
+guarantee against a nearer point the sampling missed.
 
 `Curve::chord_segments(range, chord)` is the 3D twin of
 `Piece::segment_count` (§Pcurves): how many straight segments approximate
@@ -477,12 +479,37 @@ exists — and two coplanar circles are the radical line. A coplanar pair
 with an ellipse in it is `Coincident` when the two are the same conic
 (centres, radii and major axes agreeing within the tolerance — the edge
 a boolean made and the edge a second boolean meets it with) and
-`Unsupported` otherwise, as is any pair with a `Nurbs` operand.
+`Unsupported` otherwise.
+A **`Nurbs` curve** (ADR-0018) — the fitted section edge the next
+boolean meets — goes through the same planes, its hits on them from the
+NURBS arm of `intersect_curve_surface` above. Against a circle or an
+ellipse, through the conic's plane; one in that plane meets the conic
+where it meets the cylinder the conic is the section of, circular or
+elliptic, in the conic's frame and of its radii, so a touch is decided
+in `tol.linear` of length by that arm, and a curve on the cylinder too is
+`Coincident`. Against a line, through the two planes that hold the line
+and are square to each other (the line's `Frame::from_z` gives their
+normals): the hits on either within `tol.linear` of the line are the
+candidates, those within `tol.linear` of each other one hit — a crossing
+of either plane before a touch, since a curve is tangent to a line only
+where it touches every plane through it, then the one nearest the line —
+a curve in one plane is the coplanar case, the other plane's hits the
+answer, and a curve in both is `Coincident`. A crossing of the line is
+transversal to one of the two planes unless the curve runs along the
+line there, so it is found to rounding. `Nurbs`–`Nurbs` is `Unsupported`:
+where two fitted curves of one pair meet is the tracer's `points`
+(§Curves, below), and anything else a marcher's (C4).
 `curves_coincide(a, b, tol) -> Result<bool, GeomError>` is that
 `Coincident` verdict alone, by the same arms, so it answers the coplanar
 pair with an ellipse too — the same conic or not — without the quartic
-of where two such conics meet; it is `Unsupported` only for a `Nurbs`
-operand.
+of where two such conics meet. Two `Nurbs` curves coincide when they are
+the same spline, every control point within `tol.linear` of its twin
+over the same degree, knots and weights — the same section made twice —
+and do not when a point of either at an end, a knot or halfway between
+two has no hit of the other on the plane square to it there within
+`tol.linear` (a projection's sampling could settle on a farther local
+minimum; the plane's NURBS arm cannot). Any other two — one curve over
+two knot vectors — are `Unsupported` naming the pair.
 
 `trace_quadrics(a, b, within, tol) -> Result<SectionTrace, GeomError>`
 is the exact section of two quadrics, one of them ruled — a cylinder, an

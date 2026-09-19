@@ -409,10 +409,10 @@ fn two_circles_in_crossing_planes_meet_where_they_were_built_to() {
 // --- what has no closed form ----------------------------------------------
 
 #[test]
-fn a_nurbs_operand_is_unsupported_naming_the_pair() {
-    check((curve(), nurbs_curve()), |(c, n)| {
-        let n = Curve::Nurbs(n);
-        for (a, b) in [(&c, &n), (&n, &c), (&n, &n)] {
+fn two_nurbs_curves_are_unsupported_naming_the_pair() {
+    check((nurbs_curve(), nurbs_curve()), |(m, n)| {
+        let (m, n) = (Curve::Nurbs(m), Curve::Nurbs(n));
+        for (a, b) in [(&m, &n), (&n, &m), (&n, &n)] {
             match intersect_curves(a, b, tol()) {
                 Err(GeomError::Unsupported { a: ka, b: kb }) => {
                     prop_assert_eq!(ka, GeomKind::Curve(a.kind()));
@@ -538,7 +538,7 @@ fn an_inconsistent_tolerance_is_an_error() {
 fn every_analytic_pair_passes_the_common_properties() {
     check((curve(), curve()), |(a, b)| {
         let supported =
-            !matches!(a.kind(), CurveKind::Nurbs) && !matches!(b.kind(), CurveKind::Nurbs);
+            !matches!(a.kind(), CurveKind::Nurbs) || !matches!(b.kind(), CurveKind::Nurbs);
         match intersect_curves(&a, &b, tol()) {
             Ok(_) => {
                 prop_assert!(supported);
@@ -558,8 +558,9 @@ fn every_analytic_pair_passes_the_common_properties() {
 /// that answers, any pair; where it refuses — two conics in one plane with
 /// an ellipse among them — the conics are the same only as the closed
 /// form says: an ellipse's twins are, a circle or a second ellipse in its
-/// plane is not (docs/DATA-MODEL.md §Curves). A NURBS
-/// operand is `Unsupported` naming the pair.
+/// plane is not (docs/DATA-MODEL.md §Curves). Two NURBS curves, which
+/// `intersect_curves` refuses, are the same curve, apart, or
+/// `Unsupported` naming the pair (`intersect_spline_curves.rs`).
 #[test]
 fn curves_coincide_is_the_coincident_verdict_without_the_quartic() {
     check((curve(), curve()), |(a, b)| {
@@ -576,10 +577,11 @@ fn curves_coincide_is_the_coincident_verdict_without_the_quartic() {
             }
             Err(GeomError::Unsupported { a: ka, b: kb }) => {
                 let nurbs =
-                    matches!(a.kind(), CurveKind::Nurbs) || matches!(b.kind(), CurveKind::Nurbs);
+                    matches!(a.kind(), CurveKind::Nurbs) && matches!(b.kind(), CurveKind::Nurbs);
                 if nurbs {
                     prop_assert!(
-                        matches!(verdict, Err(GeomError::Unsupported { a: x, b: y }) if x == ka && y == kb),
+                        verdict.is_ok()
+                            || matches!(verdict, Err(GeomError::Unsupported { a: x, b: y }) if x == ka && y == kb),
                         "{:?}",
                         verdict
                     );

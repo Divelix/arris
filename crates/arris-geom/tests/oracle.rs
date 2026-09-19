@@ -13,8 +13,9 @@ use arris_debug::fixtures::geom::{
 use arris_debug::fixtures::{Kind, corpus, kind_of};
 use arris_debug::testing::{REL, close, close_param};
 use arris_geom::{
-    Curve, CurveSurfaceIntersection, GeomError, MeetKind, SECTION_FIT_FRACTION, Surface,
-    SurfaceIntersection, SurfaceKind, intersect_curve_surface, intersect_surfaces,
+    Curve, CurveIntersection, CurveSurfaceIntersection, GeomError, MeetKind, SECTION_FIT_FRACTION,
+    Surface, SurfaceIntersection, SurfaceKind, intersect_curve_surface, intersect_curves,
+    intersect_surfaces,
 };
 use arris_math::{Point3, Precision, Tolerance, Vec3};
 
@@ -518,6 +519,63 @@ fn check_curve_pair(c: &Curve, s: &Surface, res: &PairResult, errors: &mut Vec<S
     }
 }
 
+/// Two curves against the oracle's extrema as `check_curve_pair` holds a
+/// curve against a surface: every oracle hit is one of ours — a crossing
+/// to REL in its point and both parameters, a touch to TOUCH — and every
+/// crossing of ours is an oracle hit. `intersect_curves` keeps the point
+/// it computed for a pair it swapped, which is the second curve's, and a
+/// crossing's two points agree to rounding.
+fn check_curve_curve_pair(a: &Curve, b: &Curve, res: &PairResult, errors: &mut Vec<String>) {
+    let label = format!("{} vs {}", res.a, res.b);
+    let r = match intersect_curves(a, b, tol()) {
+        Ok(r) => r,
+        Err(e) => {
+            errors.push(format!("{label}: {e}"));
+            return;
+        }
+    };
+    let hits = match (&r, res.kind.as_str()) {
+        (CurveIntersection::Points(h), "points") => h,
+        _ => {
+            errors.push(format!("{label}: {r:?} vs oracle {}", res.kind));
+            return;
+        }
+    };
+    for h in &res.hits {
+        let p = p3(&h.point);
+        let scale = p.coords.norm().max(1.0);
+        let Some(tb) = h.tb else {
+            errors.push(format!("{label}: the oracle's hit carries no tb"));
+            continue;
+        };
+        let matched = hits.iter().any(|ours| {
+            let bound = if ours.tangent { TOUCH } else { REL * scale };
+            (ours.point - p).norm() <= bound
+                && (ours.ta - h.t).abs().min(turn_diff(ours.ta, h.t, a)) <= bound
+                && (ours.tb - tb).abs().min(turn_diff(ours.tb, tb, b)) <= bound
+        });
+        if !matched {
+            errors.push(format!(
+                "{label}: the oracle's hit at t = {}, tb = {tb} {:?} is not among {hits:?}",
+                h.t, h.point
+            ));
+        }
+    }
+    for ours in hits.iter().filter(|h| !h.tangent) {
+        let scale = ours.point.coords.norm().max(1.0);
+        if !res
+            .hits
+            .iter()
+            .any(|h| (ours.point - p3(&h.point)).norm() <= REL * scale)
+        {
+            errors.push(format!(
+                "{label}: our hit at t = {} {:?} is not among the oracle's {:?}",
+                ours.ta, ours.point, res.hits
+            ));
+        }
+    }
+}
+
 /// `|a − b|` modulo the curve's period, or infinity for a line so the
 /// plain difference wins.
 fn turn_diff(a: f64, b: f64, c: &Curve) -> f64 {
@@ -534,8 +592,8 @@ fn turn_diff(a: f64, b: f64, c: &Curve) -> f64 {
 fn every_geometry_fixture_matches_the_oracle() {
     let fixtures = geometry_fixtures();
     assert!(
-        fixtures.len() >= 7,
-        "expected geom/analytic-eval, geom/c1-intersections, geom/c2-cylinder-pairs, geom/c2-quadric-pairs, geom/c3-cylinder-pairs, geom/c3-quadric-pairs and geom/c3-nurbs-hits"
+        fixtures.len() >= 8,
+        "expected geom/analytic-eval, geom/c1-intersections, geom/c2-cylinder-pairs, geom/c2-quadric-pairs, geom/c3-cylinder-pairs, geom/c3-quadric-pairs, geom/c3-nurbs-hits and geom/c3-nurbs-crossings"
     );
     let mut errors = Vec::new();
     for f in &fixtures {
@@ -559,6 +617,10 @@ fn every_geometry_fixture_matches_the_oracle() {
             }
         }
         for result in &f.expected.pairs {
+            if let (Some(a), Some(b)) = (built.curves.get(&result.a), built.curves.get(&result.b)) {
+                check_curve_curve_pair(a, b, result, &mut errors);
+                continue;
+            }
             let Some(b) = built.surfaces.get(&result.b) else {
                 errors.push(format!("{}: {} is not a surface", f.name, result.b));
                 continue;
@@ -943,5 +1005,53 @@ fn the_c3_nurbs_hits_cross_as_built() {
         };
         assert_eq!(hits.len(), *count, "{a} vs {b}: {hits:?}");
         assert!(hits.iter().all(|h| !h.tangent), "{a} vs {b}: {hits:?}");
+    }
+}
+
+/// What Arris says about every pair of `geom/c3-nurbs-crossings`, by name:
+/// the crossings and touches each was built with. The oracle comparison
+/// is one-sided at a touch, so the ring's tangent is pinned here.
+#[test]
+fn the_c3_nurbs_crossings_classify_as_built() {
+    let f = geometry_fixtures()
+        .into_iter()
+        .find(|f| f.name == "geom/c3-nurbs-crossings")
+        .expect("geom/c3-nurbs-crossings");
+    let built = build(&f);
+    // (a, b, crossings, touches)
+    let cases: &[(&str, &str, usize, usize)] = &[
+        ("ring", "pierce", 1, 0),
+        ("ring", "chord", 2, 0),
+        ("ring", "tangent", 0, 1),
+        ("ring", "lifted", 0, 0),
+        ("ring", "hoop", 1, 0),
+        ("ring", "oval", 1, 0),
+        ("ring", "round", 4, 0),
+        ("wave", "wave_line", 1, 0),
+        ("wave", "wave_miss", 0, 0),
+        ("wave", "wave_hoop", 1, 0),
+        ("wave", "wave_oval", 1, 0),
+        ("skein", "skein_line", 1, 0),
+        ("skein", "skein_hoop", 1, 0),
+        ("hoop", "ring", 1, 0),
+        ("wave_line", "wave", 1, 0),
+    ];
+    assert_eq!(
+        cases.len(),
+        f.recipe.pairs.len(),
+        "every pair of the fixture is pinned here"
+    );
+    for (a, b, crossings, touches) in cases {
+        let r = intersect_curves(&built.curves[*a], &built.curves[*b], tol())
+            .unwrap_or_else(|e| panic!("{a} vs {b}: {e}"));
+        let CurveIntersection::Points(hits) = r else {
+            panic!("{a} vs {b}: {r:?}");
+        };
+        let tangent = hits.iter().filter(|h| h.tangent).count();
+        assert_eq!(
+            (hits.len() - tangent, tangent),
+            (*crossings, *touches),
+            "{a} vs {b}: {hits:?}"
+        );
     }
 }
