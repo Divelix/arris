@@ -838,8 +838,8 @@ public and cheap enough for a consumer to run after every feature; the
 `paranoid` feature turns the debug behaviour on in release, returning
 `OpError::Internal` instead of panicking.
 
-The checker never repairs. Healing is an operation (a later cycle), and it
-returns provenance like any other.
+The checker never repairs. Healing is an operation — the healing cycle's
+— and it returns provenance like any other.
 
 ## Geometry dispatch
 

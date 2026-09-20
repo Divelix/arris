@@ -415,11 +415,13 @@ recipe is not re-run on every test run — `oracle::scratch_fixture` runs it
 today whatever the recipe says; a property tier above CI's case count, run
 nightly; random *recipes* evaluated by both kernels — the recipe grammar
 already carries the same eleven operations on each side (`Step` in
-`arris-debug`, the `op` dispatch in `tools/oracle`), so the generator
-needs no new interpreter; `cargo-fuzz` targets over the intersectors and,
-once it exists, the STEP reader, seeded from the corpus. Its numbers — benchmark baselines, cases per night — live in this
-section once they exist. Its one open question is the case count the
-pre-commit hook runs against CI's, which is the human's call.
+`arris-debug`, the `op` dispatch in `tools/oracle`), so the generator is
+a `proptest` strategy over `Step` beside the oracle's existing evaluator
+and needs no new interpreter on either side; `cargo-fuzz` targets over
+the intersectors and, once it exists, the STEP reader, seeded from the
+corpus. Its numbers — benchmark baselines, cases per night — live in
+this section once they exist. Its one open question is the case count
+the pre-commit hook runs against CI's, which is the human's call.
 
 **The first-party binding.** Code-first and agent-driven modelling is one
 of the consumers `SEED.md` §1 names, and a binding in this repository is
@@ -494,7 +496,10 @@ opens it.
 - **The sweep cycle** — sweep along a path, loft, shell, offset.
 - **The healing cycle** — healing; sheet and wire bodies in every
   operation.
-- **The query cycle** — distance, clash, ray fire, selection.
+- **The query cycle** — distance, clash, ray fire, selection; none of
+  them has its machinery yet, since nothing in the kernel holds a
+  hierarchy over face boxes or fires a ray at a surface outside
+  `classify_point`.
 - **The attribute cycle** — attributes a consumer attaches to entities,
   carried through every operation by declared rules over the split order
   ADR-0009 fixes, for a consumer with no naming scheme of its own
