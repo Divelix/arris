@@ -260,7 +260,7 @@ bound has to be established here.
   was drawn as two crossing elliptic prisms first, and is the column
   through a plate instead because that pair is exactly the curved case:
   a backlog line, with the evidence that Open CASCADE's own measurement
-  of it is 2e-3 out. (c) The volume
+  of it is 6e-4 to 1.2e-3 out. (c) The volume
   properties of a shape with an extrusion face go through
   `VolumePropertiesGK` with the span option: the plain adaptive
   integration is 9e-7 off in `elliptic-operand-cut`'s inertia tensor
