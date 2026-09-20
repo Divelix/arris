@@ -39,7 +39,7 @@ use core::f64::consts::{FRAC_1_SQRT_2, FRAC_PI_2, FRAC_PI_4, SQRT_2, TAU};
 use arris_math::Tolerance;
 
 use crate::Surface;
-use crate::bernstein::Binomials;
+use crate::bernstein::{Binomials, sign_change_candidates};
 use crate::bernstein2::{Continuum, Gate, Isolation, Poly2, Zero2, common_zeros, merge};
 use crate::implicit::{BERNSTEIN_ROUNDING, Implicit};
 
@@ -71,6 +71,53 @@ fn quarter_arc(quarter: usize) -> [[f64; 3]; 3] {
 /// outside `[0, 1]` is the angle a little outside the quarter.
 fn quarter_angle(quarter: usize, s: f64) -> f64 {
     quarter as f64 * FRAC_PI_2 + FRAC_PI_4 + 2.0 * (QUARTER_TAN * (2.0 * s - 1.0)).atan()
+}
+
+/// The parameter of a quarter turn at `angle` from its start, the
+/// inverse of [`quarter_angle`], kept inside `[0, 1]`.
+fn quarter_param(angle: f64) -> f64 {
+    (0.5 * (1.0 + (0.5 * (angle - FRAC_PI_4)).tan() / QUARTER_TAN)).clamp(0.0, 1.0)
+}
+
+/// The quarter turns a range of angles lies over, each with the part of
+/// its `[0, 1]` the range covers.
+fn quarters([lo, hi]: [f64; 2]) -> Vec<(usize, [f64; 2])> {
+    let first = (lo / FRAC_PI_2).floor();
+    let last = (hi / FRAC_PI_2).floor().max(first);
+    let count = (last - first) as usize + 1;
+    (0..count.min(5))
+        .map(|k| {
+            let start = (first + k as f64) * FRAC_PI_2;
+            let from = if k == 0 {
+                quarter_param(lo - start)
+            } else {
+                0.0
+            };
+            let to = if k + 1 == count {
+                quarter_param(hi - start)
+            } else {
+                1.0
+            };
+            let quarter = (first + k as f64).rem_euclid(4.0) as usize;
+            (quarter, [from, to.max(from)])
+        })
+        .collect()
+}
+
+/// What [`PatchedSection::sign_over`] looks at over a box.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Probe {
+    /// The section's polynomial `f`: no point of the section in the box.
+    F,
+    /// `∂f/∂s`: at most one point of the section on every line of
+    /// constant `v` through the box.
+    Fs,
+    /// `∂f/∂t`: at most one on every line of constant `u`.
+    Ft,
+    /// `∂²F/∂v²` of the other surface's polynomial over the torus: no
+    /// more than two on a line of constant `u`, either side of the one
+    /// zero of `∂F/∂v`.
+    Fvv,
 }
 
 /// One patch: the other surface's polynomial over it, and its weight.
@@ -219,6 +266,72 @@ impl<'a> PatchedSection<'a> {
             };
             common_zeros([&g_s, &g_t], floors, Some(gate))
         })
+    }
+
+    /// The sign `probe` keeps over the box `u × v` of angles — unwrapped,
+    /// either side up to a whole turn — beyond its rounding floor:
+    /// `Some(true)` for positive, `None` where the coefficients do not
+    /// say. The box is cut at the patches' edges and every part has to
+    /// agree. `f` is continuous across those edges, so parts on which
+    /// `f_s` (or `f_t`) keeps one sign make `f` monotone in `u` (in `v`)
+    /// across the whole box; [`Probe::Fvv`] is free of the patch's
+    /// weight altogether.
+    pub(crate) fn sign_over(&self, probe: Probe, u: [f64; 2], v: [f64; 2]) -> Option<bool> {
+        let d = self.implicit.degree() as f64;
+        let mut sign = None;
+        for (qu, s) in quarters(u) {
+            for (qv, t) in quarters(v) {
+                let patch = self.patches.get(4 * qu + qv)?;
+                let [m, n] = patch.f.degree();
+                let (m, n) = (m as f64, n as f64);
+                let part = match probe {
+                    Probe::F => patch.f.restricted(s, t).sign(self.floor),
+                    Probe::Fs => patch.f.du().restricted(s, t).sign(2.0 * m * self.floor),
+                    Probe::Ft => patch.f.dv().restricted(s, t).sign(2.0 * n * self.floor),
+                    Probe::Fvv => {
+                        let binomials = Binomials::new(4 * self.implicit.degree() + 4);
+                        let (f, w) = (&patch.f, &patch.weight);
+                        // `w·X_t − d·w_t·X`, twice: `w^(d+1)·F_t` and then
+                        // a positive multiple of `∂²F/∂v²`, since a
+                        // quarter's `dv/dt` is a constant over its weight.
+                        let weighed = |x: &Poly2| {
+                            Poly2::combine(&[
+                                (1.0, &w.mul(&x.dv(), &binomials)),
+                                (-d, &w.dv().mul(x, &binomials)),
+                            ])
+                        };
+                        let g = weighed(f);
+                        let floor_g = (2.0 * n + d) * self.floor;
+                        let floor_h = (2.0 * (n + 1.0) + d) * floor_g;
+                        weighed(&g).restricted(s, t).sign(floor_h)
+                    }
+                }?;
+                if sign.is_some_and(|s| s != part) {
+                    return None;
+                }
+                sign = Some(part);
+            }
+        }
+        sign
+    }
+
+    /// Candidates for the roots of `f(0, ·)`, as angles ascending: every
+    /// sign change of the section's polynomial along `u = 0` has one
+    /// within rounding of it, and a candidate need be no root
+    /// (`crate::bernstein::sign_change_candidates`).
+    pub(crate) fn seam_candidates(&self) -> Vec<f64> {
+        let mut found: Vec<f64> = Vec::new();
+        for patch in self.patches.iter().filter(|p| p.quarter[0] == 0) {
+            let stride = patch.f.degree()[1] + 1;
+            let row = &patch.f.coefficients()[..stride];
+            found.extend(
+                sign_change_candidates(row, self.floor)
+                    .into_iter()
+                    .map(|t| quarter_angle(patch.quarter[1], t)),
+            );
+        }
+        found.sort_by(f64::total_cmp);
+        found
     }
 
     /// One isolation per patch, its zeros and boxes taken to angles and
@@ -394,22 +507,23 @@ mod tests {
     const MEASURED_DEPTH: usize = 32;
     const MEASURED_BOXES: usize = 2000;
 
-    /// The torus to walk and the surface to put it into. Of two tori the
-    /// one with the smaller tube is walked: a torus's polynomial is a
-    /// quartic, and at points a hundred of its own sizes away its terms
-    /// cancel to `100⁴·ε` of themselves, so a small torus is never the
-    /// implicit one for a large one's points. The flag says the operands
-    /// were exchanged.
+    /// The torus to walk and the surface to put it into, by the tracer's
+    /// rule (`crate::torus_walk`): of two tori the smaller one over all
+    /// is walked. A torus's polynomial is a quartic, and at points a
+    /// hundred of its own sizes away its terms cancel to `100⁴·ε` of
+    /// themselves, so a small torus is never the implicit one for a large
+    /// one's points. The flag says the operands were exchanged.
     fn operands<'s>(torus: &'s Surface, other: &'s Surface) -> (&'s Surface, &'s Surface, bool) {
-        match (torus, other) {
-            (
-                Surface::Torus {
-                    minor_radius: a, ..
-                },
-                Surface::Torus {
-                    minor_radius: b, ..
-                },
-            ) if b < a => (other, torus, true),
+        let size = |s: &Surface| match s {
+            Surface::Torus {
+                major_radius,
+                minor_radius,
+                ..
+            } => Some(major_radius + minor_radius),
+            _ => None,
+        };
+        match size(torus).zip(size(other)) {
+            Some((a, b)) if b < a => (other, torus, true),
             _ => (torus, other, false),
         }
     }

@@ -38,8 +38,11 @@ use core::fmt;
 use std::sync::Arc;
 
 use arris_math::roots::{POLYNOMIAL_ROUNDING, newton_in_interval, quartic};
-use arris_math::{Aabb, Frame, Interval, Point3, RELATIVE_ROUNDING, Tolerance, Vec3, wrap_angle};
+use arris_math::{
+    Aabb, Frame, Interval, Point2, Point3, RELATIVE_ROUNDING, Tolerance, Vec3, wrap_angle,
+};
 
+use crate::torus_walk::TorusWalk;
 use crate::{GeomError, GeomKind, Surface};
 
 /// How many parameters a branch is sampled at to decide that it is no
@@ -55,11 +58,11 @@ const EXTENT_SAMPLES: usize = 17;
 /// with `S(y) ≤ 3y²`, which keeps its sign for every `ρ² > 3·|D_e|/κ`.
 /// Two is the smallest whole multiple that does. A ratio, not a
 /// tolerance.
-const REACH: f64 = 2.0;
+pub(crate) const REACH: f64 = 2.0;
 
-/// Why the section of two quadrics is one the tracer does not resolve.
-/// Each is a pose of measure zero that a closed form owns or that needs
-/// a decision the tracer will not guess.
+/// Why a section is one its tracer does not resolve. Each is a pose of
+/// measure zero that a closed form owns or that needs a decision the
+/// tracer will not guess.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SectionFault {
     /// The surfaces are tangent along a whole arc of the section, or
@@ -76,6 +79,17 @@ pub enum SectionFault {
     /// or more roots of the discriminant within the tolerance of one
     /// another, a cusp of the section.
     CrowdedSingularity,
+    /// A tube circle of the walked torus lies on the other surface: the
+    /// pipe elbow against its straight pipe, a plane through the torus's
+    /// axis, a sphere centred on the centre circle. Every point of the
+    /// circle is a turning point of the section, which none of them
+    /// isolates.
+    TubeCircle,
+    /// Turning points of a torus section that `f64` does not tell apart,
+    /// away from any singular point: a turning point that is an
+    /// inflection as well, or a stretch of the section too close to
+    /// another to be followed alone.
+    UnresolvedTurning,
 }
 
 impl fmt::Display for SectionFault {
@@ -85,6 +99,10 @@ impl fmt::Display for SectionFault {
             SectionFault::SharedRuling => "a ruling of one surface lies on the other",
             SectionFault::CrowdedSingularity => {
                 "three or more turning points within the tolerance of one another"
+            }
+            SectionFault::TubeCircle => "a tube circle of the torus lies on the other surface",
+            SectionFault::UnresolvedTurning => {
+                "turning points of the section that cannot be told apart"
             }
         })
     }
@@ -459,11 +477,10 @@ impl Pencil {
     }
 }
 
-/// One arc of a branch: one root over an interval of the family's angle,
-/// walked from `start` to `finish`.
+/// One arc of a branch: one root over an interval of the walked angle —
+/// a ruled family's, or a torus's `u` — from `start` to `finish`.
 #[derive(Debug, Clone, Copy)]
-struct Arc1 {
-    label: Label,
+pub(crate) struct Arc1 {
     start: f64,
     finish: f64,
     /// The section turns back at this end: the square root vanishes here
@@ -476,6 +493,30 @@ struct Arc1 {
 }
 
 impl Arc1 {
+    /// An arc yet to be laid into a branch ([`Arc1::lay`]).
+    pub(crate) fn new(start: f64, finish: f64, turn_start: bool, turn_finish: bool) -> Arc1 {
+        Arc1 {
+            start,
+            finish,
+            turn_start,
+            turn_finish,
+            t0: 0.0,
+            len: 0.0,
+        }
+    }
+
+    /// The arcs laid end to end in the branch's parameter, and the
+    /// branch's length.
+    pub(crate) fn lay(arcs: &mut [Arc1]) -> f64 {
+        let mut t = 0.0;
+        for arc in arcs {
+            arc.t0 = t;
+            arc.len = Arc1::length(arc.start, arc.finish, arc.turn_start, arc.turn_finish);
+            t += arc.len;
+        }
+        t
+    }
+
     /// The parameter length of an arc: an arc that turns runs at
     /// `θ = t / √L`, so that `s − s_T = t²/2` to leading order on both
     /// sides of a turn whatever the two arcs' lengths, and the branch is
@@ -491,7 +532,7 @@ impl Arc1 {
 
     /// The family angle at `x ∈ [0, len]`, and the turning point it is
     /// measured from with half the offset, when there is one.
-    fn angle(&self, x: f64) -> (f64, Option<(f64, f64)>) {
+    pub(crate) fn angle(&self, x: f64) -> (f64, Option<(f64, f64)>) {
         let sign = (self.finish - self.start).signum();
         let l = (self.finish - self.start).abs();
         let from_start = |off: f64| {
@@ -540,6 +581,19 @@ pub enum BranchEnd {
     Clipped,
 }
 
+/// What a branch is walked on: the rulings of a quadric
+/// ([`trace_quadrics`]) or the parameter plane of a torus
+/// ([`crate::trace_torus`]).
+#[derive(Debug, Clone)]
+enum Walk {
+    /// Which root of its ruling's quadratic each arc follows.
+    Ruled {
+        pencil: Arc<Pencil>,
+        labels: Vec<Label>,
+    },
+    Torus(TorusWalk),
+}
+
 /// One branch of a section: a smooth curve lying on the walked surface to
 /// rounding and within the trace's tolerance of the other — to rounding
 /// too, away from a singular point's reach.
@@ -550,7 +604,7 @@ pub enum BranchEnd {
 /// [`BranchEnd::Singular`] evaluates to that singular point at that end.
 #[derive(Debug, Clone)]
 pub struct SectionBranch {
-    pencil: Arc<Pencil>,
+    walk: Walk,
     arcs: Vec<Arc1>,
     ends: Option<[BranchEnd; 2]>,
     /// The singular points the ends are, so that an end evaluates to its
@@ -560,9 +614,28 @@ pub struct SectionBranch {
 }
 
 impl SectionBranch {
-    /// `[0, length]`. The parameter is the tracer's own: the family's
-    /// angle along an arc that does not turn, and a parameter in which the
-    /// section is smooth through a turning point elsewhere.
+    /// A branch of a torus section from its arcs, one of `walk`'s to
+    /// each; `pins` are the singular points the ends are.
+    pub(crate) fn on_torus(
+        walk: TorusWalk,
+        mut arcs: Vec<Arc1>,
+        ends: Option<[BranchEnd; 2]>,
+        pins: [Option<Point3>; 2],
+    ) -> SectionBranch {
+        let length = Arc1::lay(&mut arcs);
+        SectionBranch {
+            walk: Walk::Torus(walk),
+            arcs,
+            ends,
+            pins,
+            length,
+        }
+    }
+
+    /// `[0, length]`. The parameter is the tracer's own: the walked
+    /// angle — a ruled family's, a torus's `u` — along an arc that does
+    /// not turn, and a parameter in which the section is smooth through a
+    /// turning point elsewhere.
     pub fn domain(&self) -> Interval {
         Interval::new(0.0, self.length).unwrap_or(Interval::UNIT)
     }
@@ -581,25 +654,59 @@ impl SectionBranch {
     /// The point at `t`, wrapped into the domain on a closed branch and
     /// clamped to it on an open one.
     pub fn point(&self, t: f64) -> Point3 {
-        let t = if self.is_closed() {
-            t.rem_euclid(self.length)
-        } else {
-            t.clamp(0.0, self.length)
-        };
+        let t = self.inside(t);
         match self.pins {
             [Some(start), _] if t <= 0.0 => return start,
             [_, Some(end)] if t >= self.length => return end,
             _ => {}
         }
+        let (i, s, anchor) = self.located(t);
+        match &self.walk {
+            Walk::Ruled { pencil, labels } => match labels.get(i) {
+                Some(&label) => pencil.point(s, anchor, label),
+                None => pencil.frame.origin(),
+            },
+            Walk::Torus(walk) => walk.point(i, s),
+        }
+    }
+
+    /// The walked torus's own `(u, v)` of `point(t)`, exact as the point
+    /// is, for a branch of [`crate::trace_torus`]; `None` for a branch
+    /// walked on rulings. Unwrapped across both seams, so it is
+    /// continuous along the branch and may leave `[0, 2π)`; a closed
+    /// branch that winds round the torus comes back a whole number of
+    /// turns from where it started.
+    pub fn uv(&self, t: f64) -> Option<Point2> {
+        let Walk::Torus(walk) = &self.walk else {
+            return None;
+        };
+        let t = self.inside(t);
+        let (i, s, _) = self.located(t);
+        Some(walk.uv(i, s, [t <= 0.0, t >= self.length]))
+    }
+
+    /// `t` wrapped into the domain on a closed branch and clamped to it
+    /// on an open one.
+    fn inside(&self, t: f64) -> f64 {
+        if self.is_closed() {
+            t.rem_euclid(self.length)
+        } else {
+            t.clamp(0.0, self.length)
+        }
+    }
+
+    /// The arc `t` falls on and the walked angle there, with the turning
+    /// point it is measured from.
+    fn located(&self, t: f64) -> (usize, f64, Option<(f64, f64)>) {
         let i = self
             .arcs
             .partition_point(|arc| arc.t0 <= t)
             .saturating_sub(1);
         let Some(arc) = self.arcs.get(i) else {
-            return self.pencil.frame.origin();
+            return (i, 0.0, None);
         };
         let (s, anchor) = arc.angle((t - arc.t0).clamp(0.0, arc.len));
-        self.pencil.point(s, anchor, arc.label)
+        (i, s, anchor)
     }
 }
 
@@ -616,7 +723,7 @@ pub struct SectionPoint {
     pub isolated: bool,
 }
 
-/// The section of two quadrics: its branches and its singular points.
+/// A traced section: its branches and its singular points.
 #[derive(Debug, Clone)]
 pub struct SectionTrace {
     branches: Vec<SectionBranch>,
@@ -624,6 +731,10 @@ pub struct SectionTrace {
 }
 
 impl SectionTrace {
+    pub(crate) fn new(branches: Vec<SectionBranch>, points: Vec<SectionPoint>) -> SectionTrace {
+        SectionTrace { branches, points }
+    }
+
     /// The branches, in an order and with orientations that depend on the
     /// two surfaces alone — never on which was passed first.
     pub fn branches(&self) -> &[SectionBranch] {
@@ -631,7 +742,8 @@ impl SectionTrace {
     }
 
     /// The singular points, ascending by the angle of the walked ruling
-    /// through each.
+    /// through each; of a torus section, by the walked torus's `u` and
+    /// then its `v`.
     pub fn points(&self) -> &[SectionPoint] {
         &self.points
     }
@@ -1125,24 +1237,19 @@ fn assemble(
         let closed = chain.ends.is_none();
         let turns_at_start = closed && steps.last().is_some_and(|step| step.2);
         let mut arcs: Vec<Arc1> = Vec::new();
+        let mut labels: Vec<Label> = Vec::new();
         let mut open: Option<Arc1> = None;
         for (k, &(piece, forward, turns_after)) in steps.iter().enumerate() {
             let (lo, hi) = chain.bounds[piece / 2];
             let arc = open.get_or_insert_with(|| {
                 let start = if forward { lo } else { hi };
-                Arc1 {
-                    label: LABELS[piece % 2],
-                    start,
-                    finish: start,
-                    turn_start: if k == 0 {
-                        turns_at_start
-                    } else {
-                        steps[k - 1].2
-                    },
-                    turn_finish: false,
-                    t0: 0.0,
-                    len: 0.0,
-                }
+                let turn_start = if k == 0 {
+                    turns_at_start
+                } else {
+                    steps[k - 1].2
+                };
+                labels.push(LABELS[piece % 2]);
+                Arc1::new(start, start, turn_start, false)
             });
             arc.finish += if forward { hi - lo } else { lo - hi };
             if turns_after || k + 1 == steps.len() {
@@ -1150,12 +1257,7 @@ fn assemble(
                 arcs.extend(open.take());
             }
         }
-        let mut t = 0.0;
-        for arc in &mut arcs {
-            arc.t0 = t;
-            arc.len = Arc1::length(arc.start, arc.finish, arc.turn_start, arc.turn_finish);
-            t += arc.len;
-        }
+        let t = Arc1::lay(&mut arcs);
         if !(t.is_finite() && t > 0.0) {
             continue;
         }
@@ -1165,7 +1267,10 @@ fn assemble(
             BranchEnd::Clipped => None,
         };
         let branch = SectionBranch {
-            pencil: Arc::clone(pencil),
+            walk: Walk::Ruled {
+                pencil: Arc::clone(pencil),
+                labels,
+            },
             arcs,
             ends,
             pins: ends.map_or([None; 2], |ends| ends.map(pin)),

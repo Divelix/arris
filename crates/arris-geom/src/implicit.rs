@@ -204,10 +204,6 @@ impl<'a> Implicit<'a> {
     /// for a point and its foot both within `reach`: a distance below a
     /// tolerance is a value of `F` below `steepness` times it. An
     /// overestimate, which is the side a caller excluding by it needs.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "the torus tracer is its first caller")
-    )]
     pub(crate) fn steepness(&self, reach: f64) -> f64 {
         match self.form {
             Form::Plane => 1.0,
@@ -288,6 +284,30 @@ impl<'a> Implicit<'a> {
                     Vec3::zeros()
                 }
             }
+        }
+    }
+
+    /// A function of `p` with the surface's sign that vanishes on it and
+    /// nowhere else, with its gradient in the surface's frame, as cheap
+    /// as a root-finder calling it in a loop needs: [`Self::distance`]
+    /// and [`Self::gradient`] where those are closed forms, and for the
+    /// elliptic cylinder — whose distance is an iteration of its own —
+    /// the polynomial over its gradient's norm, which is the distance to
+    /// first order, with the unit vector along that gradient. What is
+    /// decided *in length* is decided on the distance, never on this.
+    pub(crate) fn level(&self, p: Point3) -> (f64, Vec3) {
+        let Form::EllipticCylinder { a, b } = self.form else {
+            return (self.distance(p), self.gradient(p));
+        };
+        let q = self.frame.to_local(p);
+        let value = (q.x / a).powi(2) + (q.y / b).powi(2) - 1.0;
+        let slope = Vec3::new(2.0 * q.x / (a * a), 2.0 * q.y / (b * b), 0.0);
+        let steep = slope.norm();
+        if steep > 0.0 {
+            (value / steep, slope / steep)
+        } else {
+            // On the axis: inside, as far as the smaller half-axis.
+            (-a.min(b), Vec3::zeros())
         }
     }
 

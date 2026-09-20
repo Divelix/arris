@@ -235,6 +235,33 @@ impl Poly2 {
         wide.split_v(hi).0.split_v(inner).1
     }
 
+    /// The polynomial over the box `[s₀, s₁] × [t₀, t₁]` of the unit
+    /// square, on its own `[0, 1]²`: convex combinations only. A box with
+    /// no width is a line of the square, and its polynomial is constant
+    /// across it.
+    pub(crate) fn restricted(&self, s: [f64; 2], t: [f64; 2]) -> Poly2 {
+        // The part below the upper end, and of that the part above the
+        // lower end, which is at `lo / hi` of it.
+        let inner = |[lo, hi]: [f64; 2]| if hi > 0.0 { (lo / hi).min(1.0) } else { 0.0 };
+        let along_s = self.split_u(s[1]).0.split_u(inner(s)).1;
+        along_s.split_v(t[1]).0.split_v(inner(t)).1
+    }
+
+    /// `Some(true)` where every coefficient is above `floor`,
+    /// `Some(false)` where every one is below `-floor`: the polynomial's
+    /// sign over the closed unit square, `None` where the coefficients do
+    /// not say.
+    pub(crate) fn sign(&self, floor: f64) -> Option<bool> {
+        let range = self.range();
+        if range.lo > floor {
+            Some(true)
+        } else if range.hi < -floor {
+            Some(false)
+        } else {
+            None
+        }
+    }
+
     /// The least and greatest coefficient: bounds on the polynomial over
     /// the unit square.
     fn range(&self) -> Range {

@@ -107,8 +107,9 @@ with only the tracers' named refusals left unchecked.
   gains the torus form: ascending by `u`, then `v`.
 - **`SectionFault`, new variants** (steps 2 and 3, a public enum, so a
   breaking change named in the commit body): the torus poses refused by
-  name — a tube circle of the torus on the other surface until step 3
-  answers it, and whatever step 2 finds it cannot decide. The existing
+  name — `TubeCircle`, a tube circle of the torus on the other surface,
+  until step 3 answers it, and `UnresolvedTurning`, what step 2 found it
+  cannot decide. The existing
   `TangentAlongCurve` and `CrowdedSingularity` are reused where they say
   the same thing.
 - **`intersect_surfaces`** (step 4): `off_axis`'s torus arms and the
@@ -116,8 +117,9 @@ with only the tracers' named refusals left unchecked.
   `Unsupported` surface pairs left have a `Surface::Nurbs` in them. No
   wildcard arm. The signature does not change; the rustdoc table does.
   Which torus of two is parametrised is a rule on the surfaces — the
-  smaller minor radius, then the smaller major radius, then the frames
-  coordinate by coordinate — so a swap changes nothing, bit for bit.
+  smaller `R + r`, then the smaller minor radius, then the frames
+  coordinate by coordinate (step 2's record says why not the tube
+  first) — so a swap changes nothing, bit for bit.
 - **`arris-check`** (step 5): no signature changes; `faces_meet` already
   passes whatever the intersector answers. `Unchecked::FacePair`'s and
   `ShellFacePair`'s docs narrow to the tracers' refusals and NURBS.
@@ -163,7 +165,7 @@ bound has to be established here.
   `Precision::DEFAULT` on these poses within bernstein.rs's `MAX_DEPTH`,
   or a pair costs more than a hundred times a ruled pair's trace, stop:
   open question 1 is the human's.
-- [ ] Step 2 **[3]** — The tracer, `arris_geom::trace_torus`, all six
+- [x] Step 2 **[3]** — The tracer, `arris_geom::trace_torus`, all six
   pairs, wired to nothing. Seeds from step 1's turning points and the
   roots of `f(0, ·)` (the univariate isolation that exists); between
   turning points each `u` solves `f(u, ·) = 0`, the root followed by its
@@ -303,7 +305,8 @@ What the step found that the plan did not have:
   `100⁴·ε`, and the turning points of a 1e-5 overlap were left
   uncertified with the large torus walked. The smaller tube is walked —
   step 4's rule as written — and step 2's property should pose two tori
-  of very different sizes to hold it.
+  of very different sizes to hold it. (It did, and the rule became the
+  smaller torus over all: step 2's record.)
 - **A tube circle on the other surface is not a `Continuum`** but an
   uncertified box a whole turn long in `v` and a sliver in `u` (1e-5 to
   3e-3 wide), beside the certified turning points of whatever else the
@@ -313,6 +316,80 @@ What the step found that the plan did not have:
   parameters. Step 2 refuses, and step 3 detects, on the box's shape.
 - Depths are in **halvings**, two to a quartering; `MAX_DEPTH` is per
   direction.
+
+## Step 2's record (the tracer)
+
+`arris_geom::trace_torus` in `torus_walk.rs`, on step 1's census. What it
+proved, and what it found that the plan did not have:
+
+- **A branch is graphs `v(u)` joined by ADR-0018's `u = u_T ± L(1 − cos
+  θ)`** (open question 4, first half): `Arc1` is shared with the ruled
+  tracer as it is, `SectionBranch` holds either walk behind its methods.
+  What the ruled pair has in closed form — the root on a ruling — is here
+  the root of the other surface's signed distance along a tube circle, by
+  bracketed Newton; a point costs 0.7 to 1.4 µs.
+- **The bracket is proven, not followed.** Each graph is covered by cells
+  marched along it, certified on the Bernstein coefficients of `f` over
+  the cell's box: `f_t` of one sign and `f` of opposite signs along the
+  lower and upper edges (one root at every `u`); a turning point's cell
+  with `f_s` of one sign and no other turning point in it, so `v_T` itself
+  parts the two arms; a singular point's cell with `∂²F/∂v²` of one sign
+  (weight-free, `w·X_t − d·w_t·X` twice) and `f` of one sign along both
+  edges, its arms parted by the zero of the distance's slope in `v`. A
+  march ends where it stands in another point's cell, which holds nothing
+  but that point's arms. No labels, no root counting: roots exactly on a
+  patch edge, which every symmetric pose has, never come into it.
+- **Winding components** with no turning point are seeded from the
+  isolated sign changes of `f(0, ·)` that no cell and no marched graph
+  accounts for, and marched until they are back, however many turns later.
+- **The singular point is a bump in the Hessian's own metric** (open
+  question 4, second half). ADR-0018's bump carried over as a *round* one
+  fails on the first thin torus: the distance's curvature differs a
+  hundredfold between `u` and `v`, and a reach wide enough for the flat
+  direction swamps the steep one's cell. With `y² = xᵀ|H|x / reach²`,
+  `reach² = 8·|δ_S|`, the correction adds at most three quarters of the
+  quadratic part along each eigenvector and the signature is kept — the
+  same bound as ADR-0018's. A saddle is a crossing of four arms, an
+  extremum an isolated point; the turning points inside the reach, the
+  near miss's two among them, are the singular point's.
+- **A turning point's cell has an aspect**: as tall as the fold
+  `u − u_T ≈ c·(v − v_T)²` is at the cell's width. A square cell on a ring
+  a hundred tubes across lets its arms out after nanoradians of `u`, where
+  `f` over a march's box is below its rounding floor. And it is half the
+  way, in `v`, to a turning point beside it in `u`: the two ends of an
+  S-bend sit nanoradians apart in `u`, their cells overlap, and a march
+  between them starts captured.
+- **The elliptic cylinder's exact distance is an iteration**, 50 µs a
+  point. `Implicit::level` — the polynomial over its gradient's norm for
+  that one form, the distance for the others — is what the roots are found
+  on; whether a critical point is singular is still decided in length, on
+  the exact distance.
+- **Refusals**: `TubeCircle` (new; step 3 answers it), `UnresolvedTurning`
+  (new: turning points `f64` does not tell apart away from a singular
+  point, a cell or a march that cannot be certified),
+  `TangentAlongCurve` (a continuum, a critical box long either way, the
+  torus against itself), `CrowdedSingularity` (a degenerate critical point
+  within the tolerance, singular points within twice each other's reach, a
+  saddle with an arm along `v`, no certifiable cell). `SharedRuling` does
+  not occur.
+- **Cost** (dev profile, this machine, the hand cases' ring): the whole
+  trace — both isolations, the cells, the chains — 0.7 ms against a plane,
+  0.8 against a torus, 1.0 to 1.1 against a quadric. That is the number
+  ⚠ OPEN 1 was waiting for: under a third of what `intersect_surfaces`
+  spends on a ruled pair, fit included, so the gate's reading stands.
+- **The operand rule is the smaller torus over all, `R + r`, not the
+  smaller tube** — step 1's rule as written was wrong, and the plan's
+  step 4 delta is amended. A thin large ring (8 by 0.15) against a small
+  fat torus (0.27 by 0.2) has the smaller tube and points sixty of the fat
+  one's sizes away from it: one turning point in 35 000 sections came
+  back uncertified. Step 1's poses choose the same torus under either
+  rule, so its record stands.
+- **Measured**: the six pairs and a large torus against one twenty to a
+  hundred times smaller, 5000 random poses of each — 35 000 sections —
+  with none refused and a 160² scan of the torus finding no crossing off
+  a branch (the acceptance asks for 1000); 350 tangencies (five tori, a
+  convex point and a saddle, seven partners, a gap of 0, ±½ and ±100
+  tolerances) each one singular point or none.
 
 ## Acceptance
 
@@ -357,7 +434,8 @@ What the step found that the plan did not have:
 
 - ⚠ OPEN 1 — **the fallback if step 1's gate fails** (human, at step 1;
   certification passed, the cost clause was read as step 1's record says
-  and is the human's to overrule):
+  and is the human's to overrule; step 2 measured the whole trace at
+  0.7 to 1.1 ms, which does not change the reading):
   the idea's answer is option A — tube circles as the family, for a plane
   and a sphere only — with the other four pairs moved to C4 and the
   roadmap amended. Not planned here; the plan is rewritten if it comes
@@ -376,10 +454,10 @@ What the step found that the plan did not have:
   a pipe elbow against its straight pipe is this pose and S5 meets it as
   soon as a body has both faces. The refusal is the fallback, not the
   plan.
-- ⚠ OPEN 4 — **how step 2 joins pieces at a turning point and ends
-  branches at a singular point** (agent, at step 2; recorded in
-  ADR-0019): ADR-0018's two devices are one-dimensional and the idea
-  already says the bump does not carry over as is.
+- OPEN 4, answered at step 2 — **how pieces join at a turning point and
+  branches end at a singular point**: ADR-0018's `u = u_T ± L(1 − cos θ)`
+  as it is, and its bump in the Hessian's own metric; step 2's record has
+  both, for ADR-0019.
 - ⚠ OPEN 5 — **does `MeetCurve` carry the torus's pcurve, or does the
   next plan fit it from `pcurve_on`'s projection?** (agent, in C3's third
   plan — not here.) This plan only keeps `SectionBranch::uv` so the first

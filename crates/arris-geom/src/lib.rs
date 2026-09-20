@@ -18,10 +18,6 @@
 #![warn(missing_docs)]
 
 mod bernstein;
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the torus tracer is its first caller")
-)]
 mod bernstein2;
 mod cone_section;
 mod conic2;
@@ -42,14 +38,8 @@ mod project;
 pub mod region2;
 mod section;
 mod surface;
+mod torus_walk;
 mod trace;
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the isolation only; the tracer on it is not written yet"
-    )
-)]
 mod trace_torus;
 
 pub use cone_section::HYPERBOLA_HALF_SPAN;
@@ -68,6 +58,7 @@ pub use profile::{Profile, ProfileEdge, ProfileError, ProfileLoop, ProfileSegmen
 pub use project::{CurveProjection, SurfaceProjection};
 pub use section::{SECTION_FIT_DEGREE, SECTION_FIT_FRACTION};
 pub use surface::{Surface, SurfaceEval, SurfaceKind};
+pub use torus_walk::trace_torus;
 pub use trace::{
     BranchEnd, SectionBranch, SectionFault, SectionPoint, SectionTrace, trace_quadrics,
 };
