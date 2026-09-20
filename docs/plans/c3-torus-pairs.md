@@ -233,13 +233,14 @@ bound has to be established here.
   `every_other_pair_is_unsupported` is left the NURBS pairs. Rustdoc table
   and `docs/DATA-MODEL.md` §Curves restated in this commit; the commit
   body names the `SectionFault` and `SectionBranch` changes not yet named.
-- [ ] Step 5 **[2]** — S5 and B1 decide a torus face against anything.
+- [x] Step 5 **[2]** — S5 and B1 decide a torus face against anything.
   Checker tests on hand-assembled bodies (`arris_debug`'s sample torus):
   the ring beside a tilted cylinder shell clear of it — B1 decided, clean;
-  a tilted pin through the tube — B1 violated, naming the faces; a torus
-  face and an oblique plane face of one shell sharing their section as an
-  edge — S5 clean — and the same with the edge left out — S5 violated;
-  the elbow pose of step 3 as two faces sharing the tube circle. The
+  a tilted pin through the tube — B1 violated, naming the shells; a torus
+  face and an oblique plane face of one shell whose section is interior to
+  both — S5 violated — and the same plane trimmed clear of it — S5 clean;
+  the elbow pose of step 3 as two faces sharing the tube circle, and the
+  same tangency laid across a bend with nothing shared — S5 violated. The
   `unchecked` list of each asserted empty. The cost of a `Full` check on
   the torus pairs measured against the 50 ms a ruled pair takes
   (`within` does not clip a torus section, and the last plan's S5 went to
@@ -543,6 +544,58 @@ and what it found that the plan did not have:
   `geom/c3-torus-pairs` — twelve pairs, ten partners — matching the
   oracle's walked lines and pinned by name.
 
+## Step 5's record (S5 and B1)
+
+`crates/arris-check/tests/torus.rs`, seven tests, each asserting
+`Report::unchecked` empty. What it found that the plan did not have:
+
+- **The shared edge cannot be an oblique plane's section, this plan.** A
+  face's loop needs a pcurve on *both* its surfaces, and `pcurve_on` of a
+  fitted curve on a torus is `Unsupported` — this plan's own non-goal,
+  C3's third plan's to lift (⚠ OPEN 5). So the step's "sharing their
+  section as an edge" is the elbow's exact tube circle, which both
+  surfaces carry as a `Curve2::Line`: a quarter-bend of the ring and the
+  straight pipe it runs into, welded along it, clean at `Full`. The
+  oblique plane gives the other half — a 20-across patch through the ring,
+  its fitted section interior to both faces, S5 violated; the same plane
+  trimmed to 2.8 across inside the hole, the same section traced and none
+  of it interior to the patch, S5 silent. A section of a torus that is
+  *interior* to both faces and excused by a shared edge — the rim case of
+  `full.rs` with a torus — has to wait for that pcurve.
+- **A tangency along a tube circle is a violation when nothing is
+  shared**, and the contrast is the one the step asked for: the same pipe
+  and the same bend, the pipe laid across the bend's middle at `u = π/4`
+  instead of welded at its end, `Touch` on a circle interior to both
+  faces. The welded pose passes because the circle is each face's own
+  boundary and the pose's other loop lies at a `u` the bend does not
+  cover.
+- **`ShellNestingFault::Overlap` names the shells, not the faces**: the
+  step's wording was wrong about B1's line. The faces are what
+  `Unchecked::ShellFacePair` would name, and there is none to name now.
+- **Cost, and the reading of it** (test profile, this machine): the whole
+  `Full` check per body — the ring alone 6 ms, the pin through the hole
+  8 ms, the pin through the tube 14 ms, the oblique plane 33 and 35 ms,
+  the elbow 84 ms, the pipe across the bend 124 ms. Against the 50 ms a
+  ruled pair's body took in `plans/quadric-intersection-curves`'s record,
+  the worst is 2.5×, not the order of magnitude that would land a fix
+  here. All of the excess is `intersect_surfaces`, and within it
+  `fit_curve` (step 4's finding): the pairs alone are 0.16 ms for the
+  pin through the hole (`Empty`), 9.1 ms for the pin through the tube,
+  26 ms for the oblique plane and 80 ms for the elbow — against 3.5 ms
+  for a traced *ruled* pair (two cylinders on skew axes) and 3.5 ms for a
+  whole `Full` check with no traced pair in it. The checker itself adds
+  nothing a torus makes expensive: `within` is ignored by the torus
+  tracer, so the clipping that took S5 to seconds in the last plan has no
+  torus form.
+- **Looked at, not only asserted**: all five bodies rendered
+  (`inspect`) — the elbow is a pipe elbow, the crossing pose's three
+  circles sit on the bend where they should, the pin is in the hole in
+  one pose and through the tube in the other, and the oblique patch spans
+  the ring in one and sits inside the hole in the other.
+- **`Unchecked`'s `Display` no longer says "no closed form"**: a traced
+  pair has none either and is decided. It says the pair "is not decided".
+  A `Display` change, no type or signature.
+
 ## Acceptance
 
 - `ARRIS_PROPTEST_CASES=1000 cargo nextest run --workspace` green: the
@@ -611,4 +664,6 @@ and what it found that the plan did not have:
 - ⚠ OPEN 5 — **does `MeetCurve` carry the torus's pcurve, or does the
   next plan fit it from `pcurve_on`'s projection?** (agent, in C3's third
   plan — not here.) This plan only keeps `SectionBranch::uv` so the first
-  is possible.
+  is possible. Step 5 found the second thing that waits on it: no face
+  can be bounded by a fitted torus section, so S5's shared-edge excuse is
+  untestable over one until the pcurve exists — a test to write with it.

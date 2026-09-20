@@ -9,9 +9,9 @@
 //! tolerance scaled to the surface's speed, and the polygons are kept for
 //! the row that needs them next.
 //!
-//! A pair the geometry kernel has no closed form for is never guessed at:
-//! it is recorded through [`crate::Unchecked`], which is neither a
-//! violation nor a pass.
+//! A pair the geometry kernel does not decide is never guessed at: it is
+//! recorded through [`crate::Unchecked`], which is neither a violation nor
+//! a pass.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -192,8 +192,8 @@ impl<'m> Checker<'m> {
     /// they share — S5's test, and B1's between two shells, which share
     /// none. A pair whose boxes are apart shares no point and is decided
     /// without an intersector; a pair that does not resolve is M1's and
-    /// meets nowhere here. Errors: the intersector has no closed form for
-    /// the pair's surfaces, whose kinds it names.
+    /// meets nowhere here. Errors: the intersector does not decide the
+    /// pair's surfaces, whose kinds it names.
     pub(crate) fn faces_meet(
         &self,
         a: FaceId,
@@ -314,8 +314,8 @@ impl<'m> Checker<'m> {
     }
 
     /// S5: two faces of a shell meet only along the edges and vertices
-    /// they share ([`Checker::faces_meet`]); a pair with no closed form is
-    /// unchecked.
+    /// they share ([`Checker::faces_meet`]); a pair the intersector does
+    /// not decide is unchecked.
     fn s5_face_pairs(&mut self) {
         let model = self.model;
         let mut found = Vec::new();

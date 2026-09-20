@@ -337,10 +337,12 @@ fn edge_near(m: &Model, body: Body, at: Point3) -> Result<Edge, TestCaseError> {
 }
 
 /// `report` has no violation and nothing unchecked: every face pair a
-/// blend makes without a torus is decided by S5 and B1, the skew blend
-/// cylinders two fillets meet in and a corner's sphere against a blend
-/// cylinder off its centre among them, traced over the overlap of the
-/// two faces' boxes (ADR-0018).
+/// blend makes is decided by S5 and B1, the skew blend cylinders two
+/// fillets meet in and a corner's sphere against a blend cylinder off its
+/// centre among them, traced over the overlap of the two faces' boxes
+/// (ADR-0018). Nothing here carries a torus face — every blended edge is
+/// between two planes — but nothing would be left undecided if it did:
+/// every pair of analytic surfaces is decided in every pose (ADR-0019).
 fn assert_checked(report: &Report) -> Result<(), TestCaseError> {
     prop_assert!(report.is_ok(), "{}", report);
     prop_assert!(

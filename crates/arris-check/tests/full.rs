@@ -1,7 +1,8 @@
 //! Checker `Full` (`docs/DATA-MODEL.md` §Invariants): one violation
 //! test per row of E8, L5, S5, B1 and B2, the sample bodies clean at
-//! `Full`, and a pair the geometry kernel has no closed form for landing
-//! under `Report::unchecked` rather than passing or failing.
+//! `Full`, and a pair the geometry kernel does not decide landing under
+//! `Report::unchecked` rather than passing or failing. The rows over a
+//! torus face are in `torus.rs`.
 
 use core::f64::consts::{PI, TAU};
 

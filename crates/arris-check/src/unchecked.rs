@@ -17,9 +17,11 @@ use arris_topo::{BodyId, EntityId, FaceId, ShellId};
 #[non_exhaustive]
 pub enum Unchecked {
     /// **S5** — the intersector does not decide this pair of surfaces —
-    /// a torus in a pose sharing no axis with the other, or a pose the
-    /// tracer refuses (ADR-0018) — so whether the two faces meet away
-    /// from their shared edges is not known.
+    /// a [`SurfaceKind::Nurbs`] in it, or a pose one of the two tracers
+    /// refuses (ADR-0018, ADR-0019) — so whether the two faces meet away
+    /// from their shared edges is not known. Every pair of analytic
+    /// surfaces is decided in every pose, a torus against anything among
+    /// them.
     FacePair {
         /// The shell holding both faces.
         shell: ShellId,
@@ -38,9 +40,9 @@ pub enum Unchecked {
         /// The shell that could not be placed.
         shell: ShellId,
     },
-    /// **B1** — the intersector has no closed form for a face of one shell
-    /// against a face of another, so whether the two shells meet is not
-    /// known.
+    /// **B1** — the intersector does not decide a face of one shell
+    /// against a face of another — [`Unchecked::FacePair`]'s pair, on two
+    /// shells — so whether the two shells meet is not known.
     ShellFacePair {
         /// The body.
         body: BodyId,
@@ -86,7 +88,7 @@ impl fmt::Display for Unchecked {
                 ..
             } => write!(
                 f,
-                "no closed form for {face_a} ({}) against {face_b} ({})",
+                "{face_a} ({}) against {face_b} ({}) is not decided",
                 kinds.0, kinds.1
             ),
             Unchecked::ShellNesting { shell, .. } => {
@@ -99,7 +101,7 @@ impl fmt::Display for Unchecked {
                 ..
             } => write!(
                 f,
-                "no closed form for {face_a} ({}) against {face_b} ({}), of two shells",
+                "{face_a} ({}) against {face_b} ({}), of two shells, is not decided",
                 kinds.0, kinds.1
             ),
         }
