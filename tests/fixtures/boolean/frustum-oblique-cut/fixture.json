@@ -1,0 +1,35 @@
+{
+  "description": "the frustum of sweep/revolve-frustum grown to z ∈ [−2, 2] — the cone r = 3 − z/2 about z, bored to r = 1 — cut by a half-space tilted by `tilt` about x through the origin, so the cut plane z = y·tan(tilt) meets the cone in a whole ellipse clear of both caps and the apex, and the bore in a second one. The ellipse is the first section an operand's cone face carries: no exact Curve2 on a cone, so its pcurve there is fitted over the cone's own projection and crosses the seam (ADR-0021). The volume is the bored frustum 100π/3 less the piece above the plane: the annulus 1 ≤ r ≤ 2 contributes 3π(2 − 0) and the cone's own cap ∫(6 − 2r − cy) over r ≥ 2, which is 144π/(4 − c²)^(3/2) + 32π/3 − 24π with c = tan(tilt), by ∫dθ/(2 + c·sinθ)² = 4π/(4 − c²)^(3/2); the area is the bottom annulus, the bore, the oblique face (its xy projection over cos tilt) and what is left of the cone, whose element is √5·r·dr·dθ. The oracle's numbers are its own; its reading of Arris's STEP is held to 1e-6, because Open CASCADE's STEP reader drops the fitted pcurve the cone's ellipse is written with — degree five over thirty-six poles — and reprojects it as a cubic over twenty-five, whose (u, v) region is 9.5e-7 of the cone face away from the one Arris measures to 4e-10 of the closed form above",
+  "params": {"tilt": 15},
+  "variants": {"steeper": {"tilt": 20}},
+  "tolerances": {"volume_rel": 1e-6, "area_rel": 1e-6, "inertia_rel": 2e-6, "centroid_abs": 5e-6},
+  "steps": [
+    {
+      "name": "trapezoid",
+      "op": "profile",
+      "plane": {"origin": [0, 0, 0], "x": [1, 0, 0], "y": [0, 0, 1]},
+      "outer": {"start": [1, -2], "segments": [{"line_to": [4, -2]}, {"line_to": [2, 2]}, {"line_to": [1, 2]}, {"line_to": [1, -2]}]}
+    },
+    {"name": "frustum", "op": "revolve", "profile": "trapezoid", "axis": {"origin": [0, 0, 0], "direction": [0, 0, 1]}, "angle_deg": 360},
+    {"name": "slab0", "op": "box", "min": [-10, -10, 0], "max": [10, 10, 10]},
+    {"name": "slab", "op": "transform", "of": "slab0", "rotate": {"axis": [1, 0, 0], "origin": [0, 0, 0], "angle_deg": "tilt"}},
+    {"name": "result", "op": "cut", "target": "frustum", "tool": "slab"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [0, -2.5, -1.5], "expect": "in"},
+    {"label": "in_the_bore", "point": [0, 0, 0], "expect": "out"},
+    {"label": "above_the_plane", "point": [0, 2, 1], "expect": "out"},
+    {"label": "outside", "point": [5, 0, 0], "expect": "out"},
+    {"label": "on_the_oblique_face", "point": [0, -2, "-2 * tan(radians(tilt))"], "expect": "on"},
+    {"label": "on_the_cone", "point": [-3.5, 0, -1], "expect": "on"},
+    {"label": "on_the_bore", "point": [1, 0, -1], "expect": "on"},
+    {"label": "on_the_bottom", "point": [2, 0, -2], "expect": "on"}
+  ],
+  "analytic": {
+    "volume": "pi * 122 / 3 - 144 * pi / (4 - tan(radians(tilt))^2)^(3/2)",
+    "area": "19 * pi + (72 * pi / (4 - tan(radians(tilt))^2)^(3/2) - pi) / cos(radians(tilt)) + 16 * sqrt(5) * pi - 72 * sqrt(5) * pi / (4 - tan(radians(tilt))^2)^(3/2)",
+    "counts": {"vertices": 4, "edges": 6, "faces": 4, "loops": 6, "shells": 1},
+    "genus": 1
+  }
+}

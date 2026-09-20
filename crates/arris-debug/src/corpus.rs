@@ -27,7 +27,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use arris_geom::{GeomKind, Profile, SurfaceKind};
+use arris_geom::Profile;
 use arris_io::arris_check::arris_topo::arris_math::nalgebra::UnitQuaternion;
 use arris_io::arris_check::arris_topo::arris_math::{
     Axis, FrameError, Isometry, Point3, UnitVec3, Vec3,
@@ -321,9 +321,6 @@ impl Refusal {
             Refusal::Error(ExpectError::EllipticRevolve) => {
                 "OpError::Degenerate with Reason::EllipticRevolve".into()
             }
-            Refusal::Error(ExpectError::EllipticOperand) => {
-                "OpError::Unsupported naming an elliptic-cylinder face".into()
-            }
         }
     }
 
@@ -350,7 +347,6 @@ impl Refusal {
                     Refusal::Error(ExpectError::EllipticRevolve) => {
                         matches!(reason, Reason::EllipticRevolve { .. })
                     }
-                    Refusal::Error(ExpectError::EllipticOperand) => false,
                 };
                 if matches {
                     return Ok(());
@@ -360,20 +356,10 @@ impl Refusal {
             Err(CorpusError::Op {
                 source: OpError::Unsupported { a, b },
                 ..
-            }) => {
-                let elliptic = |kind: GeomKind| {
-                    matches!(kind, GeomKind::Surface(SurfaceKind::EllipticCylinder))
-                };
-                let matches = matches!(self, Refusal::Error(ExpectError::EllipticOperand))
-                    && (elliptic(a.0) || elliptic(b.0));
-                if matches {
-                    return Ok(());
-                }
-                format!(
-                    "OpError::Unsupported: no closed form for {} ({}) against {} ({})",
-                    a.1, a.0, b.1, b.0
-                )
-            }
+            }) => format!(
+                "OpError::Unsupported: no closed form for {} ({}) against {} ({})",
+                a.1, a.0, b.1, b.0
+            ),
             Err(e) => e.to_string(),
         };
         Err(CorpusError::Expectation {

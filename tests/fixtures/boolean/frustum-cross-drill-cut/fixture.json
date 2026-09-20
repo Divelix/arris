@@ -1,0 +1,31 @@
+{
+  "description": "the same bored frustum drilled across its wall: a cylinder of radius `rd` on y at x = dx, z = dz, whose closest approach to the axis is dx − rd > 1 so it never reaches the bore and whose z span stays inside both caps, so it meets the cone alone. A cone and a cylinder on skew axes have no conic section: each of the two loops where the drill enters and leaves the wall is a quartic traced by the cone's rulings and fitted (ADR-0018, ADR-0019), with a fitted pcurve on the cone and an exact one on the drill. One tunnel through one chunk of wall, so the genus is the bore's plus one",
+  "params": {"dx": 2, "dz": 0.5, "rd": 0.6, "L": 12},
+  "steps": [
+    {
+      "name": "trapezoid",
+      "op": "profile",
+      "plane": {"origin": [0, 0, 0], "x": [1, 0, 0], "y": [0, 0, 1]},
+      "outer": {"start": [1, -2], "segments": [{"line_to": [4, -2]}, {"line_to": [2, 2]}, {"line_to": [1, 2]}, {"line_to": [1, -2]}]}
+    },
+    {"name": "frustum", "op": "revolve", "profile": "trapezoid", "axis": {"origin": [0, 0, 0], "direction": [0, 0, 1]}, "angle_deg": 360},
+    {"name": "drill", "op": "cylinder", "base": ["dx", "-L / 2", "dz"], "axis": [0, 1, 0], "radius": "rd", "height": "L"},
+    {"name": "result", "op": "cut", "target": "frustum", "tool": "drill"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [0, -2.5, 0], "expect": "in"},
+    {"label": "in_the_drill", "point": ["dx", 0, "dz"], "expect": "out"},
+    {"label": "in_the_bore", "point": [0, 0, 0], "expect": "out"},
+    {"label": "past_the_wall", "point": ["dx", 2.5, "dz"], "expect": "out"},
+    {"label": "outside", "point": [5, 0, 0], "expect": "out"},
+    {"label": "on_the_drill_wall", "point": ["dx", 0, "dz + rd"], "expect": "on"},
+    {"label": "on_the_cone", "point": [-3, 0, 0], "expect": "on"},
+    {"label": "on_the_bore", "point": [1, 0, 0], "expect": "on"},
+    {"label": "on_the_bottom", "point": [2, 0, -2], "expect": "on"}
+  ],
+  "analytic": {
+    "counts": {"vertices": 6, "edges": 9, "faces": 5, "loops": 9, "shells": 1},
+    "genus": 2
+  }
+}

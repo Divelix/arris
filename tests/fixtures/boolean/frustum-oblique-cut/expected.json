@@ -1,0 +1,228 @@
+{
+  "occt": "8.0.1.0.0",
+  "recipe_sha256": "a1d7db1a20cdcfd3c703ce37582a0d0283737b6944081a687dbbeef5c3637d46",
+  "results": {
+    "default": {
+      "area": 133.9482388491437,
+      "centroid": [
+        2.26785287767945e-11,
+        0.2530485518364766,
+        -1.092933041910425
+      ],
+      "counts": {
+        "edges": 6,
+        "faces": 4,
+        "loops": 6,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 4
+      },
+      "degenerate": false,
+      "euler_characteristic": 0,
+      "genus": 1,
+      "inertia": [
+        [
+          254.64261286203853,
+          -6.225384364695035e-10,
+          -1.7716000848640057e-09
+        ],
+        [
+          -6.225384364695035e-10,
+          266.402334537162,
+          -17.307388754824956
+        ],
+        [
+          -1.7716000848640057e-09,
+          -17.307388754824956,
+          468.7430420448852
+        ]
+      ],
+      "probes": [
+        {
+          "class": "in",
+          "label": "inside",
+          "point": [
+            0.0,
+            -2.5,
+            -1.5
+          ]
+        },
+        {
+          "class": "out",
+          "label": "in_the_bore",
+          "point": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "above_the_plane",
+          "point": [
+            0.0,
+            2.0,
+            1.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "outside",
+          "point": [
+            5.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_the_oblique_face",
+          "point": [
+            0.0,
+            -2.0,
+            -0.5358983848622454
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_the_cone",
+          "point": [
+            -3.5,
+            0.0,
+            -1.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_the_bore",
+          "point": [
+            1.0,
+            0.0,
+            -1.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_the_bottom",
+          "point": [
+            2.0,
+            0.0,
+            -2.0
+          ]
+        }
+      ],
+      "volume": 69.65203938307275
+    },
+    "steeper": {
+      "area": 133.89274261444712,
+      "centroid": [
+        4.9914808183267405e-11,
+        0.36472211708350666,
+        -1.0811356324899275
+      ],
+      "counts": {
+        "edges": 6,
+        "faces": 4,
+        "loops": 6,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 4
+      },
+      "degenerate": false,
+      "euler_characteristic": 0,
+      "genus": 1,
+      "inertia": [
+        [
+          242.28232503397427,
+          3.2868420346195874e-10,
+          -3.467859034773608e-09
+        ],
+        [
+          3.2868420346195874e-10,
+          265.5879972508268,
+          -21.7467163352808
+        ],
+        [
+          -3.467859034773608e-09,
+          -21.7467163352808,
+          450.8572302501486
+        ]
+      ],
+      "probes": [
+        {
+          "class": "in",
+          "label": "inside",
+          "point": [
+            0.0,
+            -2.5,
+            -1.5
+          ]
+        },
+        {
+          "class": "out",
+          "label": "in_the_bore",
+          "point": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "above_the_plane",
+          "point": [
+            0.0,
+            2.0,
+            1.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "outside",
+          "point": [
+            5.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_the_oblique_face",
+          "point": [
+            0.0,
+            -2.0,
+            -0.7279404685324047
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_the_cone",
+          "point": [
+            -3.5,
+            0.0,
+            -1.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_the_bore",
+          "point": [
+            1.0,
+            0.0,
+            -1.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_the_bottom",
+          "point": [
+            2.0,
+            0.0,
+            -2.0
+          ]
+        }
+      ],
+      "volume": 68.2792519825173
+    }
+  }
+}

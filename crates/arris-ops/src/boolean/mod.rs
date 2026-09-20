@@ -54,10 +54,11 @@ pub struct FacePair {
     /// [`Interferences::blocks`] — and the touching curves of a `Meets`
     /// by its [`Interferences::contacts`] — the blocks of the tangent
     /// ruling interior to both faces — and the curvature rule at each;
-    /// neither contributes a section edge. A pair past the quadric guard
-    /// meets in curves of one kind: a *crossing pair* or a *touching
-    /// pair*; its only points are a traced section's singular points,
-    /// where its branches end (ADR-0018), each a section crossing.
+    /// neither contributes a section edge. Every pair the intersector is
+    /// asked about meets in curves of one kind: a *crossing pair* or a
+    /// *touching pair*; its only points are a traced section's singular
+    /// points, where its branches end (ADR-0018), each a section
+    /// crossing.
     pub intersection: SurfaceIntersection,
 }
 

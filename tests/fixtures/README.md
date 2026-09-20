@@ -139,17 +139,26 @@ of the step that made the fixture pass, and a later change to it is a
   both sides (`gp_Elips` insists on `a ≥ b`); radii within the linear
   tolerance of each other are a circle in Arris. The oracle's area of a
   face on the `Geom_SurfaceOfLinearExtrusion` an ellipse extrudes into
-  is its basis arc's length (`GCPnts_AbscissaPoint`, to 1e-13) times its
-  height — its (u, v) region is a rectangle for every face an extrude
-  makes — since Open CASCADE's fixed-order integration is 2e-5 off there
-  and its adaptive one worse; a shape of elementary faces alone keeps
-  the fixed order over the whole shape and its committed numbers bit for
-  bit. A shape with a B-spline edge — the section two cylinders on
-  crossing or skew axes meet in, walked by Open CASCADE and fitted by
-  Arris (ADR-0018) — is measured by the adaptive integration to 1e-12
-  instead, volume and area both: over the many-span pcurves such an edge
-  trims its faces with, the fixed order is 1e-6 off where the shape is
-  right to 1e-10 against a quadrature of the exact section.
+  is the contour integral of its basis arc's length
+  (`GCPnts_AbscissaPoint`, to 1e-13) against `dv` around the face's own
+  (u, v) loops — Green's theorem over an area element that is the basis
+  curve's speed alone — since Open CASCADE's fixed-order integration is
+  2e-5 off there and its adaptive one worse. An untrimmed such face is a
+  rectangle and the integral is its arc length times its height, as it
+  always was; a boolean that trims one with planes parallel to the axis
+  (rulings) or perpendicular to it (arcs) is exact too, and a curved
+  pcurve there is refused by name. A shape with an extrusion face also
+  takes `VolumePropertiesGK` for its volume, centroid and inertia, which
+  the plain adaptive integration is 9e-7 off in
+  (`boolean/elliptic-operand-cut`, against its closed forms); a shape of
+  elementary faces alone keeps the fixed order over the whole shape and
+  its committed numbers bit for bit. A shape trimmed by a B-spline
+  pcurve of many spans — under a walked or fitted section edge
+  (ADR-0018), or under an exact conic on a cone, a sphere or a torus,
+  which has no exact 2D form there (ADR-0021) — is measured by the
+  adaptive integration to 1e-12 instead, volume and area both: over such
+  a pcurve the fixed order is 1e-6 off where the shape is right to 1e-10
+  against a quadrature of the exact section.
 - **A `profile` plane's `x` and `y`** must be orthogonal (each normalised
   first): refused on both sides, by the same named tolerance
   (`arris_math::Precision::DEFAULT.angular_tolerance`, Open CASCADE's

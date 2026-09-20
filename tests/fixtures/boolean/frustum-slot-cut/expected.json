@@ -1,0 +1,135 @@
+{
+  "occt": "8.0.1.0.0",
+  "recipe_sha256": "cd3dc635c858860ce4475ea48b054d9e8bc85c0a0ea1f3be9fee06b34cfbc716",
+  "results": {
+    "default": {
+      "area": 173.3206317658373,
+      "centroid": [
+        5.241674572985509e-12,
+        -0.1711938793243365,
+        -0.4818884570680777
+      ],
+      "counts": {
+        "edges": 18,
+        "faces": 8,
+        "loops": 10,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 12
+      },
+      "degenerate": false,
+      "euler_characteristic": 0,
+      "genus": 1,
+      "inertia": [
+        [
+          375.8657730780557,
+          -4.92697298904337e-09,
+          8.499423737544289e-10
+        ],
+        [
+          -4.92697298904337e-09,
+          419.6259381552696,
+          -1.54668007533399
+        ],
+        [
+          8.499423737544289e-10,
+          -1.54668007533399,
+          571.5641347775488
+        ]
+      ],
+      "probes": [
+        {
+          "class": "in",
+          "label": "inside",
+          "point": [
+            0.0,
+            -2.5,
+            0.0
+          ]
+        },
+        {
+          "class": "in",
+          "label": "beside_the_slot",
+          "point": [
+            2.0,
+            2.0,
+            0.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "in_the_slot",
+          "point": [
+            0.0,
+            2.5,
+            0.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "in_the_bore",
+          "point": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "outside",
+          "point": [
+            0.0,
+            5.0,
+            0.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_the_slot_floor",
+          "point": [
+            0.0,
+            1.5,
+            0.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_the_slot_wall",
+          "point": [
+            0.6,
+            2.0,
+            0.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_the_cone",
+          "point": [
+            -3.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_the_bore",
+          "point": [
+            1.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_the_bottom",
+          "point": [
+            2.0,
+            0.0,
+            -2.0
+          ]
+        }
+      ],
+      "volume": 97.62031242905137
+    }
+  }
+}

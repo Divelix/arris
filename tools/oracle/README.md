@@ -42,8 +42,11 @@ commit that says so (`.agents/rules/git.md`).
   the module docstring and `tests/fixtures/README.md`.
 - `oracle/measure.py` — volume, area, centroid and the inertia tensor
   (`GProp`: its fixed-order integration, but the adaptive overloads to
-  `SPLINE_EPS` for a shape with a B-spline edge — a quadric section
-  walked or fitted, over whose pcurves the fixed order is 1e-6 off),
+  `SPLINE_EPS` for a shape trimmed by a many-span B-spline pcurve — under
+  a quadric section walked or fitted, or under an exact conic on a cone,
+  a sphere or a torus — over which the fixed order is 1e-6 off, and
+  `VolumePropertiesGK` for a shape with a surface-of-extrusion face,
+  whose area is the Green integral of its basis arc length instead),
   counts by unique
   sub-shape (a seam edge once, an edge `BRep_Tool::Degenerated` names not
   at all), loops, shells, solids — of the boundary only: an edge oriented

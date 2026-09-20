@@ -21,8 +21,8 @@
 import math
 
 from OCP.BRep import BRep_Tool
-from OCP.BRepAdaptor import BRepAdaptor_Curve, BRepAdaptor_Surface
-from OCP.BRepTools import BRepTools
+from OCP.BRepAdaptor import BRepAdaptor_Curve, BRepAdaptor_Curve2d, BRepAdaptor_Surface
+from OCP.BRepTools import BRepTools_WireExplorer
 from OCP.GCPnts import GCPnts_AbscissaPoint
 from OCP.BRepClass3d import BRepClass3d_SolidClassifier
 from OCP.BRepGProp import BRepGProp
@@ -52,6 +52,16 @@ from . import OracleError
 # three orders below the corpus's `area_rel` (1e-9).
 LENGTH_TOL = 1e-13
 
+# How far a pcurve's `u` may move along an edge of a face on a surface of
+# linear extrusion and still be a ruling: the pcurves of this corpus's
+# extrusion faces are exactly axis-parallel, so this only absorbs the
+# rounding of a boolean's own recomputation.
+RULING_TOL = 1e-9
+
+# The points a pcurve of an extrusion face is read at to see whether it is
+# a ruling or an arc.
+RULING_SAMPLES = 16
+
 # The relative error the adaptive integration is asked for on a shape
 # bounded by a spline edge (`_spline_bounded`): three orders below the
 # corpus's `volume_rel` and `area_rel` (1e-9), as LENGTH_TOL is.
@@ -62,6 +72,14 @@ _CONIC_EDGES = (
     GeomAbs_CurveType.GeomAbs_Line,
     GeomAbs_CurveType.GeomAbs_Circle,
     GeomAbs_CurveType.GeomAbs_Ellipse,
+)
+
+# Surfaces on which a conic has no exact 2D form, so a section that is not
+# a circle of revolution or a ruling carries a fitted pcurve (ADR-0021).
+_NO_EXACT_PCURVE = (
+    GeomAbs_SurfaceType.GeomAbs_Cone,
+    GeomAbs_SurfaceType.GeomAbs_Sphere,
+    GeomAbs_SurfaceType.GeomAbs_Torus,
 )
 
 _ELEMENTARY = (
@@ -81,24 +99,51 @@ def _faces(shape: TopoDS_Shape):
 
 
 def _spline_bounded(shape: TopoDS_Shape) -> bool:
-    """Whether an edge of the shape has a 3D curve that is no line and no
-    conic: a B-spline, the approximation of a section two cylinders on
-    crossing or skew axes meet in (Open CASCADE's walked line, Arris's
-    fitted one, ADR-0018). The faces it bounds are trimmed by B-spline
-    pcurves of many spans, over which the fixed-order integration is 1e-6
-    off in volume and area where the shape itself is right to 1e-10 — the
-    adaptive overloads, asked for SPLINE_EPS, agree with a quadrature of
-    the closed form to 1e-10. Such a shape is measured by those; every
-    other keeps the fixed-order integration and its committed numbers."""
-    explorer = TopExp_Explorer(shape, TopAbs_EDGE)
-    while explorer.More():
-        edge = TopoDS.Edge(explorer.Current())
-        explorer.Next()
-        if BRep_Tool.Degenerated_s(edge):
-            continue
-        if BRepAdaptor_Curve(edge).GetType() not in _CONIC_EDGES:
-            return True
+    """Whether the shape is trimmed by a B-spline pcurve of many spans,
+    over which the fixed-order integration is 1e-6 off in volume and
+    area where the shape itself is right to 1e-10 — the adaptive
+    overloads, asked for SPLINE_EPS, agree with a quadrature of the
+    closed form to 1e-10. Such a shape is measured by those; every other
+    keeps the fixed-order integration and its committed numbers.
+
+    Three ways in. An edge whose 3D curve is no line and no conic: a
+    B-spline, the approximation of a section two quadrics meet in (Open
+    CASCADE's walked line, Arris's fitted one, ADR-0018). A cone, a
+    sphere or a torus face trimmed by a B-spline pcurve under an exact
+    conic edge, which is what a section of one carries where it is
+    neither a circle of revolution nor a ruling (ADR-0021). And a shape
+    with a surface-of-extrusion face, whose every face the fixed order
+    is 2e-7 off on (`boolean/elliptic-operand-cut`'s planes, against
+    their closed form)."""
+    if _has_extrusion(shape):
+        return True
+    for face in _faces(shape):
+        fitted = BRepAdaptor_Surface(face).GetType() in _NO_EXACT_PCURVE
+        explorer = TopExp_Explorer(face, TopAbs_EDGE)
+        while explorer.More():
+            edge = TopoDS.Edge(explorer.Current())
+            explorer.Next()
+            if BRep_Tool.Degenerated_s(edge):
+                continue
+            if BRepAdaptor_Curve(edge).GetType() not in _CONIC_EDGES:
+                return True
+            if fitted and BRepAdaptor_Curve2d(edge, face).GetType() not in _CONIC_EDGES:
+                return True
     return False
+
+
+def _has_extrusion(shape: TopoDS_Shape) -> bool:
+    """Whether a face of the shape lies on a `Geom_SurfaceOfLinearExtrusion`
+    — an extruded elliptic profile segment, ADR-0014. Over such a face the
+    area element is no polynomial in the parameters, and the plain
+    adaptive integration is 1e-6 off in the inertia tensor of a shape
+    whose closed forms are exact (`boolean/elliptic-operand-cut`); the
+    Gauss–Kronrod overload with the span option agrees with them to
+    1e-11, and is what such a shape's volume properties are taken by."""
+    return any(
+        BRepAdaptor_Surface(f).GetType() == GeomAbs_SurfaceType.GeomAbs_SurfaceOfExtrusion
+        for f in _faces(shape)
+    )
 
 
 def _area(shape: TopoDS_Shape) -> float:
@@ -108,12 +153,10 @@ def _area(shape: TopoDS_Shape) -> float:
     stay bit for bit. A face on a `Geom_SurfaceOfLinearExtrusion` — an
     extruded elliptic profile segment, ADR-0014 — has an area element no
     polynomial in the parameters, which that integration is 2e-5 off on
-    and the adaptive overload worse; its (u, v) region is a rectangle
-    for every face an extrude makes, so its area is its basis arc's
-    length over the face's `u` bounds, by `GCPnts_AbscissaPoint` to
-    LENGTH_TOL, times its `v` extent. Any other face — a B-spline patch
-    of a sample — takes the fixed-order integration face by face, as the
-    whole-shape call gave it before."""
+    and the adaptive overload worse, and takes `_extrusion_area`. Any
+    other face — a B-spline patch of a sample — takes the integration
+    the whole-shape call would have given it, adaptive where the shape
+    is spline-bounded."""
     faces = list(_faces(shape))
     spline = _spline_bounded(shape)
     if all(BRepAdaptor_Surface(f).GetType() in _ELEMENTARY for f in faces):
@@ -127,14 +170,76 @@ def _area(shape: TopoDS_Shape) -> float:
     for face in faces:
         adaptor = BRepAdaptor_Surface(face)
         if adaptor.GetType() == GeomAbs_SurfaceType.GeomAbs_SurfaceOfExtrusion:
-            u1, u2, v1, v2 = BRepTools.UVBounds_s(face)
-            length = GCPnts_AbscissaPoint.Length_s(adaptor.BasisCurve(), u1, u2, LENGTH_TOL)
-            total += length * (v2 - v1)
+            total += _extrusion_area(face, adaptor)
         else:
             sp = GProp_GProps()
-            BRepGProp.SurfaceProperties_s(face, sp)
+            if spline:
+                BRepGProp.SurfaceProperties_s(face, sp, SPLINE_EPS)
+            else:
+                BRepGProp.SurfaceProperties_s(face, sp)
             total += sp.Mass()
     return total
+
+
+def _arc_length(basis, u0: float, u: float) -> float:
+    """The basis curve's arc length from `u0` to `u`, signed by the
+    direction — `GCPnts_AbscissaPoint` gives the same positive length
+    either way, and a face whose `u` range straddles the basis curve's
+    own origin needs the two sides to tell apart."""
+    if u == u0:
+        return 0.0
+    if u > u0:
+        return GCPnts_AbscissaPoint.Length_s(basis, u0, u, LENGTH_TOL)
+    return -GCPnts_AbscissaPoint.Length_s(basis, u, u0, LENGTH_TOL)
+
+
+def _extrusion_area(face: TopoDS_Shape, adaptor: BRepAdaptor_Surface) -> float:
+    """The area of one face on a `Geom_SurfaceOfLinearExtrusion`, whose
+    (u, v) region a boolean need no longer leave a rectangle. The area
+    element is the basis curve's speed alone — |C'(u) x d| = |C'(u)|,
+    since every extrude in the grammar runs along the profile plane's
+    normal — so the area is the integral of |C'(u)| over the region,
+    which by Green's theorem is the contour integral of the basis arc
+    length L(u) against dv. Every pcurve trimming such a face in this
+    corpus is a straight line in (u, v): the other operand's planes are
+    parallel to the extrusion (a ruling, u constant, contributing
+    L(u)·Δv) or perpendicular to it (an arc, v constant, contributing
+    nothing), so the integral is exact and a rectangle gives back
+    (L(u2) − L(u1))·Δv, the arc-length rule itself. A curved pcurve
+    there is refused: the quadrature it wants is a fixture the corpus
+    does not hold yet."""
+    basis = adaptor.BasisCurve()
+    u0 = basis.FirstParameter()
+    signed = 0.0
+    explorer = TopExp_Explorer(face, TopAbs_WIRE)
+    while explorer.More():
+        wire = TopoDS.Wire(explorer.Current())
+        explorer.Next()
+        walker = BRepTools_WireExplorer(wire, TopoDS.Face(face))
+        while walker.More():
+            edge = walker.Current()
+            walker.Next()
+            pcurve = BRepAdaptor_Curve2d(edge, TopoDS.Face(face))
+            t0, t1 = pcurve.FirstParameter(), pcurve.LastParameter()
+            samples = [
+                pcurve.Value(t0 + (t1 - t0) * i / RULING_SAMPLES)
+                for i in range(RULING_SAMPLES + 1)
+            ]
+            us = [p.X() for p in samples]
+            vs = [p.Y() for p in samples]
+            if max(vs) - min(vs) <= RULING_TOL:
+                continue
+            if max(us) - min(us) > RULING_TOL:
+                raise OracleError(
+                    "a pcurve on a surface of linear extrusion that is neither "
+                    f"a ruling nor an arc: du={max(us) - min(us)}"
+                )
+            first, last = samples[0], samples[-1]
+            if edge.Orientation() == TopAbs_REVERSED:
+                first, last = last, first
+            signed += _arc_length(basis, u0, first.X()) * (last.Y() - first.Y())
+    return abs(signed)
+
 
 DEFAULT_TOLERANCES = {
     "volume_rel": 1e-9,
@@ -239,7 +344,9 @@ def measure(shape: TopoDS_Shape, probes: list[dict], probe_tolerance: float, man
         return out
 
     vp = GProp_GProps()
-    if _spline_bounded(shape):
+    if _has_extrusion(shape):
+        BRepGProp.VolumePropertiesGK_s(shape, vp, SPLINE_EPS, False, True, True, True)
+    elif _spline_bounded(shape):
         BRepGProp.VolumeProperties_s(shape, vp, SPLINE_EPS)
     else:
         BRepGProp.VolumeProperties_s(shape, vp)

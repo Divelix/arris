@@ -1,0 +1,34 @@
+{
+  "description": "an elliptic column of semi-axes a on x and b on y, extruded Hz along z, fused with a plate 2·Lx by 2·Ly by 2·t that the column runs through: the plate's caps z = ±t cut the column's wall in two whole ellipses and its sides stand clear of it, so the elliptic-cylinder face is an operand face whose sections are exact conics crossing its seam (ADR-0014) and whose (u, v) regions stay rectangles. The volume is the column outside the plate plus the plate whole, π·a·b·(Hz − 2t) + 8·Lx·Ly·t; the area wants the perimeter of an ellipse, which the recipe grammar cannot say, so the oracle holds it",
+  "params": {"a": 2, "b": 1, "Hz": 6, "Lx": 6, "Ly": 2, "t": 1},
+  "steps": [
+    {
+      "name": "sketch",
+      "op": "profile",
+      "plane": {"origin": [0, 0, "-Hz / 2"], "x": [1, 0, 0], "y": [0, 1, 0]},
+      "outer": {"ellipse": {"center": [0, 0], "major": ["a", 0], "minor_radius": "b"}}
+    },
+    {"name": "column", "op": "extrude", "profile": "sketch", "direction": [0, 0, 1], "length": "Hz"},
+    {"name": "plate", "op": "box", "min": ["-Lx", "-Ly", "-t"], "max": ["Lx", "Ly", "t"]},
+    {"name": "result", "op": "fuse", "a": "column", "b": "plate"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside_both", "point": [0, 0, 0], "expect": "in"},
+    {"label": "in_the_column", "point": [0, 0, 2.5], "expect": "in"},
+    {"label": "in_the_plate", "point": [4, 0, 0], "expect": "in"},
+    {"label": "outside", "point": [4, 0, 2.5], "expect": "out"},
+    {"label": "beside_the_column", "point": [0, 1.5, 2.5], "expect": "out"},
+    {"label": "on_the_column", "point": ["a * cos(radians(40))", "b * sin(radians(40))", 2.5], "expect": "on"},
+    {"label": "on_the_plate_top", "point": [4, 0, "t"], "expect": "on"},
+    {"label": "on_the_plate_side", "point": ["Lx", 0, 0], "expect": "on"},
+    {"label": "on_the_column_cap", "point": [0, 0, "Hz / 2"], "expect": "on"},
+    {"label": "on_the_section", "point": ["a", 0, "t"], "expect": "on"}
+  ],
+  "analytic": {
+    "volume": "pi * a * b * (Hz - 2 * t) + 8 * Lx * Ly * t",
+    "centroid": [0, 0, 0],
+    "counts": {"vertices": 12, "edges": 18, "faces": 10, "loops": 12, "shells": 1},
+    "genus": 0
+  }
+}

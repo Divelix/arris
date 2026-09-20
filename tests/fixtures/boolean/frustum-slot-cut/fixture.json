@@ -1,0 +1,32 @@
+{
+  "description": "the same bored frustum (the cone r = 3 − z/2 about z, bore r = 1, z ∈ [−2, 2]) with a slot `2w` wide cut past it from y = b outwards, through both caps: the slot's floor y = b and its two walls x = ±w are all parallel to the cone's axis, so each meets the cone in an exact hyperbola (ADR-0018) and carries it as a section edge with a Curve2 on the plane and a fitted pcurve on the cone. b > 1 keeps the slot clear of the bore and the apex is outside the operand, so the result is genus 1 — a groove, not a handle. Its volume has no closed form over the recipe grammar (the chord of a circle wants asin), so the oracle holds it",
+  "params": {"b": 1.5, "w": 0.6},
+  "steps": [
+    {
+      "name": "trapezoid",
+      "op": "profile",
+      "plane": {"origin": [0, 0, 0], "x": [1, 0, 0], "y": [0, 0, 1]},
+      "outer": {"start": [1, -2], "segments": [{"line_to": [4, -2]}, {"line_to": [2, 2]}, {"line_to": [1, 2]}, {"line_to": [1, -2]}]}
+    },
+    {"name": "frustum", "op": "revolve", "profile": "trapezoid", "axis": {"origin": [0, 0, 0], "direction": [0, 0, 1]}, "angle_deg": 360},
+    {"name": "slot", "op": "box", "min": ["-w", "b", -3], "max": ["w", 10, 3]},
+    {"name": "result", "op": "cut", "target": "frustum", "tool": "slot"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [0, -2.5, 0], "expect": "in"},
+    {"label": "beside_the_slot", "point": [2, 2, 0], "expect": "in"},
+    {"label": "in_the_slot", "point": [0, 2.5, 0], "expect": "out"},
+    {"label": "in_the_bore", "point": [0, 0, 0], "expect": "out"},
+    {"label": "outside", "point": [0, 5, 0], "expect": "out"},
+    {"label": "on_the_slot_floor", "point": [0, "b", 0], "expect": "on"},
+    {"label": "on_the_slot_wall", "point": ["w", 2, 0], "expect": "on"},
+    {"label": "on_the_cone", "point": [-3, 0, 0], "expect": "on"},
+    {"label": "on_the_bore", "point": [1, 0, 0], "expect": "on"},
+    {"label": "on_the_bottom", "point": [2, 0, -2], "expect": "on"}
+  ],
+  "analytic": {
+    "counts": {"vertices": 12, "edges": 18, "faces": 8, "loops": 10, "shells": 1},
+    "genus": 1
+  }
+}

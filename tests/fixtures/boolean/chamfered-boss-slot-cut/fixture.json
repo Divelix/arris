@@ -1,0 +1,28 @@
+{
+  "description": "a boss of radius R and height H whose top rim is chamfered at d — a 45° cone from r = R at z = H − d to r = R − d at z = H — and then, in a second operation, a slot 2w wide cut across its top from z = zc up: the closure ADR-0020 is about, a body Arris made taken back as a boolean operand. The slot's walls x = ±w are parallel to the cone's axis and meet it in exact hyperbolas; its floor z = zc meets it in a circle of radius R − (zc − H + d). Both carry a fitted pcurve on the chamfer cone. The chamfer's own volume is the triangle d²/2 swept about the axis at R − d/3 by Pappus; what the slot takes off the cone and the top face wants asin over the recipe grammar, so the oracle holds the volume",
+  "params": {"R": 2, "H": 3, "d": 0.5, "w": 0.5, "zc": 2.6},
+  "steps": [
+    {"name": "boss", "op": "cylinder", "base": [0, 0, 0], "axis": [0, 0, 1], "radius": "R", "height": "H"},
+    {"name": "chamfered", "op": "chamfer", "of": "boss", "edges": [[0, "R", "H"]], "distance": "d"},
+    {"name": "slot", "op": "box", "min": ["-w", -10, "zc"], "max": ["w", 10, 10]},
+    {"name": "result", "op": "cut", "target": "chamfered", "tool": "slot"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [0, 1, 1], "expect": "in"},
+    {"label": "beside_the_slot", "point": [1, 0, 2.8], "expect": "in"},
+    {"label": "in_the_slot", "point": [0, 0, 2.8], "expect": "out"},
+    {"label": "corner_gone", "point": ["R - d / 4", 0, "H - d / 4"], "expect": "out"},
+    {"label": "outside", "point": [3, 0, 1], "expect": "out"},
+    {"label": "on_the_slot_floor", "point": [0, 0, "zc"], "expect": "on"},
+    {"label": "on_the_slot_wall", "point": ["w", 0, 2.8], "expect": "on"},
+    {"label": "on_the_chamfer", "point": [1.7, 0, 2.8], "expect": "on"},
+    {"label": "on_the_top", "point": [1, 0, "H"], "expect": "on"},
+    {"label": "on_the_wall", "point": ["R", 0, 1], "expect": "on"},
+    {"label": "on_the_bottom", "point": [1, 0, 0], "expect": "on"}
+  ],
+  "analytic": {
+    "counts": {"vertices": 11, "edges": 17, "faces": 8, "loops": 8, "shells": 1},
+    "genus": 0
+  }
+}

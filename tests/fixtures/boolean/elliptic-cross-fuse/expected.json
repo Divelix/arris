@@ -1,0 +1,135 @@
+{
+  "occt": "8.0.1.0.0",
+  "recipe_sha256": "ac206fdc34b8fb2aa45f5d41d7eae2b89c6ab077467c8d174336e164a387dcd8",
+  "results": {
+    "default": {
+      "area": 198.7537928552903,
+      "centroid": [
+        -2.122373015932271e-11,
+        -1.1983653149503026e-13,
+        0.0
+      ],
+      "counts": {
+        "edges": 18,
+        "faces": 10,
+        "loops": 12,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 12
+      },
+      "degenerate": false,
+      "euler_characteristic": 2,
+      "genus": 0,
+      "inertia": [
+        [
+          275.1917306200511,
+          -1.416068810201226e-10,
+          0.0
+        ],
+        [
+          -1.416068810201226e-10,
+          1318.0412865503492,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1311.41592653227
+        ]
+      ],
+      "probes": [
+        {
+          "class": "in",
+          "label": "inside_both",
+          "point": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "class": "in",
+          "label": "in_the_column",
+          "point": [
+            0.0,
+            0.0,
+            2.5
+          ]
+        },
+        {
+          "class": "in",
+          "label": "in_the_plate",
+          "point": [
+            4.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "outside",
+          "point": [
+            4.0,
+            0.0,
+            2.5
+          ]
+        },
+        {
+          "class": "out",
+          "label": "beside_the_column",
+          "point": [
+            0.0,
+            1.5,
+            2.5
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_the_column",
+          "point": [
+            1.532088886237956,
+            0.6427876096865393,
+            2.5
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_the_plate_top",
+          "point": [
+            4.0,
+            0.0,
+            1.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_the_plate_side",
+          "point": [
+            6.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_the_column_cap",
+          "point": [
+            0.0,
+            0.0,
+            3.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_the_section",
+          "point": [
+            2.0,
+            0.0,
+            1.0
+          ]
+        }
+      ],
+      "volume": 121.13274121975083
+    }
+  }
+}

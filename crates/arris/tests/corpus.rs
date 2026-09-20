@@ -450,12 +450,47 @@ fn boolean_short_cross_cylinders_fuse() {
     run("boolean/short-cross-cylinders-fuse");
 }
 
-/// A box with an elliptic cylinder cut through it: the pave model's
-/// quadric guard refuses the elliptic-cylinder face before any
-/// intersector runs, `OpError::Unsupported` naming it (ADR-0014).
+/// A box with an elliptic cylinder cut through it: an elliptic-cylinder
+/// operand face, past what is left of the quadric guard (ADR-0014).
 #[test]
 fn boolean_elliptic_operand_cut() {
     run("boolean/elliptic-operand-cut");
+}
+
+/// Two elliptic prisms crossing at right angles, fused: an elliptic
+/// cylinder on both operands, meeting in the two conics the unit
+/// Steinmetz solid's planes pull back to.
+#[test]
+fn boolean_elliptic_cross_fuse() {
+    run("boolean/elliptic-cross-fuse");
+}
+
+/// A bored frustum cut by a tilted half-space: a whole ellipse on the
+/// cone, its pcurve fitted over the cone's own projection (ADR-0021).
+#[test]
+fn boolean_frustum_oblique_cut() {
+    run("boolean/frustum-oblique-cut");
+}
+
+/// A slot cut past the same frustum: three planes parallel to the cone's
+/// axis, each meeting it in an exact hyperbola (ADR-0018).
+#[test]
+fn boolean_frustum_slot_cut() {
+    run("boolean/frustum-slot-cut");
+}
+
+/// A drill across the same frustum's wall: a cone and a cylinder on skew
+/// axes, two traced and fitted quartic loops (ADR-0018, ADR-0019).
+#[test]
+fn boolean_frustum_cross_drill_cut() {
+    run("boolean/frustum-cross-drill-cut");
+}
+
+/// A boss chamfered and then slotted: the cone Arris made taken back as
+/// a boolean operand, which is the closure ADR-0020 is about.
+#[test]
+fn boolean_chamfered_boss_slot_cut() {
+    run("boolean/chamfered-boss-slot-cut");
 }
 
 /// A rectangle with a circular hole extruded: `boolean/through-hole`'s

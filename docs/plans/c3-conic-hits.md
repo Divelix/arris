@@ -227,7 +227,7 @@ bound has to be established here.
   same point, but a split there gives a hair-thin block at the end of a
   closed edge rather than none at its start. The periodic assertions are
   written in the turn metric because of it.
-- [ ] Step 4 **[2]** — The guard lifted for the ruled kinds: a cone and an
+- [x] Step 4 **[2]** — The guard lifted for the ruled kinds: a cone and an
   elliptic cylinder as operand faces, clear of the apex. Fixtures against
   the oracle, every corpus stage: `boolean/frustum-oblique-cut` (an
   ellipse, its pcurve fitted on the cone), `boolean/frustum-slot-cut` (a
@@ -238,6 +238,47 @@ bound has to be established here.
   solid, `boolean/elliptic-cross-fuse`. `a_quadric_face_is_refused_before_
   the_intersector` becomes the same recipe building. A sphere or torus
   face is still refused, by the guard narrowed to those two.
+  *Established:* the pave model needed **nothing** — narrowing `quadric`
+  to the sphere and the torus is the whole kernel change, and every
+  fixture passes every corpus stage on the recipe as first written. What
+  the step cost was the **oracle**, in three places, because an operand
+  face on a cone or an elliptic cylinder is the first face Open CASCADE
+  cannot measure by the rules the corpus was calibrated on. (a)
+  `_spline_bounded` read 3D edge curves; a section on a cone is an exact
+  conic edge over a *fitted pcurve* (ADR-0021), which that test cannot
+  see, and over such a pcurve the fixed-order integration is 1e-6 off.
+  It now also reads the pcurves of a cone, sphere or torus face, and
+  takes any shape with a surface-of-extrusion face — whose *plane* faces
+  the fixed order is 2e-7 off on, against `boolean/elliptic-operand-cut`'s
+  closed forms. (b) The area of an extrusion face was its basis arc's
+  length times its height, which assumed "its (u, v) region is a
+  rectangle for every face an extrude makes" — true until a boolean
+  trims it. It is now the contour integral of the arc length against dv
+  (Green), exact over a region bounded by rulings and arcs and giving
+  back L·Δv bit for bit on a rectangle; a curved pcurve there is refused
+  by name, since the corpus holds no such fixture — `elliptic-cross-fuse`
+  was drawn as two crossing elliptic prisms first, and is the column
+  through a plate instead because that pair is exactly the curved case:
+  a backlog line, with the evidence that Open CASCADE's own measurement
+  of it is 2e-3 out. (c) The volume
+  properties of a shape with an extrusion face go through
+  `VolumePropertiesGK` with the span option: the plain adaptive
+  integration is 9e-7 off in `elliptic-operand-cut`'s inertia tensor
+  where GK is 1e-11 from the closed forms. **The oracle was the wrong
+  side in every one of them** — Arris matched the closed forms to 1e-10
+  before the change and after. Four committed `expected.json` move:
+  `boolean/elliptic-operand-cut` (area 1.5e-7, inertia 2e-6 — the
+  fixture's own correction) and the three `sweep/extrude-elliptic*` at
+  1e-15, the GK path's rounding. One more finding, in
+  `frustum-oblique-cut`'s own text: **Open CASCADE's STEP reader drops
+  Arris's fitted pcurve** — degree five over thirty-six poles — and
+  reprojects the cone's ellipse as a cubic over twenty-five, whose
+  (u, v) region is 9.5e-7 of the cone face away, so that one fixture's
+  *oracle comparison* is held to 1e-6 while Arris's own measure is
+  4e-10 from the closed-form volume and area. The `mixed` invariant of
+  `sections` is kept as a tripwire with its reason restated (a cone or
+  an elliptic cylinder met at its apex or along a tangent circle is
+  steps 6 and 7's), and no fixture here trips it.
 - [ ] Step 5 **[3]** — The guard gone: a sphere and a torus as operand
   faces, clear of the poles. What is unproven is the face, not the
   section: a whole torus face is periodic both ways with two seam edges,
@@ -296,7 +337,10 @@ bound has to be established here.
   centroid, classifications, STEP, tessellation — each result's
   `Report::unchecked` empty at `Full`, every edge at its faces' tolerance
   (ADR-0018's tripwire).
-- Every existing fixture unchanged but `boolean/elliptic-operand-cut`.
+- Every existing fixture unchanged but `boolean/elliptic-operand-cut` —
+  *amended at step 4*: and the three `sweep/extrude-elliptic*`, whose
+  numbers move by 1e-15 when a shape with an extrusion face takes the
+  Gauss–Kronrod volume properties the oracle now needs.
 - `grep -rn "quadric guard" crates docs/ARCHITECTURE.md docs/DATA-MODEL.md`
   finds nothing in the present tense; `pcurve_on`,
   `intersect_curve_surface` and `intersect_curves` are `Unsupported` only

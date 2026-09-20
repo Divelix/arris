@@ -527,13 +527,16 @@ fn an_unsupported_surface_pair_names_the_faces() {
     }
 }
 
-/// The quadric guard (ADR-0008): a revolve with a cone face against a
-/// box through it is refused before any intersector is asked, as the
-/// same `Unsupported` naming the box's plane face and the cone face it
-/// got while the intersector had no arm for the pair. The box's face is
-/// the first operand's, the cone the second's.
+/// What is left of the quadric guard (ADR-0008, ADR-0020): the revolve
+/// with a cone face against a box through it, which was refused before
+/// any intersector was asked, is an operand like any other — the box's
+/// two cap planes cut the cone in circles and its four sides in
+/// hyperbolas, and the cut is a body the checker passes at `Full`. A
+/// sphere and a torus face are still refused, as the same `Unsupported`
+/// naming the box's plane face and theirs; the box's face is the first
+/// operand's, the quadric the second's.
 #[test]
-fn a_quadric_face_is_refused_before_the_intersector() {
+fn a_cone_face_is_an_operand_like_any_other() {
     let mut m = Model::default();
     let p = |u, v| Point2::new(u, v);
     // The frustum of `sweep/revolve-frustum`: x ∈ [1, 4] at z = −1
@@ -565,27 +568,44 @@ fn a_quadric_face_is_refused_before_the_intersector() {
         Point3::new(5.0, 5.0, 0.5),
     )
     .unwrap();
-    for err in [
-        interferences(&m, cube, frustum).unwrap_err(),
-        cut(&mut m, cube, frustum).unwrap_err(),
+    let i = interferences(&m, cube, frustum).unwrap();
+    assert!(!i.sections.is_empty(), "{i}");
+    assert_sections_consistent(&m, &i).unwrap();
+    let (kept, _) = cut(&mut m, cube, frustum).unwrap();
+    let report = check(&m, kept, Level::Full);
+    assert!(report.is_empty(), "{report}");
+    assert!(report.unchecked().is_empty(), "{report}");
+
+    for quadric in [
+        sample::sphere(&mut m, Point3::origin(), 1.5).unwrap(),
+        sample::torus(&mut m, Point3::origin(), 3.0, 0.5).unwrap(),
     ] {
-        let OpError::Unsupported { a, b } = err else {
-            panic!("{err}");
-        };
-        assert_eq!(a.0, GeomKind::Surface(SurfaceKind::Plane));
-        assert_eq!(b.0, GeomKind::Surface(SurfaceKind::Cone));
-        assert!(
-            m.faces(cube)
-                .unwrap()
-                .iter()
-                .any(|f| f.shape().id == a.1.id)
-        );
-        assert!(
-            m.faces(frustum)
-                .unwrap()
-                .iter()
-                .any(|f| f.shape().id == b.1.id)
-        );
+        let kind = m
+            .surface(m.face(m.faces(quadric).unwrap()[0].id).unwrap().surface())
+            .unwrap()
+            .kind();
+        for err in [
+            interferences(&m, cube, quadric).unwrap_err(),
+            cut(&mut m, cube, quadric).unwrap_err(),
+        ] {
+            let OpError::Unsupported { a, b } = err else {
+                panic!("{err}");
+            };
+            assert_eq!(a.0, GeomKind::Surface(SurfaceKind::Plane));
+            assert_eq!(b.0, GeomKind::Surface(kind));
+            assert!(
+                m.faces(cube)
+                    .unwrap()
+                    .iter()
+                    .any(|f| f.shape().id == a.1.id)
+            );
+            assert!(
+                m.faces(quadric)
+                    .unwrap()
+                    .iter()
+                    .any(|f| f.shape().id == b.1.id)
+            );
+        }
     }
 }
 

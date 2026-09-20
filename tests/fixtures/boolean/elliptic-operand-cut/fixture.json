@@ -1,5 +1,5 @@
 {
-  "description": "box [-5,-5,2]–[5,5,4] minus an elliptic cylinder (major radius 3 along x, minor 1.5, axis z, base at the origin, height 6) whose ellipse spans the box in x and y and whose z range holds the box's: Open CASCADE builds the box with an elliptical hole through it, Arris refuses at the first face pair the pave model examines with OpError::Unsupported naming the elliptic-cylinder face, since the quadric guard refuses a boolean with an elliptic operand before any intersector is trusted (ADR-0014, boolean/pave.rs). Elliptic-faced operands are C3's (docs/BACKLOG.md)",
+  "description": "box [-5,-5,2]–[5,5,4] minus an elliptic cylinder (major radius 3 along x, minor 1.5, axis z, base at the origin, height 6) whose ellipse spans the box in x and y and whose z range holds the box's: a box with an elliptical hole through it. The cut planes are parallel to the elliptic cylinder's axis or perpendicular to it, so the bore's wall meets them in rulings and in the two arcs its seam splits the ellipse into (ADR-0014); an elliptic-cylinder operand face is past what is left of the quadric guard (boolean/pave.rs)",
   "params": {"a": 3, "b": 1.5, "H": 6},
   "steps": [
     {
@@ -16,7 +16,6 @@
   "result": "result",
   "probes": [],
   "analytic": {
-    "expect_error": "elliptic-operand",
     "volume": "10 * 10 * 2 - pi * a * b * 2",
     "counts": {"vertices": 10, "edges": 15, "faces": 7, "loops": 9, "shells": 1},
     "genus": 1

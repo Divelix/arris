@@ -245,22 +245,25 @@ cone's apex — where the surface has no normal (`Reason::Singular`).
 `ops::boolean::interferences(&Model, a, b) -> Result<Interferences,
 OpError>` is another query: the boolean decomposition of ADR-0004 as
 a value, computed without building anything. A face pair, or an edge
-against a face, whose boxes overlap and that has a face on a cone, a
-sphere or a torus is refused before any intersector is asked — the
-*quadric guard*, `OpError::Unsupported` naming the pair exactly as the
-intersector named it before the coaxial arm existed (ADR-0008) — so a
-new intersector arm widens no boolean silently; booleans with quadric
-operand faces are C3's, with their corpus. The guard is the kernel's
-one open closure gap: `ops::fillet`, `ops::chamfer` and `ops::revolve`
-build tori, spheres and cones, so until C3 lifts it a body Arris
+against a face, whose boxes overlap and that has a face on a **sphere
+or a torus** is refused before any intersector is asked — what is left
+of the *quadric guard*, `OpError::Unsupported` naming the pair exactly
+as the intersector named it before the coaxial arm existed (ADR-0008) —
+so a new intersector arm widens no boolean silently. A cone and an
+elliptic cylinder are past it: an operand face on either is paved like
+any other, with its corpus (`boolean/frustum-*`,
+`boolean/chamfered-boss-slot-cut`, `boolean/elliptic-*`), which is why
+a chamfer's cone is a body a later boolean takes. The guard is what is
+left of the kernel's closure gap: `ops::fillet` and `ops::revolve` also
+build tori and spheres, so until it goes a *blended* body Arris
 returned is not a body a boolean takes (ADR-0020). Every face pair is
 intersected in one region for the whole boolean — the overlap of the
 operands' boxes grown by its own diagonal — so pairs on the same two
 surfaces get the same traced curve (ADR-0018). It holds every face
 pair whose boxes overlap with its `SurfaceIntersection` — a *crossing
 pair* when its `Meets` curves all cross, a *touching pair* when they
-all touch, and a pair past the quadric guard is always one or the
-other; its only points are a traced section's singular points, where
+all touch, and a pair the intersector is asked about is always one or
+the other; its only points are a traced section's singular points, where
 its branches end; every point where
 an edge of one operand pierces a face of the other, kept when the
 parameter is in the edge's range and the (u, v) is on the face
@@ -644,8 +647,9 @@ sector of one), oblique a cone with its apex on the axis; an arc centred
 on the axis a sphere, elsewhere a torus of `R` its centre's distance and
 `r` its radius. Every pair of faces a revolve makes shares its axis or
 has a plane through it, so S5 and B1 decide them by the meridian arm and
-`classify_point` casts against them by the line arms (ADR-0008); their
-booleans are C3's, behind the quadric guard (§Operations). The
+`classify_point` casts against them by the line arms (ADR-0008); a
+revolve's cone, cylinder and plane faces are boolean operands, its
+spheres and tori still behind what is left of the guard (§Operations). The
 surfaces of revolution share one frame: origin on the axis, `X` the unit
 radial from the axis into the profile's plane — so `u = 0` *is* the
 profile plane and every seam lies in it — `Z` the axis direction, except
@@ -891,9 +895,8 @@ cylinder or another elliptic cylinder with a parallel axis by closed
 form, through the two sections in the plane across the axes — the
 pairs an extrude's faces make — against those on other axes, a cone or
 a sphere by the ruled tracer, and against a torus by the torus's; the
-pave model's quadric guard
-refuses a face on it as it refuses a cone, a sphere or a torus, so a
-boolean never widens onto it silently. A circle or an ellipse — the edge
+pave model takes a face on it as an operand face like any other, its
+pcurves fitted over its own projection (ADR-0021). A circle or an ellipse — the edge
 an operand face already carries — is decided against every analytic
 surface but the torus: by the closed forms of the table where there is
 one, and against a cone, a sphere or an elliptic cylinder in any plane

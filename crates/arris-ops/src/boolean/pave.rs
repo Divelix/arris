@@ -208,22 +208,17 @@ fn shape_of(body: Body) -> Shape {
     Shape::new(body.id, body.orientation)
 }
 
-/// The quadric guard: a face on a cone, a sphere, a torus or an elliptic
-/// cylinder is refused
-/// before any intersector is asked — as the same [`OpError::Unsupported`]
-/// naming the pair it got while the intersector had no arm for it — so
-/// the coaxial arm (ADR-0008) and the elliptic cylinder's closed forms
-/// (ADR-0014) widen no boolean silently. Booleans with
-/// quadric or elliptic operand faces are C3's, with their corpus
-/// (`docs/ARCHITECTURE.md` §Operations).
+/// What is left of the quadric guard: a face on a sphere or a torus is
+/// refused before any intersector is asked — as the same
+/// [`OpError::Unsupported`] naming the pair it got while the intersector
+/// had no arm for it — so the coaxial arm (ADR-0008) widens no boolean
+/// silently. The ruled kinds are past it: a cone and an elliptic
+/// cylinder are operand faces, with their corpus
+/// (`docs/ARCHITECTURE.md` §Operations). A sphere's and a torus's faces
+/// are the closing kinds, whose periodic and degenerate boundaries the
+/// face splitter has yet to meet.
 fn quadric(s: &Surface) -> bool {
-    matches!(
-        s.kind(),
-        SurfaceKind::Cone
-            | SurfaceKind::Sphere
-            | SurfaceKind::Torus
-            | SurfaceKind::EllipticCylinder
-    )
+    matches!(s.kind(), SurfaceKind::Sphere | SurfaceKind::Torus)
 }
 
 /// The tolerance a geometric query between two entities runs at: the
@@ -1110,18 +1105,20 @@ impl<'m> Build<'m> {
     fn sections(&mut self) -> Result<(), OpError> {
         for pi in 0..self.pairs.len() {
             let intersection = &self.pairs[pi].intersection;
-            // Only a pair with a cone, a sphere, a torus or an elliptic
-            // cylinder meets in curves of both kinds at once, and the
-            // quadric guard refuses those before the intersector is asked.
-            // Points past it are a traced section's singular points, which
-            // `section_crossings` read.
+            // A pair meeting in curves of both kinds at once wants a
+            // sphere, a torus, or a cone or an elliptic cylinder met at
+            // its apex or along a tangent circle — the first two the
+            // guard still refuses, the rest C3's remaining plans. Until
+            // they land the mixed pair is a tripwire, not a wrong
+            // answer. Points here are a traced section's singular
+            // points, which `section_crossings` read.
             let mixed = intersection
                 .curves()
                 .windows(2)
                 .any(|w| w[0].kind != w[1].kind);
             if mixed {
                 return Err(OpError::Internal(Fault::Invariant {
-                    what: "a face pair meeting in curves of both kinds past the quadric guard",
+                    what: "a face pair meeting in curves of both kinds",
                 }));
             }
             let curves: Vec<(usize, Curve)> = meet_curves(intersection, MeetKind::Crossing)
