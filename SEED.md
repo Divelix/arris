@@ -90,6 +90,8 @@ Arris replaces monstertruck behind the first consumer's kernel facade when it co
 ### Toward Parasolid grade — later cycles, roughly in order
 Cone/sphere/torus intersection pairs · coincident and tangent face handling with tolerance growth · NURBS–NURBS surface intersection · sweep, loft, shell, offset · fillet networks, vertex blends, variable radius · STEP reader and healing · sheet and wire bodies in every operation · IGES. Each earns its own cycle with an acceptance corpus; none is scheduled here.
 
+*Amended by ADR-0020 (2026-09-20): every item above stays on the list and the ordering does not. Closure comes before breadth (the kernel's own output is an operand of every operation first), the STEP reader and a real-part corpus are the cycle after that, and the cycle after **that** is picked from the reader's refusal histogram and the first consumer's side-by-side regressions. Unopened cycles carry names, not numbers; `docs/ROADMAP.md` holds them.*
+
 ## 7. Tech Stack (decided)
 
 | Layer | Choice | Why / notes |
