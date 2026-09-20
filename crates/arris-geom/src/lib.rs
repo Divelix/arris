@@ -60,5 +60,6 @@ pub use section::{SECTION_FIT_DEGREE, SECTION_FIT_FRACTION};
 pub use surface::{Surface, SurfaceEval, SurfaceKind};
 pub use torus_walk::trace_torus;
 pub use trace::{
-    BranchEnd, SectionBranch, SectionFault, SectionPoint, SectionTrace, trace_quadrics,
+    BranchEnd, SectionBranch, SectionCircle, SectionFault, SectionPoint, SectionTrace,
+    trace_quadrics,
 };

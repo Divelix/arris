@@ -107,11 +107,20 @@ with only the tracers' named refusals left unchecked.
   gains the torus form: ascending by `u`, then `v`.
 - **`SectionFault`, new variants** (steps 2 and 3, a public enum, so a
   breaking change named in the commit body): the torus poses refused by
-  name — `TubeCircle`, a tube circle of the torus on the other surface,
-  until step 3 answers it, and `UnresolvedTurning`, what step 2 found it
-  cannot decide. The existing
+  name — `TubeCircle`, which step 3 narrowed to what it left: two tube
+  circles on the other surface with more of the section besides, and a
+  circle the other surface runs along without holding it to the tolerance
+  wherever the rest is traced — and `UnresolvedTurning`, what step 2
+  found it cannot decide. The existing
   `TangentAlongCurve` and `CrowdedSingularity` are reused where they say
   the same thing.
+- **`SectionTrace::circles() -> &[SectionCircle]`, new public API** (step
+  3): `SectionCircle { circle: Curve, tangent: bool }`, a tube circle of
+  the walked torus on the other surface as an exact `Curve::Circle`
+  parametrised by the torus's `v`, `tangent` where the surfaces do not
+  cross along it (step 4 makes that `Touch`, the other `Crossing`). Empty
+  from `trace_quadrics`. A branch that reaches a circle ends on it at a
+  `SectionPoint` that is not isolated; the circle is not cut there.
 - **`intersect_surfaces`** (step 4): `off_axis`'s torus arms and the
   elliptic cylinder's route to a torus stop being `Unsupported`; the only
   `Unsupported` surface pairs left have a `Surface::Nurbs` in them. No
@@ -190,7 +199,7 @@ bound has to be established here.
   circles; a drill through the tube (two loops) and a thin tilted pin through the
   hole, clear of the tube (none); a sphere off the axis; two interlocked tori; two tori touching
   at a point.
-- [ ] Step 3 **[3]** — A tube circle on the other surface, the pipe-elbow
+- [x] Step 3 **[3]** — A tube circle on the other surface, the pipe-elbow
   pose: a cylinder of the tube's radius whose axis is tangent to the
   centre circle; the sphere of the tube's radius centred on the centre
   circle, or a larger one centred elsewhere on that tangent; a cone about
@@ -391,6 +400,88 @@ proved, and what it found that the plan did not have:
   convex point and a saddle, seven partners, a gap of 0, ±½ and ±100
   tolerances) each one singular point or none.
 
+## Step 3's record (a tube circle on the other surface)
+
+**The closed form, not the refusal** (open question 3). What it proved,
+and what it found that the plan did not have:
+
+- **The circle is a factor, and both halves of the tracer divide by it.**
+  `F(P(u, v)) = sinᵐ((u − u₀)/2) · H(u, v)`, `m = 1` where the surfaces
+  cross along the circle and 2 where they are tangent along it. On the
+  patches a quarter turn's chart makes `sin((u − u₀)/2)` a linear factor
+  `s − s₀` over a positive function, so the division is one by a linear
+  polynomial in Bernstein form (`Poly2::over_linear`: the two-term
+  recurrence of the scaled basis, forwards and backwards to the basis
+  function that peaks at the root, the rounding carried alongside), on the
+  circle's column and on a neighbour within half a column of it. For the
+  walk the quotient is a closed form: `F` expanded along the chord from
+  the circle's point, `F(A + λτ) − F(A) = λ(∇F(A)·τ + λc₂ + λ²c₃ + λ³c₄)`
+  (`Implicit::slope`, `Implicit::bend`), and along a tangency `∇F(A)·τ`
+  loses its `τ₀` part the same way. Never a small number over a small
+  number: the elbow's loop is on `(R + r cos v)·cos²(u/2) = R` to 1e-12
+  where it crosses the circle as anywhere.
+- **Nothing of step 2 changed to trace the rest.** The quotient is
+  regular where the rest of the section crosses the circle, so the census,
+  the cells and the march run on it as on the distance, and a branch is
+  *cut* at `u = u₀` afterwards: the crossing becomes a `SectionPoint`, the
+  two halves end at it exactly. No new kind of cell. An odd `m` makes the
+  quotient change sign with a whole turn of `u`; `sign_over` is told the
+  turn, the walk evaluates at the unwrapped `u`.
+- **What is dropped has to be the same on both sides.** A circle within
+  the tolerance and not on the surface leaves `F(A) ≠ 0`. The patches
+  subtract `F(P(u₀, v))` — and `sin(u − u₀)·∂F/∂u(u₀, v)` along a tangency
+  — as polynomials before dividing, exactly what the closed form leaves
+  out, so the certificates and the roots are of one function to rounding.
+  With a plain division the two differ by `tol/size`, and an arm's root
+  falls off the end of its bracket beside a turning point.
+- **Accepted in length, and on `F`.** A circle is held to `tol.linear`
+  all the way round on the exact distance, and `|F|` along it to what
+  `tol.linear` makes of `F` anywhere on the torus (`Implicit::firmness`, a
+  lower bound of `|∇F|` on the surface), so the rest, which is traced
+  without it, stays within `tol.linear` of the other surface. Found
+  wanting by an elliptic cylinder half a tolerance large, whose rest was
+  1.08 tolerances off where its gradient is least. A cone has no such
+  bound by its apex: half a tolerance off the pose with the apex by the
+  torus it is refused, `TubeCircle`.
+- **One circle per stretch within the tolerance.** A bead half a tolerance
+  large cuts the tube in two exact circles a milliradian apart with the
+  torus within the tolerance all the way between: one circle, a tangency,
+  at that tolerance. Candidates — the sign changes of `f` and of `f_s`
+  along two lines of constant `v`, and the columns' edges — are grouped
+  first and a group is refined together; where the roots disagree (a pose
+  within the tolerance and not exact) the circle held best is found by a
+  golden section on the largest `|F|` along it.
+- **Two circles**: a plane through the axis, a ball centred on the
+  tangent — returned when the quotient by both keeps one sign over every
+  patch, nothing else to trace. Two with more besides (an elliptic
+  cylinder along a chord of the centre circle) has no closed-form quotient
+  to walk and stays `TubeCircle`. More than two is the torus itself.
+- **A turning point or a singular point of the rest within the tolerance
+  of the circle** is `CrowdedSingularity`: a touch is not told from two
+  crossings there.
+- **Found in step 2's march, fixed here:** two arms' edges a rounding
+  apart (a mirror-symmetric section a kilometre out) left a step of 5e-14
+  between them, and a cell that flat holds `f` below its floor all over. A
+  march's cell is now no lower than a point's smallest cell (`HALF_MIN`);
+  the certificate still decides.
+- **Left refused, by name** (backlog at retirement): a loop of the section
+  within about 1e-4 of a tube circle all the way round —
+  `UnresolvedTurning`, measured on the 2 by 0.5 ring from one tolerance to
+  1e-4 off each of the seven poses (clean from 1e-3); the march follows
+  graphs `v(u)`, and that loop is a graph `u(v)`. The two refusals above.
+- **Measured**: seven holders (elbow, bead, ball, cone, plane through the
+  axis, leaning elliptic cylinder, S-bend) × four tori (`R/r` 1.1 to 100)
+  × four `u₀` (a column's edge among them) × three placements, 336
+  sections, every circle exact, every branch on both surfaces to rounding,
+  a 160² scan finding nothing off the trace, a swap bit for bit; 1000
+  random poses of the same; ±½ tolerance off each pose the circle still
+  answered (the cone excepted), ±2 and ±100 tolerances off traced whole or
+  refused by name. Cost (dev profile): 0.06 to 0.17 ms where circles are
+  all there is, 0.8 to 1.0 ms for the elbow, 1.1 to 2.8 ms for the cone,
+  1.7 to 2.3 ms for the S-bend. The division raises the rounding floor 168
+  times at the worst (two tori, a tangency, the circle on a column's
+  edge), and every turning point of the rest was still certified.
+
 ## Acceptance
 
 - `ARRIS_PROPTEST_CASES=1000 cargo nextest run --workspace` green: the
@@ -422,7 +513,10 @@ proved, and what it found that the plan did not have:
   comes from the branch's (u, v).
 - `docs/adr/README.md` — ADR-0019 in the index.
 - `docs/BACKLOG.md` — new lines: the named refusals step 2 and 3 leave,
-  each with its pose; the Villarceau circles if open question 2 leaves
+  each with its pose (step 3's: a loop within 1e-4 of a tube circle all
+  the way round, which wants a march along `v`; two tube circles with more
+  of the section besides; a cone off the pose by less than the tolerance
+  with its apex by the torus); the Villarceau circles if open question 2 leaves
   them fitted; `bernstein2` as C4's starting point for a NURBS patch in
   an implicit. The "two intersector properties fail at 3000 cases" lines
   are untouched.
@@ -449,11 +543,9 @@ proved, and what it found that the plan did not have:
   `Curve::Circle`s if step 2's singular points make the detection a
   lookup (two singular points on one plane section), fitted with a
   backlog line otherwise.
-- ⚠ OPEN 3 — **closed form or named refusal for a tube circle on the
-  other surface** (agent, at step 3). Preferred: the closed form, because
-  a pipe elbow against its straight pipe is this pose and S5 meets it as
-  soon as a body has both faces. The refusal is the fallback, not the
-  plan.
+- OPEN 3, answered at step 3 — **closed form or named refusal for a tube
+  circle on the other surface**: the closed form, the circle exact and the
+  rest traced on the quotient; step 3's record has what stays refused.
 - OPEN 4, answered at step 2 — **how pieces join at a turning point and
   branches end at a singular point**: ADR-0018's `u = u_T ± L(1 − cos θ)`
   as it is, and its bump in the Hessian's own metric; step 2's record has

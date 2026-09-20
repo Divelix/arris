@@ -51,21 +51,43 @@
 //! loop smaller than the tolerance all become the one point they are at
 //! that tolerance, and the turning points the near miss had, `√(tol·r)`
 //! apart, lie inside the reach and are the singular point's.
+//!
+//! A **tube circle of the torus on the other surface** — the pipe elbow
+//! against its pipe, a bead in the tube, a cone about the tangent to the
+//! centre circle — is a whole line `u = u₀` of turning points, which
+//! nothing isolates. It is found first, held to the tolerance all the way
+//! round, and returned as the circle it is. Then it is divided out: the
+//! other surface's `F` over the torus is `sinᵐ((u − u₀) / 2)` times a
+//! quotient, `m` one where the surfaces cross along the circle and two
+//! where they are tangent along it, and the quotient's zeros are the rest
+//! of the section. On the patches the division is one by a linear factor
+//! of a column's chart (`PatchedSection::deflate`); for the walk the
+//! quotient is a closed form, `F` expanded along the chord from the
+//! circle's point ([`Walker::quotient`]) — never a small number over a
+//! small number, so the rest of the section is as exact where it crosses
+//! the circle as anywhere. Everything above then runs on the quotient as
+//! it does on the distance, and a branch that comes to `u = u₀` is cut
+//! there: the crossing is a singular point of the section, the branch
+//! ends at it exactly, and the circle runs through it. What is dropped
+//! for the division to be exact — `F` along the circle, and along a
+//! tangency its slope across it — is within what `tol.linear` makes of
+//! `F` anywhere on the torus, or the circle is not accepted, so the rest
+//! is within `tol.linear` of the other surface as the circle is.
 
 use core::cell::Cell as Latest;
-use core::f64::consts::{FRAC_PI_4, PI, TAU};
+use core::f64::consts::{FRAC_PI_2, FRAC_PI_4, PI, TAU};
 use std::sync::Arc;
 
 use arris_math::roots::newton_in_interval;
-use arris_math::{Interval, Point2, Point3, Tolerance, wrap_angle};
+use arris_math::{Frame, Interval, Point2, Point3, Tolerance, wrap_angle};
 
 use crate::bernstein2::Zero2;
 use crate::implicit::Implicit;
 use crate::trace::{
-    Arc1, BranchEnd, REACH, SectionBranch, SectionFault, SectionPoint, SectionTrace,
+    Arc1, BranchEnd, REACH, SectionBranch, SectionCircle, SectionFault, SectionPoint, SectionTrace,
 };
 use crate::trace_torus::{PatchedSection, Probe};
-use crate::{GeomError, GeomKind, Surface};
+use crate::{Curve, GeomError, GeomKind, Surface};
 
 /// The half-width a turning point's or a singular point's cell is first
 /// tried at, and halved from until its certificate holds. A size in the
@@ -78,6 +100,13 @@ const CELL_START: f64 = PI / 32.0;
 /// `f64` cannot resolve: `2⁻¹⁶` of [`CELL_START`] is a few microradians,
 /// below which the coefficients of `f` over the cell are its rounding.
 const CELL_HALVINGS: usize = 16;
+
+/// The least half-height of a march's cell, the smallest a point's own
+/// cell gets: two arms' edges a rounding apart leave a march a step of
+/// `1e-14` between them, and a cell as flat as that holds `f` below its
+/// rounding floor all over. A cell taller than it need be is only harder
+/// to certify, never wrong.
+const HALF_MIN: f64 = CELL_START / (1u64 << CELL_HALVINGS) as f64;
 
 /// The longest step of a march in `u`, a sixteenth of a turn: a cell
 /// never lies over more than two patches either way.
@@ -108,6 +137,43 @@ const EXIT_SHARE: f64 = 0.75;
 /// What two sums of the same angles may differ by: a march clipped at
 /// another cell's edge has to recognise that it is there.
 const ANGLE_SLACK: f64 = 16.0 * f64::EPSILON * TAU;
+
+/// How far either side of a candidate a tube circle is looked for, in
+/// radians: wide enough that the distance there is far above its
+/// rounding, narrow enough that nothing else of the section is likely to
+/// be between. A place to look, not a tolerance: the circle found is held
+/// to `tol.linear` afterwards, all the way round.
+const CIRCLE_BRACKET: f64 = 1e-4;
+
+/// How many tube circles of `v` a candidate is looked at on, and how many
+/// points of a tube circle are held to the tolerance. The other surface's
+/// polynomial along a tube circle is a trigonometric polynomial of degree
+/// four at the most, which thirty-two points bound to within a tenth.
+const CIRCLE_SAMPLES: usize = 32;
+
+/// Of the tube circles of `v` a candidate is looked at on, how many it is
+/// refined on: those where the distance beside it is largest, away from
+/// wherever else the section crosses the circle.
+const CIRCLE_REFINED: usize = 5;
+
+/// How many golden sections look for the tube circle nearest the other
+/// surface inside [`CIRCLE_BRACKET`]: forty take the bracket to `1e-12`
+/// radians, below anything a tolerance tells apart.
+const GOLDEN_STEPS: usize = 40;
+
+/// A tube circle this near a column's edge, in radians, is put on it: a
+/// billionth of a radian is a thousandth of any tolerance a model carries
+/// on a torus metres across, the circle is held to the tolerance where it
+/// is put, and a branch seeded on `u = 0` then starts on the circle and
+/// not a rounding away from it.
+const EDGE_SNAP: f64 = 1e-9;
+
+/// The step of the central differences that give the gradient of the
+/// distance with a tube circle divided out of it
+/// ([`Walker::quotient`]): the quotient is analytic and good to rounding,
+/// so the gradient is to ten digits, and no root depends on it — it
+/// steers Newton steps and sizes cells.
+const QUOTIENT_STEP: f64 = 1e-5;
 
 /// An angle difference in `[−π, π)`.
 fn wrap_pi(x: f64) -> f64 {
@@ -162,26 +228,122 @@ struct SingularCell {
     crossing: bool,
 }
 
+/// A tube circle of the walked torus that lies on the other surface, to
+/// be divided out of the distance: what is left of the section is traced
+/// on the quotient.
+#[derive(Debug, Clone, Copy)]
+struct TubeFactor {
+    u0: f64,
+    /// One where the surfaces cross along the circle, two where they are
+    /// tangent along it.
+    order: usize,
+}
+
 /// The torus and the other surface with the singular points' corrections:
 /// what a branch is evaluated on.
 #[derive(Debug)]
 pub(crate) struct Walker {
     torus: Surface,
     other: Surface,
+    factor: Option<TubeFactor>,
     bumps: Vec<Bump>,
     singular: Vec<SingularCell>,
 }
 
 impl Walker {
-    /// The other surface's signed distance at the torus's `(u, v)`,
-    /// corrected, and its gradient in `(u, v)`.
-    fn value(&self, u: f64, v: f64) -> (f64, [f64; 2]) {
+    /// The other surface's signed distance at the torus's `(u, v)` and
+    /// its gradient in `(u, v)`, as they are.
+    fn distance(&self, u: f64, v: f64) -> (f64, [f64; 2]) {
         let Some(implicit) = Implicit::of(&self.other) else {
             return (f64::NAN, [f64::NAN; 2]);
         };
         let e = self.torus.eval(u, v);
-        let (mut value, normal) = implicit.level(e.point);
-        let mut slope = [e.du, e.dv].map(|d| normal.dot(&implicit.frame.vec_to_local(d)));
+        let (value, normal) = implicit.level(e.point);
+        let slope = [e.du, e.dv].map(|d| normal.dot(&implicit.frame.vec_to_local(d)));
+        (value, slope)
+    }
+
+    /// The distance with the tube circle `factor` divided out of it:
+    /// `F̃(P(u, v)) / sinᵐ((u − u₀) / 2)` over `|∇F|`, a length, with `u`
+    /// as it comes — unwrapped, so that the quotient is continuous, and
+    /// for an odd order changes sign with a whole turn.
+    ///
+    /// No quotient is taken. The chord from the circle's point `A = P(u₀,
+    /// v)` to `P(u, v)` is `λ·τ`, `λ = 2ρ sin((u − u₀) / 2)` along the
+    /// unit tangent `τ` of the parallel circle half way, so `F(P)` is
+    /// `F(A)` and `λ·(∇F(A)·τ + λ·c₂ + λ²·c₃ + λ³·c₄)` with the `c` of
+    /// [`Implicit::bend`], and the bracket is `F̃ / λ` in closed form.
+    /// `F(A)` is what is dropped: zero when the circle is on the other
+    /// surface, within the tolerance when it is within the tolerance of
+    /// it. Where the surfaces are tangent along the circle, `∇F(A)·τ`,
+    /// which is `cos(·)·∇F(A)·τ₀ − sin(·)·∇F(A)·e₀`, loses its first term
+    /// the same way — the gradient is across the circle's tangent `τ₀` —
+    /// and the second carries the other `sin`.
+    fn quotient(&self, factor: &TubeFactor, u: f64, v: f64) -> f64 {
+        let (
+            Some(implicit),
+            Surface::Torus {
+                frame,
+                major_radius,
+                minor_radius,
+            },
+        ) = (Implicit::of(&self.other), &self.torus)
+        else {
+            return f64::NAN;
+        };
+        let half = 0.5 * (u - factor.u0);
+        let rho = major_radius + minor_radius * v.cos();
+        let (x, y) = (frame.x().into_inner(), frame.y().into_inner());
+        let (sin, cos) = factor.u0.sin_cos();
+        let (sin_mid, cos_mid) = (factor.u0 + half).sin_cos();
+        let outward = implicit.frame.vec_to_local(x * cos + y * sin);
+        let tau = implicit.frame.vec_to_local(y * cos_mid - x * sin_mid);
+        let a = implicit.frame.to_local(self.torus.point(factor.u0, v));
+        let p = implicit.frame.to_local(self.torus.point(u, v));
+        let gradient = implicit.slope(a);
+        let [c2, c3, c4] = implicit.bend(a, tau);
+        let lambda = 2.0 * rho * half.sin();
+        let higher = c2 + lambda * (c3 + lambda * c4);
+        let quotient = if factor.order == 1 {
+            2.0 * rho * (gradient.dot(&tau) + lambda * higher)
+        } else {
+            2.0 * rho * (2.0 * rho * higher - gradient.dot(&outward))
+        };
+        let steep = implicit.slope(p).norm();
+        if steep > 0.0 {
+            quotient / steep
+        } else {
+            quotient
+        }
+    }
+
+    /// What is decided in length at `(u, v)`: the exact distance to the
+    /// other surface, or with a tube circle divided out the quotient,
+    /// which is never less.
+    fn apart(&self, u: f64, v: f64) -> f64 {
+        match (&self.factor, Implicit::of(&self.other)) {
+            (Some(factor), _) => self.quotient(factor, u, v),
+            (None, Some(other)) => other.distance(self.torus.point(u, v)),
+            (None, None) => f64::NAN,
+        }
+    }
+
+    /// The other surface's signed distance at the torus's `(u, v)` — with
+    /// a tube circle divided out of it where one lies on the other
+    /// surface — corrected, and its gradient in `(u, v)`.
+    fn value(&self, u: f64, v: f64) -> (f64, [f64; 2]) {
+        let (mut value, mut slope) = match &self.factor {
+            None => self.distance(u, v),
+            Some(factor) => {
+                let h = QUOTIENT_STEP;
+                let at = |u: f64, v: f64| self.quotient(factor, u, v);
+                let slope = [
+                    (at(u + h, v) - at(u - h, v)) / (2.0 * h),
+                    (at(u, v + h) - at(u, v - h)) / (2.0 * h),
+                ];
+                (at(u, v), slope)
+            }
+        };
         for bump in &self.bumps {
             let (y, mx) = bump.measure(u, v);
             if y < 1.0 {
@@ -411,6 +573,8 @@ struct Tracer<'a> {
     section: PatchedSection<'a>,
     walker: Walker,
     turning: Vec<TurningCell>,
+    /// The tube circles of the torus on the other surface, ascending.
+    circles: Vec<TubeFactor>,
     tol: Tolerance,
 }
 
@@ -419,12 +583,18 @@ struct Tracer<'a> {
 /// Operands: a torus against a plane, a cylinder, an elliptic cylinder, a
 /// cone, a sphere or another torus, in any pose; every other pair is
 /// [`GeomError::Unsupported`]. A torus is compact, so there is no region
-/// to clip to and the whole section is returned. The poses it does not
-/// resolve are refused by name as [`GeomError::DegenerateSection`]: a
-/// tube circle of the torus on the other surface
-/// ([`SectionFault::TubeCircle`]), surfaces tangent along a curve or the
-/// same, a singular point crowded by another or by a turning point, and
-/// turning points `f64` does not tell apart.
+/// to clip to and the whole section is returned. A tube circle of the
+/// torus that lies on the other surface within `tol.linear` — a pipe
+/// elbow against its pipe, a plane through the axis, a sphere or a cone
+/// about the tangent to the centre circle — is one of
+/// [`SectionTrace::circles`], exact, and what else the pair meets in is
+/// traced beside it. The poses the tracer does not resolve are refused by
+/// name as [`GeomError::DegenerateSection`]: two such circles with more
+/// of the section besides ([`SectionFault::TubeCircle`]), surfaces
+/// tangent along any other curve or the same, a singular point crowded by
+/// another, by a turning point or by a tube circle, and turning points
+/// `f64` does not tell apart — a loop within a ten-thousandth of a tube
+/// circle all the way round among them.
 ///
 /// Guarantees: every branch lies on both surfaces, exactly on the walked
 /// torus — [`SectionBranch::uv`] is its parameters there — and to rounding
@@ -434,7 +604,11 @@ struct Tracer<'a> {
 /// it exactly; every part of the section is on a branch, because each
 /// stretch of a branch is proven alone in its cell on the section's
 /// polynomial, and the turning points and the roots along `u = 0` that
-/// seed the branches are isolated, not sampled. Which of two tori is
+/// seed the branches are isolated, not sampled. A branch that reaches a
+/// tube circle of [`SectionTrace::circles`] ends on it, at a
+/// [`SectionPoint`] that is not isolated, and beside such a circle the
+/// singular points are decided on the distance over the circle's factor,
+/// which is never less than the distance. Which of two tori is
 /// walked is a rule on the two surfaces — the smaller over all, then the
 /// smaller tube — so swapping the arguments changes nothing, bit for bit.
 ///
@@ -469,10 +643,12 @@ pub fn trace_torus(a: &Surface, b: &Surface, tol: Tolerance) -> Result<SectionTr
         walker: Walker {
             torus: torus.clone(),
             other: other.clone(),
+            factor: None,
             bumps: Vec::new(),
             singular: Vec::new(),
         },
         turning: Vec::new(),
+        circles: Vec::new(),
         tol,
     };
     tracer.run().map_err(|fault| GeomError::DegenerateSection {
@@ -533,6 +709,28 @@ fn in_box(p: [f64; 2], at: [f64; 2], half: [f64; 2]) -> bool {
 
 impl Tracer<'_> {
     fn run(mut self) -> Result<SectionTrace, SectionFault> {
+        self.circles = self.tube_circles();
+        // Two surfaces that are not the same share two tube circles at
+        // the most: their centre lines touch the centre circle there.
+        if self.circles.len() > 2 {
+            return Err(SectionFault::TangentAlongCurve);
+        }
+        for (i, circle) in self.circles.clone().iter().enumerate() {
+            self.section.deflate(circle.u0, circle.order, i == 0);
+        }
+        match self.circles[..] {
+            [] => {}
+            [only] => self.walker.factor = Some(only),
+            // Two circles and nothing else is a plane through the axis,
+            // or a sphere centred on the tangent to the centre circle.
+            // With more of the section besides there is no quotient in
+            // closed form to walk it on.
+            _ if self.section.is_empty() => {
+                let circles = self.section_circles()?;
+                return Ok(SectionTrace::new(Vec::new(), Vec::new()).with_circles(circles));
+            }
+            _ => return Err(SectionFault::TubeCircle),
+        }
         let turning = (self.section.turning_points())
             .map_err(|_| SectionFault::TangentAlongCurve)?
             .zeros;
@@ -540,8 +738,9 @@ impl Tracer<'_> {
             .map_err(|_| SectionFault::TangentAlongCurve)?
             .zeros;
         // A box of turning points a whole turn long in `v` is a tube
-        // circle on the other surface; a whole turn both ways is the
-        // torus itself.
+        // circle the other surface runs along, and not one held to the
+        // tolerance, which would have been divided out; a whole turn both
+        // ways is the torus itself.
         let turn = TAU - ANGLE_SLACK;
         for z in turning.iter().filter(|z| !z.certified) {
             if z.hi[1] - z.lo[1] >= turn {
@@ -585,7 +784,220 @@ impl Tracer<'_> {
             let cell = self.turning_cell(i, at, &turning)?;
             self.turning.push(cell);
         }
+        // What is left of the section crosses the tube circle wherever it
+        // reaches it, and a branch is cut there. Where it turns or is
+        // singular within the tolerance of the circle there is no telling
+        // a crossing from a touch.
+        if let (
+            Some(factor),
+            Surface::Torus {
+                major_radius,
+                minor_radius,
+                ..
+            },
+        ) = (self.walker.factor, &self.walker.torus)
+        {
+            let near = self.tol.linear / (major_radius + minor_radius);
+            let off = |u: f64| wrap_pi(u - factor.u0).abs();
+            let crowded = (self.turning.iter().any(|t| off(t.at[0]) <= near))
+                || (self.walker.singular.iter()).any(|s| off(s.at[0]) <= s.half[0] + near);
+            if crowded {
+                return Err(SectionFault::CrowdedSingularity);
+            }
+        }
         self.assemble()
+    }
+
+    /// The tube circles of the torus that lie on the other surface within
+    /// the tolerance, ascending by `u`, each with whether the surfaces
+    /// cross along it or are tangent along it.
+    ///
+    /// A candidate ([`PatchedSection::tube_circle_candidates`]) is looked
+    /// at on tube circles of `v` all the way round: either side of it the
+    /// distance has opposite signs where the surfaces cross along the
+    /// circle, and then the circle is where it vanishes; the same sign
+    /// where they are tangent, and then it is where its slope in `u`
+    /// does. The circle is accepted in length: every point of it within
+    /// `tol.linear` of the other surface, and the other surface's
+    /// polynomial along it no more than a distance of `tol.linear` makes
+    /// of it anywhere on the torus ([`Implicit::firmness`]) — that
+    /// polynomial is what the rest of the section is traced without, so
+    /// the rest stays within `tol.linear` of the other surface too. It is
+    /// a tangency when the polynomial and its slope in `u` are within
+    /// that bound together: there both are dropped.
+    fn tube_circles(&self) -> Vec<TubeFactor> {
+        let walker = &self.walker;
+        let Some(other) = Implicit::of(&walker.other) else {
+            return Vec::new();
+        };
+        let round = |k: usize| TAU * (k as f64 + 0.5) / CIRCLE_SAMPLES as f64;
+        let tol = self.tol.linear;
+        // Every point of the tube circle at `u` within `within` of the
+        // other surface.
+        let on = |u: f64, within: f64| {
+            (0..CIRCLE_SAMPLES)
+                .all(|k| other.distance(walker.torus.point(u, round(k))).abs() <= within)
+        };
+        // What the other surface's polynomial may be along a circle for
+        // the section traced without it to stay within the tolerance of
+        // the other surface: a distance of `tol.linear` wherever on the
+        // torus it is traced, and the polynomial's own rounding.
+        let dropped = {
+            // Whatever is traced is on the torus, and as far from a point
+            // as the torus is.
+            let clear_of = |p: Point3| {
+                (Implicit::of(&walker.torus))
+                    .map_or(0.0, |torus| torus.distance(other.frame.to_world(p)).abs())
+            };
+            tol * other.firmness(clear_of) + self.section.floor()
+        };
+        // Candidates with the torus within the tolerance of the other
+        // surface all the way from one to the next are one circle at that
+        // tolerance — the two a sphere a little larger than the tube cuts
+        // it in, either side of where it would touch — and are looked at
+        // together.
+        let near: Vec<f64> = (self.section.tube_circle_candidates().into_iter())
+            .filter(|&u| on(u, 2.0 * tol))
+            .collect();
+        let joined = |a: f64, b: f64| on(a + 0.5 * wrap_pi(b - a), tol);
+        // A group is its first candidate and how far the others reach
+        // either side of it, the short way round.
+        let mut groups: Vec<(f64, [f64; 2])> = Vec::new();
+        for (i, &u) in near.iter().enumerate() {
+            match groups.last_mut() {
+                Some((anchor, reach)) if i > 0 && joined(near[i - 1], u) => {
+                    let off = wrap_pi(u - *anchor);
+                    *reach = [reach[0].min(off), reach[1].max(off)];
+                }
+                _ => groups.push((u, [0.0; 2])),
+            }
+        }
+        // The group below `2π` and the group above zero may be one.
+        if let (Some(&(anchor, reach)), Some(&last), true) =
+            (groups.first(), near.last(), groups.len() > 1)
+        {
+            if joined(last, anchor) {
+                groups.remove(0);
+                if let Some((end, span)) = groups.last_mut() {
+                    let off = wrap_pi(anchor - *end);
+                    *span = [span[0].min(off + reach[0]), span[1].max(off + reach[1])];
+                }
+            }
+        }
+
+        let mut found: Vec<TubeFactor> = Vec::new();
+        for (anchor, reach) in groups {
+            let lo = anchor + reach[0] - CIRCLE_BRACKET;
+            let hi = anchor + reach[1] + CIRCLE_BRACKET;
+            let mut beside: Vec<(f64, f64, f64)> = (0..CIRCLE_SAMPLES)
+                .map(|k| {
+                    let v = round(k);
+                    (walker.distance(lo, v).0, walker.distance(hi, v).0, v)
+                })
+                .collect();
+            let crosses = beside.iter().map(|(a, b, _)| a * b).sum::<f64>() < 0.0;
+            beside.sort_by(|p, q| (q.0.abs().min(q.1.abs())).total_cmp(&p.0.abs().min(p.1.abs())));
+            let Ok(bracket) = Interval::new(lo, hi) else {
+                continue;
+            };
+            let mut roots: Vec<f64> = (beside.iter().take(CIRCLE_REFINED))
+                .filter_map(|&(_, _, v)| {
+                    let value = |u: f64| walker.distance(u, v).0;
+                    let slope = |u: f64| walker.distance(u, v).1[0];
+                    let bend = |u: f64| {
+                        (slope(u + HESSIAN_STEP) - slope(u - HESSIAN_STEP)) / (2.0 * HESSIAN_STEP)
+                    };
+                    if crosses {
+                        newton_in_interval(value, slope, bracket, 0.0).ok()
+                    } else {
+                        newton_in_interval(slope, bend, bracket, 0.0).ok()
+                    }
+                })
+                .collect();
+            roots.sort_by(f64::total_cmp);
+            let refined = (roots.get(roots.len() / 2).copied()).unwrap_or(0.5 * (lo + hi));
+            // The other surface's polynomial along the circle at `u` at
+            // its largest, the same with its slope in `u` added, and how
+            // far the circle is from the other surface.
+            let measure = |u: f64| {
+                let edge = (u / FRAC_PI_2).round() * FRAC_PI_2;
+                let u0 = wrap_angle(if (u - edge).abs() <= EDGE_SNAP {
+                    edge
+                } else {
+                    u
+                });
+                let mut worst = [0.0f64; 2];
+                let mut away = 0.0f64;
+                for k in 0..CIRCLE_SAMPLES {
+                    let e = walker.torus.eval(u0, round(k));
+                    let a = other.frame.to_local(e.point);
+                    let off = other.value(a).abs();
+                    let slope = other.slope(a).dot(&other.frame.vec_to_local(e.du)).abs();
+                    worst = [worst[0].max(off), worst[1].max(off + slope)];
+                    away = away.max(other.distance(e.point).abs());
+                }
+                (u0, worst, away)
+            };
+            let accepted =
+                |&(_, worst, away): &(f64, [f64; 2], f64)| away <= tol && worst[0] <= dropped;
+            // Where the circle is on the other surface the roots are one
+            // to rounding, and their median is the circle. Where it is
+            // only within the tolerance of it they are as far apart as
+            // that lets them be, and the circle held best is looked for:
+            // the polynomial along the circle is, this near, linear in
+            // `u` at every `v`, and the largest of its magnitudes convex.
+            let mut best = measure(refined);
+            if !accepted(&best) {
+                let ratio = 0.5 * (5f64.sqrt() - 1.0);
+                let (mut a, mut b) = (lo, hi);
+                for _ in 0..GOLDEN_STEPS {
+                    let (c, d) = (b - ratio * (b - a), a + ratio * (b - a));
+                    if measure(c).1[0] < measure(d).1[0] {
+                        b = d;
+                    } else {
+                        a = c;
+                    }
+                }
+                best = measure(0.5 * (a + b));
+            }
+            if accepted(&best) {
+                let (u0, worst, _) = best;
+                let order = if worst[1] <= dropped { 2 } else { 1 };
+                found.push(TubeFactor { u0, order });
+            }
+        }
+        found.sort_by(|a, b| a.u0.total_cmp(&b.u0));
+        found
+    }
+
+    /// The tube circles as curves: on the torus exactly, the parameter
+    /// the torus's `v`.
+    fn section_circles(&self) -> Result<Vec<SectionCircle>, SectionFault> {
+        let Surface::Torus {
+            frame,
+            major_radius,
+            minor_radius,
+        } = &self.walker.torus
+        else {
+            return Err(SectionFault::TubeCircle);
+        };
+        (self.circles.iter())
+            .map(|c| {
+                let (sin, cos) = c.u0.sin_cos();
+                let outward = frame.x().into_inner() * cos + frame.y().into_inner() * sin;
+                let up = frame.z().into_inner();
+                let origin = frame.origin() + outward * *major_radius;
+                let around = Frame::from_orthonormal(origin, outward, up, outward.cross(&up))
+                    .map_err(|_| SectionFault::TubeCircle)?;
+                Ok(SectionCircle {
+                    circle: Curve::Circle {
+                        frame: around,
+                        radius: *minor_radius,
+                    },
+                    tangent: c.order == 2,
+                })
+            })
+            .collect()
     }
 
     /// The critical points within the tolerance of the other surface,
@@ -594,12 +1006,9 @@ impl Tracer<'_> {
         let raw = |u: f64, v: f64| self.walker.value(u, v);
         let mut out: Vec<Singular> = Vec::new();
         // Whether a critical point is singular is decided in length, on
-        // the exact distance.
-        let apart = |u: f64, v: f64| {
-            (Implicit::of(&self.walker.other)).map_or(f64::NAN, |other| {
-                other.distance(self.walker.torus.point(u, v))
-            })
-        };
+        // the exact distance — over a tube circle's factor where one has
+        // been divided out, which is never less.
+        let apart = |u: f64, v: f64| self.walker.apart(u, v);
         for z in critical {
             let value = raw(z.at[0], z.at[1]).0;
             if !z.certified {
@@ -961,7 +1370,7 @@ impl Tracer<'_> {
             let mut tries = 0;
             let (next, half) = loop {
                 let next = u + dir * du;
-                let half = (2.0 * steep * du).max(0.5 * du);
+                let half = (2.0 * steep * du).max(0.5 * du).max(HALF_MIN);
                 let (us, vs) = ([u.min(next), u.max(next)], [v - half, v + half]);
                 let proven = half <= FRAC_PI_4
                     && self.section.sign_over(Probe::Ft, us, vs).is_some()
@@ -1138,12 +1547,8 @@ impl Tracer<'_> {
     }
 
     fn chained(self, marched: Vec<Marched>) -> Result<SectionTrace, SectionFault> {
-        let points: Vec<SectionPoint> = (self.walker.singular.iter())
-            .map(|s| SectionPoint {
-                point: self.walker.torus.point(s.at[0], s.at[1]),
-                isolated: !s.crossing,
-            })
-            .collect();
+        let circles = self.section_circles()?;
+        let tol = self.tol;
         let walker = Arc::new(self.walker);
         // The graph that holds the other arm of a turning point.
         let across = |end: ArcEnd| -> Option<(usize, usize)> {
@@ -1194,64 +1599,156 @@ impl Tracer<'_> {
             }
         }
 
+        // The points branches end at, as `(u, v)` in `[0, 2π)²`: the
+        // singular points, and after them the crossings of a tube circle
+        // that lies on the other surface, as the chains come to them.
+        let mut ends_at: Vec<([f64; 2], bool)> = (walker.singular.iter())
+            .map(|s| (s.at, !s.crossing))
+            .collect();
+        let singular = |end: ArcEnd| match end {
+            ArcEnd::Singular(i, _) => Some(i),
+            ArcEnd::Turning(..) | ArcEnd::Home => None,
+        };
+        let turns = |end: ArcEnd| matches!(end, ArcEnd::Turning(..));
+        let mut cut: Vec<Vec<Piece>> = Vec::new();
+        for chain in &chains {
+            let mut pieces: Vec<Piece> = Vec::new();
+            for &(k, forward) in chain {
+                let m = &marched[k];
+                let (from, to) = if forward { (0, 1) } else { (1, 0) };
+                let (start, finish) = (m.arc.ends[from], m.arc.ends[to]);
+                // Where the graph crosses the circle, in the order it
+                // runs: a graph seeded on the circle starts and ends on
+                // it, at one point.
+                let mut stops: Vec<([f64; 2], Option<usize>)> = Vec::new();
+                let seeded = walker
+                    .factor
+                    .filter(|f| m.ends[from] == ArcEnd::Home && f.u0 == 0.0);
+                let home = seeded.map(|f| {
+                    ends_at.push(([f.u0, wrap_angle(start[1])], false));
+                    ends_at.len() - 1
+                });
+                stops.push((start, singular(m.ends[from]).or(home)));
+                if let Some(factor) = walker.factor {
+                    let (lo, hi) = (start[0].min(finish[0]), start[0].max(finish[0]));
+                    let first = ((lo - factor.u0) / TAU).floor() + 1.0;
+                    let mut inside: Vec<f64> = (0..)
+                        .map(|n| factor.u0 + TAU * (first + n as f64))
+                        .take_while(|u| *u < hi - 4.0 * ANGLE_SLACK)
+                        .filter(|u| *u > lo + 4.0 * ANGLE_SLACK)
+                        .collect();
+                    if start[0] > finish[0] {
+                        inside.reverse();
+                    }
+                    for u in inside {
+                        let v = walker.v_on(&m.arc, u);
+                        ends_at.push(([factor.u0, wrap_angle(v)], false));
+                        stops.push(([u, v], Some(ends_at.len() - 1)));
+                    }
+                }
+                stops.push((finish, singular(m.ends[to]).or(home)));
+                let last = stops.len() - 1;
+                for (i, w) in stops.windows(2).enumerate() {
+                    pieces.push(Piece {
+                        graph: k,
+                        from: w[0].0,
+                        to: w[1].0,
+                        turns: [
+                            i == 0 && turns(m.ends[from]),
+                            i + 1 == last && turns(m.ends[to]),
+                        ],
+                        ends: [w[0].1, w[1].1],
+                    });
+                }
+            }
+            // A loop that crosses the circle starts at a crossing.
+            if pieces.first().is_some_and(|p| p.ends[0].is_none()) {
+                if let Some(i) = pieces.iter().position(|p| p.ends[0].is_some()) {
+                    pieces.rotate_left(i);
+                }
+            }
+            let mut group: Vec<Piece> = Vec::new();
+            for piece in pieces {
+                let ended = piece.ends[1].is_some();
+                group.push(piece);
+                if ended {
+                    cut.push(core::mem::take(&mut group));
+                }
+            }
+            if !group.is_empty() {
+                cut.push(group);
+            }
+        }
+
+        // The points in their documented order, ascending by `u` and
+        // then `v`, and where each went.
+        let mut order: Vec<usize> = (0..ends_at.len()).collect();
+        order.sort_by(|&a, &b| {
+            let (p, q) = (ends_at[a].0, ends_at[b].0);
+            p[0].total_cmp(&q[0]).then(p[1].total_cmp(&q[1]))
+        });
+        let mut index = vec![0; ends_at.len()];
+        for (now, &was) in order.iter().enumerate() {
+            index[was] = now;
+        }
+        let points: Vec<SectionPoint> = (order.iter())
+            .map(|&i| SectionPoint {
+                point: walker.torus.point(ends_at[i].0[0], ends_at[i].0[1]),
+                isolated: ends_at[i].1,
+            })
+            .collect();
+        // Two crossings of the circle within the tolerance of each other
+        // are a touch, or a crossing, that the tolerance does not decide.
+        let crossings = &order[..];
+        for (i, &a) in crossings.iter().enumerate() {
+            for &b in &crossings[i + 1..] {
+                let both = a >= walker.singular.len() && b >= walker.singular.len();
+                let apart = points[index[a]].point - points[index[b]].point;
+                if both && apart.norm() <= 2.0 * tol.linear {
+                    return Err(SectionFault::CrowdedSingularity);
+                }
+            }
+        }
+
         let mut branches = Vec::new();
-        for chain in chains {
+        for group in cut {
             let mut arcs = Vec::new();
             let mut graphs = Vec::new();
             let mut shifts: Vec<[f64; 2]> = Vec::new();
             let mut reached: Option<[f64; 2]> = None;
-            for &(k, forward) in &chain {
-                let m = &marched[k];
-                let (from, to) = if forward { (0, 1) } else { (1, 0) };
-                let turns = |end: ArcEnd| matches!(end, ArcEnd::Turning(..));
+            for piece in &group {
                 arcs.push(Arc1::new(
-                    m.arc.ends[from][0],
-                    m.arc.ends[to][0],
-                    turns(m.ends[from]),
-                    turns(m.ends[to]),
+                    piece.from[0],
+                    piece.to[0],
+                    piece.turns[0],
+                    piece.turns[1],
                 ));
                 // Whole turns, so that this graph starts where the last
                 // one ended, and the first inside `[0, 2π)`.
                 let shift = [0, 1].map(|c| match reached {
-                    Some(at) => TAU * ((at[c] - m.arc.ends[from][c]) / TAU).round(),
-                    None => -TAU * (m.arc.ends[from][c] / TAU).floor(),
+                    Some(at) => TAU * ((at[c] - piece.from[c]) / TAU).round(),
+                    None => -TAU * (piece.from[c] / TAU).floor(),
                 });
-                reached = Some([0, 1].map(|c| m.arc.ends[to][c] + shift[c]));
+                reached = Some([0, 1].map(|c| piece.to[c] + shift[c]));
                 shifts.push(shift);
-                graphs.push(m.arc.clone());
+                graphs.push(TorusArc {
+                    cells: marched[piece.graph].arc.cells.clone(),
+                    ends: [piece.from, piece.to],
+                });
             }
-            let (Some(&(first, forward)), Some(&(last, last_forward))) =
-                (chain.first(), chain.last())
-            else {
+            let (Some(first), Some(last)) = (group.first(), group.last()) else {
                 continue;
             };
-            let first_end = marched[first].ends[usize::from(!forward)];
-            let last_end = marched[last].ends[usize::from(last_forward)];
-            let singular = |end: ArcEnd| match end {
-                ArcEnd::Singular(i, _) => Some(i),
-                ArcEnd::Turning(..) | ArcEnd::Home => None,
-            };
-            let ends = (singular(first_end).zip(singular(last_end)))
-                .map(|(a, b)| [BranchEnd::Singular(a), BranchEnd::Singular(b)]);
-            let pin = |i: Option<usize>| i.and_then(|i| points.get(i)).map(|p| p.point);
-            let uv_of = |at: &TorusArc, end: usize, shift: &[f64; 2]| {
-                [0, 1].map(|c| at.ends[end][c] + shift[c])
-            };
-            let pins_uv = match (
-                ends,
-                graphs.first().zip(shifts.first()),
-                graphs.last().zip(shifts.last()),
-            ) {
-                (Some(_), Some((a, sa)), Some((b, sb))) => [
-                    Some(uv_of(a, usize::from(!forward), sa)),
-                    Some(uv_of(b, usize::from(last_forward), sb)),
-                ],
-                _ => [None; 2],
-            };
-            let pins = if ends.is_some() {
-                [pin(singular(first_end)), pin(singular(last_end))]
-            } else {
-                [None; 2]
+            let ends = (first.ends[0].zip(last.ends[1]))
+                .map(|(a, b)| [BranchEnd::Singular(index[a]), BranchEnd::Singular(index[b])]);
+            let pin = |i: Option<usize>| i.and_then(|i| points.get(index[i])).map(|p| p.point);
+            let uv_of = |at: [f64; 2], shift: &[f64; 2]| [0, 1].map(|c| at[c] + shift[c]);
+            let (pins, pins_uv) = match (ends, shifts.first(), shifts.last()) {
+                (Some(_), Some(sa), Some(sb)) => (
+                    [pin(first.ends[0]), pin(last.ends[1])],
+                    [Some(uv_of(first.from, sa)), Some(uv_of(last.to, sb))],
+                ),
+                _ => ([None; 2], [None; 2]),
             };
             let walk = TorusWalk {
                 walker: Arc::clone(&walker),
@@ -1261,6 +1758,20 @@ impl Tracer<'_> {
             };
             branches.push(SectionBranch::on_torus(walk, arcs, ends, pins));
         }
-        Ok(SectionTrace::new(branches, points))
+        Ok(SectionTrace::new(branches, points).with_circles(circles))
     }
+}
+
+/// A stretch of one marched graph as a branch runs through it: all of it,
+/// or what lies between two crossings of a tube circle.
+struct Piece {
+    graph: usize,
+    /// `(u, v)` where the branch enters the stretch and where it leaves.
+    from: [f64; 2],
+    to: [f64; 2],
+    /// The section turns back at that end of the stretch.
+    turns: [bool; 2],
+    /// The point a branch ends at there, an index into the points as
+    /// they are found.
+    ends: [Option<usize>; 2],
 }

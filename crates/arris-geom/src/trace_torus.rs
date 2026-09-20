@@ -33,13 +33,19 @@
 //!   a singular point of the section is not decided on `f`, which
 //!   carries a factor the size of the other surface to the power `d`,
 //!   but in length, on [`Implicit::distance`] at the point.
+//!
+//! A tube circle of the torus that lies on the other surface is a line
+//! `s = s₀` of a column on which `f` vanishes: neither set is isolated
+//! along it. It is looked for first ([`PatchedSection::tube_circle_candidates`])
+//! and divided out ([`PatchedSection::deflate`]), and both sets are then
+//! those of the quotient, the rest of the section.
 
 use core::f64::consts::{FRAC_1_SQRT_2, FRAC_PI_2, FRAC_PI_4, SQRT_2, TAU};
 
 use arris_math::Tolerance;
 
 use crate::Surface;
-use crate::bernstein::{Binomials, sign_change_candidates};
+use crate::bernstein::{self, Binomials, sign_change_candidates};
 use crate::bernstein2::{Continuum, Gate, Isolation, Poly2, Zero2, common_zeros, merge};
 use crate::implicit::{BERNSTEIN_ROUNDING, Implicit};
 
@@ -79,9 +85,28 @@ fn quarter_param(angle: f64) -> f64 {
     (0.5 * (1.0 + (0.5 * (angle - FRAC_PI_4)).tan() / QUARTER_TAN)).clamp(0.0, 1.0)
 }
 
+/// The weight of a quarter turn at its parameter `s`, the quadratic with
+/// the coefficients `(1, cos π/4, 1)`.
+fn quarter_weight(s: f64) -> f64 {
+    1.0 - (2.0 - SQRT_2) * s * (1.0 - s)
+}
+
+/// Where a line of the torus at `t` of a quarter turn in `v` is looked
+/// along for the tube circles that lie on the other surface: every such
+/// circle crosses it. A place with nothing special about it, not a
+/// tolerance.
+const CIRCLE_ROW: f64 = 0.37;
+
+/// How far outside a column's `[0, 1]` a tube circle's parameter may lie
+/// for the column still to be divided by it: a circle that near the
+/// column's edge leaves the polynomial too small beside it to keep a sign
+/// above its rounding. A ratio of the column's width.
+const DIVIDED_WITHIN: f64 = 0.5;
+
 /// The quarter turns a range of angles lies over, each with the part of
-/// its `[0, 1]` the range covers.
-fn quarters([lo, hi]: [f64; 2]) -> Vec<(usize, [f64; 2])> {
+/// its `[0, 1]` the range covers and whether it is an odd number of whole
+/// turns from `[0, 2π)`.
+fn quarters([lo, hi]: [f64; 2]) -> Vec<(usize, [f64; 2], bool)> {
     let first = (lo / FRAC_PI_2).floor();
     let last = (hi / FRAC_PI_2).floor().max(first);
     let count = (last - first) as usize + 1;
@@ -99,7 +124,8 @@ fn quarters([lo, hi]: [f64; 2]) -> Vec<(usize, [f64; 2])> {
                 1.0
             };
             let quarter = (first + k as f64).rem_euclid(4.0) as usize;
-            (quarter, [from, to.max(from)])
+            let odd = ((first + k as f64) / 4.0).floor().rem_euclid(2.0) == 1.0;
+            (quarter, [from, to.max(from)], odd)
         })
         .collect()
 }
@@ -137,6 +163,13 @@ pub(crate) struct PatchedSection<'a> {
     /// What `|f|` is no larger than within `tol.linear` of the other
     /// surface, rounding included.
     near: f64,
+    /// `near` without the rounding: what a distance of `tol.linear` makes
+    /// of `f`.
+    steep: f64,
+    /// The polynomial changes sign with every whole turn of `u`: a tube
+    /// circle it crossed along has been divided out of it
+    /// ([`Self::deflate`]).
+    odd_turn: bool,
 }
 
 /// The points isolated over the whole torus, as angles.
@@ -207,13 +240,157 @@ impl<'a> PatchedSection<'a> {
         // and no weight is above one.
         let reach = major + minor + origin.norm();
         let floor = BERNSTEIN_ROUNDING * implicit.magnitude(reach, 1.0);
-        let near = floor + implicit.steepness(reach + tol.linear) * tol.linear;
+        let steep = implicit.steepness(reach + tol.linear) * tol.linear;
         Some(PatchedSection {
             implicit,
             patches,
             floor,
-            near,
+            near: floor + steep,
+            steep,
+            odd_turn: false,
         })
+    }
+
+    /// Candidates for the `u` of a tube circle of the torus lying on the
+    /// other surface, ascending in `[0, 2π)`: such a circle crosses every
+    /// line of constant `v`, where `f` along the line vanishes and
+    /// changes sign, or touches zero and its derivative does. The
+    /// columns' edges are candidates as they are, since a change of sign
+    /// exactly at the end of a polynomial's `[0, 1]` is no variation of
+    /// its coefficients. A candidate is a place to look and no more.
+    pub(crate) fn tube_circle_candidates(&self) -> Vec<f64> {
+        let mut found: Vec<f64> = (0..4).map(|q| q as f64 * FRAC_PI_2).collect();
+        for patch in self.patches.iter().filter(|p| p.quarter[1] % 2 == 0) {
+            let line = patch.f.along(CIRCLE_ROW);
+            let m = line.len().saturating_sub(1) as f64;
+            let slope = bernstein::derivative(&line);
+            let roots = sign_change_candidates(&line, self.floor)
+                .into_iter()
+                .chain(sign_change_candidates(&slope, 2.0 * m * self.floor));
+            found.extend(roots.map(|s| quarter_angle(patch.quarter[0], s).rem_euclid(TAU)));
+        }
+        found.sort_by(f64::total_cmp);
+        found
+    }
+
+    /// The rounding of a coefficient of the polynomial, and of the other
+    /// surface's polynomial at a point of the torus.
+    pub(crate) fn floor(&self) -> f64 {
+        self.floor
+    }
+
+    /// No zero of the polynomial anywhere on the torus: every patch's
+    /// coefficients keep one sign beyond their rounding.
+    pub(crate) fn is_empty(&self) -> bool {
+        (self.patches.iter()).all(|patch| patch.f.sign(self.floor).is_some())
+    }
+
+    /// The tube circle at `u0`, which lies on the other surface, divided
+    /// out of the polynomial: `order` is one where the surfaces cross
+    /// along it and two where they are tangent along it. What is left is
+    /// `F̃(P(u, v)) / sinᵐ((u − u₀) / 2)` times a positive function, its
+    /// sign that of the quotient with `u − u₀` taken in `(−2π, 2π)` — so
+    /// that for an odd order it changes sign with a whole turn of `u`,
+    /// which [`Self::sign_over`] knows.
+    ///
+    /// With `corrected`, `F̃` is `F` less what keeps the division from
+    /// being exact when the circle is on the other surface only within
+    /// the tolerance: `F(P(u₀, v))`, and for a tangency `sin(u − u₀)·
+    /// ∂F/∂u(u₀, v)` as well, both polynomials on the patches. It is the
+    /// function `crate::torus_walk` evaluates in closed form, so the two
+    /// have the same zeros to rounding. That needs the patches as
+    /// [`Self::new`] made them: a second circle is divided out as it is,
+    /// and what the division is off by is dropped.
+    ///
+    /// A column is divided by its own linear factor `s − s₀` — the chart
+    /// of a quarter turn makes `sin((u − u₀) / 2)` that, over a positive
+    /// function — when the circle lies in it or within
+    /// [`DIVIDED_WITHIN`] of it; the others keep their polynomial, which
+    /// the factor does not make small.
+    pub(crate) fn deflate(&mut self, u0: f64, order: usize, corrected: bool) {
+        let d = self.implicit.degree();
+        let binomials = Binomials::new(4 * d + 2);
+        let home = ((u0 / FRAC_PI_2).floor().max(0.0) as usize).min(3);
+        let s_home = quarter_param(u0 - home as f64 * FRAC_PI_2);
+        let w_home = quarter_weight(s_home);
+        let weight = vec![1.0, FRAC_1_SQRT_2, 1.0];
+        let power =
+            |n: usize| (0..n).fold(vec![1.0], |p, _| bernstein::mul(&p, &weight, &binomials));
+        // The half angle from a column's middle to the circle, and the
+        // circle's parameter in the column's chart.
+        let chart = |qu: usize| {
+            let middle = qu as f64 * FRAC_PI_2 + FRAC_PI_4;
+            let alpha = 0.5 * ((u0 - middle + TAU / 2.0).rem_euclid(TAU) - TAU / 2.0);
+            let root = if qu == home {
+                s_home
+            } else {
+                0.5 * (1.0 + alpha.tan() / QUARTER_TAN)
+            };
+            (middle, alpha, root)
+        };
+        let mut rounding = self.floor;
+        if corrected {
+            for step in 0..order {
+                for qv in 0..4 {
+                    let Some(at_home) = self.patches.get(4 * home + qv) else {
+                        continue;
+                    };
+                    let (left, scale) = if step == 0 {
+                        (at_home.f.across(s_home), 1.0 / w_home.powi(d as i32))
+                    } else {
+                        let scale = w_home / (2.0 * QUARTER_TAN * w_home.powi(d as i32));
+                        (at_home.f.du().across(s_home), scale)
+                    };
+                    for qu in 0..4 {
+                        let (_, alpha, _) = chart(qu);
+                        let (sin, cos) = alpha.sin_cos();
+                        let t = QUARTER_TAN;
+                        let along = if step == 0 {
+                            power(d)
+                        } else {
+                            // `w·sin(u − u₀)` over `2 cos² π/8`.
+                            let first = [-t * cos - sin, t * cos - sin];
+                            let second = [cos - t * sin, cos + t * sin];
+                            let turn = bernstein::mul(&first, &second, &binomials);
+                            bernstein::mul(&power(d - 1), &turn, &binomials)
+                        };
+                        if let Some(patch) = self.patches.get_mut(4 * qu + qv) {
+                            let less = Poly2::outer(&along, &left);
+                            patch.f = Poly2::combine(&[(1.0, &patch.f), (-scale, &less)]);
+                        }
+                    }
+                }
+                rounding += self.floor;
+            }
+        }
+        let mut worst = rounding;
+        for patch in &mut self.patches {
+            let (middle, _, root) = chart(patch.quarter[0]);
+            let odd = order % 2 == 1;
+            let divided = (-DIVIDED_WITHIN..=1.0 + DIVIDED_WITHIN).contains(&root);
+            let mut floor = rounding;
+            if divided {
+                for _ in 0..order {
+                    let (quotient, carried) = patch.f.over_linear(root, floor, &binomials);
+                    patch.f = quotient;
+                    floor = carried;
+                }
+            }
+            // `s − s₀` has the sign of `u − u₀` taken in `(−π, π)`, and
+            // the sign wanted is that of `u − u₀` as it is.
+            let flipped = if divided {
+                (middle - u0).abs() > TAU / 2.0
+            } else {
+                middle < u0
+            };
+            if odd && flipped {
+                patch.f = Poly2::combine(&[(-1.0, &patch.f)]);
+            }
+            worst = worst.max(floor);
+        }
+        self.floor = worst;
+        self.near = worst + self.steep;
+        self.odd_turn ^= order % 2 == 1;
     }
 
     /// The turning points of the section in `u`. A certified zero is a
@@ -279,8 +456,8 @@ impl<'a> PatchedSection<'a> {
     pub(crate) fn sign_over(&self, probe: Probe, u: [f64; 2], v: [f64; 2]) -> Option<bool> {
         let d = self.implicit.degree() as f64;
         let mut sign = None;
-        for (qu, s) in quarters(u) {
-            for (qv, t) in quarters(v) {
+        for (qu, s, turned) in quarters(u) {
+            for (qv, t, _) in quarters(v) {
                 let patch = self.patches.get(4 * qu + qv)?;
                 let [m, n] = patch.f.degree();
                 let (m, n) = (m as f64, n as f64);
@@ -306,6 +483,7 @@ impl<'a> PatchedSection<'a> {
                         weighed(&g).restricted(s, t).sign(floor_h)
                     }
                 }?;
+                let part = part != (turned && self.odd_turn);
                 if sign.is_some_and(|s| s != part) {
                     return None;
                 }
@@ -938,6 +1116,69 @@ mod tests {
         let all = &found.zeros[0];
         assert!(!all.certified);
         assert!((0..2).all(|k| all.hi[k] - all.lo[k] >= TAU - ANGLE_ROUNDING));
+    }
+
+    /// A tube circle divided out of the polynomial leaves the rest of the
+    /// section: the quotient times `sinᵐ((u − u₀) / 2)` has the sign of
+    /// the polynomial it came from everywhere, its turning points are all
+    /// certified — the elbow's loop across the circle, which turns twice
+    /// — and its candidates on the circle are where the loop crosses it.
+    /// Two circles crossed along, a plane through the axis, leave nothing.
+    #[test]
+    fn a_tube_circle_divided_out_leaves_the_rest_of_the_section() {
+        let (major, minor) = (2.0, 0.5);
+        let torus = torus(major, minor);
+        let plane = |u0: f64| Surface::Plane {
+            frame: frame(Point3::origin(), Vec3::new(-(u0.sin()), u0.cos(), 0.0)),
+        };
+        for u0 in [0.0, 0.7, FRAC_PI_2, 4.0, TAU - 1e-3] {
+            let on_ring = Point3::new(major * u0.cos(), major * u0.sin(), 0.0);
+            let tangent = Vec3::new(-(u0.sin()), u0.cos(), 0.0);
+            let elbow = Surface::Cylinder {
+                frame: frame(on_ring, tangent),
+                radius: minor,
+            };
+            for (other, order) in [(elbow, 2), (plane(u0), 1)] {
+                let whole = PatchedSection::new(&torus, &other, TOL).unwrap();
+                let mut rest = PatchedSection::new(&torus, &other, TOL).unwrap();
+                let candidates = whole.tube_circle_candidates();
+                assert!(
+                    candidates
+                        .iter()
+                        .any(|c| apart([*c, 0.0], [u0, 0.0]) < 1e-9),
+                    "{u0} not among {candidates:?}"
+                );
+                rest.deflate(u0, order, true);
+                assert_eq!(rest.odd_turn, order == 1);
+                for (f, h) in whole.patches.iter().zip(&rest.patches) {
+                    for (s, t) in [(0.03, 0.2), (0.41, 0.9), (0.77, 0.5), (0.98, 0.1)] {
+                        let u = quarter_angle(f.quarter[0], s);
+                        let factor = (0.5 * (u - u0)).sin().powi(order as i32);
+                        let (was, is) = (f.f.eval(s, t), h.f.eval(s, t) * factor);
+                        if was.abs() > 1e3 * whole.floor {
+                            assert_eq!(was > 0.0, is > 0.0, "{u0}, order {order}, {:?}", f.quarter);
+                        }
+                    }
+                }
+                if order == 2 {
+                    let found = rest.turning_points().unwrap();
+                    assert_eq!(found.zeros.len(), 2, "{u0}: {:?}", found.zeros);
+                    assert!(found.zeros.iter().all(|z| z.certified), "{u0}");
+                    assert!(found.boxes <= MEASURED_BOXES, "{u0}: {} boxes", found.boxes);
+                    assert!(rest.floor <= 1e3 * whole.floor, "{u0}: {}", rest.floor);
+                } else {
+                    // The quotient changes sign with a whole turn, and a
+                    // box is told so.
+                    let here = rest.sign_over(Probe::F, [u0 + 0.1, u0 + 0.2], [1.0, 1.1]);
+                    let turned =
+                        rest.sign_over(Probe::F, [u0 + 0.1 + TAU, u0 + 0.2 + TAU], [1.0, 1.1]);
+                    assert!(here.is_some() && here == turned.map(|s| !s), "{u0}");
+                    assert!(!rest.is_empty(), "{u0}");
+                    rest.deflate((u0 + TAU / 2.0).rem_euclid(TAU), 1, false);
+                    assert!(rest.is_empty() && !rest.odd_turn, "{u0}");
+                }
+            }
+        }
     }
 
     /// A plane parallel to the axis, from through the hole to clear of

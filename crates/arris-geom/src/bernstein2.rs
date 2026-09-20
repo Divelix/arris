@@ -191,6 +191,81 @@ impl Poly2 {
         casteljau(&column, s)
     }
 
+    /// The polynomial in `t` along the line `s = at`, by de Casteljau
+    /// down every column.
+    pub(crate) fn across(&self, at: f64) -> Vec<f64> {
+        let [m, n] = self.degree;
+        (0..=n)
+            .map(|j| {
+                let column: Vec<f64> = (0..=m).map(|i| self.c[i * (n + 1) + j]).collect();
+                casteljau(&column, at)
+            })
+            .collect()
+    }
+
+    /// The polynomial in `s` along the line `t = at`.
+    pub(crate) fn along(&self, at: f64) -> Vec<f64> {
+        self.rows().map(|row| casteljau(row, at)).collect()
+    }
+
+    /// `self / (s − root)`, of one degree less in `s`, for a polynomial
+    /// that vanishes along the line `s = root` — inside the unit square
+    /// or outside it — and the rounding of the quotient's coefficients
+    /// where `floor` is that of `self`'s. In the scaled basis `aᵢ·C(m, i)`
+    /// the product with `(1 − root)·s − root·(1 − s)` is the two-term
+    /// recurrence `ãᵢ = (1 − root)·c̃ᵢ₋₁ − root·c̃ᵢ`; it is solved forwards
+    /// from `ã₀` and backwards from `ãₘ`, each as far as the basis function
+    /// that peaks at the root, which is as far as either keeps what it
+    /// carries in check — all the way for a root outside the square. One
+    /// equation is left over between the two. For a polynomial
+    /// that does vanish on the line it holds to rounding; otherwise what
+    /// it is off by is dropped, a multiple of the one basis function that
+    /// peaks nearest the root.
+    pub(crate) fn over_linear(&self, root: f64, floor: f64, binomials: &Binomials) -> (Poly2, f64) {
+        let [m, n] = self.degree;
+        if m == 0 {
+            return (self.clone(), floor);
+        }
+        let stride = n + 1;
+        // Quotient coefficients below `meet` come from the forward
+        // recurrence, the others from the backward one.
+        let meet = (root * m as f64).round().clamp(0.0, m as f64) as usize;
+        let mut c = vec![0.0; m * stride];
+        let mut rounding = vec![0.0; m];
+        for j in 0..=n {
+            let scaled = |i: usize| binomials.get(m, i) * self.c[i * stride + j];
+            let mut carried = 0.0;
+            for i in 0..meet {
+                carried = ((1.0 - root) * carried - scaled(i)) / root;
+                c[i * stride + j] = carried / binomials.get(m - 1, i);
+            }
+            let mut carried = 0.0;
+            for i in (meet..m).rev() {
+                carried = (scaled(i + 1) + root * carried) / (1.0 - root);
+                c[i * stride + j] = carried / binomials.get(m - 1, i);
+            }
+        }
+        // The same recurrences on the magnitudes of what each step adds.
+        let mut carried = 0.0;
+        for (i, slot) in rounding.iter_mut().enumerate().take(meet) {
+            carried = ((1.0 - root).abs() * carried + binomials.get(m, i) * floor) / root.abs();
+            *slot = carried / binomials.get(m - 1, i);
+        }
+        let mut carried = 0.0;
+        for i in (meet..m).rev() {
+            carried = (binomials.get(m, i + 1) * floor + root.abs() * carried) / (1.0 - root).abs();
+            rounding[i] = carried / binomials.get(m - 1, i);
+        }
+        let worst = rounding.iter().copied().fold(floor, f64::max);
+        (
+            Poly2 {
+                degree: [m - 1, n],
+                c,
+            },
+            worst,
+        )
+    }
+
     /// The same polynomial with `s` and `t` exchanged.
     fn transposed(&self) -> Poly2 {
         let [m, n] = self.degree;
@@ -950,6 +1025,42 @@ mod tests {
             }
         }
         assert_eq!(linear(1.0, 0.0, 0.0).du().dv().coefficients(), [0.0]);
+    }
+
+    #[test]
+    fn a_polynomial_over_its_linear_factor_is_the_other_factor() {
+        let binomials = Binomials::new(16);
+        // A quotient of bidegree (5, 3) with nothing special about it.
+        let quotient = Poly2 {
+            degree: [5, 3],
+            c: (0..24).map(|k| ((k * 7 + 3) % 11) as f64 - 4.5).collect(),
+        };
+        // Roots inside the square, on its edges and outside it.
+        for root in [0.0, 0.3, 0.5, 0.83, 1.0, -0.4, 1.5, 3.4] {
+            let factor = Poly2::outer(&[-root, 1.0 - root], &[1.0]);
+            let product = factor.mul(&quotient, &binomials);
+            let floor = 8.0 * f64::EPSILON * 5.5;
+            let (found, rounding) = product.over_linear(root, floor, &binomials);
+            assert_eq!(found.degree(), [5, 3]);
+            for (a, b) in found.coefficients().iter().zip(quotient.coefficients()) {
+                assert!((a - b).abs() <= rounding, "{root}: {a} vs {b} ± {rounding}");
+            }
+            // The rounding carried is a small multiple of what went in.
+            assert!(rounding <= 64.0 * floor, "{root}: {rounding} from {floor}");
+            // Twice over, for a factor squared.
+            let (again, _) = (factor.mul(&product, &binomials))
+                .over_linear(root, floor, &binomials)
+                .0
+                .over_linear(root, floor, &binomials);
+            for (a, b) in again.coefficients().iter().zip(quotient.coefficients()) {
+                assert!((a - b).abs() <= 1e-12, "{root}: {a} vs {b}");
+            }
+        }
+        // The lines of a polynomial are the polynomial along them.
+        let (s, t) = (0.37, 0.81);
+        let value = quotient.eval(s, t);
+        assert!((casteljau(&quotient.across(s), t) - value).abs() < 1e-14);
+        assert!((casteljau(&quotient.along(t), s) - value).abs() < 1e-14);
     }
 
     #[test]

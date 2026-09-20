@@ -9,9 +9,9 @@ use core::f64::consts::TAU;
 
 use arris_debug::prop::{self, check};
 use arris_geom::{
-    BranchEnd, GeomError, SectionBranch, SectionFault, SectionTrace, Surface, trace_torus,
+    BranchEnd, Curve, GeomError, SectionBranch, SectionFault, SectionTrace, Surface, trace_torus,
 };
-use arris_math::{Frame, Point3, Precision, Tolerance, Vec3};
+use arris_math::{Frame, Isometry, Point3, Precision, Tolerance, Vec3};
 use proptest::prelude::*;
 
 fn tol() -> Tolerance {
@@ -59,6 +59,7 @@ fn worst_off(trace: &SectionTrace, a: &Surface, b: &Surface) -> f64 {
         .iter()
         .flat_map(|branch| samples(branch, 257))
         .chain(trace.points().iter().map(|p| p.point))
+        .chain((trace.circles().iter()).flat_map(|c| (0..64).map(|k| c.circle.point(k as f64))))
         .map(|p| distance(a, p).max(distance(b, p)))
         .fold(0.0, f64::max)
 }
@@ -322,18 +323,21 @@ fn the_poses_the_tracer_does_not_resolve_are_refused_by_name() {
         Err(GeomError::DegenerateSection { fault, .. }) => fault,
         other => panic!("not refused: {other:?}"),
     };
-    // The pipe elbow: a cylinder of the tube's radius along the tangent
-    // to the centre circle.
-    let elbow = Surface::Cylinder {
-        frame: frame([2.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
-        radius: 0.5,
+    // Two tube circles on the other surface and more of the section
+    // besides: an elliptic cylinder along a chord of the centre circle,
+    // a circular section of either family on a tube circle.
+    let (lean, minor) = (0.4f64, 0.5 * 0.4f64.cos());
+    let chord = Surface::EllipticCylinder {
+        frame: Frame::new(
+            Point3::new(2.0, 0.0, 0.0),
+            Vec3::new(-lean.sin(), lean.cos(), 0.0),
+            Vec3::z(),
+        )
+        .unwrap(),
+        major_radius: 0.5,
+        minor_radius: minor,
     };
-    assert_eq!(refused(&elbow), SectionFault::TubeCircle);
-    // A plane through the axis: two tube circles.
-    let through = Surface::Plane {
-        frame: frame([0.0; 3], [0.0, 1.0, 0.0]),
-    };
-    assert_eq!(refused(&through), SectionFault::TubeCircle);
+    assert_eq!(refused(&chord), SectionFault::TubeCircle);
     // A plane resting on the ring, and the ring itself.
     let lid = Surface::Plane {
         frame: frame([0.0, 0.0, 0.5], [0.0, 0.0, 1.0]),
@@ -413,6 +417,35 @@ fn segment_distance(p: Point3, a: Point3, b: Point3) -> f64 {
     (p - (a + ab * t)).norm()
 }
 
+/// A branch as a polyline with no chord longer than `chord`: a branch
+/// that runs along a tube circle for a stretch does so within a sliver of
+/// its parameter, which samples at even steps would jump.
+fn polyline(branch: &SectionBranch, chord: f64) -> Vec<Point3> {
+    let domain = branch.domain();
+    let mut line = vec![branch.point(domain.lo())];
+    let mut ahead: Vec<(f64, f64, usize)> = (0..256)
+        .rev()
+        .map(|i| {
+            (
+                domain.lerp(i as f64 / 256.0),
+                domain.lerp((i + 1) as f64 / 256.0),
+                0,
+            )
+        })
+        .collect();
+    while let Some((from, to, depth)) = ahead.pop() {
+        let (p, q) = (branch.point(from), branch.point(to));
+        if (q - p).norm() > chord && depth < 40 {
+            let mid = 0.5 * (from + to);
+            ahead.push((mid, to, depth + 1));
+            ahead.push((from, mid, depth + 1));
+        } else {
+            line.push(q);
+        }
+    }
+    line
+}
+
 /// How many cells each way the scan cuts the torus into.
 const SCAN: usize = 160;
 
@@ -420,8 +453,16 @@ const SCAN: usize = 160;
 /// corners not all on one side — is near a branch or a point of the
 /// trace, to what the cell's size and a polyline of the branches resolve.
 fn assert_complete(trace: &SectionTrace, torus: &Surface, other: &Surface) {
+    let Surface::Torus { minor_radius, .. } = torus else {
+        panic!("not a torus");
+    };
     let polylines: Vec<Vec<Point3>> = (trace.branches().iter())
-        .map(|b| samples(b, 2049))
+        .map(|b| polyline(b, TAU * minor_radius / SCAN as f64))
+        .chain(trace.circles().iter().map(|c| {
+            (0..=2048)
+                .map(|i| c.circle.point(TAU * i as f64 / 2048.0))
+                .collect()
+        }))
         .collect();
     let to_trace = |p: Point3| {
         polylines
@@ -518,7 +559,7 @@ fn holds((a, b): (Surface, Surface)) -> Result<(), TestCaseError> {
     // A point's own rounding grows with its distance from the frames.
     let bound = |p: Point3| {
         let scale = 1.0 + p.coords.norm();
-        let singular = if trace.points().is_empty() {
+        let singular = if trace.points().is_empty() && trace.circles().is_empty() {
             0.0
         } else {
             tol().linear
@@ -536,6 +577,7 @@ fn holds((a, b): (Surface, Surface)) -> Result<(), TestCaseError> {
     }
     let swapped = trace_torus(&b, &a, tol()).map_err(|e| TestCaseError::fail(e.to_string()))?;
     prop_assert_eq!(trace.points(), swapped.points());
+    prop_assert_eq!(trace.circles(), swapped.circles());
     prop_assert_eq!(trace.branches().len(), swapped.branches().len());
     for (x, y) in trace.branches().iter().zip(swapped.branches()) {
         prop_assert_eq!(samples(x, 9), samples(y, 9));
@@ -757,4 +799,316 @@ fn a_tangency_within_the_tolerance_is_one_singular_point() {
             }
         }
     }
+}
+
+/// The surfaces that hold the tube circle at `u0` of `torus`, each with
+/// how many tube circles it holds and whether it is tangent along them:
+/// the pipe elbow's cylinder, a bead in the tube, a larger ball centred
+/// on the tangent to the centre circle, a cone about that tangent, the
+/// plane through the axis, an elliptic cylinder leaning out of the ring's
+/// plane with a circular section on the circle, and the other half of an
+/// S-bend. `grown` is added to every radius and `shifted` moves the
+/// surface along the torus's axis, to take it off the pose.
+fn holders(
+    torus: &Surface,
+    u0: f64,
+    grown: f64,
+    shifted: f64,
+) -> Vec<(&'static str, Surface, usize, bool)> {
+    let Surface::Torus {
+        frame,
+        major_radius: big,
+        minor_radius: r,
+    } = torus
+    else {
+        panic!("not a torus");
+    };
+    let (big, r) = (*big, *r);
+    let (x, y, z) = (
+        frame.x().into_inner(),
+        frame.y().into_inner(),
+        frame.z().into_inner(),
+    );
+    let outward = x * u0.cos() + y * u0.sin();
+    let tangent = y * u0.cos() - x * u0.sin();
+    let centre = frame.origin() + outward * big + z * shifted;
+    let about = Frame::from_z(centre, tangent).unwrap();
+    let lean = 0.4f64;
+    vec![
+        (
+            "elbow",
+            Surface::Cylinder {
+                frame: about,
+                radius: r + grown,
+            },
+            1,
+            true,
+        ),
+        (
+            "bead",
+            Surface::Sphere {
+                frame: Frame::from_z(centre, z).unwrap(),
+                radius: r + grown,
+            },
+            1,
+            true,
+        ),
+        (
+            "ball",
+            Surface::Sphere {
+                frame: Frame::from_z(centre + tangent * (1.2 * r), z).unwrap(),
+                radius: r * 1.2f64.hypot(1.0) + grown,
+            },
+            2,
+            false,
+        ),
+        (
+            "funnel",
+            Surface::Cone {
+                frame: about,
+                radius: r + grown,
+                half_angle: 0.3,
+            },
+            1,
+            false,
+        ),
+        (
+            "plane through the axis",
+            Surface::Plane {
+                frame: Frame::from_z(frame.origin() + tangent * (grown + shifted), tangent)
+                    .unwrap(),
+            },
+            2,
+            false,
+        ),
+        (
+            "leaning elliptic cylinder",
+            Surface::EllipticCylinder {
+                frame: Frame::new(centre, tangent * lean.cos() + z * lean.sin(), outward).unwrap(),
+                major_radius: r + grown,
+                minor_radius: r * lean.cos() + grown,
+            },
+            1,
+            false,
+        ),
+        (
+            "S-bend",
+            Surface::Torus {
+                frame: Frame::from_z(centre + outward * (1.5 * big), z).unwrap(),
+                major_radius: 1.5 * big,
+                minor_radius: r + grown,
+            },
+            1,
+            true,
+        ),
+    ]
+}
+
+/// What a trace with tube circles owes beyond [`holds`]: the circles are
+/// the torus's own, exact, with the torus's `v` for a parameter; every
+/// open branch ends on a circle, at a point of the trace.
+fn assert_circles(trace: &SectionTrace, torus: &Surface, u0: f64, count: usize, tangent: bool) {
+    assert_eq!(trace.circles().len(), count);
+    let scale = 1.0 + torus.point(0.0, 0.0).coords.norm();
+    for c in trace.circles() {
+        assert_eq!(c.tangent, tangent);
+        assert!(matches!(c.circle, Curve::Circle { .. }));
+    }
+    let nearest = (trace.circles().iter())
+        .map(|c| {
+            (0..16)
+                .map(|k| (c.circle.point(k as f64) - torus.point(u0, k as f64)).norm())
+                .fold(0.0, f64::max)
+        })
+        .fold(f64::INFINITY, f64::min);
+    assert!(
+        nearest <= 1e-9 * scale,
+        "the circle at {u0} is {nearest} off"
+    );
+    for b in trace.branches() {
+        // A loop is what is left of the section clear of the circles.
+        let Some(ends) = b.ends() else {
+            continue;
+        };
+        for (end, t) in ends.iter().zip([b.domain().lo(), b.domain().hi()]) {
+            let BranchEnd::Singular(i) = end else {
+                panic!("clipped");
+            };
+            let p = trace.points()[*i];
+            assert!(!p.isolated);
+            assert_eq!(b.point(t), p.point);
+            let on = (trace.circles().iter())
+                .map(|c| c.circle.project(p.point).unwrap().distance)
+                .fold(f64::INFINITY, f64::min);
+            assert!(on <= 1e-9 * scale, "a branch ends {on} off the circle");
+        }
+    }
+}
+
+#[test]
+fn a_pipe_elbow_meets_its_pipe_in_the_tube_circle_and_a_loop_across_it() {
+    let ring = ring();
+    let elbow = holders(&ring, 0.0, 0.0, 0.0).remove(0).1;
+    let trace = trace_torus(&ring, &elbow, tol()).unwrap();
+    assert_circles(&trace, &ring, 0.0, 1, true);
+    // What is left is `(R + r cos v)·cos²(u / 2) = R`: one loop round the
+    // outer equator, across the circle on top of the tube and below it.
+    let tops: Vec<Point3> = trace.points().iter().map(|p| p.point).collect();
+    assert_eq!(
+        tops,
+        [Point3::new(2.0, 0.0, 0.5), Point3::new(2.0, 0.0, -0.5)]
+    );
+    assert_eq!(trace.branches().len(), 2);
+    for b in trace.branches() {
+        for i in 0..=64 {
+            let uv = b.uv(b.domain().lerp(i as f64 / 64.0)).unwrap();
+            let left = (2.0 + 0.5 * uv.y.cos()) * (0.5 * uv.x).cos().powi(2);
+            assert!((left - 2.0).abs() < 1e-12, "{left} at {uv}");
+        }
+    }
+    assert!(worst_off(&trace, &ring, &elbow) < 1e-12);
+    assert_complete(&trace, &ring, &elbow);
+}
+
+#[test]
+fn a_tube_circle_on_the_other_surface_is_returned_exact() {
+    let turn = arris_math::nalgebra::UnitQuaternion::from_euler_angles(0.3, -1.1, 2.0);
+    let poses = [
+        Isometry::identity(),
+        Isometry::from_rotation(turn),
+        Isometry::new(turn, Vec3::new(1e3, -2e3, 5e2)),
+    ];
+    let tori = [(2.0, 0.5), (1.0, 0.01), (10.0, 9.0), (0.05, 0.02)];
+    for (big, r) in tori {
+        for u0 in [0.0, 0.7, 4.0, 1.5 * core::f64::consts::PI] {
+            for (k, pose) in poses.iter().enumerate() {
+                let torus = Surface::Torus {
+                    frame: Frame::world(),
+                    major_radius: big,
+                    minor_radius: r,
+                }
+                .transformed(pose);
+                for (name, other, count, tangent) in holders(&torus, u0, 0.0, 0.0) {
+                    let label = format!("{name} at {u0}, R={big} r={r}, pose {k}");
+                    let trace = trace_torus(&torus, &other, tol())
+                        .unwrap_or_else(|e| panic!("{label}: {e}"));
+                    let walked = trace.branches().first().map_or(&torus, |b| {
+                        let uv = b.uv(0.0).unwrap();
+                        let first = (torus.point(uv.x, uv.y) - b.point(0.0)).norm();
+                        if first <= 1e-9 * (1.0 + b.point(0.0).coords.norm()) {
+                            &torus
+                        } else {
+                            &other
+                        }
+                    });
+                    if core::ptr::eq(walked, &torus) {
+                        assert_circles(&trace, &torus, u0, count, tangent);
+                    }
+                    let scale = 1.0 + torus.point(0.0, 0.0).coords.norm();
+                    let off = worst_off(&trace, &torus, &other);
+                    assert!(off <= 1e-11 * scale * scale, "{label}: {off} off");
+                    let unwalked = if core::ptr::eq(walked, &torus) {
+                        &other
+                    } else {
+                        &torus
+                    };
+                    assert_complete(&trace, walked, unwalked);
+                    let swapped = trace_torus(&other, &torus, tol()).unwrap();
+                    assert_eq!(trace.points(), swapped.points(), "{label}");
+                    assert_eq!(trace.circles(), swapped.circles(), "{label}");
+                    for (a, b) in trace.branches().iter().zip(swapped.branches()) {
+                        assert_eq!(samples(a, 9), samples(b, 9), "{label}");
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// The holders a little off their pose: half a tolerance off, the circle
+/// is still the section, at that tolerance; two and a hundred tolerances
+/// off it is not, and what the surfaces do meet in is traced whole or
+/// refused by name — never a wrong topology.
+#[test]
+fn a_tube_circle_is_decided_in_the_tolerance() {
+    let t = tol().linear;
+    for (big, r) in [(2.0, 0.5), (10.0, 0.1)] {
+        let torus = Surface::Torus {
+            frame: Frame::world(),
+            major_radius: big,
+            minor_radius: r,
+        };
+        for u0 in [0.0, 0.7] {
+            for times in [0.5, -0.5, 2.0, -2.0, 100.0, -100.0] {
+                for (grown, shifted) in [(times * t, 0.0), (0.0, times * t)] {
+                    for (name, other, count, _) in holders(&torus, u0, grown, shifted) {
+                        let label =
+                            format!("{name} at {u0}, R={big}: {grown} larger, {shifted} up");
+                        let trace = match trace_torus(&torus, &other, tol()) {
+                            Ok(trace) => trace,
+                            Err(GeomError::DegenerateSection { .. }) if times.abs() > 1.0 => {
+                                continue;
+                            }
+                            // Near a cone's apex its polynomial is flat,
+                            // and what is traced without the polynomial's
+                            // value along the circle would stray from the
+                            // cone by more than the circle does.
+                            Err(GeomError::DegenerateSection { .. }) if name == "funnel" => {
+                                continue;
+                            }
+                            Err(e) => panic!("{label}: {e}"),
+                        };
+                        if times.abs() < 1.0 && name != "funnel" {
+                            assert_eq!(trace.circles().len(), count, "{label}");
+                        }
+                        // A circle, and what is traced beside one, are
+                        // within the tolerance of the other surface;
+                        // anything else is on it.
+                        let bound = if trace.circles().is_empty() && trace.points().is_empty() {
+                            1e-11 * (1.0 + big) * (1.0 + big)
+                        } else {
+                            1.001 * t
+                        };
+                        let off = worst_off(&trace, &torus, &other);
+                        assert!(off <= bound, "{label}: {off} off");
+                        assert_complete(&trace, &torus, &other);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// A torus, a tube circle of it and one of the surfaces that hold it, in
+/// any pose.
+fn held() -> impl Strategy<Value = (Surface, Surface, f64, usize, bool)> {
+    (
+        prop::geom::torus(),
+        prop::finite_f64(0.0..=TAU),
+        0usize..7,
+        prop::pose(),
+    )
+        .prop_map(|(torus, u0, which, pose)| {
+            let torus = torus.transformed(&pose);
+            let (_, other, count, tangent) = holders(&torus, u0, 0.0, 0.0).swap_remove(which);
+            (torus, other, u0, count, tangent)
+        })
+}
+
+#[test]
+fn random_tube_circles_on_the_other_surface_trace() {
+    check(held(), |(torus, other, u0, count, tangent)| {
+        holds((torus.clone(), other.clone()))?;
+        let trace =
+            trace_torus(&torus, &other, tol()).map_err(|e| TestCaseError::fail(e.to_string()))?;
+        // The other half of an S-bend is the larger torus, never walked.
+        let uv_is_the_first = trace.branches().first().is_none_or(|b| {
+            let (uv, p) = (b.uv(0.0).unwrap_or_default(), b.point(0.0));
+            (torus.point(uv.x, uv.y) - p).norm() <= 1e-9 * (1.0 + p.coords.norm())
+        });
+        if uv_is_the_first {
+            assert_circles(&trace, &torus, u0, count, tangent);
+        }
+        Ok(())
+    });
 }

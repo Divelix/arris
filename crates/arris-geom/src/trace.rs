@@ -43,7 +43,7 @@ use arris_math::{
 };
 
 use crate::torus_walk::TorusWalk;
-use crate::{GeomError, GeomKind, Surface};
+use crate::{Curve, GeomError, GeomKind, Surface};
 
 /// How many parameters a branch is sampled at to decide that it is no
 /// longer than the tolerance, and is its end point rather than a curve:
@@ -79,11 +79,16 @@ pub enum SectionFault {
     /// or more roots of the discriminant within the tolerance of one
     /// another, a cusp of the section.
     CrowdedSingularity,
-    /// A tube circle of the walked torus lies on the other surface: the
-    /// pipe elbow against its straight pipe, a plane through the torus's
-    /// axis, a sphere centred on the centre circle. Every point of the
-    /// circle is a turning point of the section, which none of them
-    /// isolates.
+    /// Tube circles of the walked torus lie along the other surface and
+    /// the tracer does not part the rest of the section from them. One
+    /// on the other surface within the tolerance is answered
+    /// ([`SectionTrace::circles`]), and so are two with nothing else. This
+    /// is two with more of the section besides — an elliptic cylinder
+    /// along a chord of the centre circle, a circular section of either
+    /// family on a tube circle — and a circle the other surface runs
+    /// along without holding it to the tolerance everywhere the rest is
+    /// traced: a cone a fraction of the tolerance off the pose, its apex
+    /// by the torus.
     TubeCircle,
     /// Turning points of a torus section that `f64` does not tell apart,
     /// away from any singular point: a turning point that is an
@@ -100,7 +105,9 @@ impl fmt::Display for SectionFault {
             SectionFault::CrowdedSingularity => {
                 "three or more turning points within the tolerance of one another"
             }
-            SectionFault::TubeCircle => "a tube circle of the torus lies on the other surface",
+            SectionFault::TubeCircle => {
+                "tube circles of the torus lie along the other surface with more of the section"
+            }
             SectionFault::UnresolvedTurning => {
                 "turning points of the section that cannot be told apart"
             }
@@ -723,16 +730,52 @@ pub struct SectionPoint {
     pub isolated: bool,
 }
 
-/// A traced section: its branches and its singular points.
+/// A tube circle of the walked torus that lies on the other surface
+/// within the tolerance: a conic of the section, exact and never fitted.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SectionCircle {
+    /// A [`Curve::Circle`] on the torus exactly and within the trace's
+    /// tolerance of the other surface, its parameter the torus's `v` and
+    /// its frame's origin on the torus's centre circle.
+    pub circle: Curve,
+    /// `true` where the surfaces are tangent along the circle and do not
+    /// cross there — a pipe elbow against its straight pipe, a sphere of
+    /// the tube's radius inside it; `false` where they cross along it.
+    pub tangent: bool,
+}
+
+/// A traced section: its branches, its singular points, and the conics a
+/// tracer answers in closed form.
 #[derive(Debug, Clone)]
 pub struct SectionTrace {
     branches: Vec<SectionBranch>,
     points: Vec<SectionPoint>,
+    circles: Vec<SectionCircle>,
 }
 
 impl SectionTrace {
     pub(crate) fn new(branches: Vec<SectionBranch>, points: Vec<SectionPoint>) -> SectionTrace {
-        SectionTrace { branches, points }
+        SectionTrace {
+            branches,
+            points,
+            circles: Vec::new(),
+        }
+    }
+
+    /// The trace with the tube circles of the walked torus that lie on
+    /// the other surface.
+    pub(crate) fn with_circles(mut self, circles: Vec<SectionCircle>) -> SectionTrace {
+        self.circles = circles;
+        self
+    }
+
+    /// The tube circles of the walked torus that lie on the other
+    /// surface, ascending by the torus's `u`; none from
+    /// [`trace_quadrics`]. A branch that reaches one ends on it, at a
+    /// singular point of [`Self::points`] that is not isolated; the
+    /// circle itself runs through that point whole.
+    pub fn circles(&self) -> &[SectionCircle] {
+        &self.circles
     }
 
     /// The branches, in an order and with orientations that depend on the
@@ -1292,7 +1335,7 @@ fn assemble(
         }
         branches.push(branch);
     }
-    SectionTrace { branches, points }
+    SectionTrace::new(branches, points)
 }
 
 /// The extent of the region along the rulings: a parallel family's

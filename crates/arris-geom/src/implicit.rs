@@ -311,6 +311,105 @@ impl<'a> Implicit<'a> {
         }
     }
 
+    /// `F` at `q`, a point in the surface's frame.
+    pub(crate) fn value(&self, q: Point3) -> f64 {
+        let across = q.x * q.x + q.y * q.y;
+        match self.form {
+            Form::Plane => q.z,
+            Form::Cylinder { radius } => across - radius * radius,
+            Form::EllipticCylinder { a, b } => (q.x / a).powi(2) + (q.y / b).powi(2) - 1.0,
+            Form::Cone { radius, sin, cos } => {
+                let h = q.z + radius * cos / sin;
+                cos * cos * across - sin * sin * h * h
+            }
+            Form::Sphere { radius } => across + q.z * q.z - radius * radius,
+            Form::Torus { major, minor } => {
+                let s = across + q.z * q.z + major * major - minor * minor;
+                s * s - 4.0 * major * major * across
+            }
+        }
+    }
+
+    /// A lower bound on `|∇F|` at the points of the surface a caller
+    /// looks at, which are no nearer than `clear_of(p)` to a point `p` of
+    /// the surface's frame: there `|F(q)| ≤ firmness · tol` puts `q`
+    /// within `tol` of the surface, to first order — the converse of
+    /// [`Self::steepness`]. On the surface `|∇F|` is twice the radius of a
+    /// cylinder or a sphere, `2 / a` at the least round an ellipse, `8Rr`
+    /// times the distance from a torus's axis, and on a cone `sin 2α`
+    /// times the distance from the apex: nothing at all where the apex is
+    /// among the points looked at.
+    pub(crate) fn firmness(&self, clear_of: impl Fn(Point3) -> f64) -> f64 {
+        match self.form {
+            Form::Plane => 1.0,
+            Form::Cylinder { radius } | Form::Sphere { radius } => 2.0 * radius,
+            Form::EllipticCylinder { a, b } => 2.0 / a.max(b),
+            Form::Cone { radius, sin, cos } => {
+                let apex = Point3::new(0.0, 0.0, -radius * cos / sin);
+                2.0 * sin * cos * clear_of(apex).max(0.0)
+            }
+            Form::Torus { major, minor } => 8.0 * major * minor * (major - minor),
+        }
+    }
+
+    /// `∇F` at `q`, a point in the surface's frame: the polynomial's own
+    /// gradient, not the distance's.
+    pub(crate) fn slope(&self, q: Point3) -> Vec3 {
+        match self.form {
+            Form::Plane => Vec3::z(),
+            Form::Cylinder { .. } => Vec3::new(2.0 * q.x, 2.0 * q.y, 0.0),
+            Form::EllipticCylinder { a, b } => {
+                Vec3::new(2.0 * q.x / (a * a), 2.0 * q.y / (b * b), 0.0)
+            }
+            Form::Cone { radius, sin, cos } => {
+                let h = q.z + radius * cos / sin;
+                Vec3::new(
+                    2.0 * cos * cos * q.x,
+                    2.0 * cos * cos * q.y,
+                    -2.0 * sin * sin * h,
+                )
+            }
+            Form::Sphere { .. } => 2.0 * q.coords,
+            Form::Torus { major, minor } => {
+                let s = q.coords.norm_squared() + major * major - minor * minor;
+                4.0 * s * q.coords - 8.0 * major * major * Vec3::new(q.x, q.y, 0.0)
+            }
+        }
+    }
+
+    /// The coefficients of `λ²`, `λ³` and `λ⁴` of `F(q + λ·τ)`, `q` a
+    /// point and `τ` a unit vector in the surface's frame; the constant
+    /// is `F(q)` and the coefficient of `λ` is `∇F(q)·τ`
+    /// ([`Self::slope`]). With them `F` along a line from a point *on*
+    /// the surface is divided by `λ` in closed form, with none of the
+    /// cancellation the quotient of two small numbers has
+    /// (`crate::torus_walk`, a tube circle on the other surface).
+    pub(crate) fn bend(&self, q: Point3, tau: Vec3) -> [f64; 3] {
+        let across = tau.x * tau.x + tau.y * tau.y;
+        match self.form {
+            Form::Plane => [0.0; 3],
+            Form::Cylinder { .. } => [across, 0.0, 0.0],
+            Form::EllipticCylinder { a, b } => {
+                [(tau.x / a).powi(2) + (tau.y / b).powi(2), 0.0, 0.0]
+            }
+            Form::Cone { sin, cos, .. } => {
+                [cos * cos * across - sin * sin * tau.z * tau.z, 0.0, 0.0]
+            }
+            Form::Sphere { .. } => [1.0, 0.0, 0.0],
+            Form::Torus { major, minor } => {
+                // `S(λ)² − 4R²·T(λ)`, `S = |q + λτ|² + R² − r²` and `T` the
+                // square of the distance from the axis.
+                let s = q.coords.norm_squared() + major * major - minor * minor;
+                let along = q.coords.dot(&tau);
+                [
+                    4.0 * along * along + 2.0 * s - 4.0 * major * major * across,
+                    4.0 * along,
+                    1.0,
+                ]
+            }
+        }
+    }
+
     /// The eccentric anomaly of the point of the section `(a cos t, b sin
     /// t)` nearest `p` across the axis, and that point; the query's own
     /// anomaly where the nearest is not unique.
@@ -323,5 +422,79 @@ impl<'a> Implicit<'a> {
         };
         let (st, ct) = t.sin_cos();
         (t, arris_math::Point2::new(a * ct, b * st))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use arris_math::Frame;
+
+    use super::*;
+
+    fn surfaces() -> Vec<Surface> {
+        let frame = Frame::from_z(Point3::new(0.3, -0.2, 0.1), Vec3::new(0.2, 0.5, 0.8)).unwrap();
+        vec![
+            Surface::Plane { frame },
+            Surface::Cylinder { frame, radius: 0.7 },
+            Surface::EllipticCylinder {
+                frame,
+                major_radius: 0.9,
+                minor_radius: 0.4,
+            },
+            Surface::Cone {
+                frame,
+                radius: 0.6,
+                half_angle: 0.4,
+            },
+            Surface::Sphere { frame, radius: 0.8 },
+            Surface::Torus {
+                frame,
+                major_radius: 1.1,
+                minor_radius: 0.3,
+            },
+        ]
+    }
+
+    /// `F` along a line is the polynomial in `λ` that [`Implicit::value`],
+    /// [`Implicit::slope`] and [`Implicit::bend`] give its coefficients
+    /// of, and `F` vanishes on the surface.
+    #[test]
+    fn the_polynomial_along_a_line_is_its_value_slope_and_bend() {
+        let q = Point3::new(0.4, -0.7, 0.25);
+        let tau = Vec3::new(0.3, 0.5, -0.4).normalize();
+        for surface in surfaces() {
+            let implicit = Implicit::of(&surface).unwrap();
+            let [c2, c3, c4] = implicit.bend(q, tau);
+            let (c0, c1) = (implicit.value(q), implicit.slope(q).dot(&tau));
+            for lambda in [-1.3, 0.2, 0.9] {
+                let direct = implicit.value(q + tau * lambda);
+                let series = c0 + lambda * (c1 + lambda * (c2 + lambda * (c3 + lambda * c4)));
+                assert!(
+                    (direct - series).abs() < 1e-12,
+                    "{surface:?}: {direct} vs {series}"
+                );
+            }
+            let on = implicit.frame.to_local(surface.point(0.8, 0.3));
+            assert!(implicit.value(on).abs() < 1e-14, "{surface:?}");
+        }
+    }
+
+    /// On the surface the polynomial's gradient is no smaller than its
+    /// firmness, away from a cone's apex as far as the caller says.
+    #[test]
+    fn the_gradient_on_the_surface_is_no_smaller_than_the_firmness() {
+        for surface in surfaces() {
+            let implicit = Implicit::of(&surface).unwrap();
+            for (u, v) in [(0.0, 0.2), (1.1, 0.3), (2.9, -0.4), (4.4, 0.9), (5.8, 3.0)] {
+                let on = implicit.frame.to_local(surface.point(u, v));
+                let firm = implicit.firmness(|p| (on - p).norm());
+                let steep = implicit.slope(on).norm();
+                assert!(
+                    steep >= firm * (1.0 - 1e-12),
+                    "{surface:?}: {steep} < {firm}"
+                );
+                assert!(firm > 0.0, "{surface:?}");
+            }
+        }
     }
 }
