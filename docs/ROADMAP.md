@@ -409,12 +409,13 @@ signature, so neither earns a minor version (`.agents/rules/git.md`
 reader cycle, so it exists before the reader does: benchmarks over
 tessellation and the boolean corpus, so a robustness fix that costs 10×
 shows up as a number; the oracle cached by `recipe_hash`, so an unchanged
-recipe is not re-run on every test run; a property tier above CI's case
-count, run nightly; random *recipes* evaluated by both kernels — the
-recipe grammar already carries the same eleven operations on each side
-(`Step` in `arris-debug`, the `op` dispatch in `tools/oracle`), so the
-generator needs no new interpreter; `cargo-fuzz` targets seeded from the
-corpus. Its numbers — benchmark baselines, cases per night — live in this
+recipe is not re-run on every test run — `oracle::scratch_fixture` runs it
+today whatever the recipe says; a property tier above CI's case count, run
+nightly; random *recipes* evaluated by both kernels — the recipe grammar
+already carries the same eleven operations on each side (`Step` in
+`arris-debug`, the `op` dispatch in `tools/oracle`), so the generator
+needs no new interpreter; `cargo-fuzz` targets over the intersectors and,
+once it exists, the STEP reader, seeded from the corpus. Its numbers — benchmark baselines, cases per night — live in this
 section once they exist. Its one open question is the case count the
 pre-commit hook runs against CI's, which is the human's call.
 
@@ -436,7 +437,8 @@ over a public corpus of real parts is counted. That count, beside the
 first consumer's side-by-side regressions, is what picks the cycle after
 this one (ADR-0020). Until it exists the kernel's refusals are unranked:
 every fixture in the corpus is a recipe written out of the operations
-Arris has.*
+Arris has. The first consumer wants the cycle for its own reason — its
+roadmap imports vendor parts (ADR-0017).*
 
 **Status: not opened.** It takes its number from `/close-cycle`.
 
@@ -493,9 +495,10 @@ opens it.
 - **The query cycle** — distance, clash, ray fire, selection.
 - **The attribute cycle** — attributes a consumer attaches to entities,
   carried through every operation by declared rules over the split order
-  ADR-0009 fixes.
-- **The breadth-and-speed cycle** — IGES; same-domain face merging; the
-  performance pass the design reserved room for.
+  ADR-0009 fixes, for a consumer with no naming scheme of its own
+  (Parasolid's attribute definitions).
+- **The breadth-and-speed cycle** — IGES, read and write; same-domain face
+  merging; the performance pass the design reserved room for.
 
 ## What not to spend agent time on
 

@@ -119,9 +119,11 @@ bound has to be established here.
   replacing "Toward Parasolid grade — later cycles, one line each". C3's
   section gains one sentence — why it is first: closure — and nothing
   else. Check: every item the old C4–C8 lines held appears under a name.
-- [ ] Step 3 **[1]** — `docs/BACKLOG.md`: remove the lines the roadmap now
+- [x] Step 3 **[1]** — `docs/BACKLOG.md`: remove the lines the roadmap now
   holds (benchmarks, `cargo-fuzz` targets, the oracle re-run and
-  `recipe_hash`, the STEP reader before the first consumer's import, IGES);
+  `recipe_hash`, the STEP reader before the first consumer's import, IGES,
+  and — found in the step — attribute propagation, which the named cycles
+  now hold);
   add the query set's pieces not yet listed, random recipes as a generator,
   and `project` onto a NURBS surface as the reader's prerequisite where
   the existing M3 line only names mesh deviation. The hook-count line stays,
