@@ -1,24 +1,27 @@
 //! Pcurves: the (u, v) image of a 3D curve on a surface at the curve's own
-//! parameter, exact where a `Curve2` variant exists and a fitted NURBS
-//! otherwise (`docs/DATA-MODEL.md` §Pcurves), and the projection of a
-//! curve onto a plane for a consumer's sketch.
+//! parameter, exact where a `Curve2` variant exists and a NURBS fitted
+//! over the surface's projection otherwise, on every analytic surface
+//! (`docs/DATA-MODEL.md` §Pcurves), and the projection of a curve onto a
+//! plane for a consumer's sketch.
 
 use core::f64::consts::{FRAC_PI_2, TAU};
 
 use arris_math::{
-    Frame, Frame2, Handedness, Interval, Point2, Tolerance, UnitVec2, Vec2, Vec3, is_negligible,
-    wrap_angle as wrap_turn,
+    Frame, Frame2, Handedness, Interval, Point2, Point3, Tolerance, UnitVec2, Vec2, Vec3,
+    is_negligible, wrap_angle as wrap_turn,
 };
 
 use crate::project::{ellipse_distance, ellipse_nearest};
 use crate::{Curve, Curve2, GeomError, GeomKind, NurbsCurve, NurbsCurve2, Surface, fit_curve2};
 
 /// How many parameters `pcurve_on` samples over the range to decide that
-/// the curve lies on the surface, and the resolution of the table that
-/// unwraps a periodic `u` along the curve: a curve that winds around the
-/// axis by more than a quarter turn between two samples is refused. A
-/// sampling density, not a tolerance; the fitted result is verified at the
-/// fit's own, denser, check parameters.
+/// the curve lies on the surface and where it nears a singular point, and
+/// the resolution of the table that unwraps a periodic parameter along
+/// the curve: an interval over which one swings by a quarter turn is
+/// halved until it does not, and a curve that still does after
+/// thirty-two halvings is refused. A sampling density, not a tolerance;
+/// the fitted result is verified at the fit's own, denser, check
+/// parameters.
 pub const PCURVE_SAMPLES: usize = 256;
 
 /// The degree of a fitted pcurve. The oblique section of a cylinder is a
@@ -28,6 +31,19 @@ pub const PCURVE_SAMPLES: usize = 256;
 /// micrometre well inside `MAX_FIT_SPANS`, where a cubic would run out of
 /// spans. A structural choice, not a tolerance.
 pub const PCURVE_FIT_DEGREE: usize = 5;
+
+/// The fraction of `tol.linear` within which a curve is *on* a singular
+/// point of a surface — a cone's apex, a sphere's pole — for
+/// [`pcurve_on`]: a range that ends that near one ends on it, and one
+/// that comes that near anywhere else runs through it. A pcurve that ends
+/// on the point is off the curve there by the curve's own miss, which no
+/// refinement removes, and the fit accepts half the tolerance; a quarter
+/// leaves the fit the other quarter, so splitting where
+/// [`GeomError::ThroughSingularity`] says always gives two ranges that
+/// fit. It is [`crate::SECTION_FIT_FRACTION`] as well, which is how near
+/// its surfaces a fitted section is held. A ratio between two fits, not a
+/// tolerance.
+pub const PCURVE_SINGULAR_BAND: f64 = 0.25;
 
 /// `d` moved into `(−π, π]`.
 fn wrap_pi(d: f64) -> f64 {
@@ -82,11 +98,7 @@ fn degenerate(kind: GeomKind, reason: impl Into<String>) -> GeomError {
 /// or against it by the turn of the circle's own axes in the plane of the
 /// axis, and a meridian's `v` leaves `[−π/2, π/2]` where the great circle
 /// passes a pole onto the opposite meridian, which is where the sphere's
-/// parametrisation puts it. Every other pair on these three — an oblique
-/// section of a cone, a small circle of a sphere about no axis of it, a
-/// Villarceau circle, a NURBS — is [`GeomError::Unsupported`] naming the
-/// pair: there is no fitted fallback here, since the sweeps' curves are
-/// all exact. NURBS surfaces are an `Unsupported` arm.
+/// parametrisation puts it.
 ///
 /// On an **elliptic cylinder** the exact arms are the two an extrude
 /// makes (ADR-0014), each a `Line`: a ruling — a line along the axis —
@@ -97,16 +109,39 @@ fn degenerate(kind: GeomKind, reason: impl Into<String>) -> GeomError {
 /// agreeing within `tol.linear` — at constant `v`, `u` starting at `0` or
 /// `π` by the sign of its `X` against the surface's and running in the
 /// sense of its `Z` against the surface's, as a parallel does on a
-/// cylinder. Every other curve on it — a circle, an ellipse off the axis
-/// or of other radii, a NURBS — is `Unsupported`, with no fitted
-/// fallback.
+/// cylinder.
+///
+/// **Every other curve on these five surfaces is fitted**, by the one
+/// fallback the cylinder's oblique section takes: a `Nurbs` from
+/// [`fit_curve2`] over the surface's own projection of the curve
+/// ([`Surface::project`]), held to the curve in 3D. Each periodic
+/// parameter — `u`, and on a torus `v` — is unwrapped along `t`, so a seam
+/// crossing is continuous and the parameter may leave `[0, 2π)`; the
+/// unwrapping halves the interval between two of its [`PCURVE_SAMPLES`]
+/// wherever the parameter swings by a quarter turn, which is what `u`
+/// does beside a pole or an apex, and a curve passing one fits from the
+/// band below out. A NURBS surface is the one `Unsupported` arm.
+///
+/// A fitted pcurve never runs through a **singular point** of the
+/// surface — a cone's apex, a sphere's pole — where `u` has no value.
+/// The decision is a distance: within [`PCURVE_SINGULAR_BAND`] of
+/// `tol.linear` of the point the curve is on it. A range with that
+/// inside it is [`GeomError::ThroughSingularity`] naming the parameter of
+/// the nearest approach, and both sides of a split there fit. A range
+/// that *ends* there is fitted, and ends on the point's own `v` with the
+/// `u` the curve arrives with — the limit along it, read from its
+/// tangent. The exact arms are as they were: a ruling keeps its one `u`
+/// through the apex, a meridian its one `u` over a pole.
 ///
 /// Errors: [`GeomError::NotOnSurface`] when the curve is farther than
 /// `tol.linear` from the surface at any of [`PCURVE_SAMPLES`] + 1 parameters
-/// over the range; [`GeomError::Fit`] when the fitted arm cannot reach
-/// `tol.linear`; [`GeomError::Degenerate`] for an unbounded or empty
-/// range, or a curve winding faster than the sampling resolves;
-/// [`GeomError::InvalidTolerance`].
+/// over the range; [`GeomError::ThroughSingularity`] as above;
+/// [`GeomError::Fit`] when the fitted arm cannot reach `tol.linear`;
+/// [`GeomError::Degenerate`] for an unbounded or empty range, a curve
+/// winding faster than the sampling resolves — or jumping, as one that
+/// changes a cone's nappe beside the apex does — or one that arrives at a
+/// singular point with no tangent; [`GeomError::Unsupported`] on a NURBS
+/// surface; [`GeomError::InvalidTolerance`].
 ///
 /// ```
 /// use arris_geom::{Curve, Curve2, Surface, pcurve_on};
@@ -161,7 +196,14 @@ pub fn pcurve_on(
                 let noise = p.coords.norm() + frame.origin().coords.norm();
                 ellipse_distance(major_radius, minor_radius, q.x, q.y, noise)
             })?;
-            on_elliptic_cylinder(curve, frame, [major_radius, minor_radius], surface, tol)
+            on_elliptic_cylinder(
+                curve,
+                range,
+                frame,
+                [major_radius, minor_radius],
+                surface,
+                tol,
+            )
         }
         &Surface::Cone {
             ref frame,
@@ -171,7 +213,7 @@ pub fn pcurve_on(
             check_on(curve, range, surface, tol, |p| {
                 cone_distance(frame, radius, half_angle, p)
             })?;
-            on_cone(curve, frame, radius, half_angle, surface, tol)
+            on_cone(curve, range, frame, radius, half_angle, surface, tol)
         }
         &Surface::Sphere { ref frame, radius } => {
             check_on(curve, range, surface, tol, |p| {
@@ -188,7 +230,15 @@ pub fn pcurve_on(
                 let q = frame.to_local(p);
                 ((q.x.hypot(q.y) - major_radius).hypot(q.z) - minor_radius).abs()
             })?;
-            on_torus(curve, frame, major_radius, minor_radius, surface, tol)
+            on_torus(
+                curve,
+                range,
+                frame,
+                major_radius,
+                minor_radius,
+                surface,
+                tol,
+            )
         }
         Surface::Nurbs(_) => Err(GeomError::Unsupported {
             a: curve_kind,
@@ -307,7 +357,7 @@ fn on_cylinder(
                     direction: UnitVec2::new_unchecked(Vec2::new(0.0, d.z.signum())),
                 });
             }
-            fitted_on_cylinder(curve, range, cyl, surface, tol)
+            fitted_on(curve, range, surface, tol)
         }
         &Curve::Circle {
             ref frame,
@@ -329,18 +379,18 @@ fn on_cylinder(
                     direction: UnitVec2::new_unchecked(Vec2::new(sense, 0.0)),
                 });
             }
-            fitted_on_cylinder(curve, range, cyl, surface, tol)
+            fitted_on(curve, range, surface, tol)
         }
-        Curve::Ellipse { .. } | Curve::Nurbs(_) => {
-            fitted_on_cylinder(curve, range, cyl, surface, tol)
-        }
+        Curve::Ellipse { .. } | Curve::Nurbs(_) => fitted_on(curve, range, surface, tol),
     }
 }
 
 /// The exact pcurves on an elliptic cylinder: a ruling at constant `u`,
-/// the section ellipse at constant `v` (the table in [`pcurve_on`]).
+/// the section ellipse at constant `v` (the table in [`pcurve_on`]); the
+/// rest fitted.
 fn on_elliptic_cylinder(
     curve: &Curve,
+    range: Interval,
     cyl: &Frame,
     [a, b]: [f64; 2],
     surface: &Surface,
@@ -351,7 +401,7 @@ fn on_elliptic_cylinder(
         &Curve::Line { origin, direction } => {
             let d = cyl.vec_to_local(direction.into_inner());
             if d.x.hypot(d.y).atan2(d.z.abs()) > tol.angular {
-                return Err(unsupported(curve, surface));
+                return fitted_on(curve, range, surface, tol);
             }
             // A ruling: constant `u` at its section point, which is on
             // the ellipse (checked above) and so has a unique parameter
@@ -381,11 +431,11 @@ fn on_elliptic_cylinder(
                 && (major_radius - a).abs() <= tol.linear
                 && (minor_radius - b).abs() <= tol.linear;
             if !section {
-                return Err(unsupported(curve, surface));
+                return fitted_on(curve, range, surface, tol);
             }
             Ok(parallel_pcurve(cyl, frame, centre.z, false))
         }
-        Curve::Circle { .. } | Curve::Nurbs(_) => Err(unsupported(curve, surface)),
+        Curve::Circle { .. } | Curve::Nurbs(_) => fitted_on(curve, range, surface, tol),
     }
 }
 
@@ -399,14 +449,6 @@ fn cone_distance(cone: &Frame, radius: f64, half_angle: f64, p: arris_math::Poin
     let near = ((rho - radius) * cos - z * sin).abs();
     let far = ((rho + radius) * cos + z * sin).abs();
     near.min(far)
-}
-
-/// [`GeomError::Unsupported`] naming the pair.
-fn unsupported(curve: &Curve, surface: &Surface) -> GeomError {
-    GeomError::Unsupported {
-        a: GeomKind::Curve(curve.kind()),
-        b: GeomKind::Surface(surface.kind()),
-    }
 }
 
 /// `true` when two axes are parallel — either way round — within `tol`.
@@ -492,9 +534,10 @@ fn meridian_radial(
 }
 
 /// The exact pcurves on a cone: a ruling at constant `u`, a circle about
-/// the axis at constant `v`.
+/// the axis at constant `v`; the rest fitted.
 fn on_cone(
     curve: &Curve,
+    range: Interval,
     cone: &Frame,
     radius: f64,
     half_angle: f64,
@@ -518,7 +561,7 @@ fn on_cone(
             let sense = if d.z >= 0.0 { 1.0 } else { -1.0 };
             let equatorial = Vec2::new(sense * d.x, sense * d.y);
             if (equatorial.norm().atan2(d.z.abs()) - half_angle).abs() > tol.angular {
-                return Err(unsupported(curve, surface));
+                return fitted_on(curve, range, surface, tol);
             }
             if is_negligible(equatorial.norm(), 1.0) {
                 return Err(degenerate(kind, "the ruling has no radial direction"));
@@ -535,17 +578,17 @@ fn on_cone(
             let about_axis =
                 centre.x.hypot(centre.y) <= tol.linear && parallel_axes(&frame.z(), &cone.z(), tol);
             if !about_axis {
-                return Err(unsupported(curve, surface));
+                return fitted_on(curve, range, surface, tol);
             }
             let v = centre.z / cos;
             Ok(parallel_pcurve(cone, frame, v, radius + v * sin < 0.0))
         }
-        Curve::Ellipse { .. } | Curve::Nurbs(_) => Err(unsupported(curve, surface)),
+        Curve::Ellipse { .. } | Curve::Nurbs(_) => fitted_on(curve, range, surface, tol),
     }
 }
 
 /// The exact pcurves on a sphere: a parallel at constant `v`, a meridian
-/// at constant `u`.
+/// at constant `u`; the rest fitted.
 fn on_sphere(
     curve: &Curve,
     range: Interval,
@@ -570,26 +613,27 @@ fn on_sphere(
                 && (rho - radius).abs() <= tol.linear
                 && perpendicular_axes(&frame.z(), &sphere.z(), tol);
             if !through_axis {
-                return Err(unsupported(curve, surface));
+                return fitted_on(curve, range, surface, tol);
             }
             let z = sphere.vec_to_local(frame.z().into_inner());
             let candidate = Vec3::new(-z.y, z.x, 0.0);
             let Some(candidate) = candidate.try_normalize(0.0) else {
-                return Err(unsupported(curve, surface));
+                return fitted_on(curve, range, surface, tol);
             };
             let radial = meridian_radial(sphere, curve, range, candidate, radius);
             Ok(meridian_pcurve(sphere, frame, radial, false))
         }
         Curve::Line { .. } | Curve::Ellipse { .. } | Curve::Nurbs(_) => {
-            Err(unsupported(curve, surface))
+            fitted_on(curve, range, surface, tol)
         }
     }
 }
 
 /// The exact pcurves on a torus: a circle about the axis at constant `v`,
-/// a circle of the tube at constant `u`.
+/// a circle of the tube at constant `u`; the rest fitted.
 fn on_torus(
     curve: &Curve,
+    range: Interval,
     torus: &Frame,
     major_radius: f64,
     minor_radius: f64,
@@ -610,7 +654,7 @@ fn on_torus(
                 return Ok(parallel_pcurve(torus, frame, v, false));
             }
             let Some(radial) = Vec3::new(centre.x, centre.y, 0.0).try_normalize(0.0) else {
-                return Err(unsupported(curve, surface));
+                return fitted_on(curve, range, surface, tol);
             };
             let z = torus.vec_to_local(frame.z().into_inner());
             let of_the_tube = (equatorial.norm() - major_radius).abs() <= tol.linear
@@ -619,53 +663,326 @@ fn on_torus(
                 && perpendicular_axes(&z, &Vec3::z(), tol)
                 && perpendicular_axes(&z, &radial, tol);
             if !of_the_tube {
-                return Err(unsupported(curve, surface));
+                return fitted_on(curve, range, surface, tol);
             }
             Ok(meridian_pcurve(torus, frame, radial, true))
         }
         Curve::Line { .. } | Curve::Ellipse { .. } | Curve::Nurbs(_) => {
-            Err(unsupported(curve, surface))
+            fitted_on(curve, range, surface, tol)
         }
     }
 }
 
-/// A NURBS pcurve fitted over the cylinder's projection of the curve, `u`
-/// unwrapped along `t` through a table of [`PCURVE_SAMPLES`] parameters.
-fn fitted_on_cylinder(
+/// A singular point of a surface's parametrisation, where every `u`
+/// names one point: a cone's apex, a sphere's pole.
+#[derive(Debug, Clone, Copy)]
+struct Singular {
+    point: Point3,
+    /// The `v` the parametrisation reaches it at.
+    v: f64,
+}
+
+/// The singular points of `surface`: a cone's apex, a sphere's two poles,
+/// and none on the others.
+fn singular_points(surface: &Surface) -> Vec<Singular> {
+    match *surface {
+        Surface::Cone {
+            ref frame,
+            radius,
+            half_angle,
+        } => {
+            let (sin, cos) = half_angle.sin_cos();
+            let v = -radius / sin;
+            vec![Singular {
+                point: frame.origin() + v * cos * frame.z().into_inner(),
+                v,
+            }]
+        }
+        Surface::Sphere { ref frame, radius } => [1.0, -1.0]
+            .into_iter()
+            .map(|side| Singular {
+                point: frame.origin() + side * radius * frame.z().into_inner(),
+                v: side * FRAC_PI_2,
+            })
+            .collect(),
+        Surface::Plane { .. }
+        | Surface::Cylinder { .. }
+        | Surface::EllipticCylinder { .. }
+        | Surface::Torus { .. }
+        | Surface::Nurbs(_) => Vec::new(),
+    }
+}
+
+/// An end of the range that is on a singular point of the surface.
+#[derive(Debug, Clone, Copy)]
+struct SingularEnd {
+    point: Point3,
+    /// By how much the curve's end misses the point, at most the band.
+    miss: Vec3,
+    /// The pcurve's end: the `u` the curve arrives with, the point's `v`.
+    uv: Point2,
+    /// The parameter beyond which the curve is left where it is.
+    exit: f64,
+}
+
+/// The parameter in `[a, b]` at which `curve` is nearest `point`, and the
+/// distance there, by golden section: the bracket is one the sampling
+/// found a single dip in.
+fn nearest_approach(curve: &Curve, point: Point3, mut a: f64, mut b: f64) -> (f64, f64) {
+    let ratio = 0.5 * (5f64.sqrt() - 1.0);
+    let d = |t: f64| (curve.point(t) - point).norm();
+    let (mut x1, mut x2) = (b - ratio * (b - a), a + ratio * (b - a));
+    let (mut d1, mut d2) = (d(x1), d(x2));
+    for _ in 0..GOLDEN_STEPS {
+        if d1 <= d2 {
+            (b, x2, d2) = (x2, x1, d1);
+            x1 = b - ratio * (b - a);
+            d1 = d(x1);
+        } else {
+            (a, x1, d1) = (x1, x2, d2);
+            x2 = a + ratio * (b - a);
+            d2 = d(x2);
+        }
+    }
+    // An end of the bracket may be nearer than anything inside it.
+    [(a, d(a)), (b, d(b)), (x1, d1), (x2, d2)]
+        .into_iter()
+        .fold(
+            (a, f64::INFINITY),
+            |best, c| if c.1 < best.1 { c } else { best },
+        )
+}
+
+/// Golden-section steps of [`nearest_approach`]: each shrinks the bracket
+/// by 0.618, so eighty take one sampling interval below the spacing of
+/// `f64` parameters. An iteration count, not a tolerance.
+const GOLDEN_STEPS: usize = 80;
+
+/// How many times the interval between two of the [`PCURVE_SAMPLES`] is
+/// halved to follow a periodic parameter that swings faster than a
+/// quarter turn between them, which is what `u` does beside a pole or an
+/// apex: by `π` over a stretch as long as the miss. Thirty-two halvings
+/// of a 256th of the range reach a miss of `1e-12` of the curve's length;
+/// a step that is still a quarter turn there is a jump, and is refused. A
+/// sampling depth, not a tolerance.
+const UNWRAP_DEPTH: usize = 32;
+
+/// Where, in units of the band from a singular point a range ends on,
+/// the curve is carried onto the point in full and where it is left
+/// alone, with a smooth fade between: the end misses the point by at most
+/// one unit, so its `u` as seen from the point is wrong by up to a right
+/// angle within a few units and by a sixteenth of a radian at the far
+/// bound, where the 3D effect of either reading is the same miss. Ratios
+/// of the band, not tolerances.
+const SINGULAR_FADE: [f64; 2] = [4.0, 16.0];
+
+/// `1` at or below `SINGULAR_FADE[0]`, `0` at or above `SINGULAR_FADE[1]`,
+/// the C² quintic step between.
+fn fade(x: f64) -> f64 {
+    let [near, far] = SINGULAR_FADE;
+    let s = ((x - near) / (far - near)).clamp(0.0, 1.0);
+    1.0 - s * s * s * (10.0 - 15.0 * s + 6.0 * s * s)
+}
+
+/// The ends of `range` that are within the band of a singular point of
+/// the surface ([`PCURVE_SINGULAR_BAND`]), or [`GeomError::ThroughSingularity`] when the curve
+/// comes that near one anywhere else: the decision is a distance, taken
+/// at the nearest approach inside each sampling interval that dips.
+fn singular_ends(
     curve: &Curve,
     range: Interval,
-    cyl: &Frame,
+    surface: &Surface,
+    tol: Tolerance,
+) -> Result<[Option<SingularEnd>; 2], GeomError> {
+    let kind = GeomKind::Curve(curve.kind());
+    let n = PCURVE_SAMPLES;
+    let ts: Vec<f64> = (0..=n).map(|i| range.lerp(i as f64 / n as f64)).collect();
+    let points: Vec<Point3> = ts.iter().map(|&t| curve.point(t)).collect();
+    let band = PCURVE_SINGULAR_BAND * tol.linear;
+    let mut ends = [None, None];
+    for singular in singular_points(surface) {
+        let d: Vec<f64> = (points.iter())
+            .map(|p| (p - singular.point).norm())
+            .collect();
+        let at_end = [d[0] <= band, d[n] <= band];
+        for i in 0..=n {
+            let (lo, hi) = (i.saturating_sub(1), (i + 1).min(n));
+            let dips = d[i] <= d[lo] && d[i] <= d[hi];
+            let reach = band + (points[hi] - points[lo]).norm();
+            if !dips || d[i] > reach {
+                continue;
+            }
+            let (t, nearest) = nearest_approach(curve, singular.point, ts[lo], ts[hi]);
+            let of_an_end = (at_end[0] && lo == 0) || (at_end[1] && hi == n);
+            if nearest <= band && !of_an_end {
+                return Err(GeomError::ThroughSingularity {
+                    curve: kind,
+                    surface: GeomKind::Surface(surface.kind()),
+                    t,
+                });
+            }
+        }
+        for (side, &end) in [0, n].iter().enumerate() {
+            if !at_end[side] {
+                continue;
+            }
+            // The `u` the curve arrives with is its tangent's, read where
+            // the tangent leads from the point into the range.
+            let into = if side == 0 { 1.0 } else { -1.0 };
+            let reach = (curve.point(range.midpoint()) - singular.point).norm();
+            let tangent = (into * curve.eval(ts[end]).d1)
+                .try_normalize(0.0)
+                .filter(|_| reach > 0.0)
+                .ok_or_else(|| degenerate(kind, "arrives at a singular point with no tangent"))?;
+            let u = surface.project(singular.point + reach * tangent)?.uv.x;
+            // Carried onto the point until the first sample clear of the
+            // fade, or the middle of a range too short to have one.
+            let far = SINGULAR_FADE[1] * band;
+            let inward: Vec<usize> = if side == 0 {
+                (1..=n / 2).collect()
+            } else {
+                (n / 2..n).rev().collect()
+            };
+            let exit = (inward.iter().find(|&&i| d[i] >= far)).map_or(range.midpoint(), |&i| ts[i]);
+            ends[side] = Some(SingularEnd {
+                point: singular.point,
+                miss: points[end] - singular.point,
+                uv: Point2::new(u, singular.v),
+                exit,
+            });
+        }
+    }
+    Ok(ends)
+}
+
+/// A NURBS pcurve fitted over the surface's own projection of the curve
+/// ([`Surface::project`]), each periodic parameter unwrapped along `t`
+/// through a table of [`PCURVE_SAMPLES`] parameters, halved where the
+/// parameter swings; the rules by a singular point are [`pcurve_on`]'s.
+fn fitted_on(
+    curve: &Curve,
+    range: Interval,
     surface: &Surface,
     tol: Tolerance,
 ) -> Result<Curve2, GeomError> {
     let kind = GeomKind::Curve(curve.kind());
-    let raw = |t: f64| {
-        let q = cyl.to_local(curve.point(t));
-        (q.y.atan2(q.x), q.z)
+    let ends = singular_ends(curve, range, surface, tol)?;
+    let origin = surface.frame().map_or(0.0, |f| f.origin().coords.norm());
+    let band = PCURVE_SINGULAR_BAND * tol.linear;
+    let raw = |t: f64| -> Result<Point2, GeomError> {
+        let mut p = curve.point(t);
+        for (side, end) in ends.iter().enumerate() {
+            let Some(end) = end else { continue };
+            let carried = if side == 0 {
+                t <= end.exit
+            } else {
+                t >= end.exit
+            };
+            if carried {
+                p -= fade((p - end.point).norm() / band) * end.miss;
+            }
+        }
+        for end in ends.iter().flatten() {
+            if is_negligible((p - end.point).norm(), p.coords.norm() + origin) {
+                return Ok(end.uv);
+            }
+        }
+        let uv = surface.project(p)?.uv;
+        // A cylinder's `u` as `atan2` gives it rather than wrapped into
+        // the turn: the unwrapping puts the turns back either way, and
+        // wrapping first costs the last bit of a negative angle, which
+        // would move every fitted pcurve a cylinder already carries.
+        Ok(match surface {
+            Surface::Cylinder { frame, .. } => {
+                let q = frame.to_local(p);
+                Point2::new(q.y.atan2(q.x), uv.y)
+            }
+            Surface::Plane { .. }
+            | Surface::EllipticCylinder { .. }
+            | Surface::Cone { .. }
+            | Surface::Sphere { .. }
+            | Surface::Torus { .. }
+            | Surface::Nurbs(_) => uv,
+        })
+    };
+    let periodic = surface.period().map(|p| p.is_some());
+    // `q` with each periodic parameter moved the short way round from
+    // `near`'s, which is how far along the unwrapping it is.
+    let beside = |near: [f64; 2], q: Point2| {
+        [0, 1].map(|k| {
+            if periodic[k] {
+                near[k] + wrap_pi(q[k] - near[k])
+            } else {
+                q[k]
+            }
+        })
     };
     let n = PCURVE_SAMPLES;
-    let mut table = Vec::with_capacity(n + 1);
-    let mut last = wrap_turn(raw(range.lo()).0);
-    table.push(last);
-    for i in 1..=n {
-        let t = range.lerp(i as f64 / n as f64);
-        let step = wrap_pi(raw(t).0 - last);
-        if step.abs() >= FRAC_PI_2 {
-            return Err(degenerate(
-                kind,
-                format!(
-                    "winds {step} radians around the axis between two of {n} samples: faster than the pcurve sampling resolves"
-                ),
-            ));
+    let first = raw(range.lo())?;
+    let start = [0, 1].map(|k| {
+        if periodic[k] {
+            wrap_turn(first[k])
+        } else {
+            first[k]
         }
-        last += step;
-        table.push(last);
+    });
+    // The unwrapped parameters along `t`, and where in the table each of
+    // the `n + 1` even samples is: the halvings lie between them.
+    let mut table: Vec<(f64, [f64; 2])> = Vec::with_capacity(n + 1);
+    let mut even: Vec<usize> = Vec::with_capacity(n + 1);
+    table.push((range.lo(), start));
+    even.push(0);
+    for i in 1..=n {
+        // Depth-first over the halvings of this interval, nearest first.
+        let mut pending = vec![(range.lerp(i as f64 / n as f64), 0usize)];
+        while let Some(&(t, depth)) = pending.last() {
+            let (t0, last) = table[table.len() - 1];
+            let next = beside(last, raw(t)?);
+            let swing = (0..2)
+                .filter(|&k| periodic[k])
+                .map(|k| (next[k] - last[k]).abs())
+                .fold(0.0, f64::max);
+            // A NaN is not below the bound, and is not halved away either.
+            if swing < FRAC_PI_2 {
+                table.push((t, next));
+                pending.pop();
+            } else if depth < UNWRAP_DEPTH && swing.is_finite() {
+                // Both halves are one level down: the rest of the
+                // interval is looked at again once the near half is in.
+                if let Some(rest) = pending.last_mut() {
+                    rest.1 = depth + 1;
+                }
+                pending.push((0.5 * (t0 + t), depth + 1));
+            } else {
+                return Err(degenerate(
+                    kind,
+                    format!(
+                        "winds {swing} radians around the axis between two of {n} samples halved {UNWRAP_DEPTH} times: faster than the pcurve sampling resolves"
+                    ),
+                ));
+            }
+        }
+        even.push(table.len() - 1);
     }
     let f = |t: f64| {
+        let Ok(q) = raw(t) else {
+            return Point2::new(f64::NAN, f64::NAN);
+        };
+        // The nearest even sample, and where an interval beside it was
+        // halved, the nearest of what the halving put there.
         let s = ((t - range.lo()) / range.length() * n as f64).round();
         let i = (s.max(0.0) as usize).min(n);
-        let (u_raw, v) = raw(t);
-        Point2::new(table[i] + wrap_pi(u_raw - table[i]), v)
+        let (from, to) = (even[i.saturating_sub(1)], even[(i + 1).min(n)]);
+        let mut near = table[even[i]];
+        if to - from > 2 {
+            for &entry in &table[from..=to] {
+                if (entry.0 - t).abs() < (near.0 - t).abs() {
+                    near = entry;
+                }
+            }
+        }
+        let [u, v] = beside(near.1, q);
+        Point2::new(u, v)
     };
     let deviation = |t: f64, q: Point2| (surface.point(q.x, q.y) - curve.point(t)).norm();
     let fit = fit_curve2(f, range, PCURVE_FIT_DEGREE, deviation, tol.linear)?;
@@ -792,7 +1109,7 @@ pub(crate) fn principal_axes(col1: Vec2, col2: Vec2) -> (f64, f64, f64) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arris_math::{Point3, Precision};
+    use arris_math::Precision;
 
     fn tol() -> Tolerance {
         Precision::DEFAULT.tolerance()
@@ -839,17 +1156,15 @@ mod tests {
             pcurve_on(&circle, Interval::TURN, &wall, tol()),
             Err(GeomError::NotOnSurface { .. })
         ));
-        // An ellipse *on* the surface that is not a section — none lies
-        // on it but the sections — so the unsupported arm is reached only
-        // through a ruling off the axis' direction: a chord.
+        // No ellipse lies on the surface but the sections, so a chord
+        // short enough to be within the tolerance of it is what reaches
+        // the fitted arm by hand.
         let chord = Curve::Line {
             origin: Point3::new(3.0, 0.0, 0.0),
             direction: Vec3::y_axis(),
         };
-        assert!(matches!(
-            pcurve_on(&chord, Interval::new(0.0, 1e-9).unwrap(), &wall, tol()),
-            Err(GeomError::Unsupported { .. })
-        ));
+        let pc = pcurve_on(&chord, Interval::new(0.0, 1e-9).unwrap(), &wall, tol()).unwrap();
+        assert!(matches!(pc, Curve2::Nurbs(_)), "{pc:?}");
     }
 
     #[test]
@@ -882,15 +1197,13 @@ mod tests {
             Err(GeomError::NotOnSurface { .. })
         ));
         // A small circle *on* the sphere about no axis of it has no
-        // `Curve2` variant, and is the unsupported pair.
+        // `Curve2` variant, and is fitted.
         let small = Curve::Circle {
             frame: Frame::from_z(Point3::new(0.5, 0.0, 0.0), Vec3::x()).unwrap(),
             radius: 0.75f64.sqrt(),
         };
-        assert!(matches!(
-            pcurve_on(&small, Interval::TURN, &sphere, tol()),
-            Err(GeomError::Unsupported { .. })
-        ));
+        let pc = pcurve_on(&small, Interval::TURN, &sphere, tol()).unwrap();
+        assert!(matches!(pc, Curve2::Nurbs(_)), "{pc:?}");
         assert!(matches!(
             pcurve_on(&lifted, range, &plane, Tolerance::new(0.0, 1.0)),
             Err(GeomError::InvalidTolerance(_))

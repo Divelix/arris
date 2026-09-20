@@ -670,14 +670,11 @@ starts at the offset of the circle's `X` from the cylinder's and runs in
 the sense of the circle's `Z` against the cylinder's, a line along the
 axis is a `Line` at constant u, and an oblique plane section (a 3D
 ellipse), or a NURBS, is a sinusoid in (u, v) — not a `Curve2` variant, so
-it is a `Nurbs` fitted by `fit_curve2` (below) over the cylinder's
-projection of the curve with `u` unwrapped along `t`, so a seam crossing
-stays continuous and `u` may leave `[0, 2π)`. The rule: exact where a
-variant exists, fitted otherwise, and in both cases the checker verifies
-the pcurve against the 3D curve (§Invariants E4). A curve farther than
-`tol.linear` from the surface at any of `PCURVE_SAMPLES + 1` parameters over
-the range is `GeomError::NotOnSurface` naming the parameter and the
-distance.
+it is fitted (below). The rule: exact where a variant exists, fitted
+otherwise, and in both cases the checker verifies the pcurve against the
+3D curve (§Invariants E4). A curve farther than `tol.linear` from the
+surface at any of `PCURVE_SAMPLES + 1` parameters over the range is
+`GeomError::NotOnSurface` naming the parameter and the distance.
 
 On the surfaces of revolution the exact arms are the six a revolve makes,
 each a `Line` in (u, v): on a **cone**, a ruling — the line through the
@@ -692,12 +689,7 @@ circle beyond the apex, whose radial factor `R + v sin α` is negative. A
 constant-`u` arm's `v` runs with `t` or against it by the turn of the
 circle's own axes in the plane of the axis, and a meridian's `v` leaves
 `[−π/2, π/2]` where the great circle passes a pole onto the opposite
-meridian, which is where the sphere's parametrisation puts it. Every
-other pair on these three — an oblique section of a cone, a small circle
-of a sphere about no axis of it, a Villarceau circle, a NURBS — is
-`Unsupported` naming the pair, with no fitted fallback: the sweeps' curves
-are all exact there (a fallback is a backlog line, for the operation that
-first needs one). NURBS surfaces are an `Unsupported` arm. On an
+meridian, which is where the sphere's parametrisation puts it. On an
 **elliptic cylinder** (ADR-0014) the exact arms are the two an extrude
 makes, each a `Line`: a ruling at constant `u`, the parameter of its
 section point, `v` running with `t` or against it by the line's
@@ -706,8 +698,55 @@ its `Z` along the axis, its major axis along the surface's `X` either
 way, the radii agreeing within `tol.linear` — at constant `v`, `u`
 starting at `0` or `π` by its `X` against the surface's and running in
 the sense of its `Z` against the surface's, as a parallel does on a
-cylinder. Every other curve on it is `Unsupported`, with no fitted
-fallback.
+cylinder. NURBS surfaces are the one `Unsupported` arm.
+
+**The fitted fallback is one, for every analytic surface.** Every other
+curve on a cylinder, an elliptic cylinder, a cone, a sphere or a torus —
+an oblique section, a small circle about no axis of the sphere, a
+Villarceau circle, a traced quartic, any NURBS — is a `Nurbs` fitted by
+`fit_curve2` (below) over the surface's own projection of the curve
+(`Surface::project`), held to the curve in 3D. Each periodic parameter —
+`u`, and on a torus `v` as well — is unwrapped along `t`, so a seam
+crossing stays continuous and the parameter may leave `[0, 2π)`. The
+unwrapping reads a table of `PCURVE_SAMPLES` parameters and halves an
+interval over which a parameter swings by a quarter turn, up to
+thirty-two times, before it refuses the curve as winding faster than it
+resolves: that is what `u` does beside a pole or an apex — by `π` over a
+stretch as long as the miss — and the fit follows by halving its spans
+there. Measured on a unit sphere at the default tolerance, a small circle
+passing a pole fits at every miss from the band below to a hundredth of
+the radius: 917 control points just outside the band, 901 at one
+tolerance, 767 at `1e-5`, 479 at `1e-3`, 293 at `1e-2`, a quarter of
+`MAX_FIT_SPANS` at the worst and 10 to 110 ms. The projection is the only
+source of a torus's pcurve, too: the tracer's exact (u, v)
+(`SectionBranch::uv`) is the branch's, and the curve an edge carries is
+the 3D fit of it, which is held to its two surfaces and so sits off the
+branch along a grazing section by up to sixteen tolerances (over 1000
+random poses); the projected pcurve follows the fitted curve and adds at
+most 0.82 of a tolerance to that, where the branch's own (u, v) would be
+off the edge's curve by all of it.
+
+**A fitted pcurve never runs through a singular point** of the surface —
+a cone's apex, a sphere's pole — where every `u` names one point. The
+decision is a distance: a curve within `PCURVE_SINGULAR_BAND` (a quarter)
+of `tol.linear` of the point is on it. A range with that inside it is
+`GeomError::ThroughSingularity { curve, surface, t }`, `t` the parameter
+of the nearest approach, and the caller splits there; a range that *ends*
+there is fitted, and its pcurve ends on the point's own `v` with the `u`
+the curve arrives with, the limit along it read from its tangent. The
+band is a quarter because a pcurve that ends on the point is off the
+curve there by the curve's own miss, which no refinement removes, and the
+fit accepts half the tolerance: a quarter leaves the fit the other
+quarter, so both sides of a split always fit — and it is how near its
+surfaces a fitted section is held (`SECTION_FIT_FRACTION`). Within one
+tolerance of such an end the curve is carried onto the point, fading out
+by four, so that `u` is read as the curve's own end sees it and not as
+the point does, to which the miss, however small, is a right angle. The exact arms are as they were: a ruling keeps its one `u`
+through the apex onto the other nappe, a meridian its one `u` over a
+pole. A curve that changes a cone's nappe *beside* the apex — farther
+than the band from it and within the tolerance of the surface, which
+only a very flat cone has room for — jumps by `π` in `u` and is refused
+as winding.
 
 **The (u, v) toolkit** is what every algorithm that reasons about a
 face's domain shares — the checker's loop, face and body rows,

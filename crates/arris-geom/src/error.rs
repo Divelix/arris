@@ -147,6 +147,24 @@ pub enum GeomError {
         /// The distance there.
         distance: f64,
     },
+    /// The curve runs through a singular point of the surface's
+    /// parametrisation — a cone's apex, a sphere's pole — inside the range
+    /// a pcurve was asked over, where `u` has no single value: `t` is the
+    /// parameter of the curve's nearest approach, within
+    /// [`crate::PCURVE_SINGULAR_BAND`] of `tol.linear` of the point, and
+    /// the caller splits the range there. A range that *ends* on the
+    /// point has a pcurve ([`crate::pcurve_on`]).
+    #[error(
+        "the {curve} runs through a singular point of the {surface} at t = {t}: split the range there"
+    )]
+    ThroughSingularity {
+        /// The curve.
+        curve: GeomKind,
+        /// The surface whose singular point it is.
+        surface: GeomKind,
+        /// The curve's parameter nearest the point.
+        t: f64,
+    },
     /// The section of two quadrics is one the tracer
     /// ([`crate::trace_quadrics`]) does not resolve: a pose of measure
     /// zero that a closed form owns, or one that needs a decision the

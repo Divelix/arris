@@ -53,7 +53,9 @@ pub use nurbs::{
     FitError, MAX_DEGREE, MAX_FIT_SPANS, NurbsCurve, NurbsCurve2, NurbsSurface, fit_curve,
     fit_curve_periodic, fit_curve2,
 };
-pub use pcurve::{PCURVE_FIT_DEGREE, PCURVE_SAMPLES, pcurve_on, project_to_plane};
+pub use pcurve::{
+    PCURVE_FIT_DEGREE, PCURVE_SAMPLES, PCURVE_SINGULAR_BAND, pcurve_on, project_to_plane,
+};
 pub use profile::{Profile, ProfileEdge, ProfileError, ProfileLoop, ProfileSegment};
 pub use project::{CurveProjection, SurfaceProjection};
 pub use section::{SECTION_FIT_DEGREE, SECTION_FIT_FRACTION};

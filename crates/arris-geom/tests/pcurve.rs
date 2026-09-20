@@ -1,20 +1,24 @@
-//! Every analytic curve on a plane and on a cylinder has a pcurve whose
-//! image under the surface is the curve at the same parameter — exactly
-//! on the exact arms, within the tolerance on the fitted one — and a
-//! curve projected onto a plane is the expected conic; and the six
-//! exact arms a revolve makes on a cone, a sphere and a torus are lines
-//! in (u, v) with the same property, while every other pair on those
-//! three is `Unsupported` naming it.
+//! Every curve on every analytic surface has a pcurve whose image under
+//! the surface is the curve at the same parameter — exactly on the exact
+//! arms, within the tolerance on the fitted one, which is one fallback
+//! over the surface's own projection — and a curve projected onto a plane
+//! is the expected conic. The six exact arms a revolve makes on a cone, a
+//! sphere and a torus are lines in (u, v); a section of any of the five
+//! curved surfaces at a random pose has a pcurve on it, a torus's against
+//! the tracer's exact (u, v); and by a singular point — an apex, a pole —
+//! a range that ends on it fits, one that runs through it is refused
+//! naming where to split, and one that passes beside it fits from the
+//! band outwards. Only a NURBS surface is `Unsupported`.
 
 use core::f64::consts::{PI, TAU};
 
 use arris_debug::prop::geom::{cylinder, nurbs_curve, plane};
 use arris_debug::prop::{DEFAULT_SCALE, check, finite_f64, frame, radius, unit_vec3};
 use arris_geom::{
-    Curve, Curve2, Curve2Kind, MeetKind, NurbsCurve, Surface, intersect_surfaces, pcurve_on,
-    project_to_plane,
+    Curve, Curve2, Curve2Kind, GeomError, MAX_FIT_SPANS, MeetKind, NurbsCurve,
+    PCURVE_SINGULAR_BAND, Surface, intersect_surfaces, pcurve_on, project_to_plane, trace_torus,
 };
-use arris_math::{Frame, Interval, Point3, Precision, Tolerance, Vec3};
+use arris_math::{Frame, Interval, Point2, Point3, Precision, Tolerance, Vec3};
 use proptest::prelude::*;
 
 /// Exact arms: the image matches the curve to rounding at the scale.
@@ -619,114 +623,568 @@ fn a_parallel_and_a_tube_circle_of_a_torus_are_lines_in_uv() {
     );
 }
 
+/// Parameters a fitted pcurve's image is held to the curve at.
+const DENSE: usize = 2000;
+
+/// The farthest the image of `pc` is from `curve` at [`DENSE`] + 1
+/// parameters over `range`, both ends included.
+fn worst_image(pc: &Curve2, curve: &Curve, surface: &Surface, range: Interval) -> f64 {
+    (0..=DENSE)
+        .map(|i| {
+            let t = range.lerp(i as f64 / DENSE as f64);
+            let uv = pc.point(t);
+            (surface.point(uv.x, uv.y) - curve.point(t)).norm()
+        })
+        .fold(0.0, f64::max)
+}
+
+/// `surface` with its frame's origin moved to `origin`.
+fn placed(surface: &Surface, origin: Point3) -> Surface {
+    let mut out = surface.clone();
+    match &mut out {
+        Surface::Plane { frame }
+        | Surface::Cylinder { frame, .. }
+        | Surface::EllipticCylinder { frame, .. }
+        | Surface::Cone { frame, .. }
+        | Surface::Sphere { frame, .. }
+        | Surface::Torus { frame, .. } => *frame = frame.with_origin(origin),
+        Surface::Nurbs(_) => {}
+    }
+    out
+}
+
+/// A plane, a cylinder or a sphere: what a section is cut with.
+fn cutter() -> impl Strategy<Value = Surface> {
+    prop_oneof![plane(), cylinder(), arris_debug::prop::geom::sphere(),]
+}
+
+/// A surface and a cutter placed where it meets it: the cutter's origin
+/// within its own radius of a point of the surface.
+fn cut(base: impl Strategy<Value = Surface>) -> impl Strategy<Value = (Surface, Surface)> {
+    (
+        base,
+        cutter(),
+        finite_f64(0.0..=TAU),
+        finite_f64(0.0..=1.0),
+        unit_vec3(),
+        finite_f64(0.0..=0.9),
+    )
+        .prop_map(|(base, cutter, u, s, direction, reach)| {
+            let v = match &base {
+                Surface::Sphere { .. } => 2.8 * (s - 0.5),
+                Surface::Torus { .. } => TAU * s,
+                _ => 10.0 * (s - 0.5),
+            };
+            let size = match cutter {
+                Surface::Cylinder { radius, .. } | Surface::Sphere { radius, .. } => radius,
+                _ => 0.0,
+            };
+            let at = base.point(u, v) + direction.into_inner() * (reach * size);
+            (base, placed(&cutter, at))
+        })
+}
+
+/// The pcurve of `curve` over `range` on `surface` holds the curve within
+/// the tolerance at [`DENSE`] parameters, and comes back a whole number
+/// of turns from where it started when the range is the curve's period.
+fn fits(curve: &Curve, range: Interval, surface: &Surface) -> Result<(), TestCaseError> {
+    let pc = match pcurve_on(curve, range, surface, tol()) {
+        Ok(pc) => pc,
+        // Through an apex or a pole: both sides of the split fit.
+        Err(GeomError::ThroughSingularity { t, .. }) => {
+            prop_assert!(
+                range.lo() < t && t < range.hi(),
+                "split at {t} of {range:?}"
+            );
+            for half in [(range.lo(), t), (t, range.hi())] {
+                let half = Interval::new(half.0, half.1).unwrap();
+                let pc = pcurve_on(curve, half, surface, tol())
+                    .map_err(|e| TestCaseError::fail(format!("{half:?} of a split: {e}")))?;
+                let off = worst_image(&pc, curve, surface, half);
+                prop_assert!(off <= tol().linear, "a split half is {off} off");
+            }
+            return Ok(());
+        }
+        Err(e) => {
+            return Err(TestCaseError::fail(format!(
+                "{curve:?} on {surface:?}: {e}"
+            )));
+        }
+    };
+    let off = worst_image(&pc, curve, surface, range);
+    prop_assert!(off <= tol().linear, "the image is {off} off {curve:?}");
+    if curve.period() == Some(range.length()) {
+        // Closed in 3D, so closed in (u, v) up to the surface's periods:
+        // a seam crossing is continuous, and a whole turn is a whole turn.
+        let by = pc.point(range.hi()) - pc.point(range.lo());
+        for (k, period) in surface.period().into_iter().enumerate() {
+            let turns = period.map_or(0.0, |p| (by[k] / p).round() * p);
+            // In length: an angle of 1e-6 is a micrometre on these radii
+            // only beside a pole, where `u` is that loose.
+            prop_assert!(
+                (by[k] - turns).abs() <= 1e-5,
+                "parameter {k} comes back {} from a whole turn",
+                by[k] - turns
+            );
+        }
+    }
+    Ok(())
+}
+
+/// Every curve of the section of the pair has a pcurve on the first.
+fn section_has_pcurves((base, cutter): (Surface, Surface)) -> Result<(), TestCaseError> {
+    let meets = match intersect_surfaces(&base, &cutter, &within(), tol()) {
+        Ok(meets) => meets,
+        // A pose the tracers refuse by name is not this property's.
+        Err(GeomError::DegenerateSection { .. }) => return Ok(()),
+        Err(e) => return Err(TestCaseError::fail(format!("no section: {e}"))),
+    };
+    for c in meets.curves().iter().map(|m| &m.curve) {
+        let range = match c {
+            Curve::Line { .. } => Interval::new(-DEFAULT_SCALE, DEFAULT_SCALE).unwrap(),
+            _ => c.domain(),
+        };
+        fits(c, range, &base)?;
+    }
+    Ok(())
+}
+
+arris_debug::prop_shards! {
+    /// An elliptic cylinder's sections: rulings and its own ellipse exact,
+    /// every other conic and every quartic fitted.
+    every_section_of_an_elliptic_cylinder_has_a_pcurve_on_it [shard_0 shard_1 shard_2 shard_3]
+        (pair) = cut(arris_debug::prop::geom::elliptic_cylinder()) => { section_has_pcurves(pair) }
+}
+
+arris_debug::prop_shards! {
+    /// A cone's sections: rulings and parallels exact, the ellipses, the
+    /// hyperbolas and the quartics fitted, past the apex or beside it.
+    every_section_of_a_cone_has_a_pcurve_on_it [shard_0 shard_1 shard_2 shard_3]
+        (pair) = cut(arris_debug::prop::geom::cone()) => { section_has_pcurves(pair) }
+}
+
+arris_debug::prop_shards! {
+    /// A sphere's sections: small circles about any axis, and the
+    /// quartics a cylinder cuts.
+    every_section_of_a_sphere_has_a_pcurve_on_it [shard_0 shard_1 shard_2 shard_3]
+        (pair) = cut(arris_debug::prop::geom::sphere()) => { section_has_pcurves(pair) }
+}
+
+arris_debug::prop_shards! {
+    /// A torus's sections, unwrapped across both seams.
+    every_section_of_a_torus_has_a_pcurve_on_it [shard_0 shard_1 shard_2 shard_3 shard_4 shard_5 shard_6 shard_7]
+        (pair) = cut(arris_debug::prop::geom::torus()) => { section_has_pcurves(pair) }
+}
+
+/// The projected pcurve of every traced branch of a torus section against
+/// the tracer's exact `(u, v)`, in length on the torus: by how much the
+/// pcurve is farther from the branch's (u, v) than the fitted 3D curve it
+/// is the pcurve of is from the branch's points, at worst over the
+/// branches. The fitted curve is held to its two surfaces, not to the
+/// branch, so along a grazing section it sits off the branch by many
+/// tolerances — 1.6e-6 at the default 1e-7, over 1000 poses — and the
+/// pcurve has to follow it there: what the projection itself adds is the
+/// difference.
+fn against_the_branch(torus: &Surface, cutter: &Surface) -> Result<f64, TestCaseError> {
+    let &Surface::Torus {
+        major_radius,
+        minor_radius,
+        ..
+    } = torus
+    else {
+        unreachable!("the torus strategy yields tori")
+    };
+    let Ok(trace) = trace_torus(torus, cutter, tol()) else {
+        return Ok(0.0);
+    };
+    let meets = intersect_surfaces(torus, cutter, &within(), tol())
+        .map_err(|e| TestCaseError::fail(format!("traced, and no section: {e}")))?;
+    let mut excess = 0.0f64;
+    for branch in trace.branches() {
+        let domain = branch.domain();
+        // The fitted curve of this branch: same parameter, and the
+        // nearest to its points — nearest rather than within the
+        // tolerance, since a fit held to its two surfaces slides along a
+        // grazing one by more than that.
+        let away = |c: &Curve| -> f64 {
+            [0.21, 0.67]
+                .iter()
+                .map(|&s| (c.point(domain.lerp(s)) - branch.point(domain.lerp(s))).norm())
+                .sum()
+        };
+        let fitted = (meets.curves().iter())
+            .map(|m| &m.curve)
+            .filter(|c| matches!(c, Curve::Nurbs(_)) && c.domain() == domain)
+            .min_by(|a, b| away(a).total_cmp(&away(b)));
+        let Some(fitted) = fitted else {
+            // A pose a closed form owns — a plane across the axis, a
+            // sphere on it — is exact circles, with nothing fitted.
+            let exact = |m: &arris_geom::MeetCurve| !matches!(m.curve, Curve::Nurbs(_));
+            prop_assert!(
+                meets.curves().iter().all(exact),
+                "a branch with no fitted curve"
+            );
+            continue;
+        };
+        let pc = pcurve_on(fitted, domain, torus, tol())
+            .map_err(|e| TestCaseError::fail(format!("no pcurve: {e}")))?;
+        let turns = |t: f64| -> Option<[f64; 2]> {
+            let (p, q) = (pc.point(t), branch.uv(t)?);
+            Some([((p.x - q.x) / TAU).round(), ((p.y - q.y) / TAU).round()])
+        };
+        let whole = turns(domain.lo());
+        // A closed branch's own (u, v) wraps back at the end of its
+        // period, where the pcurve is whole turns on.
+        let last = if branch.is_closed() { DENSE - 1 } else { DENSE };
+        for i in 0..=last {
+            let t = domain.lerp(i as f64 / DENSE as f64);
+            let (p, Some(q)) = (pc.point(t), branch.uv(t)) else {
+                return Err(TestCaseError::fail("a torus branch without uv"));
+            };
+            // One unwrapping against another: the same whole turns apart
+            // all the way along.
+            prop_assert_eq!(turns(t), whole, "the unwrapping slips at t = {}", t);
+            let [ku, kv] = whole.unwrap_or([0.0; 2]);
+            let apart = |s: f64| {
+                let q = branch.uv(s).unwrap_or(q);
+                let du = (p.x - q.x - ku * TAU) * (major_radius + minor_radius * q.y.cos());
+                let dv = (p.y - q.y - kv * TAU) * minor_radius;
+                du.hypot(dv)
+            };
+            // The nearest of the branch about the same parameter, by
+            // golden section over a window that holds it: of its own
+            // (u, v) to the pcurve, and of its points to the 3D curve.
+            let reach = domain.length() / DENSE as f64;
+            let window = ((t - reach).max(domain.lo()), (t + reach).min(domain.hi()));
+            let on_curve = fitted.point(t);
+            let lifted = |s: f64| (branch.point(s) - on_curve).norm();
+            let in_uv = nearest(&apart, t, window);
+            let in_space = nearest(&lifted, t, window);
+            excess = excess.max(in_uv - in_space);
+        }
+    }
+    Ok(excess)
+}
+
+/// The least of `f` over `window`, by golden section.
+fn nearest(f: &dyn Fn(f64) -> f64, middle: f64, (mut a, mut b): (f64, f64)) -> f64 {
+    let ratio = 0.5 * (5f64.sqrt() - 1.0);
+    for _ in 0..40 {
+        let (x1, x2) = (b - ratio * (b - a), a + ratio * (b - a));
+        if f(x1) <= f(x2) {
+            b = x2;
+        } else {
+            a = x1;
+        }
+    }
+    // The arcs of a branch join within the tracer's tolerance, not to
+    // rounding, so `f` may step inside the window: the window's middle
+    // is the same parameter, and no worse than what the search found.
+    f(0.5 * (a + b)).min(f(middle))
+}
+
+arris_debug::prop_shards! {
+    /// The torus's pcurve comes from the projection and from nowhere
+    /// else: measured against the tracer's exact (u, v), it adds at most
+    /// 0.82 of the tolerance (over 1000 poses) to what the fitted 3D
+    /// curve is off the exact branch already — and the branch's own
+    /// (u, v) would be *that* far off the curve the edge carries, up to
+    /// sixteen tolerances, so it is no pcurve of it.
+    a_torus_pcurve_by_projection_is_the_tracers_uv [shard_0 shard_1 shard_2 shard_3 shard_4 shard_5 shard_6 shard_7]
+        ((torus, cutter)) = cut(arris_debug::prop::geom::torus()) => {
+            let added = against_the_branch(&torus, &cutter)?;
+            prop_assert!(added <= tol().linear, "{added} beyond the fitted curve's own");
+            Ok(())
+        }
+}
+
+/// The unit sphere at rest, and the small circle of angular radius
+/// `0.4` whose nearest point to the north pole misses it by `miss`, at
+/// `t = π/2`, the pole outside it.
+fn beside_the_pole(miss: f64) -> (Surface, Curve) {
+    let sphere = Surface::Sphere {
+        frame: Frame::world(),
+        radius: 1.0,
+    };
+    let (across, tilt) = (0.4f64, 0.4 + miss);
+    let axis = Vec3::new(tilt.sin(), 0.0, tilt.cos());
+    let circle = Curve::Circle {
+        frame: Frame::new(Point3::origin() + across.cos() * axis, axis, Vec3::y()).unwrap(),
+        radius: across.sin(),
+    };
+    (sphere, circle)
+}
+
 #[test]
-fn what_a_surface_of_revolution_has_no_variant_for_is_unsupported_by_name() {
+fn a_small_circle_through_a_pole_is_split_there_and_both_halves_fit() {
+    // Through it exactly, and within the band of it.
+    for miss in [0.0, 0.9 * PCURVE_SINGULAR_BAND * tol().linear] {
+        let (sphere, circle) = beside_the_pole(miss);
+        let err = pcurve_on(&circle, Interval::TURN, &sphere, tol()).unwrap_err();
+        let GeomError::ThroughSingularity { t, .. } = err else {
+            panic!("{err}")
+        };
+        assert!((t - PI / 2.0).abs() < 1e-6, "split at {t}");
+        // The circle passes the pole along −y: it arrives from u = π/2
+        // and leaves towards u = 3π/2, the limit of each half's u, and
+        // each half ends on the pole's own v.
+        let halves = [
+            (Interval::new(0.0, t).unwrap(), true, PI / 2.0),
+            (Interval::new(t, TAU).unwrap(), false, 3.0 * PI / 2.0),
+        ];
+        for (range, ends_there, u) in halves {
+            let pc = pcurve_on(&circle, range, &sphere, tol()).unwrap();
+            let off = worst_image(&pc, &circle, &sphere, range);
+            assert!(off <= tol().linear, "{off} off over {range:?}");
+            let at = pc.point(if ends_there { range.hi() } else { range.lo() });
+            assert_eq!(at.y, PI / 2.0);
+            assert!(same_angle(at.x, u), "arrives with u = {}, not {u}", at.x);
+        }
+    }
+}
+
+#[test]
+fn a_circle_beside_a_pole_fits_from_the_band_to_a_hundredth_of_the_radius() {
+    // `u` swings by nearly π over a stretch as long as the miss, and the
+    // fit follows it by halving spans there: measured at the default
+    // tolerance, 917 control points just outside the band, 901 at one
+    // tolerance, 767 at 1e-5, 479 at 1e-3 and 293 at 1e-2 of the radius
+    // — a quarter of `MAX_FIT_SPANS` at the worst.
+    let band = PCURVE_SINGULAR_BAND * tol().linear;
+    for miss in [1.04 * band, tol().linear, 1e-6, 1e-5, 1e-4, 1e-3, 1e-2] {
+        let (sphere, circle) = beside_the_pole(miss);
+        let pc = pcurve_on(&circle, Interval::TURN, &sphere, tol())
+            .unwrap_or_else(|e| panic!("a miss of {miss}: {e}"));
+        let off = worst_image(&pc, &circle, &sphere, Interval::TURN);
+        assert!(off <= tol().linear, "a miss of {miss}: {off} off");
+        let Curve2::Nurbs(fit) = &pc else {
+            panic!("{pc:?}")
+        };
+        let points = fit.control_points().len();
+        assert!(points <= MAX_FIT_SPANS / 4, "a miss of {miss}: {points}");
+        // The pole is outside the circle: `u` comes back to where it
+        // started, having swung by the angle the circle fills as seen
+        // from the pole, which is all but a half turn.
+        let by = pc.point(TAU) - pc.point(0.0);
+        assert!(by.norm() <= 1e-9, "{by}");
+        let us: Vec<f64> = (0..=DENSE)
+            .map(|i| pc.point(TAU * i as f64 / DENSE as f64).x)
+            .collect();
+        let swing = us.iter().cloned().fold(f64::MIN, f64::max)
+            - us.iter().cloned().fold(f64::MAX, f64::min);
+        assert!(
+            PI / 2.0 < swing && swing < PI,
+            "a miss of {miss}: u swings {swing}"
+        );
+    }
+}
+
+/// The cone at rest with its apex at the origin: half-angle `0.5`, the
+/// reference circle of radius `2` above it.
+fn cone_on_its_apex() -> Surface {
+    let (radius, half_angle) = (2.0, 0.5f64);
+    Surface::Cone {
+        frame: Frame::from_z(Point3::new(0.0, 0.0, radius / half_angle.tan()), Vec3::z()).unwrap(),
+        radius,
+        half_angle,
+    }
+}
+
+#[test]
+fn a_cone_carries_what_runs_through_its_apex_and_what_passes_beside_it() {
+    let cone = cone_on_its_apex();
+    let long = Interval::new(-5.0, 5.0).unwrap();
+    // A plane through the apex and inside the cone: two rulings, each an
+    // exact line in (u, v) from one nappe to the other.
+    let through = Surface::Plane {
+        frame: Frame::from_z(Point3::origin(), Vec3::new(1.0, 0.0, 0.2)).unwrap(),
+    };
+    let meets = intersect_surfaces(&cone, &through, &within(), tol()).unwrap();
+    assert_eq!(meets.curves().len(), 2, "{meets:?}");
+    for ruling in meets.curves().iter().map(|m| &m.curve) {
+        let pc = pcurve_on(ruling, long, &cone, tol()).unwrap();
+        assert_eq!(pc.kind(), Curve2Kind::Line);
+        assert!(worst_image(&pc, ruling, &cone, long) <= EXACT);
+    }
+    // The same ruling as a spline has no exact arm: it is through the
+    // apex, and either side of it fits at the ruling's own u.
+    let tilt = 0.5f64;
+    let ruling = |s: f64| Point3::new(s * tilt.sin(), 0.0, s * tilt.cos());
+    let spline = Curve::Nurbs(
+        NurbsCurve::new(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![ruling(-3.0), ruling(2.0)],
+            vec![1.0, 1.0],
+        )
+        .unwrap(),
+    );
+    let err = pcurve_on(&spline, Interval::UNIT, &cone, tol()).unwrap_err();
+    let GeomError::ThroughSingularity { t, .. } = err else {
+        panic!("{err}")
+    };
+    assert!((t - 0.6).abs() < 1e-9, "split at {t}");
+    for (range, u) in [
+        (Interval::new(0.0, t).unwrap(), PI),
+        (Interval::new(t, 1.0).unwrap(), 0.0),
+    ] {
+        let pc = pcurve_on(&spline, range, &cone, tol()).unwrap();
+        assert!(worst_image(&pc, &spline, &cone, range) <= tol().linear);
+        // The lower nappe is reached with a negative radial factor, so
+        // the ruling keeps one u across the apex on the surface and the
+        // projection names the far side of it on each nappe.
+        for s in [0.0, 0.5, 1.0] {
+            let at = pc.point(range.lerp(s));
+            assert!(same_angle(at.x, u) || same_angle(at.x, u + PI), "{at}");
+        }
+    }
+    // Beside the apex: an oblique plane above it cuts an ellipse that
+    // winds once round the axis, and a steep one a hair off it cuts a
+    // hyperbola whose near branch swings round the apex.
+    let above = Surface::Plane {
+        frame: Frame::from_z(Point3::new(0.0, 0.0, 1.0), Vec3::new(0.3, 0.0, 1.0)).unwrap(),
+    };
+    let beside = Surface::Plane {
+        frame: Frame::from_z(Point3::new(1e-4, 0.0, 0.0), Vec3::new(1.0, 0.0, 0.2)).unwrap(),
+    };
+    for (plane, curves) in [(above, 1), (beside, 2)] {
+        let meets = intersect_surfaces(&cone, &plane, &within(), tol()).unwrap();
+        assert_eq!(meets.curves().len(), curves, "{meets:?}");
+        for c in meets.curves().iter().map(|m| &m.curve) {
+            let pc = pcurve_on(c, c.domain(), &cone, tol()).unwrap();
+            assert_eq!(pc.kind(), Curve2Kind::Nurbs);
+            let off = worst_image(&pc, c, &cone, c.domain());
+            assert!(off <= tol().linear, "{off} off {c:?}");
+        }
+    }
+}
+
+#[test]
+fn a_villarceau_circle_and_a_spiric_oval_are_unwrapped_across_both_seams() {
+    let (major_radius, minor_radius) = (2.0, 0.5f64);
+    let ring = Surface::Torus {
+        frame: Frame::world(),
+        major_radius,
+        minor_radius,
+    };
+    // A Villarceau circle: in the bitangent plane, of the major radius,
+    // its centre the minor radius off the axis. Once round the axis and
+    // once round the tube.
+    let tilt = (minor_radius / major_radius).asin();
+    let normal = Vec3::new(-tilt.sin(), 0.0, tilt.cos());
+    let villarceau = Curve::Circle {
+        frame: Frame::new(Point3::new(0.0, minor_radius, 0.0), normal, Vec3::y()).unwrap(),
+        radius: major_radius,
+    };
+    let pc = pcurve_on(&villarceau, Interval::TURN, &ring, tol()).unwrap();
+    assert!(worst_image(&pc, &villarceau, &ring, Interval::TURN) <= tol().linear);
+    let by = pc.point(TAU) - pc.point(0.0);
+    assert!(
+        (by.x.abs() - TAU).abs() <= 1e-6 && (by.y.abs() - TAU).abs() <= 1e-6,
+        "{by}"
+    );
+    // A spiric oval about the outer equator's point on the seam of both
+    // parameters: it crosses each seam twice and comes back to its start.
+    let wall = Surface::Plane {
+        frame: Frame::from_z(Point3::new(2.3, 0.0, 0.0), Vec3::x()).unwrap(),
+    };
+    let meets = intersect_surfaces(&ring, &wall, &within(), tol()).unwrap();
+    assert_eq!(meets.curves().len(), 1, "{meets:?}");
+    let oval = &meets.curves()[0].curve;
+    let range = oval.domain();
+    let pc = pcurve_on(oval, range, &ring, tol()).unwrap();
+    assert!(worst_image(&pc, oval, &ring, range) <= tol().linear);
+    let by = pc.point(range.hi()) - pc.point(range.lo());
+    assert!(by.norm() <= 1e-6, "{by}");
+    let (mut us, mut vs) = (Vec::new(), Vec::new());
+    for i in 0..=CHECKS {
+        let uv = pc.point(range.lerp(i as f64 / CHECKS as f64));
+        us.push(uv.x);
+        vs.push(uv.y);
+    }
+    for k in [&us, &vs] {
+        let (lo, hi) = (
+            k.iter().cloned().fold(f64::MAX, f64::min),
+            k.iter().cloned().fold(f64::MIN, f64::max),
+        );
+        // Continuous through the seam: a narrow band about a multiple of
+        // a turn, never a jump to the other end of [0, 2π).
+        assert!(hi - lo < PI, "{lo} to {hi}");
+        let seam = (0.5 * (lo + hi) / TAU).round() * TAU;
+        assert!(
+            lo < seam && seam < hi,
+            "[{lo}, {hi}] does not straddle a seam"
+        );
+    }
+}
+
+#[test]
+fn only_a_nurbs_surface_is_unsupported_and_a_curve_off_a_surface_is_not_on_it() {
     let tol = tol();
-    let sphere_frame = Frame::from_z(Point3::new(1.0, 2.0, 3.0), Vec3::new(0.0, 0.0, 1.0)).unwrap();
+    // Every analytic surface fits what it has no exact arm for: a
+    // rational quarter of a sphere's equator, as a spline.
+    let sphere_frame = Frame::from_z(Point3::new(1.0, 2.0, 3.0), Vec3::z()).unwrap();
     let sphere = Surface::Sphere {
         frame: sphere_frame,
         radius: 5.0,
     };
-    // A small circle on the sphere, about no axis of it: on the surface,
-    // and with no `Curve2` variant.
-    let centre = Point3::new(2.0, 3.0, 4.0);
-    let offset = (centre - sphere_frame.origin()).norm();
-    let oblique = Curve::Circle {
-        frame: Frame::from_z(centre, centre - sphere_frame.origin()).unwrap(),
-        radius: (25.0f64 - offset * offset).sqrt(),
-    };
-    for t in [0.0, 1.0, 2.0, 3.0] {
-        assert!(((oblique.point(t) - sphere_frame.origin()).norm() - 5.0).abs() < 1e-12);
-    }
-    let err = pcurve_on(&oblique, Interval::TURN, &sphere, tol).unwrap_err();
-    assert!(
-        matches!(err, arris_geom::GeomError::Unsupported { a, b }
-            if a == arris_geom::GeomKind::Curve(arris_geom::CurveKind::Circle)
-            && b == arris_geom::GeomKind::Surface(arris_geom::SurfaceKind::Sphere)),
-        "{err}"
+    let arc = Curve::Nurbs(
+        NurbsCurve::new(
+            2,
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            vec![
+                sphere_frame.to_world(Point3::new(5.0, 0.0, 0.0)),
+                sphere_frame.to_world(Point3::new(5.0, 5.0, 0.0)),
+                sphere_frame.to_world(Point3::new(0.0, 5.0, 0.0)),
+            ],
+            vec![1.0, 0.5f64.sqrt(), 1.0],
+        )
+        .unwrap(),
     );
-    // A rational quadratic Bézier quarter of the equator: exactly on the
-    // sphere, and a NURBS, which has no exact arm here.
-    let arc = NurbsCurve::new(
-        2,
-        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        vec![
-            sphere_frame.to_world(Point3::new(5.0, 0.0, 0.0)),
-            sphere_frame.to_world(Point3::new(5.0, 5.0, 0.0)),
-            sphere_frame.to_world(Point3::new(0.0, 5.0, 0.0)),
-        ],
-        vec![1.0, 0.5f64.sqrt(), 1.0],
-    )
-    .unwrap();
-    let arc = Curve::Nurbs(arc);
-    for i in 0..=8 {
-        let t = i as f64 / 8.0;
-        assert!(((arc.point(t) - sphere_frame.origin()).norm() - 5.0).abs() < 1e-12);
-    }
-    let err = pcurve_on(&arc, Interval::UNIT, &sphere, tol).unwrap_err();
-    assert!(
-        matches!(err, arris_geom::GeomError::Unsupported { a, .. }
-            if a == arris_geom::GeomKind::Curve(arris_geom::CurveKind::Nurbs)),
-        "{err}"
-    );
-    // An oblique plane section of a cone: an ellipse that lies on it.
-    let (r, alpha) = (3.0, 0.6);
-    let cone_frame = Frame::from_z(Point3::origin(), Vec3::z()).unwrap();
-    let cone = Surface::Cone {
-        frame: cone_frame,
-        radius: r,
-        half_angle: alpha,
-    };
-    let apex = Point3::new(0.0, 0.0, -r / alpha.tan());
-    let gamma = (PI / 2.0 - alpha) / 2.0;
-    let (k, h) = (alpha.tan().powi(2), 4.0);
-    let a = gamma.cos().powi(2) - k * gamma.sin().powi(2);
-    let s2c = k * h * gamma.sin() / a;
-    let c = k * h * h * gamma.cos().powi(2) / a;
-    let (e1, e2) = (Vec3::x(), Vec3::new(0.0, gamma.cos(), gamma.sin()));
-    let centre = apex + Vec3::new(0.0, 0.0, h) + s2c * e2;
-    let (a1, a2) = (c.sqrt(), (c / a).sqrt());
-    let (major, minor, x, y) = if a2 >= a1 {
-        (a2, a1, e2, e1)
-    } else {
-        (a1, a2, e1, e2)
-    };
-    let section = Curve::Ellipse {
-        frame: Frame::new(centre, x.cross(&y), x).unwrap(),
-        major_radius: major,
-        minor_radius: minor,
-    };
-    for i in 0..16 {
-        let t = TAU * i as f64 / 16.0;
-        let d = section.point(t) - apex;
-        let angle = Vec3::new(d.x, d.y, 0.0).norm().atan2(d.z);
-        assert!(
-            (angle - alpha).abs() < 1e-12,
-            "the section is on the cone: {angle} vs {alpha}"
-        );
-    }
-    let err = pcurve_on(&section, Interval::TURN, &cone, tol).unwrap_err();
-    assert!(
-        matches!(err, arris_geom::GeomError::Unsupported { a, b }
-            if a == arris_geom::GeomKind::Curve(arris_geom::CurveKind::Ellipse)
-            && b == arris_geom::GeomKind::Surface(arris_geom::SurfaceKind::Cone)),
-        "{err}"
-    );
-    // A curve off any of the three is `NotOnSurface`, not unsupported.
+    let pc = pcurve_on(&arc, Interval::UNIT, &sphere, tol).unwrap();
+    assert_eq!(pc.kind(), Curve2Kind::Nurbs);
+    assert!(worst_image(&pc, &arc, &sphere, Interval::UNIT) <= tol.linear);
+    assert!((pc.point(1.0) - Point2::new(PI / 2.0, 0.0)).norm() <= 1e-9);
+    // A curve off a surface is `NotOnSurface`, whatever the surface.
+    let cone = cone_on_its_apex();
     let torus = Surface::Torus {
         frame: Frame::world(),
         major_radius: 5.0,
         minor_radius: 1.0,
     };
-    for surface in [&sphere, &cone, &torus] {
-        let lifted = Curve::Circle {
-            frame: Frame::from_z(Point3::new(0.0, 0.0, 50.0), Vec3::z()).unwrap(),
-            radius: 2.0,
-        };
+    let wall = Surface::EllipticCylinder {
+        frame: Frame::world(),
+        major_radius: 3.0,
+        minor_radius: 2.0,
+    };
+    let lifted = Curve::Circle {
+        frame: Frame::from_z(Point3::new(0.0, 0.0, 50.0), Vec3::z()).unwrap(),
+        radius: 2.5,
+    };
+    for surface in [&sphere, &cone, &torus, &wall] {
         let err = pcurve_on(&lifted, Interval::TURN, surface, tol).unwrap_err();
         assert!(
-            matches!(err, arris_geom::GeomError::NotOnSurface { .. }),
+            matches!(err, GeomError::NotOnSurface { .. }),
             "{surface:?}: {err}"
         );
     }
+}
+
+#[test]
+fn a_nurbs_surface_is_the_one_unsupported_arm() {
+    check(
+        (
+            arris_debug::prop::geom::nurbs_surface(),
+            arris_debug::prop::geom::curve(),
+        ),
+        |(s, c)| {
+            let range = Interval::new(0.0, 1.0).unwrap();
+            let err = pcurve_on(&c, range, &Surface::Nurbs(s), tol()).unwrap_err();
+            let named = matches!(err, GeomError::Unsupported { a, b }
+                if a == arris_geom::GeomKind::Curve(c.kind())
+                && b == arris_geom::GeomKind::Surface(arris_geom::SurfaceKind::Nurbs));
+            prop_assert!(named, "{err}");
+            Ok(())
+        },
+    );
 }
