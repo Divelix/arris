@@ -8,6 +8,7 @@ intersections of named analytic surfaces and curves, for
       "params":   {...},                                # optional numbers
       "surfaces": {"<name>": {"type": "plane",    "origin", "z", "x"},
                    "<name>": {"type": "cylinder", "origin", "z", "x", "radius"},
+                   "<name>": {"type": "elliptic_cylinder", "origin", "z", "x", "major_radius", "minor_radius"},
                    "<name>": {"type": "cone",     "origin", "z", "x", "radius", "half_angle_deg"},
                    "<name>": {"type": "sphere",   "origin", "z", "x", "radius"},
                    "<name>": {"type": "torus",    "origin", "z", "x", "major_radius", "minor_radius"}},
@@ -21,9 +22,14 @@ intersections of named analytic surfaces and curves, for
 
 Frames are `gp_Ax3(origin, z, x)`: `x` is projected perpendicular to `z`
 and both are normalised, `y = z × x`. A pair is two surfaces, a curve
-`a` against a surface `b`, or two curves with a `nurbs` one among them.
-Every number may be an expression over
-`params` as in the solid kind.
+`a` against a surface `b`, or two curves with a `nurbs` one among them
+or two conics. An `elliptic_cylinder` is the section ellipse extruded
+along `z` (`Geom_SurfaceOfLinearExtrusion`), Open CASCADE having no
+analytic surface for it, which is the same point set; it is not a `gp`
+quadric, so it takes no surface pair, and it is trimmed to
+`EXTRUSION_REACH` either way along its axis, since the general
+intersector finds nothing on an unbounded parametric range. Every number
+may be an expression over `params` as in the solid kind.
 
 The result per sample: `Geom_*::D2` at every parameter and
 `GeomAPI_ProjectPointOnSurf` / `OnCurve` for every point (nearest point,
@@ -39,10 +45,14 @@ Newton steps; a line along which the surfaces are tangent at a sample
 has no crossing to polish onto, and the walk of a touch is no ground
 truth (1e-4 off the touching circle of a sphere in a cylinder), so it is
 dropped and counted under `dropped` — or
-`IntAna_IntConicQuad` for a curve against a surface, or
+`IntAna_IntConicQuad` for a conic against a plane or a quadric, or
 `IntAna_IntLinTorus` for a line against a torus: `coincident`, or
 `points` with every hit's point and conic parameter, duplicates within
 `Precision::Confusion` reported once (a tangent touch comes back twice).
+A conic against a torus or an elliptic cylinder has no `IntAna` form and
+goes through `GeomAPI_IntCS` below, which has no `coincident`: it reports
+a conic lying on one of those two as a cloud of hundreds of points, so a
+fixture asks it only where the two cross or touch.
 
 A `nurbs` curve is a `Geom_BSplineCurve` of the recipe's degree, knots
 (flat: each written as often as it repeats), Cartesian control points and
@@ -52,7 +62,8 @@ with every hit's point and curve parameter, held to both operands and
 deduplicated as the conics' are. It has no `coincident`: a segment of the
 curve on the surface is an error here, since no fixture means one.
 
-A pair may also be two curves, one of them a `nurbs` one: Open CASCADE has
+A pair may also be two curves — one of them a `nurbs` one, or two conics:
+Open CASCADE has
 no 3D curve–curve intersector, so its `GeomAPI_ExtremaCurveCurve` over
 the two curves' domains — a line's over `LINE_REACH` either side of its
 origin, a B-spline's span by span, since over the whole domain the search
@@ -76,7 +87,9 @@ from OCP.Geom import (
     Geom_Line,
     Geom_Parabola,
     Geom_Plane,
+    Geom_RectangularTrimmedSurface,
     Geom_SphericalSurface,
+    Geom_SurfaceOfLinearExtrusion,
     Geom_ToroidalSurface,
 )
 from OCP.collections import Array1_double, Array1_gp_Pnt, Array1_int
@@ -94,12 +107,22 @@ from OCP.Precision import Precision
 from . import OracleError
 from .recipe import number, resolve_params, vector
 
-SURFACE_TYPES = ("plane", "cylinder", "cone", "sphere", "torus")
+SURFACE_TYPES = ("plane", "cylinder", "elliptic_cylinder", "cone", "sphere", "torus")
 CURVE_TYPES = ("line", "circle", "ellipse", "nurbs")
 
 # How far either side of its origin a line is searched for its extrema
 # with another curve: past every curve of a fixture's box.
 LINE_REACH = 100.0
+
+# How far either way along its axis an `elliptic_cylinder` is built.
+# Open CASCADE has no analytic surface for one, so it is the section
+# ellipse extruded along the axis — and the general intersector finds
+# nothing at all on an extrusion's unbounded parametric range (±2e100),
+# whatever the pose, so the extrusion is trimmed to this band. Its
+# parametrisation is the extrusion's, so an evaluation or a projection
+# inside the band is unchanged; a fixture keeps its hits well inside it,
+# as it keeps a line's within LINE_REACH.
+EXTRUSION_REACH = 100.0
 
 # Where a result curve is sampled: lines at these parameters from the
 # curve's own origin, closed curves at this many even steps of a turn.
@@ -164,6 +187,17 @@ def build_surface(name: str, spec: dict, params: dict[str, float]):
         if not 0.0 < angle < math.pi / 2:
             raise OracleError(f"{name}: half_angle_deg must be inside (0, 90)")
         return Geom_ConicalSurface(ax, angle, _positive(spec, "radius", params, name))
+    if kind == "elliptic_cylinder":
+        # Open CASCADE has no elliptic cylinder: the section ellipse
+        # extruded along the axis is the same point set, and the general
+        # intersector takes it where `IntAna` has no quadric for it.
+        big = _positive(spec, "major_radius", params, name)
+        small = _positive(spec, "minor_radius", params, name)
+        if small > big:
+            raise OracleError(f"{name}: minor_radius must not exceed major_radius")
+        section = Geom_Ellipse(gp_Ax2(ax.Location(), ax.Direction(), ax.XDirection()), big, small)
+        extrusion = Geom_SurfaceOfLinearExtrusion(section, ax.Direction())
+        return Geom_RectangularTrimmedSurface(extrusion, 0.0, 2.0 * math.pi, -EXTRUSION_REACH, EXTRUSION_REACH, True, True)
     if kind == "sphere":
         return Geom_SphericalSurface(ax, _positive(spec, "radius", params, name))
     if kind == "torus":
@@ -308,6 +342,8 @@ _OVERLOADS = {
 def intersect_surfaces(name_a: str, kind_a: str, a, name_b: str, kind_b: str, b) -> dict:
     """`IntAna_QuadQuadGeo` on the two `gp` quadrics, and `GeomAPI_IntSS` on
     the two surfaces where it finds no conic."""
+    if kind_a not in _QUADRIC_OF or kind_b not in _QUADRIC_OF:
+        raise OracleError(f"{name_a} vs {name_b}: no gp quadric for {kind_a}–{kind_b}")
     qa, qb = _QUADRIC_OF[kind_a](a), _QUADRIC_OF[kind_b](b)
     if (kind_a, kind_b) in _OVERLOADS:
         tolerances = _OVERLOADS[(kind_a, kind_b)]
@@ -430,7 +466,13 @@ def intersect_curve_surface(name_c: str, kind_c: str, curve, name_s: str, kind_s
     """`IntAna_IntConicQuad` of the `gp` conic against the plane or the
     quadric, and `IntAna_IntLinTorus` of a line against a torus."""
     out: dict[str, Any] = {"a": name_c, "b": name_s}
-    if kind_c == "nurbs":
+    # `IntAna` has no form for a NURBS curve, nor for a conic against a
+    # torus or an elliptic cylinder; the general intersector has. It
+    # reports a curve *lying on* the surface as a cloud of points rather
+    # than a segment, so a fixture asks it only where the two cross or
+    # touch — a conic on one of those two is pinned in the Rust tests.
+    general = kind_c == "nurbs" or kind_s == "elliptic_cylinder" or (kind_c != "line" and kind_s == "torus")
+    if general:
         r = GeomAPI_IntCS(curve, surface)
         if not r.IsDone():
             raise OracleError(f"{name_c} vs {name_s}: GeomAPI_IntCS not done")
@@ -484,8 +526,9 @@ def intersect_curves(name_a: str, kind_a: str, a, name_b: str, kind_b: str, b) -
     """`GeomAPI_ExtremaCurveCurve` of two curves, one of them a B-spline:
     the extrema within `Precision::Confusion` as `points`."""
     out: dict[str, Any] = {"a": name_a, "b": name_b}
-    if "nurbs" not in (kind_a, kind_b):
-        raise OracleError(f"{name_a} vs {name_b}: a curve pair needs a nurbs curve in it")
+    conics = {"circle", "ellipse"}
+    if "nurbs" not in (kind_a, kind_b) and not {kind_a, kind_b} <= conics:
+        raise OracleError(f"{name_a} vs {name_b}: a curve pair needs a nurbs curve or two conics in it")
     found = []
     for a_lo, a_hi in _ranges(kind_a, a):
         for b_lo, b_hi in _ranges(kind_b, b):

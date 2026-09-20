@@ -40,56 +40,20 @@
 //! and divided out ([`PatchedSection::deflate`]), and both sets are then
 //! those of the quotient, the rest of the section.
 
-use core::f64::consts::{FRAC_1_SQRT_2, FRAC_PI_2, FRAC_PI_4, SQRT_2, TAU};
+use core::f64::consts::{FRAC_1_SQRT_2, FRAC_PI_2, FRAC_PI_4, TAU};
 
 use arris_math::Tolerance;
 
 use crate::Surface;
+use crate::arc::{QUARTER_TAN, quarter_angle, quarter_arc, quarter_param, quarter_weight};
 use crate::bernstein::{self, Binomials, sign_change_candidates};
 use crate::bernstein2::{Continuum, Gate, Isolation, Poly2, Zero2, common_zeros, merge};
 use crate::implicit::{BERNSTEIN_ROUNDING, Implicit};
-
-/// `tan(π/8)`: the half-angle parameter at the end of a quarter turn
-/// measured from its middle.
-const QUARTER_TAN: f64 = SQRT_2 - 1.0;
 
 /// What the angles of two patches' shared edge may differ by, each
 /// rounded on its own way through [`quarter_angle`]: a few `ε` of a turn.
 /// A statement about `f64`, never a tolerance.
 const ANGLE_ROUNDING: f64 = 4.0 * f64::EPSILON * TAU;
-
-/// The cosine, the sine and the weight of quarter turn `quarter`, from
-/// `quarter·π/2`, as quadratic polynomials in Bernstein form: the first
-/// quarter's turned by whole quarter turns, which is exact.
-fn quarter_arc(quarter: usize) -> [[f64; 3]; 3] {
-    let (c, s) = ([1.0, FRAC_1_SQRT_2, 0.0], [0.0, FRAC_1_SQRT_2, 1.0]);
-    let minus = |a: [f64; 3]| a.map(|v| -v);
-    let (cos, sin) = match quarter % 4 {
-        0 => (c, s),
-        1 => (minus(s), c),
-        2 => (minus(c), minus(s)),
-        _ => (s, minus(c)),
-    };
-    [cos, sin, [1.0, FRAC_1_SQRT_2, 1.0]]
-}
-
-/// The angle at parameter `s` of quarter turn `quarter`; `s` a little
-/// outside `[0, 1]` is the angle a little outside the quarter.
-fn quarter_angle(quarter: usize, s: f64) -> f64 {
-    quarter as f64 * FRAC_PI_2 + FRAC_PI_4 + 2.0 * (QUARTER_TAN * (2.0 * s - 1.0)).atan()
-}
-
-/// The parameter of a quarter turn at `angle` from its start, the
-/// inverse of [`quarter_angle`], kept inside `[0, 1]`.
-fn quarter_param(angle: f64) -> f64 {
-    (0.5 * (1.0 + (0.5 * (angle - FRAC_PI_4)).tan() / QUARTER_TAN)).clamp(0.0, 1.0)
-}
-
-/// The weight of a quarter turn at its parameter `s`, the quadratic with
-/// the coefficients `(1, cos π/4, 1)`.
-fn quarter_weight(s: f64) -> f64 {
-    1.0 - (2.0 - SQRT_2) * s * (1.0 - s)
-}
 
 /// Where a line of the torus at `t` of a quarter turn in `v` is looked
 /// along for the tube circles that lie on the other surface: every such

@@ -108,7 +108,16 @@ random poses; `fn quadric` no longer exists.
 - **`tools/oracle`**: none expected — the recipe grammar's eleven
   operations build every operand here. If the oracle needs anything (a
   fuzzy value on a pole, a `geom/` generator case for conic hits), the
-  commit body says which.
+  commit body says which. *Step 3 needed three, none of which moves a
+  number of an existing fixture:* **`arris_debug::fixtures::geom::
+  SurfaceSpec::EllipticCylinder`**, a new variant of a public enum —
+  Open CASCADE has no analytic elliptic cylinder, so the oracle builds
+  the section ellipse extruded along the axis, trimmed to
+  `EXTRUSION_REACH` since the general intersector finds nothing on an
+  extrusion's unbounded parametric range; that general intersector for a
+  conic against a torus or an elliptic cylinder, which `IntAna` has no
+  form for; and a curve pair that is two conics, decided by the
+  curve–curve extrema the NURBS pairs already use.
 - **DATA-MODEL:** §Pcurves (the fallback on every surface, the singular
   rule), §Curves (the conic–surface and conic–conic tables), §Tolerances
   if step 6's band needs a sentence. **ARCHITECTURE:** §Operations (the
@@ -177,7 +186,7 @@ bound has to be established here.
   sphere's own extrema are its polynomial's exactly, so nothing is lost.
   The random property moves the conic's centre onto the surface: drawn
   independently, 97% of the pairs miss.
-- [ ] Step 3 **[2]** — A conic against a torus, two coplanar conics, and
+- [x] Step 3 **[2]** — A conic against a torus, two coplanar conics, and
   the fixture. The torus by four rational quarter arcs through the
   Bernstein isolation `spline_surface` uses, degree eight, the hit's `t`
   the conic's own angle; up to eight hits, a Villarceau circle and the
@@ -189,6 +198,35 @@ bound has to be established here.
   `every_other_pair_is_unsupported`'s curve–surface and curve–curve
   twin in `tests/intersect_curve_surface.rs` left the NURBS arms only,
   and `intersect_curves` given the same test for its one.
+  *Established:* the quarter arc is now `geom`'s own `arc` module, moved
+  out of the torus tracer unchanged, because a conic's quarters and a
+  torus's patches are the same exact rational quadratic; a conic's
+  quarter in a torus's form is degree eight, and the quarters' own ends
+  go in beside the derivative's sign changes, an extremum at a join
+  being a change neither side sees. The coplanar pair goes through
+  `conic_pair` in the *second* conic's plane, and `curves_coincide` is
+  now that verdict rather than a closed form of its own, so the two can
+  no longer disagree. Three things the oracle needed, each in the
+  commit body: Open CASCADE has no elliptic cylinder, so the geometry
+  grammar's new `elliptic_cylinder` is the section ellipse extruded
+  along the axis — the same point set with the same `(u, v)`, which its
+  own samples in the fixture check — and the general intersector finds
+  *nothing at all* on an extrusion's unbounded parametric range
+  (±2e100) whatever the pose, so it is trimmed to `EXTRUSION_REACH`;
+  a conic against a torus or an elliptic cylinder has no `IntAna` form
+  and goes through `GeomAPI_IntCS`, which reports a conic *lying on*
+  either as a cloud of hundreds of points rather than a segment, so the
+  fixture asks it only where the two cross or touch and the coincident
+  verdicts stay in the property tests; and two coplanar conics go
+  through the curve–curve extrema the NURBS pairs already use. All
+  fourteen pairs classified as built on the first run. One finding for
+  step 6 and the tolerance plan: a root at `t = 0` comes back at one
+  rounding *below* a whole turn — `trig2_roots` polishes it to a
+  rounding-sized negative and `wrap_angle` brings that to just under
+  `2π` — which is inside the `[0, 2π)` the guarantee states and is the
+  same point, but a split there gives a hair-thin block at the end of a
+  closed edge rather than none at its start. The periodic assertions are
+  written in the turn metric because of it.
 - [ ] Step 4 **[2]** — The guard lifted for the ruled kinds: a cone and an
   elliptic cylinder as operand faces, clear of the apex. Fixtures against
   the oracle, every corpus stage: `boolean/frustum-oblique-cut` (an

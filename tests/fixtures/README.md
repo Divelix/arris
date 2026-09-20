@@ -267,6 +267,7 @@ oracle's sampled points on Arris's curves to 1e-9.
 |---|---|
 | `plane` | `origin`, `z`, `x` |
 | `cylinder`, `sphere` | `origin`, `z`, `x`, `radius` |
+| `elliptic_cylinder` | `origin`, `z` (the axis), `x` (the section's major axis), `major_radius`, `minor_radius` |
 | `cone` | `origin`, `z`, `x`, `radius` (at `v = 0`), `half_angle_deg` |
 | `torus` | `origin`, `z`, `x`, `major_radius`, `minor_radius` |
 | `line` | `origin`, `direction` |
@@ -279,7 +280,8 @@ oracle's sampled points on Arris's curves to 1e-9.
   expressions as in a solid recipe.
 - A sample's `params` are `[u, v]` pairs for a surface and `t` values for
   a curve; `points` are projected. A pair is two surfaces, a curve `a`
-  against a surface `b`, or two curves with a `nurbs` one among them.
+  against a surface `b`, or two curves with a `nurbs` one among them or
+  two conics.
 - The fixtures here are written by `geom/generate.py` (closed forms at
   full precision in committed poses) — edit and rerun it, then
   `expected.py`, rather than the numbers: `analytic-eval`,
@@ -305,6 +307,17 @@ oracle's sampled points on Arris's curves to 1e-9.
   drill through the tube and a pipe of the tube's radius tangent to the
   centre circle, which shares that tube circle exactly; a cone and a
   sphere off the axis; an interlocked torus and a larger one) and
+  `c3-conic-hits` (circles and ellipses against the four
+  surfaces a conic has no exact section of — a cone, a sphere, an
+  elliptic cylinder and a torus — each placed where the surface's trace
+  in its plane is a closed form: the cone's two lines through its apex
+  crossed and touched, the elliptic cylinder's two lines at its major
+  radius crossed, touched and cut obliquely, the torus's equators crossed
+  eight times by an equatorial ellipse, its inner equator touched and one
+  tube circle drilled; and coplanar conic pairs with an ellipse among
+  them — an ellipse against a circle between its radii, against a circle
+  of its minor radius (a touch at both minor vertices), against a second
+  ellipse about its centre, and one pair swapped) and
   `c3-nurbs-hits` (an ellipse as four rational quadratic
   arcs, a quintic of three spans and a rational cubic with a double
   knot, each against a plane, a cylinder, a cone, a sphere and a torus)
@@ -313,9 +326,14 @@ oracle's sampled points on Arris's curves to 1e-9.
   concentric circle in the ellipse's plane, a line beside them).
   An oracle parabola or hyperbola, sampled at its own
   parameters in `[−2, 2]` a branch per curve, is held against Arris's
-  exact rational quadratic NURBS. The geometry grammar has no elliptic
-  cylinder, which Open CASCADE carries only as a surface of extrusion;
-  its traced pairs are the property tests'.
+  exact rational quadratic NURBS. An `elliptic_cylinder` is the section
+  ellipse extruded along the axis, which is what Open CASCADE carries it
+  as and the same point set with the same `(u, v)`; it is no `gp`
+  quadric, so it takes no *surface* pair — those are the property tests'
+  — and the general intersector finds nothing on an extrusion's
+  unbounded parametric range, so the oracle trims it to `EXTRUSION_REACH`
+  either way along its axis and a recipe keeps its hits well inside
+  that.
 - A `nurbs` curve is `NurbsCurve::new`'s arguments and the oracle's
   `Geom_BSplineCurve` over the same knots, so the two share a parameter
   and its hits are compared in it. Against a surface it goes through
@@ -324,7 +342,9 @@ oracle's sampled points on Arris's curves to 1e-9.
   are; it has no `coincident`, and a segment of the curve on the surface
   is an error of the recipe. Against a line, a circle or an ellipse,
   Open CASCADE has no 3D curve–curve intersector, so the oracle is
-  `GeomAPI_ExtremaCurveCurve` span by span of the B-spline (over its
+  `GeomAPI_ExtremaCurveCurve` — which is also what decides two coplanar
+  conics, the only other curve pair a recipe may ask for — span by span
+  of the B-spline (over its
   whole domain the search misses crossings): every extremum within
   `Precision::Confusion` is a hit with both parameters, `t` and `tb`,
   and the oracle test holds Arris's hits to them as it holds a curve

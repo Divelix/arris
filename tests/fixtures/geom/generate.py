@@ -11,6 +11,9 @@ meet in a quartic, in that pose), `c3-quadric-pairs` (the pairs with
 a cone or a sphere in them that share no axis, in that pose),
 `c3-torus-pairs` (the pairs a torus makes with a surface sharing no axis
 with it, in that pose) and
+`c3-conic-hits` (circles and ellipses against the four surfaces a conic
+has no exact section of, and coplanar conic pairs with an ellipse among
+them, in that pose),
 `c3-nurbs-hits` (NURBS curves against every analytic surface the grammar
 has, in that pose) and `c3-nurbs-crossings` (the same curves against
 lines, circles and ellipses, in that pose). Plain Python, no Open CASCADE: the coordinates
@@ -764,6 +767,105 @@ def c2_quadric_pairs():
     }
 
 
+# --- c3-conic-hits -------------------------------------------------------------------
+
+
+def c3_conic_hits():
+    """Circles and ellipses against the four surfaces a conic has no exact
+    section of, and coplanar conic pairs with an ellipse among them —
+    everything `c3-conic-hits` adds to the intersector, in the tilt pose.
+    Every case is built so that its crossings and touches are a closed
+    form of the surface's trace in the conic's plane."""
+    f = POSES["tilt"]
+    z = f.z
+    a, across = f.around(0.6)
+    on_axis = lambda h: f.to_world([0.0, 0.0, h])
+    surfaces = {
+        "cone": {"type": "cone", **Frame(on_axis(1.5), z, a).spec(radius=2.0, half_angle_deg=30.0)},
+        "ball": {"type": "sphere", **Frame(on_axis(-0.5), a, z).spec(radius=2.5)},
+        "oval": {"type": "elliptic_cylinder", **Frame(on_axis(-2.0), z, a).spec(major_radius=2.6, minor_radius=1.4)},
+        "ring": {"type": "torus", **Frame(on_axis(3.0), z, across).spec(major_radius=4.0, minor_radius=1.5)},
+    }
+    curves = {}
+    # The cone, in the plane of its axis and `a`, where its trace is the
+    # two lines through the apex: the axis is `gap` above the apex, so
+    # each line is `gap·sin α` from the centre on it. A circle wider than
+    # that crosses both twice, and one exactly that wide touches each.
+    gap = 2.0 / math.tan(math.radians(30.0))
+    reach = gap * math.sin(math.radians(30.0))
+    curves["cone_cross"] = {"type": "circle", **Frame(on_axis(1.5), across, z).spec(radius=2.0)}
+    curves["cone_touch"] = {"type": "circle", **Frame(on_axis(1.5), across, z).spec(radius=reach)}
+    # The sphere, about its centre: an ellipse in a tilted plane whose
+    # radii straddle the radius crosses it four times, and a circle whose
+    # far point is exactly on it touches there, a quarter turn from its
+    # own seam.
+    ball = on_axis(-0.5)
+    lean = unit(add(z, mul(0.6, a)))
+    in_plane = cross(lean, across)
+    curves["ball_cross"] = {"type": "ellipse", **Frame(ball, lean, across).spec(major_radius=3.5, minor_radius=2.0)}
+    curves["ball_touch"] = {"type": "circle", **Frame(add(ball, across), lean, in_plane).spec(radius=1.5)}
+    # The elliptic cylinder, in the plane of its axis and its major axis,
+    # where its trace is the two lines at `±a`: an ellipse reaching past
+    # them crosses each twice, a circle of the major radius touches each,
+    # and a circle in a plane oblique to the axis crosses four times.
+    oval = on_axis(-2.0)
+    curves["oval_cross"] = {"type": "ellipse", **Frame(oval, across, a).spec(major_radius=3.4, minor_radius=1.2)}
+    curves["oval_touch"] = {"type": "circle", **Frame(oval, across, z).spec(radius=2.6)}
+    curves["oval_slice"] = {"type": "circle", **Frame(oval, unit(add(z, mul(0.8, a))), across).spec(radius=3.2)}
+    # The torus: an ellipse in its equatorial plane reaching past the
+    # outer equator and inside the inner one leaves and re-enters the
+    # tube eight times; a circle of the inner radius in the plane of the
+    # axis touches the tube at both inner equator points; and a circle
+    # about a point off the core circle, in that plane, crosses one tube
+    # circle twice and comes nowhere near the other.
+    ring = on_axis(3.0)
+    curves["ring_cross"] = {"type": "ellipse", **Frame(ring, z, a).spec(major_radius=6.05, minor_radius=2.25)}
+    curves["ring_touch"] = {"type": "circle", **Frame(ring, across, z).spec(radius=2.5)}
+    curves["ring_drill"] = {"type": "circle", **Frame(add(ring, add(mul(4.0, a), mul(1.0, z))), across, z).spec(radius=2.2)}
+    # Two conics in one plane with an ellipse among them, which no plane
+    # decides: a circle between the ellipse's radii crosses it four
+    # times, a circle of its minor radius touches it at both minor
+    # vertices, and a second ellipse about the same centre, wider one way
+    # and narrower the other, crosses it four times.
+    flat = Frame(f.to_world([0.0, 0.0, 6.0]), unit(add(z, mul(0.3, across))), a)
+    turned = Frame(flat.origin, flat.z, add(mul(math.cos(0.7), flat.x), mul(math.sin(0.7), flat.y)))
+    curves["flat_oval"] = {"type": "ellipse", **flat.spec(major_radius=3.0, minor_radius=1.6)}
+    curves["flat_round"] = {"type": "circle", **flat.spec(radius=2.2)}
+    curves["flat_minor"] = {"type": "circle", **flat.spec(radius=1.6)}
+    curves["flat_turned"] = {"type": "ellipse", **turned.spec(major_radius=2.6, minor_radius=1.9)}
+    # The elliptic cylinder is new to the oracle here, so its own
+    # parametrisation is checked too: `P(u, v) = O + a cos u·X + b sin
+    # u·Y + v·Z`, which is the extrusion the oracle builds.
+    samples = [
+        {"of": "oval", "params": [[0.0, 0.0], [0.7, 1.3], [math.pi, -2.0], [5.9, 0.4]],
+         "points": [f.to_world([3.5, 1.0, -1.0]), f.to_world([0.2, -0.3, -2.0])]},
+    ]
+    pairs = [
+        {"a": "cone_cross", "b": "cone"},
+        {"a": "cone_touch", "b": "cone"},
+        {"a": "ball_cross", "b": "ball"},
+        {"a": "ball_touch", "b": "ball"},
+        {"a": "oval_cross", "b": "oval"},
+        {"a": "oval_touch", "b": "oval"},
+        {"a": "oval_slice", "b": "oval"},
+        {"a": "ring_cross", "b": "ring"},
+        {"a": "ring_touch", "b": "ring"},
+        {"a": "ring_drill", "b": "ring"},
+        {"a": "flat_oval", "b": "flat_round"},
+        {"a": "flat_round", "b": "flat_oval"},
+        {"a": "flat_oval", "b": "flat_minor"},
+        {"a": "flat_oval", "b": "flat_turned"},
+    ]
+    return {
+        "kind": "geometry",
+        "description": "Circles and ellipses against a cone, a sphere, an elliptic cylinder and a torus, and coplanar conic pairs with an ellipse among them, in the tilt pose (ADR-0018): each conic placed in a plane where the surface's trace is a closed form — the cone's two lines through its apex, the elliptic cylinder's two lines at its major radius, the torus's two tube circles — so its crossings and its touches are known before the oracle is asked; the elliptic cylinder is the section ellipse extruded along the axis, which Open CASCADE meets through its general intersector, and the coplanar pairs through its curve\u2013curve extrema; written by generate.py",
+        "surfaces": surfaces,
+        "curves": curves,
+        "samples": samples,
+        "pairs": pairs,
+    }
+
+
 # --- c3-nurbs-hits -------------------------------------------------------------------
 
 
@@ -940,5 +1042,6 @@ if __name__ == "__main__":
     write("c3-cylinder-pairs", c3_cylinder_pairs())
     write("c3-quadric-pairs", c3_quadric_pairs())
     write("c3-torus-pairs", c3_torus_pairs())
+    write("c3-conic-hits", c3_conic_hits())
     write("c3-nurbs-hits", c3_nurbs_hits())
     write("c3-nurbs-crossings", c3_nurbs_crossings())

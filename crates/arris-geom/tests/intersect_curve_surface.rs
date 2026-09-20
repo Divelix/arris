@@ -11,11 +11,13 @@
 
 use core::f64::consts::{FRAC_PI_2, PI, TAU};
 
-use arris_debug::prop::geom::{circle, curve, cylinder, line, plane, surface};
+use arris_debug::prop::geom::{
+    circle, curve, cylinder, line, nurbs_curve, nurbs_surface, plane, surface,
+};
 use arris_debug::prop::{DEFAULT_SCALE, check, finite_f64, point_in_box};
 use arris_geom::{
-    Curve, CurveKind, CurveSurfaceHit, CurveSurfaceIntersection, GeomError, GeomKind, Surface,
-    SurfaceKind, intersect_curve_surface,
+    Curve, CurveSurfaceHit, CurveSurfaceIntersection, GeomError, GeomKind, Surface, SurfaceKind,
+    intersect_curve_surface,
 };
 use arris_math::{Frame, Point3, Precision, Tolerance, Vec3};
 use proptest::prelude::*;
@@ -570,25 +572,32 @@ fn implicit_signed(s: &Surface, p: Point3) -> f64 {
 
 // --- the rest of the table --------------------------------------------------
 
+/// A NURBS surface is the only arm left without a form: every analytic
+/// pair answers, a conic against a torus among them, and every curve
+/// against a `Surface::Nurbs` is `Unsupported` naming both operands.
 #[test]
-fn every_other_pair_is_unsupported() {
-    check((curve(), surface()), |(c, s)| {
-        // Every analytic pair but a conic against a torus, which is the
-        // Bernstein isolation's and not a closed form's.
-        let closed_form = c.kind() == CurveKind::Line
-            || (matches!(c.kind(), CurveKind::Circle | CurveKind::Ellipse)
-                && s.kind() != SurfaceKind::Torus);
-        match intersect_curve_surface(&c, &s, tol()) {
-            Ok(_) => prop_assert!(closed_form, "{c:?} vs {s:?} should be unsupported"),
-            Err(GeomError::Unsupported { a, b }) => {
-                prop_assert!(!closed_form, "{c:?} vs {s:?} has a closed form");
-                prop_assert_eq!(a, GeomKind::Curve(c.kind()));
-                prop_assert_eq!(b, GeomKind::Surface(s.kind()));
+fn only_a_nurbs_surface_is_unsupported() {
+    check(
+        (curve(), surface(), nurbs_curve(), nurbs_surface()),
+        |(c, s, nc, ns)| {
+            let nc = Curve::Nurbs(nc);
+            let ns = Surface::Nurbs(ns);
+            for curve in [&c, &nc] {
+                match intersect_curve_surface(curve, &s, tol()) {
+                    Ok(_) => {}
+                    other => return fail(format!("{curve:?} vs {s:?}: {other:?}")),
+                }
+                match intersect_curve_surface(curve, &ns, tol()) {
+                    Err(GeomError::Unsupported { a, b }) => {
+                        prop_assert_eq!(a, GeomKind::Curve(curve.kind()));
+                        prop_assert_eq!(b, GeomKind::Surface(SurfaceKind::Nurbs));
+                    }
+                    other => return fail(format!("{curve:?} vs a NURBS surface: {other:?}")),
+                }
             }
-            Err(e) => prop_assert!(false, "{e}"),
-        }
-        Ok(())
-    });
+            Ok(())
+        },
+    );
 }
 
 #[test]
@@ -1022,13 +1031,15 @@ fn conic() -> impl Strategy<Value = Curve> {
     prop_oneof![circle(), arris_debug::prop::geom::ellipse()]
 }
 
-/// The quadrics a conic has no exact section of: a cone, a sphere, and
-/// an elliptic cylinder, which the conic meets in a plane of any tilt.
+/// The surfaces a conic has no exact section of: a cone, a sphere, an
+/// elliptic cylinder, which the conic meets in a plane of any tilt, and
+/// a torus, whose quartic form the conic's quarter arcs go into.
 fn conic_quadric() -> impl Strategy<Value = Surface> {
     prop_oneof![
         arris_debug::prop::geom::cone(),
         arris_debug::prop::geom::sphere(),
         arris_debug::prop::geom::elliptic_cylinder(),
+        arris_debug::prop::geom::torus(),
     ]
 }
 
@@ -1135,6 +1146,22 @@ enum ConicCase {
     EllipticMeridian,
     /// The same, just reaching it.
     EllipticMeridianTangent,
+    /// A parallel of the torus: the circle at one `v`, about the axis.
+    TorusParallel,
+    /// A tube circle of the torus, in a plane through the axis.
+    TorusTube,
+    /// A Villarceau circle: the torus's section with a bitangent plane
+    /// through its centre, which is a circle of the major radius.
+    TorusVillarceau,
+    /// An ellipse in the equatorial plane about the centre, reaching
+    /// past the outer equator and inside the inner one: it leaves and
+    /// re-enters the tube eight times.
+    TorusEquatorial,
+    /// A circle of the inner radius in a plane through the axis: it
+    /// touches the torus at the two inner equator points.
+    TorusInnerTouch,
+    /// A circle inside the hole, clear of the tube.
+    TorusMiss,
 }
 
 fn conic_case() -> impl Strategy<Value = ConicCase> {
@@ -1151,6 +1178,12 @@ fn conic_case() -> impl Strategy<Value = ConicCase> {
         Just(ConicCase::EllipticScaled),
         Just(ConicCase::EllipticMeridian),
         Just(ConicCase::EllipticMeridianTangent),
+        Just(ConicCase::TorusParallel),
+        Just(ConicCase::TorusTube),
+        Just(ConicCase::TorusVillarceau),
+        Just(ConicCase::TorusEquatorial),
+        Just(ConicCase::TorusInnerTouch),
+        Just(ConicCase::TorusMiss),
     ]
 }
 
@@ -1182,6 +1215,11 @@ fn a_conic_against_a_quadric_follows_the_case_table() {
                 half_angle: angle,
             };
             let wall = Surface::EllipticCylinder {
+                frame,
+                major_radius: big,
+                minor_radius: small,
+            };
+            let ring = Surface::Torus {
                 frame,
                 major_radius: big,
                 minor_radius: small,
@@ -1339,6 +1377,81 @@ fn a_conic_against_a_quadric_follows_the_case_table() {
                     }
                     let half = (reach / radius).acos();
                     expect_hits(&c, &r, &[half, PI - half, PI + half, TAU - half], false)
+                }
+                ConicCase::TorusParallel => {
+                    // The circle of the torus at `v = angle`: radius
+                    // `R + r cos v` about the axis at the height `r sin v`.
+                    let (sv, cv) = angle.sin_cos();
+                    let c = Curve::Circle {
+                        frame: plane_of(z, a, o + (small * sv) * z)?,
+                        radius: big + small * cv,
+                    };
+                    expect_coincident(&common_properties(&c, &ring)?)
+                }
+                ConicCase::TorusTube => {
+                    // The tube circle in the plane of the axis and `a`,
+                    // about the point of the core circle there.
+                    let c = Curve::Circle {
+                        frame: plane_of(across, a, o + big * a)?,
+                        radius: small,
+                    };
+                    expect_coincident(&common_properties(&c, &ring)?)
+                }
+                ConicCase::TorusVillarceau => {
+                    // The bitangent plane through the centre leans by
+                    // `sin α = r / R` off the axis; the two circles it
+                    // cuts have the major radius and their centres `r`
+                    // from the centre across it.
+                    let (sv, cv) = (small / big, (1.0 - fraction * fraction).sqrt());
+                    let lean = -sv * a + cv * z;
+                    let c = Curve::Circle {
+                        frame: plane_of(lean, cv * a + sv * z, o + small * across)?,
+                        radius: big,
+                    };
+                    expect_coincident(&common_properties(&c, &ring)?)
+                }
+                ConicCase::TorusEquatorial => {
+                    // In the equatorial plane about the centre, past the
+                    // outer equator along `X` and inside the inner one
+                    // along `Y`: four crossings of each.
+                    let (major, minor) = (1.1 * (big + small), 0.9 * (big - small));
+                    let c = Curve::Ellipse {
+                        frame: plane_of(z, a, o)?,
+                        major_radius: major,
+                        minor_radius: minor,
+                    };
+                    let r = common_properties(&c, &ring)?;
+                    // `a² cos² t + b² sin² t = ρ²` at both equators.
+                    let across_at = |rho: f64| {
+                        let cos = ((rho * rho - minor * minor) / (major * major - minor * minor))
+                            .sqrt()
+                            .acos();
+                        [cos, PI - cos, PI + cos, TAU - cos]
+                    };
+                    let expected: Vec<f64> = across_at(big + small)
+                        .into_iter()
+                        .chain(across_at(big - small))
+                        .collect();
+                    expect_hits(&c, &r, &expected, false)
+                }
+                ConicCase::TorusInnerTouch => {
+                    // Of the inner radius in the plane of the axis and
+                    // `a`: tangent to the tube at both inner equator
+                    // points, from inside the hole.
+                    let c = Curve::Circle {
+                        frame: plane_of(across, a, o)?,
+                        radius: big - small,
+                    };
+                    expect_hits(&c, &common_properties(&c, &ring)?, &[0.0, PI], true)
+                }
+                ConicCase::TorusMiss => {
+                    // About the axis inside the hole: its distance from
+                    // the torus is constant and never vanishes.
+                    let c = Curve::Circle {
+                        frame: plane_of(z, a, o)?,
+                        radius: 0.5 * (big - small),
+                    };
+                    expect_empty(&common_properties(&c, &ring)?)
                 }
             }
         },

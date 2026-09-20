@@ -383,9 +383,10 @@ Points(Vec<CurveSurfaceHit>), Coincident}` for the pairs with a closed form
 — line–plane, line–cylinder, conic–plane and conic–cylinder, *conic*
 being a circle or an ellipse, and a line against a cone, a sphere or a
 torus — for a conic against a cone, a sphere or an elliptic cylinder in
-any plane (below), for a `Nurbs` curve against every analytic surface
-(below), and `GeomError::Unsupported` naming the pair for every other (a
-conic against a torus; any curve against a `Nurbs` surface). A hit is
+any plane and against a torus (below), for a `Nurbs` curve against every
+analytic surface (below), and `GeomError::Unsupported` naming the pair
+for the one arm left without a form: any curve against a `Nurbs`
+surface. A hit is
 `CurveSurfaceHit { t, uv, point, tangent }`: `point` is the curve's point
 at `t`, `uv` the surface's own projection of it — except at a cone's
 apex, whose projection is `Ambiguous`, where it is `u = 0` and the apex's
@@ -455,7 +456,20 @@ a sphere and for an oblique section lying on an elliptic cylinder, one
 beside it, and one crossing on each other stretch whose ends differ in
 sign. A conic through a cone's **apex** touches it there — the distance
 has its extremum, of value zero, at a point the conic does not cross —
-and takes the apex's `uv`. A conic against a torus is `Unsupported`.
+and takes the apex's `uv`.
+
+**A conic against a torus** has no such trigonometric polynomial to
+solve, the torus's `F` being quartic: the conic goes in as the four
+rational quadratic quarter arcs a turn is exactly made of (`geom`'s
+`arc`), and each one put into `F` is a polynomial of degree eight in
+Bernstein form with the torus's sign along it — the substitution and the
+isolation the NURBS arm below makes of a span, over a conic's exact
+quarters, with the quarters' own ends beside the sign changes of the
+derivative, since an extremum at a join is a change of sign neither side
+sees. The verdict is the same one, on the same distance: `Coincident`
+for a conic lying on the torus — a parallel, a tube circle, a Villarceau
+circle — one `tangent` hit at a stop within `tol.linear`, and up to
+eight crossings, each hit's `t` the conic's own angle.
 
 **A `Curve::Nurbs` against an analytic surface** (ADR-0018) is what the
 next boolean asks of a fitted section edge. Every analytic surface is
@@ -507,10 +521,16 @@ plane decides nothing: a line against a coplanar conic is that conic
 against the plane through the line perpendicular to the conic's — the
 same points, the tangency decided in `tol.linear` by an arm that already
 exists — and two coplanar circles are the radical line. A coplanar pair
-with an ellipse in it is `Coincident` when the two are the same conic
-(centres, radii and major axes agreeing within the tolerance — the edge
-a boolean made and the edge a second boolean meets it with) and
-`Unsupported` otherwise.
+with an ellipse in it is the quartic of `geom`'s `conic2`, in the second
+conic's plane: the residual `F₂(E₁(t))`, the second's implicit form
+along the first, is a trigonometric polynomial of degree two again, so
+each extremum of it where the first's point is within `tol.linear` of
+the second is a touch, every extremum a touch is `Coincident` — the edge
+a boolean made and the edge a second boolean meets it with — and each
+arc between two extrema that are not touches whose ends differ in sign
+holds one crossing. A residual with no extremum is constant, a conic
+concentric with and similar to the other, and is `Coincident` or empty
+by the distance.
 A **`Nurbs` curve** (ADR-0018) — the fitted section edge the next
 boolean meets — goes through the same planes, its hits on them from the
 NURBS arm of `intersect_curve_surface` above. Against a circle or an
@@ -535,9 +555,8 @@ line there, so it is found to rounding. `Nurbs`–`Nurbs` is `Unsupported`:
 where two fitted curves of one pair meet is the tracer's `points`
 (§Curves, below), and anything else a marcher's (the NURBS cycle's).
 `curves_coincide(a, b, tol) -> Result<bool, GeomError>` is that
-`Coincident` verdict alone, by the same arms, so it answers the coplanar
-pair with an ellipse too — the same conic or not — without the quartic
-of where two such conics meet. Two `Nurbs` curves coincide when they are
+`Coincident` verdict alone, by the same arms, so it answers every pair
+the intersector answers. Two `Nurbs` curves coincide when they are
 the same spline, every control point within `tol.linear` of its twin
 over the same degree, knots and weights — the same section made twice —
 and do not when a point of either at an end, a knot or halfway between

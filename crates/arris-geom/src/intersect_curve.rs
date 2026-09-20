@@ -1,14 +1,16 @@
 //! Curve–surface intersection: the closed-form table, and the arm that
 //! sends a NURBS curve to `crate::intersect_spline`.
 
-use core::f64::consts::{PI, TAU};
+use core::f64::consts::{FRAC_PI_2, PI, TAU};
 
 use arris_math::roots::{self, RootError};
 use arris_math::{Frame, Interval, Point2, Point3, Tolerance, Vec2, Vec3, wrap_angle as wrap_turn};
 
+use crate::arc::{quarter_angle, quarter_arc};
+use crate::bernstein::{Binomials, derivative, sign_change_candidates};
 use crate::by_distance::hits_by_distance;
 use crate::conic2::{Conic2, ConicMeet, conic_pair, trig2_roots};
-use crate::implicit::Implicit;
+use crate::implicit::{BERNSTEIN_ROUNDING, Implicit};
 use crate::intersect::line_angle;
 use crate::intersect_spline::spline_surface;
 use crate::project::ellipse_distance;
@@ -53,10 +55,11 @@ pub enum CurveSurfaceIntersection {
 }
 
 /// The intersection of a curve and a surface, by the case table: every
-/// pair with a closed form is computed exactly, a NURBS curve meets
-/// every analytic surface through the surface's implicit polynomial
-/// (ADR-0018), and every other pair is an explicit
-/// [`GeomError::Unsupported`] arm — no wildcard, no marcher.
+/// pair with a closed form is computed exactly, a conic against a torus
+/// and a NURBS curve against every analytic surface go through the
+/// surface's implicit polynomial (ADR-0018), and a NURBS surface is the
+/// one explicit [`GeomError::Unsupported`] arm — no wildcard, no
+/// marcher.
 ///
 /// Guarantees: hits are sorted by `t`, each `t` is in the curve's domain,
 /// each hit's `uv` is the surface's own projection of the point — but at
@@ -123,6 +126,18 @@ pub enum CurveSurfaceIntersection {
 /// through a cone's apex touches it there, the apex being an extremum of
 /// the distance whose value is zero, and takes the apex's `uv`.
 ///
+/// A **conic against a torus** has no trigonometric polynomial of degree
+/// two to solve, the torus's implicit form being quartic: the conic goes
+/// in as four rational quadratic quarter arcs, and each one put into the
+/// polynomial is a polynomial of degree eight in Bernstein form with the
+/// torus's sign along it — the substitution and the isolation the NURBS
+/// arm below makes of a span, over a conic's exact quarters, with the
+/// quarters' own ends beside the sign changes of the derivative. The
+/// verdict is the same one: `Coincident` for a conic lying on the torus
+/// — a parallel, a tube circle, a Villarceau circle — one `tangent` hit
+/// at a stop within `tol.linear`, and up to eight crossings, each hit's
+/// `t` the conic's own angle.
+///
 /// A **NURBS curve** against a plane, a cylinder, an elliptic cylinder, a
 /// cone, a sphere or a torus: each span of the curve put into the
 /// surface's implicit polynomial is a polynomial in Bernstein form, of
@@ -140,8 +155,8 @@ pub enum CurveSurfaceIntersection {
 /// only *ends* within `tol.linear` of the surface is a hit at that end
 /// and not `tangent`: a section edge ending on a face, not a graze. A
 /// closed curve that is not periodic has its two ends for two such hits.
-/// A conic against a **torus**, and any curve against a NURBS surface,
-/// are `Unsupported`.
+/// Any curve against a **NURBS surface** is `Unsupported`, the one arm
+/// of the table without a form.
 ///
 /// ```
 /// use arris_geom::{Curve, CurveSurfaceIntersection, Surface, intersect_curve_surface};
@@ -318,6 +333,17 @@ pub fn intersect_curve_surface(
             },
             Surface::Cone { .. } | Surface::Sphere { .. },
         ) => conic_quadric(curve, surface, cf, [*major_radius, *minor_radius], tol),
+        (Curve::Circle { frame: cf, radius }, Surface::Torus { .. }) => {
+            conic_torus(curve, surface, cf, [*radius, *radius], tol)
+        }
+        (
+            Curve::Ellipse {
+                frame: cf,
+                major_radius,
+                minor_radius,
+            },
+            Surface::Torus { .. },
+        ) => conic_torus(curve, surface, cf, [*major_radius, *minor_radius], tol),
         (
             Curve::Nurbs(spline),
             Surface::Plane { .. }
@@ -327,8 +353,7 @@ pub fn intersect_curve_surface(
             | Surface::Sphere { .. }
             | Surface::Torus { .. },
         ) => spline_surface(curve, spline, surface, tol),
-        (Curve::Circle { .. } | Curve::Ellipse { .. }, Surface::Torus { .. })
-        | (Curve::Line { .. } | Curve::Circle { .. } | Curve::Ellipse { .. }, Surface::Nurbs(_))
+        (Curve::Line { .. } | Curve::Circle { .. } | Curve::Ellipse { .. }, Surface::Nurbs(_))
         | (Curve::Nurbs(_), Surface::Nurbs(_)) => Err(GeomError::Unsupported {
             a: GeomKind::Curve(curve.kind()),
             b: GeomKind::Surface(surface.kind()),
@@ -1080,6 +1105,73 @@ fn conic_cylinder(
         hits.push(hit(curve, surface, wrap_turn(t.rem_euclid(TAU)), false)?);
     }
     Ok(points(hits))
+}
+
+/// A circle or an ellipse against a torus; `radii` is `[a, b]` as in
+/// [`conic_plane`]. A torus's polynomial is quartic, so there is no
+/// trigonometric polynomial of degree two for [`trig2_roots`] to solve:
+/// the conic goes in as the four rational quadratic quarter arcs of
+/// [`crate::arc`] instead, and each one put into the polynomial is a
+/// Bernstein polynomial of degree eight with the torus's own sign along
+/// it — the substitution and the isolation the NURBS arm makes of a
+/// span ([`crate::intersect_spline`]), over a conic's exact quarters.
+/// Between two sign changes of its derivative `g` is monotone, and so is
+/// the signed distance, whose sign it carries; the quarters' own ends go
+/// in beside them, since an extremum exactly at a join is a change of
+/// sign neither side sees. The verdict on them is [`hits_by_distance`]'s,
+/// as everywhere else: a conic on the torus — a parallel, a tube circle,
+/// a Villarceau circle — is `Coincident`, and a conic that leaves and
+/// re-enters the tube is up to eight crossings.
+fn conic_torus(
+    curve: &Curve,
+    surface: &Surface,
+    conic: &Frame,
+    radii: [f64; 2],
+    tol: Tolerance,
+) -> Result<CurveSurfaceIntersection, GeomError> {
+    let implicit = Implicit::of(surface).ok_or_else(|| GeomError::Unsupported {
+        a: GeomKind::Curve(curve.kind()),
+        b: GeomKind::Surface(surface.kind()),
+    })?;
+    // A quarter arc is quadratic, so `g` has twice the torus's degree.
+    let binomials = Binomials::new(2 * implicit.degree());
+    let origin = implicit.frame.origin().coords;
+    let centre = conic.origin().coords;
+    let (u, v) = (
+        radii[0] * conic.x().into_inner(),
+        radii[1] * conic.y().into_inner(),
+    );
+    let mut splits: Vec<f64> = Vec::new();
+    for quarter in 0..4 {
+        let [cos, sin, w] = quarter_arc(quarter);
+        // The arc's homogeneous control points, `w·P` in world, moved
+        // into the surface's frame as `w·(P − O)` turned into it.
+        let mut coords: [Vec<f64>; 4] = Default::default();
+        let (mut reach, mut weight) = (0.0f64, 0.0f64);
+        for i in 0..3 {
+            let a = w[i] * centre + cos[i] * u + sin[i] * v;
+            let local = implicit.frame.vec_to_local(a - w[i] * origin);
+            coords[0].push(local.x);
+            coords[1].push(local.y);
+            coords[2].push(local.z);
+            coords[3].push(w[i]);
+            reach = reach.max(a.norm() + w[i] * origin.norm());
+            weight = weight.max(w[i]);
+        }
+        let [x, y, z, ww] = &coords;
+        let g = implicit.along([x, y, z, ww], &binomials);
+        let degree = g.len().saturating_sub(1);
+        let floor = BERNSTEIN_ROUNDING * implicit.magnitude(reach, weight) * 2.0 * degree as f64;
+        splits.extend(
+            sign_change_candidates(&derivative(&g), floor)
+                .into_iter()
+                .map(|s| wrap_turn(quarter_angle(quarter, s))),
+        );
+        // The join, exactly, so that no split of a periodic curve falls
+        // a rounding outside its domain.
+        splits.push(quarter as f64 * FRAC_PI_2);
+    }
+    hits_by_distance(curve, surface, &implicit, splits, tol)
 }
 
 /// A circle or an ellipse against a cone, a sphere, or an elliptic

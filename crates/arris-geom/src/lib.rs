@@ -17,6 +17,7 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+mod arc;
 mod bernstein;
 mod bernstein2;
 mod by_distance;

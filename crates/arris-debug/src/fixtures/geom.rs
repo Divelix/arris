@@ -42,6 +42,23 @@ pub enum SurfaceSpec {
         /// `R`.
         radius: Num,
     },
+    /// [`Surface::EllipticCylinder`], which Open CASCADE has no analytic
+    /// surface for: the oracle builds it as the linear extrusion of the
+    /// section ellipse along the frame's `z`, which is the same point
+    /// set, and meets a curve with it through the general intersector.
+    #[serde(rename = "elliptic_cylinder")]
+    EllipticCylinder {
+        /// Frame origin.
+        origin: [Num; 3],
+        /// Frame `z`, the axis.
+        z: [Num; 3],
+        /// Frame `x` hint: the section's major axis.
+        x: [Num; 3],
+        /// `a`, along `X`.
+        major_radius: Num,
+        /// `b`, along `Y`.
+        minor_radius: Num,
+    },
     /// [`Surface::Cone`], with the half-angle in degrees as every angle
     /// in a recipe.
     Cone {
@@ -396,6 +413,17 @@ pub fn build_surface(
             frame: frame(name, origin, z, x, params)?,
             radius: num(name, radius, params)?,
         },
+        SurfaceSpec::EllipticCylinder {
+            origin,
+            z,
+            x,
+            major_radius,
+            minor_radius,
+        } => Surface::EllipticCylinder {
+            frame: frame(name, origin, z, x, params)?,
+            major_radius: num(name, major_radius, params)?,
+            minor_radius: num(name, minor_radius, params)?,
+        },
         SurfaceSpec::Cone {
             origin,
             z,
@@ -579,11 +607,13 @@ pub struct Hit {
 
 /// The oracle's answer for one pair: `IntAna_QuadQuadGeo` for two
 /// surfaces (`empty`, `coincident`, or the result curves' kind with the
-/// curves sampled), `IntAna_IntConicQuad` for a curve against a surface
-/// (`coincident`, or `points` with the hits, duplicates within
-/// `Precision::Confusion` reported once and hits off either operand
-/// dropped and counted), `GeomAPI_ExtremaCurveCurve` for two curves
-/// (`points`, the extrema within `Precision::Confusion`).
+/// curves sampled), `IntAna_IntConicQuad` for a conic against a plane or
+/// a quadric and `GeomAPI_IntCS` where it has no form — a NURBS curve,
+/// and a conic against a torus or an elliptic cylinder — (`coincident`,
+/// or `points` with the hits, duplicates within `Precision::Confusion`
+/// reported once and hits off either operand dropped and counted),
+/// `GeomAPI_ExtremaCurveCurve` for two curves (`points`, the extrema
+/// within `Precision::Confusion`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PairResult {
     /// The first name.

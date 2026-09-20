@@ -626,8 +626,8 @@ fn turn_diff(a: f64, b: f64, c: &Curve) -> f64 {
 fn every_geometry_fixture_matches_the_oracle() {
     let fixtures = geometry_fixtures();
     assert!(
-        fixtures.len() >= 9,
-        "expected geom/analytic-eval, geom/c1-intersections, geom/c2-cylinder-pairs, geom/c2-quadric-pairs, geom/c3-cylinder-pairs, geom/c3-quadric-pairs, geom/c3-torus-pairs, geom/c3-nurbs-hits and geom/c3-nurbs-crossings"
+        fixtures.len() >= 10,
+        "expected geom/analytic-eval, geom/c1-intersections, geom/c2-cylinder-pairs, geom/c2-quadric-pairs, geom/c3-cylinder-pairs, geom/c3-quadric-pairs, geom/c3-torus-pairs, geom/c3-conic-hits, geom/c3-nurbs-hits and geom/c3-nurbs-crossings"
     );
     let mut errors = Vec::new();
     for f in &fixtures {
@@ -1136,6 +1136,69 @@ fn the_c3_nurbs_crossings_classify_as_built() {
             (hits.len() - tangent, tangent),
             (*crossings, *touches),
             "{a} vs {b}: {hits:?}"
+        );
+    }
+}
+
+/// What Arris says about every pair of `geom/c3-conic-hits`, by name:
+/// the crossings and touches each conic was built with. The oracle
+/// comparison above is one-sided at a touch — it reports none, one or
+/// several points there, having no tolerance of its own — so every
+/// tangency is pinned here, where it cannot pass vacuously.
+#[test]
+fn the_c3_conic_hits_classify_as_built() {
+    let f = geometry_fixtures()
+        .into_iter()
+        .find(|f| f.name == "geom/c3-conic-hits")
+        .expect("geom/c3-conic-hits");
+    let built = build(&f);
+    // (a, b, crossings, touches)
+    let cases: &[(&str, &str, usize, usize)] = &[
+        ("cone_cross", "cone", 4, 0),
+        ("cone_touch", "cone", 0, 2),
+        ("ball_cross", "ball", 4, 0),
+        ("ball_touch", "ball", 0, 1),
+        ("oval_cross", "oval", 4, 0),
+        ("oval_touch", "oval", 0, 2),
+        ("oval_slice", "oval", 4, 0),
+        ("ring_cross", "ring", 8, 0),
+        ("ring_touch", "ring", 0, 2),
+        ("ring_drill", "ring", 2, 0),
+        ("flat_oval", "flat_round", 4, 0),
+        ("flat_round", "flat_oval", 4, 0),
+        ("flat_oval", "flat_minor", 0, 2),
+        ("flat_oval", "flat_turned", 4, 0),
+    ];
+    assert_eq!(
+        cases.len(),
+        f.recipe.pairs.len(),
+        "every pair of the fixture is pinned here"
+    );
+    for (a, b, crossings, touches) in cases {
+        let (found, tangent) = match built.surfaces.get(*b) {
+            Some(s) => {
+                let r = intersect_curve_surface(&built.curves[*a], s, tol())
+                    .unwrap_or_else(|e| panic!("{a} vs {b}: {e}"));
+                let CurveSurfaceIntersection::Points(hits) = r else {
+                    panic!("{a} vs {b}: {r:?}")
+                };
+                let tangent = hits.iter().filter(|h| h.tangent).count();
+                (hits.len(), tangent)
+            }
+            None => {
+                let r = intersect_curves(&built.curves[*a], &built.curves[*b], tol())
+                    .unwrap_or_else(|e| panic!("{a} vs {b}: {e}"));
+                let CurveIntersection::Points(hits) = r else {
+                    panic!("{a} vs {b}: {r:?}")
+                };
+                let tangent = hits.iter().filter(|h| h.tangent).count();
+                (hits.len(), tangent)
+            }
+        };
+        assert_eq!(
+            (found - tangent, tangent),
+            (*crossings, *touches),
+            "{a} vs {b}"
         );
     }
 }
