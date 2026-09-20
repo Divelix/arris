@@ -7,7 +7,12 @@ status line (`/close-cycle`), and the next is appended below.
 
 Spine: **C1** M0 → M1 → M2 → M3 → M4 → M5 (the vertical slice, done), then
 **C2** (the application gate, done 2026-09-19), then **C3** (every quadric
-pair), then the Parasolid-grade cycles one at a time.
+pair — closure: what Arris builds, Arris takes as an operand), then the
+reader cycle (the STEP reader and a real-part corpus), and after it the
+cycle that corpus's refusal histogram and the first consumer's
+side-by-side regressions pick. An unopened cycle carries a name, not a
+number: it takes its number when `/close-cycle` opens its section
+(ADR-0020).
 
 ---
 
@@ -340,6 +345,11 @@ stored as the ADR that closes the quadric-curve `⚠ OPEN` decides. Faces
 that meet within a tolerance, touching or coincident, are a corpus of
 their own and not left to luck.*
 
+*It comes first because it is closure: `ops::fillet`, `ops::chamfer` and
+`ops::revolve` already return the tori, spheres and cones the boolean's
+quadric guard refuses, so until this cycle ends a body Arris built is not
+a body Arris takes (ADR-0020).*
+
 **Status: in progress.** Every quadric pair without a torus meets in the
 intersector, conics exact and quartics traced and fitted to NURBS inside
 a region, one `Meets` result for every meeting (ADR-0018, done
@@ -389,20 +399,103 @@ passing every corpus stage against Open CASCADE;
 
 ---
 
-## Toward Parasolid grade — later cycles, one line each
+## Beside the cycles
 
-Each earns its own section with an acceptance corpus when it is next; none
-is scheduled here (`SEED.md` §6).
+Two lines of work that are not cycles. Neither changes a public type or a
+signature, so neither earns a minor version (`.agents/rules/git.md`
+§Tags); each stands beside whatever cycle is open (ADR-0020).
 
-- **C4** — NURBS–NURBS surface intersection (a marcher with explicit seam
-  handling); NURBS operands in booleans.
-- **C5** — sweep along a path, loft, shell, offset.
-- **C6** — fillet networks: edge chains, vertex blends, variable radius,
-  blends over blends.
-- **C7** — STEP reader and healing; sheet and wire bodies in every
+**The measuring harness.** What it measures decides what comes after the
+reader cycle, so it exists before the reader does: benchmarks over
+tessellation and the boolean corpus, so a robustness fix that costs 10×
+shows up as a number; the oracle cached by `recipe_hash`, so an unchanged
+recipe is not re-run on every test run; a property tier above CI's case
+count, run nightly; random *recipes* evaluated by both kernels — the
+recipe grammar already carries the same eleven operations on each side
+(`Step` in `arris-debug`, the `op` dispatch in `tools/oracle`), so the
+generator needs no new interpreter; `cargo-fuzz` targets seeded from the
+corpus. Its numbers — benchmark baselines, cases per night — live in this
+section once they exist. Its one open question is the case count the
+pre-commit hook runs against CI's, which is the human's call.
+
+**The first-party binding.** Code-first and agent-driven modelling is one
+of the consumers `SEED.md` §1 names, and a binding in this repository is
+how that consumer exists before an application is written on top of it.
+It starts once C3 closes: until then a script that fillets and then cuts
+meets the quadric guard, and a second crate under every C3 API break pays
+for the break twice. Its layer position, the `#![forbid(unsafe_code)]`
+exception a binding needs, `publish`, the wasm job and PyPI beside
+crates.io are its own idea and its own ADR.
+
+---
+
+## Next — the reader and the real-part corpus
+
+*Goal: Arris reads a part it did not design, and every refusal it returns
+over a public corpus of real parts is counted. That count, beside the
+first consumer's side-by-side regressions, is what picks the cycle after
+this one (ADR-0020). Until it exists the kernel's refusals are unranked:
+every fixture in the corpus is a recipe written out of the operations
+Arris has.*
+
+**Status: not opened.** It takes its number from `/close-cycle`.
+
+- A Part 21 parser: the exchange structure, references, the schema
+  header, string and number encodings, and a typed error carrying the
+  entity id for everything malformed.
+- The AP203/214/242 B-Rep subset onto Arris's own geometry: the analytic
+  surfaces and curves as themselves, B-spline surfaces and curves as
+  `Nurbs`, the topology through the Euler operators like every other
+  builder, provenance `Generated` from the file's entity.
+- Pcurves rebuilt rather than read — a file's are optional, approximate,
+  or absent. Closed form on the analytic surfaces (data-model §Pcurves),
+  which pulls `project` onto a NURBS surface forward: it is
+  `GeomError::Unsupported` today, by cycle-1 design.
+- Each entity's tolerance assigned from its own measured gaps, not from
+  the file's global value, so the per-entity model the kernel is built on
+  survives the import.
+- A typed refusal for everything outside the subset, named specifically
+  enough to count in the histogram.
+
+**Out:** sewing and repair, and open shells — healing is its own cycle;
+booleans on NURBS faces (the NURBS cycle's); IGES; writing anything the
+writer does not write today.
+
+**Accept:** write → read round trip as a property, over the corpus's
+shapes in random poses, to the entities' own tolerances; Open CASCADE's
+STEP of every corpus fixture read back to the same counts, volume, area
+and centroid the fixture asserts; a public corpus of real parts read
+either to checker-green — mass properties within the fixture's tolerance
+of the oracle's — or to a typed refusal, with no panic and no wrong
+solid; and the refusal histogram over that corpus printed.
+
+---
+
+## Named cycles, unordered
+
+None is scheduled, and the order below carries no meaning. The cycle
+after the reader is picked from two numbers: the refusal histogram over
+the real-part corpus, and the first consumer's side-by-side run of its
+suite against both backends (ADR-0017). Where they disagree, the
+consumer's regressions rank first while there is a consumer waiting on a
+swap, and the histogram after (ADR-0020). Each cycle earns its own
+section, with an acceptance corpus and a number, when `/close-cycle`
+opens it.
+
+- **The NURBS cycle** — NURBS–NURBS surface intersection (a marcher with
+  explicit seam handling); NURBS operands in booleans.
+- **The blend-network cycle** — edge chains, vertex blends, variable
+  radius, blends over blends; blends on the quadric face pairs outside
+  ADR-0007's table.
+- **The sweep cycle** — sweep along a path, loft, shell, offset.
+- **The healing cycle** — healing; sheet and wire bodies in every
   operation.
-- **C8** — IGES; same-domain face merging; the performance pass the design
-  reserved room for.
+- **The query cycle** — distance, clash, ray fire, selection.
+- **The attribute cycle** — attributes a consumer attaches to entities,
+  carried through every operation by declared rules over the split order
+  ADR-0009 fixes.
+- **The breadth-and-speed cycle** — IGES; same-domain face merging; the
+  performance pass the design reserved room for.
 
 ## What not to spend agent time on
 

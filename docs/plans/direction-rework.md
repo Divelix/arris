@@ -114,7 +114,7 @@ bound has to be established here.
   surface being `Unsupported`; the recipe grammar covering every operation
   on both kernels. The index row in `docs/adr/README.md`; the amendment
   line in `SEED.md` §6. Consumer-agnostic wording throughout.
-- [ ] Step 2 **[2]** — `docs/ROADMAP.md`: the spine, "Beside the cycles",
+- [x] Step 2 **[2]** — `docs/ROADMAP.md`: the spine, "Beside the cycles",
   the reader cycle's outline, the named cycles and the selection rule,
   replacing "Toward Parasolid grade — later cycles, one line each". C3's
   section gains one sentence — why it is first: closure — and nothing
