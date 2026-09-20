@@ -202,8 +202,10 @@ sphere or a torus in it wherever the two share an axis, by the meridian
 arm of the second table (ADR-0008), and elsewhere a plane against a cone
 in an exact conic and a cylinder, a cone or a sphere against a cone or a
 sphere traced and fitted, and the elliptic cylinder's pairs by the third
-table (ADR-0014); a torus against a surface sharing no axis with it, and
-every pair with a `Nurbs` operand, is an explicit `Unsupported` arm. Every curve and every point
+table (ADR-0014), and a torus against any of them in a section traced in
+the torus's own parameter plane (below the torus tracer, ADR-0019); every
+pair with a `Nurbs` operand is an explicit `Unsupported` arm, and no
+other pair is. Every curve and every point
 of a `Meets` carries its `MeetKind` (ADR-0018): a curve is a `Crossing`
 when the surfaces cross along it and a `Touch` when they are tangent all
 along it; a point is a `Touch` when the surfaces are tangent there and
@@ -214,7 +216,8 @@ least one entry and mixes kinds freely — a circle beside a point, a
 touching ruling between two crossing ones; its curves come in the order
 the arm documents, the kinds interleaved in it, and its points lie on
 the shared axis and ascend along it — a traced section's come in the
-tracer's order instead. The tables name a curve's kind
+tracer's order instead, its exact tube circles before its fitted
+branches. The tables name a curve's kind
 where it is a touch; every other curve crosses. `tol.angular` decides parallel and
 perpendicular, `tol.linear` decides coincident, tangent and empty.
 
@@ -250,7 +253,8 @@ section's parameter — up to four.
 | A plane oblique to the axis | one ellipse: the affine image of the section, its semi-axes the singular values of the section's semi-diameters slid along the axis into the plane, `Z` the plane's normal, `X` the major axis |
 | A cylinder or an elliptic cylinder with parallel axes | `Coincident`, `Empty`, or a ruling at each meeting of the sections, touching where they touch — both kinds in one `Meets` when the sections both touch and cross |
 | A cylinder or an elliptic cylinder with other axes; a cone, a sphere, in any pose | the fitted branches of the traced section |
-| A torus, a NURBS | `Unsupported` |
+| A torus, in any pose | the fitted branches of the section traced in the torus's parameter plane (ADR-0019); the two share no axis, an elliptic cylinder being no surface of revolution |
+| A NURBS | `Unsupported` |
 
 **The meridian arm.** Two surfaces of revolution about one axis meet
 where their meridians meet in a plane through the axis. In that plane,
@@ -298,8 +302,11 @@ general position: a plane oblique to a cone's axis, or parallel to it
 and further than `tol.linear` from it, meets it in a conic (below); two
 cones on different axes, a cylinder against a cone off its axis and a
 sphere off a cylinder's or a cone's axis meet in a quartic, traced and
-fitted (below the tracer); a torus in any of these is `Unsupported`,
-C3's next plan.
+fitted (below the tracer); a torus in any of these — a plane oblique to
+its axis or parallel to it and off it, a cylinder, a cone or a sphere
+off its axis, a second torus on another axis — meets it in a section
+traced in the torus's parameter plane (below the torus tracer,
+ADR-0019).
 
 **A plane against a cone off its axis** is exact. In the plane's own
 coordinates — `x` along `e₁`, the cone's axis projected onto the plane,
@@ -552,13 +559,52 @@ rulings before a cone's, the smaller radius or narrower cone first, then
 the frames coordinate by coordinate — so swapping the arguments changes
 nothing, bit for bit.
 
+`trace_torus(a, b, tol) -> Result<SectionTrace, GeomError>` is the exact
+section of a torus with a plane, a cylinder, an elliptic cylinder, a
+cone, a sphere or another torus, in any pose, before any fit (ADR-0019).
+There is no ruling to walk, so the torus's own parametrisation goes into
+the other surface's implicit polynomial: `f(u, v) = 0` over sixteen
+quarter-turn patches, each a tensor Bernstein polynomial in the
+half-angle chart of its quarter, of bidegree (2, 2) against a plane,
+(4, 4) against a quadric and (8, 8) against a torus. Every component of
+the section either turns in `u` or winds round the torus and crosses
+`u = 0`, so the turning points — the common zeros of `(f, f_v)`, isolated
+by subdivision and each certified alone in its box — and the isolated
+roots of `f(0, ·)` seed all of them: the branch structure is proven, not
+sampled, as the ruled tracer's is. A branch is graphs `v(u)` joined
+through their turning points by the same parameter, each stretch proven
+in a cell of its own on the polynomial's coefficients before its root is
+followed; every point of it is on the torus **exactly** — `uv(t)` is its
+(u, v) there, unwrapped across both seams and `None` for a ruled branch —
+and on the other surface to rounding. A critical point of the other
+surface's distance over the torus that is within `tol.linear` of zero is
+a **singular point**, taken out by a bump in the Hessian's own metric
+(ADR-0019) so that the branches through it end at it exactly; an
+isolated one is a touch. A tube circle of the torus that lies on the
+other surface within `tol.linear` — a pipe elbow against its pipe, a
+sphere or a cone about the tangent to the centre circle — is a factor of
+the polynomial, and comes back as one of `SectionTrace::circles`: an
+exact `Curve::Circle` on the torus whose `t` is the torus's `v`,
+`tangent` where the two do not cross along it, with the rest of the
+section traced on the quotient and cut at the circle. A torus is
+compact, so `within` is no part of this and every branch is returned
+whole. Which of two tori is walked is a rule on the two surfaces — the
+smaller over all (`R + r`), then the smaller tube, then the frames
+coordinate by coordinate — so swapping the arguments changes nothing,
+bit for bit. The poses it refuses are named (`SectionFault`, ADR-0019)
+and of measure zero: two tube circles with more of the section besides,
+a circle not held to the tolerance wherever the rest is traced, turning
+points `f64` does not tell apart, a continuum of them, and a singular
+point crowded by another, by a turning point or by a tube circle.
+
 **A section that is no conic is a fitted `Curve::Nurbs`** (ADR-0018);
 the exact form is never stored. Each branch of the trace is fitted at
 its own parameter by `fit_curve`, or `fit_curve_periodic` when it is a
 loop — so a closed section is one periodic B-spline with no joint, which
 the pave model cuts at its paves only — of degree `SECTION_FIT_DEGREE`
 (5, measured: the fewest control points on the metre-scale cylinder
-pairs), until neither surface is farther from the fitted point than
+pairs, and no more than a span from the fewest on the torus sections),
+until neither surface is farther from the fitted point than
 `SECTION_FIT_FRACTION` (a quarter) of `tol.linear` beyond the exact
 branch's own distance from it, which is rounding away from a singular
 point's reach. The fraction is a quarter because each face's pcurve is
@@ -573,12 +619,18 @@ curves. The region bounds only what runs to infinity: the closed forms
 ignore it, and a caller intersecting several pairs on the same two
 surfaces passes one region to all, so they get one curve — a boolean
 the overlap of its operands' boxes grown by its own diagonal, S5 the
-overlap of the two faces' boxes. Every quadric pair without a torus is
-decided in every pose; the tracer's refusals (`SectionFault`) remain,
-poses of measure zero — two cones sharing an apex or a ruling, a cusp
-of the section. A torus against a surface sharing no axis with it and
-no plane through its axis is `Unsupported`, the spiric section among
-them, and S5 lists those pairs as unchecked.
+overlap of the two faces' boxes; a torus section ignores it. Every pair
+of analytic surfaces is decided in every pose, the spiric sections and
+the interlocked tori among them; the tracers' refusals (`SectionFault`)
+remain, poses of measure zero — two cones sharing an apex or a ruling, a
+cusp of the section, a torus pose of ADR-0019's list — and S5 lists
+those pairs as unchecked. A tube circle of a torus section is the one
+curve of a `Meets` that is exact and still only within `tol.linear` of
+the other surface, the tolerance it was accepted in, as a point of a
+`Meets` is; every other conic is a closed form and lies on both surfaces
+to rounding. The Villarceau circles of a bitangent plane are not one of
+them: they come back as the fitted arms the tracer finds through that
+pose's two singular points (ADR-0019).
 
 ### Pcurves (`Curve2`)
 
@@ -776,7 +828,10 @@ where the caller's `deviation(t, fitted point)` exceeds `tol` (checked at
 result meets it between the checks too). The deviation is the caller's
 measure in the caller's units: for a pcurve, the 3D distance between the
 surface at the fitted point and the true curve. Refinement is bounded by
-`MAX_FIT_SPANS` (1024): beyond it the result is `FitError::Diverged`
+`MAX_FIT_SPANS` (4096, a budget and not a tolerance: the loop two
+metre-scale tori of nearly equal radii share runs 100 to 170 units and
+takes 1000 to 1300 spans at degree 5, where the cylinder pairs take
+under 200): beyond it the result is `FitError::Diverged`
 (`GeomError::Fit`), never a loop. `fit_curve` is the same fit of a 3D
 curve `t ↦ P` into a `NurbsCurve`, for the section curves no exact
 `Curve` variant carries. `fit_curve_periodic` fits a closed one over

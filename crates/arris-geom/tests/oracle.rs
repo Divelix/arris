@@ -265,7 +265,7 @@ fn check_surface_pair(a: &Surface, b: &Surface, res: &PairResult, errors: &mut V
         // Arris decides empty by its closed form (skew axes further apart
         // than the radii), which the oracle has no case for, a coaxial
         // sphere the oracle's exact test on its own axis lets go, or a
-        // quartic Arris traces and fits. Its curves are held to both
+        // section Arris traces and fits. Its curves are held to both
         // surfaces, and to the lines the oracle walks where it walked
         // any. Which one each pair is, is pinned by name below.
         match intersect_surfaces(a, b, &within(), tol()) {
@@ -278,8 +278,27 @@ fn check_surface_pair(a: &Surface, b: &Surface, res: &PairResult, errors: &mut V
                         errors.push(format!("{label}: {c:?} is not on both surfaces"));
                     }
                 }
+                // The oracle drops the lines it walks along a tangency,
+                // having no crossing to polish their samples onto
+                // (`dropped`), so a curve Arris touches along — the tube
+                // circle a pipe elbow shares with its torus — has no
+                // walked line covering it, and the ends of the walked
+                // crossings sit on it. It is held to both surfaces above,
+                // and exactly: it is no fit.
+                let (touched, walked): (Vec<&Curve>, Vec<&Curve>) =
+                    if res.dropped.is_some_and(|n| n > 0) {
+                        let of = |kind| {
+                            (r.curves().iter())
+                                .filter(move |m| m.kind == kind)
+                                .map(|m| &m.curve)
+                                .collect()
+                        };
+                        (of(MeetKind::Touch), of(MeetKind::Crossing))
+                    } else {
+                        (Vec::new(), curves)
+                    };
                 if !res.curves.is_empty() {
-                    check_walked(&label, &curves, res, errors);
+                    check_walked(&label, &walked, &touched, res, errors);
                 }
             }
             Err(e) => errors.push(format!("{label}: {e} vs oracle unsolved")),
@@ -396,12 +415,27 @@ fn check_surface_pair(a: &Surface, b: &Surface, res: &PairResult, errors: &mut V
 /// corpus's worst is 1.1e-8 against 2.5e-8) — and every
 /// curve of Arris's carrying at least one sample and never farther from
 /// the samples than they are spaced, so no curve is spurious or longer
-/// than the section.
-fn check_walked(label: &str, curves: &[&Curve], res: &PairResult, errors: &mut Vec<String>) {
+/// than the section. A sample on one of `touched` — a curve Arris
+/// returns exactly and the oracle dropped the walk of — is accounted
+/// for there and left out: the walked crossings end on it.
+fn check_walked(
+    label: &str,
+    curves: &[&Curve],
+    touched: &[&Curve],
+    res: &PairResult,
+    errors: &mut Vec<String>,
+) {
+    let on_touched = |p: Point3| {
+        touched.iter().any(|c| {
+            c.project(p)
+                .is_ok_and(|proj| proj.distance <= REL * p.coords.norm().max(1.0))
+        })
+    };
     let samples: Vec<(Point3, f64)> = res
         .curves
         .iter()
         .flat_map(|walked| walked.points.iter().map(|p| (p3(p), fitted_bound(p3(p)))))
+        .filter(|&(p, _)| !on_touched(p))
         .collect();
     let off = |c: &Curve, p: Point3| c.project(p).map_or(f64::INFINITY, |proj| proj.distance);
     let mut carried = vec![false; curves.len()];
@@ -592,8 +626,8 @@ fn turn_diff(a: f64, b: f64, c: &Curve) -> f64 {
 fn every_geometry_fixture_matches_the_oracle() {
     let fixtures = geometry_fixtures();
     assert!(
-        fixtures.len() >= 8,
-        "expected geom/analytic-eval, geom/c1-intersections, geom/c2-cylinder-pairs, geom/c2-quadric-pairs, geom/c3-cylinder-pairs, geom/c3-quadric-pairs, geom/c3-nurbs-hits and geom/c3-nurbs-crossings"
+        fixtures.len() >= 9,
+        "expected geom/analytic-eval, geom/c1-intersections, geom/c2-cylinder-pairs, geom/c2-quadric-pairs, geom/c3-cylinder-pairs, geom/c3-quadric-pairs, geom/c3-torus-pairs, geom/c3-nurbs-hits and geom/c3-nurbs-crossings"
     );
     let mut errors = Vec::new();
     for f in &fixtures {
@@ -962,6 +996,56 @@ fn the_c3_quadric_pairs_classify_as_built() {
             (*kind, *count),
             "{a} vs {b}: {r:?}"
         );
+    }
+}
+
+/// What Arris says about every pair of `geom/c3-torus-pairs`, by name: the
+/// branches each section was built with, fitted — loops, or the arms of a
+/// figure eight and of the elbow ending at their singular points — and the
+/// elbow's shared tube circle exact and touching beside them (ADR-0019).
+/// The oracle walks a loop in one line or in two, and drops the elbow's
+/// tangent circle, so its counts say nothing; the comparison above holds
+/// its polished points to these curves.
+#[test]
+fn the_c3_torus_pairs_classify_as_built() {
+    let f = geometry_fixtures()
+        .into_iter()
+        .find(|f| f.name == "geom/c3-torus-pairs")
+        .expect("geom/c3-torus-pairs");
+    let built = build(&f);
+    // (a, b, loops, open arms, exact circles, points)
+    let cases: &[(&str, &str, usize, usize, usize, usize)] = &[
+        ("ring", "hole", 2, 0, 0, 0),
+        ("ring", "eight", 0, 2, 0, 1),
+        ("ring", "tube", 1, 0, 0, 0),
+        ("ring", "oblique", 2, 0, 0, 0),
+        ("ring", "drill", 2, 0, 0, 0),
+        ("ring", "elbow", 0, 2, 1, 2),
+        ("ring", "cone", 2, 0, 0, 0),
+        ("ring", "ball", 2, 0, 0, 0),
+        ("ring", "link", 2, 0, 0, 0),
+        ("ring", "hoop", 2, 0, 0, 0),
+        ("hole", "ring", 2, 0, 0, 0),
+        ("link", "ring", 2, 0, 0, 0),
+    ];
+    assert_eq!(
+        cases.len(),
+        f.recipe.pairs.len(),
+        "every pair of the fixture is pinned here"
+    );
+    for (a, b, loops, arms, circles, points) in cases {
+        let r = intersect_surfaces(&built.surfaces[*a], &built.surfaces[*b], &within(), tol())
+            .unwrap_or_else(|e| panic!("{a} vs {b}: {e}"));
+        let mut got = (0, 0, 0, r.points().len());
+        for m in r.curves() {
+            match (&m.curve, m.kind) {
+                (Curve::Nurbs(c), MeetKind::Crossing) if c.period().is_some() => got.0 += 1,
+                (Curve::Nurbs(_), MeetKind::Crossing) => got.1 += 1,
+                (Curve::Circle { .. }, MeetKind::Touch) => got.2 += 1,
+                _ => panic!("{a} vs {b}: {m:?}"),
+            }
+        }
+        assert_eq!(got, (*loops, *arms, *circles, *points), "{a} vs {b}: {r:?}");
     }
 }
 

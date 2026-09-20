@@ -27,11 +27,14 @@ use crate::{Curve, GeomError, GeomKind, Surface};
 /// the operands gives the same point sets, up to the orientation of a
 /// line and the order of two parallel cylinders' rulings — and two
 /// crossing cylinders' ellipses bit for bit. A traced section — two
-/// quadrics that meet in no conic — is a `Curve::Nurbs` fitted within
-/// [`crate::SECTION_FIT_FRACTION`] of the tolerance of both surfaces, at
-/// the tracer's parametrisation and orientation, which depend on the two
-/// surfaces and never on their order: swapping the operands gives it
-/// bit for bit (ADR-0018).
+/// quadrics that meet in no conic, or a pair with a torus in it — is a
+/// `Curve::Nurbs` fitted within [`crate::SECTION_FIT_FRACTION`] of the
+/// tolerance of both surfaces, at the tracer's parametrisation and
+/// orientation, which depend on the two surfaces and never on their
+/// order: swapping the operands gives it bit for bit (ADR-0018,
+/// ADR-0019). A tube circle of a torus section is the exception the
+/// tracer answers exactly: a `Curve::Circle` on the torus, parametrised
+/// by its `v`.
 #[derive(Debug, Clone, PartialEq)]
 pub enum SurfaceIntersection {
     /// The surfaces do not meet: parallel planes apart by more than the
@@ -48,8 +51,9 @@ pub enum SurfaceIntersection {
     /// found them documents — rulings across their plane, circles
     /// ascending along the shared axis, parallel elliptic cylinders'
     /// rulings by the first section's parameter — crossings and touches
-    /// interleaved in that one order, and a traced section's branches in
-    /// the tracer's ([`crate::SectionTrace::branches`]); the points ascend
+    /// interleaved in that one order, and a traced section's tube
+    /// circles ([`crate::SectionTrace::circles`]) before its branches,
+    /// each in the tracer's ([`crate::SectionTrace::branches`]); the points ascend
     /// along the surfaces' shared axis in the direction the first operand
     /// carrying it points, and a traced section's singular points by the
     /// walked ruling through each. A point is on a curve of the same
@@ -153,16 +157,18 @@ impl SurfaceIntersection {
 /// Guarantees: the result is symmetric under swapping `a` and `b` up to
 /// a line's orientation, deterministic bit for bit, and each returned
 /// curve lies on both surfaces to rounding — a fitted one within
-/// [`crate::SECTION_FIT_FRACTION`] of `tol.linear`. `tol.angular`
-/// decides parallel and perpendicular; `tol.linear` decides coincident,
-/// tangent and empty.
+/// [`crate::SECTION_FIT_FRACTION`] of `tol.linear`, and a torus's tube
+/// circle on the other surface within `tol.linear` of it, exactly as a
+/// point of a `Meets` is. `tol.angular` decides parallel and
+/// perpendicular; `tol.linear` decides coincident, tangent and empty.
 ///
-/// `within` bounds a traced section: its branches are clipped where they
-/// leave the region's extent along the walked rulings, and a loop inside
-/// it is closed ([`crate::trace_quadrics`]). The closed forms ignore it
-/// and return their lines unbounded. A caller that intersects several
-/// pairs on the same two surfaces passes one region to all of them, so
-/// they get the same curves bit for bit.
+/// `within` bounds a section traced on rulings: its branches are clipped
+/// where they leave the region's extent along the walked rulings, and a
+/// loop inside it is closed ([`crate::trace_quadrics`]). The closed forms
+/// ignore it and return their lines unbounded, and so does a torus
+/// section, which is bounded already ([`crate::trace_torus`]). A caller
+/// that intersects several pairs on the same two surfaces passes one
+/// region to all of them, so they get the same curves bit for bit.
 ///
 /// The table, every curve and point of a `Meets` a crossing unless it
 /// says touching: plane–plane is `Empty`, `Coincident` or one line;
@@ -192,8 +198,8 @@ impl SurfaceIntersection {
 /// meeting of the sections, touching where they touch, ascending by the
 /// first operand's section parameter — up to four of them, touches and
 /// crossings together (ADR-0018); crossing axes, and the elliptic
-/// cylinder against a cone or a sphere in any pose, meet in a traced and
-/// fitted section, and against a torus or a NURBS are `Unsupported`.
+/// cylinder against a cone, a sphere or a torus in any pose, meet in a
+/// traced and fitted section, and against a NURBS it is `Unsupported`.
 /// Every pair with a cone, a sphere or a torus in it is
 /// decided when the two share an axis — a plane perpendicular to it, a
 /// cylinder, cone or torus on it, a sphere centred on it, and every
@@ -207,9 +213,15 @@ impl SurfaceIntersection {
 /// a hyperbola's two branches as rational quadratic NURBS over `within`,
 /// or through the apex the apex, one touching ruling or two crossing
 /// ones; a cylinder, a cone or a sphere against a cone or a sphere in a
-/// traced and fitted section; a torus is `Unsupported`. Read
-/// `IntAna_QuadQuadGeo` in the reference tree for the case analysis,
-/// reimplemented on our frames.
+/// traced and fitted section; and a torus against any analytic surface
+/// in a section traced in the torus's own parameter plane (ADR-0019,
+/// [`crate::trace_torus`]), the spiric sections among them — each tube
+/// circle of the torus that lies on the other surface an exact
+/// `Curve::Circle`, within `tol.linear` of that surface as the tolerance
+/// it was detected in allows, and every other branch fitted. `within` is
+/// no part of that one: a torus is compact. Read `IntAna_QuadQuadGeo` in
+/// the reference tree for the case analysis, reimplemented on our
+/// frames.
 ///
 /// ```
 /// use arris_geom::{Curve, MeetKind, Surface, intersect_surfaces};
@@ -322,17 +334,19 @@ pub fn intersect_surfaces(
                 minor_radius: bb,
             },
         ) => elliptic_pair(a, b, (ca, [*aa, *ab]), (cb, [*ba, *bb]), within, tol),
-        (Surface::EllipticCylinder { .. }, Surface::Cone { .. } | Surface::Sphere { .. })
-        | (Surface::Cone { .. } | Surface::Sphere { .. }, Surface::EllipticCylinder { .. }) => {
-            crate::section::traced(a, b, within, tol)
-        }
-        (Surface::EllipticCylinder { .. }, Surface::Torus { .. } | Surface::Nurbs(_))
-        | (Surface::Torus { .. } | Surface::Nurbs(_), Surface::EllipticCylinder { .. }) => {
-            Err(GeomError::Unsupported {
-                a: GeomKind::Surface(a.kind()),
-                b: GeomKind::Surface(b.kind()),
-            })
-        }
+        (
+            Surface::EllipticCylinder { .. },
+            Surface::Cone { .. } | Surface::Sphere { .. } | Surface::Torus { .. },
+        )
+        | (
+            Surface::Cone { .. } | Surface::Sphere { .. } | Surface::Torus { .. },
+            Surface::EllipticCylinder { .. },
+        ) => crate::section::traced(a, b, within, tol),
+        (Surface::EllipticCylinder { .. }, Surface::Nurbs(_))
+        | (Surface::Nurbs(_), Surface::EllipticCylinder { .. }) => Err(GeomError::Unsupported {
+            a: GeomKind::Surface(a.kind()),
+            b: GeomKind::Surface(b.kind()),
+        }),
         (
             Surface::Plane { .. }
             | Surface::Cylinder { .. }
@@ -372,11 +386,14 @@ pub fn intersect_surfaces(
 /// or a torus — what the meridian arm leaves (ADR-0008): a plane against
 /// a cone meets it in an exact conic (`crate::cone_section`); a
 /// cylinder, a cone or a sphere against a cone or a sphere in a quartic,
-/// traced inside `within` and fitted (`crate::section`); a torus in any
-/// such pair is `Unsupported`, C3's next plan. A plane against a sphere
-/// and two spheres always share an axis, and the pairs with neither a
-/// cone, a sphere nor a torus in them never reach here; each is listed,
-/// `Unsupported`, so the match stays exhaustive without a wildcard.
+/// traced inside `within` and fitted (`crate::section`); and a torus
+/// against any of those or another torus in a section traced in the
+/// torus's parameter plane, its tube circles on the other surface exact
+/// and the rest fitted (ADR-0019), with `within` no part of it — a torus
+/// is compact. A plane against a sphere and two spheres always share an
+/// axis, and the pairs with neither a cone, a sphere nor a torus in them
+/// never reach here; each is listed, `Unsupported`, so the match stays
+/// exhaustive without a wildcard.
 pub(crate) fn off_axis(
     a: &Surface,
     b: &Surface,
@@ -408,12 +425,26 @@ pub(crate) fn off_axis(
             crate::section::traced(a, b, within, tol)
         }
         (
+            Surface::Plane { .. }
+            | Surface::Cylinder { .. }
+            | Surface::Cone { .. }
+            | Surface::Sphere { .. }
+            | Surface::Torus { .. },
+            Surface::Torus { .. },
+        )
+        | (
+            Surface::Torus { .. },
+            Surface::Plane { .. }
+            | Surface::Cylinder { .. }
+            | Surface::Cone { .. }
+            | Surface::Sphere { .. },
+        ) => crate::section::traced(a, b, within, tol),
+        (
             Surface::Plane { .. },
             Surface::Plane { .. }
             | Surface::Cylinder { .. }
             | Surface::EllipticCylinder { .. }
             | Surface::Sphere { .. }
-            | Surface::Torus { .. }
             | Surface::Nurbs(_),
         )
         | (
@@ -421,16 +452,15 @@ pub(crate) fn off_axis(
             Surface::Plane { .. }
             | Surface::Cylinder { .. }
             | Surface::EllipticCylinder { .. }
-            | Surface::Torus { .. }
             | Surface::Nurbs(_),
         )
         | (
-            Surface::Cone { .. } | Surface::Sphere { .. },
-            Surface::EllipticCylinder { .. } | Surface::Torus { .. } | Surface::Nurbs(_),
+            Surface::Cone { .. } | Surface::Sphere { .. } | Surface::Torus { .. },
+            Surface::EllipticCylinder { .. } | Surface::Nurbs(_),
         )
         | (Surface::Sphere { .. }, Surface::Plane { .. })
         | (
-            Surface::EllipticCylinder { .. } | Surface::Torus { .. } | Surface::Nurbs(_),
+            Surface::EllipticCylinder { .. } | Surface::Nurbs(_),
             Surface::Plane { .. }
             | Surface::Cylinder { .. }
             | Surface::EllipticCylinder { .. }

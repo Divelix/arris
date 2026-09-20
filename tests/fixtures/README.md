@@ -298,7 +298,14 @@ oracle's sampled points on Arris's curves to 1e-9.
   share no axis: a plane off a cone's axis in an ellipse, a parabola and
   a hyperbola, through the apex in the apex, two rulings or a touching
   one; a pipe, a ball and a narrow cone against a cone, a post through
-  the ball) and `c3-nurbs-hits` (an ellipse as four rational quadratic
+  the ball) and `c3-torus-pairs` (a plane, a cylinder, a cone, a sphere
+  and a second torus around one torus that shares no axis with any of
+  them: the spiric sections of a plane parallel to the axis through the
+  hole, tangent to it and through the tube, and of an oblique plane; a
+  drill through the tube and a pipe of the tube's radius tangent to the
+  centre circle, which shares that tube circle exactly; a cone and a
+  sphere off the axis; an interlocked torus and a larger one) and
+  `c3-nurbs-hits` (an ellipse as four rational quadratic
   arcs, a quintic of three spans and a rational cubic with a double
   knot, each against a plane, a cylinder, a cone, a sphere and a torus)
   and `c3-nurbs-crossings` (the same three against lines, circles and

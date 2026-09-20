@@ -29,4 +29,5 @@ here; the first ADR is the first decision taken *after* the seed.
 | [0016](0016-a-touch-off-every-vertex-is-resolved-through-the-section-curves.md) | A touch off every vertex is resolved through the section curves; the intersector's touch stays a verdict on depth | accepted |
 | [0017](0017-the-application-gate-closes-on-the-corpus.md) | The application gate closes on the corpus; the swap is the consumer's | accepted |
 | [0018](0018-quadric-sections-are-fitted-nurbs-and-one-meets-result.md) | Quadric sections are fitted NURBS under the faces' tolerance, traced by ruling families in a region; one `Meets` result | accepted |
+| [0019](0019-torus-sections-are-traced-in-the-torus-parameter-plane.md) | Torus sections are traced in the torus's parameter plane: a second tracer beside the ruling families, ADR-0018's storage unchanged | accepted |
 | [0020](0020-the-direction-after-c3-closure-then-measurement.md) | The direction after C3: closure before breadth, measured then chosen, cycles named not numbered | accepted |

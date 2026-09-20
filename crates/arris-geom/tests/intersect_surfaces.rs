@@ -15,7 +15,8 @@
 use core::f64::consts::{FRAC_PI_2, TAU};
 
 use arris_debug::prop::geom::{
-    HALF_ANGLE_RANGE, RADIUS_RANGE, cone, cylinder, elliptic_cylinder, plane, sphere, surface,
+    HALF_ANGLE_RANGE, RADIUS_RANGE, cone, cylinder, elliptic_cylinder, nurbs_surface, plane,
+    sphere, surface, torus,
 };
 use arris_debug::prop::{DEFAULT_SCALE, check, finite_f64, frame, point_in_box, unit_vec3};
 use arris_debug::prop_shards;
@@ -93,13 +94,18 @@ fn implicit_distance(s: &Surface, p: Point3) -> f64 {
 /// tolerance a traced branch may be off within a singular point's reach.
 /// A NURBS is sampled densely, so the fit is held between its own check
 /// parameters too, and relative to its size, so a clipped branch a
-/// thousand units long is held as its rounding allows.
+/// thousand units long is held as its rounding allows. A conic is a
+/// closed form and is held to rounding — except a tube circle of a
+/// traced torus section, which is exact on the torus and within
+/// `tol.linear` of the other surface, the tolerance it was accepted in
+/// (ADR-0019).
 fn on_both(c: &Curve, a: &Surface, b: &Surface, slack: f64) -> Result<(), TestCaseError> {
     let (range, samples) = match c {
         Curve::Line { .. } => (-DEFAULT_SCALE..=DEFAULT_SCALE, SAMPLES),
         Curve::Circle { .. } | Curve::Ellipse { .. } => (0.0..=TAU, SAMPLES),
         Curve::Nurbs(c) => (c.domain().lo()..=c.domain().hi(), DENSE),
     };
+    let tube_circle = [a, b].iter().any(|s| s.kind() == SurfaceKind::Torus) && !coaxial(a, b);
     for i in 0..samples {
         let s = i as f64 / (samples - 1) as f64;
         let t = range.start() + s * (range.end() - range.start());
@@ -108,6 +114,7 @@ fn on_both(c: &Curve, a: &Surface, b: &Surface, slack: f64) -> Result<(), TestCa
             Curve::Nurbs(_) => {
                 slack + SECTION_FIT_FRACTION * tol().linear + 1e-11 * (1.0 + p.coords.norm())
             }
+            Curve::Circle { .. } if tube_circle => tol().linear,
             Curve::Line { .. } | Curve::Circle { .. } | Curve::Ellipse { .. } => EXACT,
         };
         let (da, db) = (implicit_distance(a, p), implicit_distance(b, p));
@@ -564,31 +571,33 @@ fn coaxial(a: &Surface, b: &Surface) -> bool {
                     parallel(&plane.z(), &carrier.z()) || (across && holds)
                 }
                 SurfaceKind::Sphere => on_axis(carrier, other.frame().unwrap().origin()),
-                _ => unreachable!(),
+                // An elliptic cylinder is no surface of revolution, and a
+                // NURBS patch carries no axis: neither shares one.
+                SurfaceKind::EllipticCylinder | SurfaceKind::Nurbs => false,
+                SurfaceKind::Cylinder | SurfaceKind::Cone | SurfaceKind::Torus => {
+                    unreachable!("a carrier")
+                }
             }
         }
         (false, false) => true,
     }
 }
 
+/// Any surface, a NURBS patch among them: what the intersector's last
+/// `Unsupported` arms are left with.
+fn any_surface() -> impl Strategy<Value = Surface> {
+    prop_oneof![surface(), nurbs_surface().prop_map(Surface::Nurbs)]
+}
+
 #[test]
 fn every_other_pair_is_unsupported() {
-    check((surface(), surface()), |(a, b)| {
-        // Every quadric pair without a torus is decided in every pose —
-        // by a closed form, an exact conic or the tracer (ADR-0018) — and
-        // a pair with a torus in it wherever the two share an axis or a
-        // plane holds the torus's axis (ADR-0008); a random pose is
-        // almost never coaxial, and the property decides the pose rather
-        // than relying on that.
-        let torus = |k| k == SurfaceKind::Torus;
-        let elliptic = |k| k == SurfaceKind::EllipticCylinder;
-        let supported = if torus(a.kind()) || torus(b.kind()) {
-            // An elliptic cylinder is no surface of revolution and shares
-            // no axis with a torus.
-            !elliptic(a.kind()) && !elliptic(b.kind()) && coaxial(&a, &b)
-        } else {
-            true
-        };
+    check((any_surface(), any_surface()), |(a, b)| {
+        // Every pair of analytic surfaces is decided in every pose — by a
+        // closed form, an exact conic, the ruled tracer (ADR-0018) or the
+        // torus's (ADR-0019) — so `Unsupported` is left the pairs with a
+        // `Surface::Nurbs` in them, which are C4's.
+        let nurbs = |k| k == SurfaceKind::Nurbs;
+        let supported = !nurbs(a.kind()) && !nurbs(b.kind());
         match intersect_surfaces(&a, &b, &within(), tol()) {
             Ok(_) => prop_assert!(supported, "{a:?} vs {b:?} should be unsupported"),
             Err(GeomError::Unsupported { a: ka, b: kb }) => {
@@ -1604,8 +1613,8 @@ fn constructed_apexes_are_points_and_equal_cones_coincide() {
 /// `r` about `O ± R·w` in the plane with its `t` the torus's `v`, the
 /// first on the side `w = Z × n`; the plane's origin anywhere in it, its
 /// normal either way. The same plane off the axis cuts a cone in a
-/// hyperbola's two branches, and a torus in a spiric section, still
-/// C3's.
+/// hyperbola's two branches, and a torus in a spiric section, traced and
+/// fitted (ADR-0019).
 #[test]
 fn a_plane_through_the_axis_cuts_the_meridian() {
     check(
@@ -1683,16 +1692,20 @@ fn a_plane_through_the_axis_cuts_the_meridian() {
                         .unwrap()
                         .with_origin(anchor + (pb.r2 + 0.5) * around),
                 };
+                let near = Aabb::of_point(anchor).inflated(4.0 * DEFAULT_SCALE);
+                let r = common_properties_in(&off, &carrier, &near)?;
                 if kind == Coaxial::Torus {
-                    let apart = intersect_surfaces(&off, &carrier, &within(), tol());
+                    // A spiric section: two ovals, one, a figure eight's
+                    // two arms through their singular point, a touch or
+                    // nothing, by the plane's distance against `R ± r` —
+                    // every branch fitted, never a conic.
                     prop_assert!(
-                        matches!(apart, Err(GeomError::Unsupported { .. })),
-                        "a plane off the axis: {:?}",
-                        apart
+                        r.curves()
+                            .iter()
+                            .all(|m| matches!(m.curve, Curve::Nurbs(_))),
+                        "a spiric section: {r:?}"
                     );
                 } else {
-                    let near = Aabb::of_point(anchor).inflated(4.0 * DEFAULT_SCALE);
-                    let r = common_properties_in(&off, &carrier, &near)?;
                     let Seen::Crossing(c) = seen(&r) else {
                         return Err(TestCaseError::fail(format!("off the axis: {r:?}")));
                     };
@@ -1703,6 +1716,259 @@ fn a_plane_through_the_axis_cuts_the_meridian() {
             Ok(())
         },
     );
+}
+
+// --- a torus against every analytic surface (ADR-0019) -----------------------
+
+/// The ring the torus cases cut: `R = 2`, `r = 0.5`, in the tilt pose of
+/// the fixtures, so no case is axis-aligned.
+fn ring() -> Surface {
+    Surface::Torus {
+        frame: Frame::new(
+            Point3::new(-2.5, 1.75, 0.5),
+            Vec3::new(2.0, 3.0, 6.0) / 7.0,
+            Vec3::new(3.0, -6.0, 2.0) / 7.0,
+        )
+        .unwrap(),
+        major_radius: 2.0,
+        minor_radius: 0.5,
+    }
+}
+
+/// A point of the ring's own (u, v), and a direction of its frame.
+fn on_ring(u: f64, v: f64) -> Point3 {
+    ring().point(u, v)
+}
+
+fn ring_dir(x: f64, y: f64, z: f64) -> Vec3 {
+    ring().frame().unwrap().vec_to_world(Vec3::new(x, y, z))
+}
+
+/// A torus meets each of the six analytic kinds in a section traced in
+/// its own parameter plane and fitted (ADR-0019): the spiric sections of
+/// a plane through the hole and one tangent to it, a drill through the
+/// tube, a cone and a sphere off the axis, an elliptic cylinder through
+/// the ring and a second torus interlocked with it. Every curve is a
+/// fitted loop or an arc ending at a singular point, on both surfaces at
+/// its samples, and bit for bit under a swap.
+#[test]
+fn a_torus_meets_every_analytic_surface_off_its_axis() {
+    let ring = ring();
+    let centre = ring.frame().unwrap().origin();
+    // (name, surface, loops, open arms, points)
+    let cases: Vec<(&str, Surface, usize, usize, usize)> = vec![
+        (
+            "a plane through the hole",
+            Surface::Plane {
+                frame: Frame::from_z(centre + ring_dir(1.0, 0.0, 0.0), ring_dir(1.0, 0.0, 0.0))
+                    .unwrap(),
+            },
+            2,
+            0,
+            0,
+        ),
+        (
+            "a plane tangent to the hole",
+            Surface::Plane {
+                frame: Frame::from_z(centre + ring_dir(1.5, 0.0, 0.0), ring_dir(1.0, 0.0, 0.0))
+                    .unwrap(),
+            },
+            0,
+            2,
+            1,
+        ),
+        (
+            "a drill through the tube",
+            Surface::Cylinder {
+                frame: Frame::from_z(centre + ring_dir(2.0, 0.0, 0.0), ring_dir(0.0, 0.0, 1.0))
+                    .unwrap(),
+                radius: 0.2,
+            },
+            2,
+            0,
+            0,
+        ),
+        (
+            "a cone off the axis",
+            Surface::Cone {
+                frame: Frame::from_z(centre + ring_dir(1.8, 0.3, -1.0), ring_dir(0.2, 0.1, 1.0))
+                    .unwrap(),
+                radius: 0.5,
+                half_angle: 0.4,
+            },
+            2,
+            0,
+            0,
+        ),
+        (
+            "a sphere off the axis",
+            Surface::Sphere {
+                frame: Frame::from_z(centre + ring_dir(1.7, 0.4, 0.0), ring_dir(0.0, 0.0, 1.0))
+                    .unwrap(),
+                radius: 0.8,
+            },
+            2,
+            0,
+            0,
+        ),
+        (
+            "an elliptic cylinder through the ring",
+            Surface::EllipticCylinder {
+                frame: Frame::new(centre, ring_dir(1.0, 0.0, 0.0), ring_dir(0.0, 0.0, 1.0))
+                    .unwrap(),
+                major_radius: 1.4,
+                minor_radius: 0.9,
+            },
+            4,
+            0,
+            0,
+        ),
+        (
+            "an interlocked torus",
+            Surface::Torus {
+                frame: Frame::from_z(centre + ring_dir(2.0, 0.0, 0.0), ring_dir(1.0, 0.0, 0.0))
+                    .unwrap(),
+                major_radius: 1.0,
+                minor_radius: 0.3,
+            },
+            2,
+            0,
+            0,
+        ),
+    ];
+    for (name, other, loops, arms, points) in cases {
+        let r = intersect_surfaces(&ring, &other, &within(), tol())
+            .unwrap_or_else(|e| panic!("{name}: {e}"));
+        let fitted: Vec<&arris_geom::NurbsCurve> = r
+            .curves()
+            .iter()
+            .map(|m| {
+                assert_eq!(m.kind, MeetKind::Crossing, "{name}: {r:?}");
+                match &m.curve {
+                    Curve::Nurbs(c) => c,
+                    other => panic!("{name}: {other:?} is not fitted"),
+                }
+            })
+            .collect();
+        assert_eq!(
+            (
+                fitted.iter().filter(|c| c.period().is_some()).count(),
+                fitted.iter().filter(|c| c.period().is_none()).count(),
+                r.points().len()
+            ),
+            (loops, arms, points),
+            "{name}: {r:?}"
+        );
+        let slack = if points == 0 { 0.0 } else { tol().linear };
+        for m in r.curves() {
+            on_both(&m.curve, &ring, &other, slack).unwrap_or_else(|e| panic!("{name}: {e}"));
+        }
+        for p in r.points() {
+            let off = implicit_distance(&ring, p.point).max(implicit_distance(&other, p.point));
+            assert!(off <= tol().linear, "{name}: a point is {off} off");
+        }
+        assert_eq!(
+            intersect_surfaces(&other, &ring, &within(), tol()).unwrap(),
+            r,
+            "{name}: the swap changed the result"
+        );
+    }
+}
+
+/// The pipe elbow: a cylinder of the tube's radius whose axis is tangent
+/// to the centre circle shares a whole tube circle with the torus. It
+/// comes back exact — a `Curve::Circle` on the torus, parametrised by its
+/// `v` — and touching, since the two do not cross along it, before the
+/// two fitted arms of the rest of the section, which end at the singular
+/// points where they reach it (ADR-0019).
+#[test]
+fn a_pipe_elbow_shares_an_exact_tube_circle_with_its_pipe() {
+    let ring = ring();
+    let centre = ring.frame().unwrap().origin();
+    let pipe = Surface::Cylinder {
+        frame: Frame::from_z(centre + ring_dir(2.0, 0.0, 0.0), ring_dir(0.0, 1.0, 0.0)).unwrap(),
+        radius: 0.5,
+    };
+    let r = intersect_surfaces(&ring, &pipe, &within(), tol()).unwrap();
+    let [circle, first, second] = r.curves() else {
+        panic!("{r:?}")
+    };
+    assert_eq!(circle.kind, MeetKind::Touch, "{r:?}");
+    let Curve::Circle { frame, radius } = &circle.curve else {
+        panic!("{r:?}")
+    };
+    assert_eq!(*radius, 0.5);
+    assert!((frame.origin() - on_ring(0.0, 0.0) + 0.5 * ring_dir(1.0, 0.0, 0.0)).norm() < EXACT);
+    // Its parameter is the torus's `v`: the circle's point at `t` is the
+    // torus's at (0, t).
+    for t in [0.0, 1.0, 2.5, -0.7] {
+        let d = (circle.curve.point(t) - on_ring(0.0, t)).norm();
+        assert!(d < EXACT, "t = {t} is not the torus's v: {d}");
+    }
+    // The rest: two arms crossing, each ending at one of the two singular
+    // points where it meets the circle.
+    assert_eq!(
+        (first.kind, second.kind),
+        (MeetKind::Crossing, MeetKind::Crossing)
+    );
+    assert_eq!(r.points().len(), 2, "{r:?}");
+    assert!(r.points().iter().all(|p| p.kind == MeetKind::Crossing));
+    for m in r.curves() {
+        on_both(&m.curve, &ring, &pipe, tol().linear).unwrap();
+    }
+    assert_eq!(
+        intersect_surfaces(&pipe, &ring, &within(), tol()).unwrap(),
+        r,
+        "the swap changed the result"
+    );
+}
+
+/// A plane bitangent to the ring meets it in the two Villarceau circles.
+/// They are *fitted*, not returned as `Curve::Circle`s: the tracer finds
+/// them as four arms through the pose's two singular points, and a
+/// second "bitangent within `tol.linear`" detector beside the tracer's
+/// own is what ADR-0019 declines to add for a pose of measure zero. The
+/// arms are held to the exact circles all the same.
+#[test]
+fn a_bitangent_plane_meets_the_ring_in_fitted_villarceau_circles() {
+    let ring = ring();
+    let centre = ring.frame().unwrap().origin();
+    let tilt = (0.5f64 / 2.0).asin();
+    let plane = Surface::Plane {
+        frame: Frame::from_z(centre, ring_dir(-tilt.sin(), 0.0, tilt.cos())).unwrap(),
+    };
+    let r = intersect_surfaces(&ring, &plane, &within(), tol()).unwrap();
+    assert_eq!((r.curves().len(), r.points().len()), (4, 2), "{r:?}");
+    assert!(
+        r.curves()
+            .iter()
+            .all(|m| matches!(&m.curve, Curve::Nurbs(c) if c.period().is_none())),
+        "{r:?}"
+    );
+    // Each arm lies on one of the two circles of radius `R` centred `r`
+    // either side of the axis, within the fit's fraction of the tolerance
+    // beyond the tolerance the tracer allows at a singular point.
+    let bound = tol().linear + SECTION_FIT_FRACTION * tol().linear;
+    for m in r.curves() {
+        let domain = m.curve.domain();
+        let off = |p: Point3, side: f64| {
+            ((p - (centre + side * 0.5 * ring_dir(0.0, 1.0, 0.0))).norm() - 2.0).abs()
+        };
+        let middle = m.curve.point(domain.lerp(0.5));
+        let side = if off(middle, 1.0) < off(middle, -1.0) {
+            1.0
+        } else {
+            -1.0
+        };
+        for i in 0..=64 {
+            let p = m.curve.point(domain.lerp(i as f64 / 64.0));
+            assert!(
+                off(p, side) <= bound,
+                "{p} is {} off its circle",
+                off(p, side)
+            );
+        }
+    }
 }
 
 /// A non-coaxial pose from §Non-goals of the quadric plan.
@@ -1728,16 +1994,19 @@ fn apart() -> impl Strategy<Value = Apart> {
     ]
 }
 
-/// Every pose of §Non-goals of ADR-0008 is decided now but a torus's: a
+prop_shards! {
+/// Every pose of §Non-goals of ADR-0008 is decided now, a torus's too: a
 /// plane oblique to a cone's axis or parallel to it and off it in an
 /// exact conic, two cones off one axis and a sphere off a cone's or a
-/// cylinder's axis traced and fitted (ADR-0018) — each on both surfaces
-/// and bit for bit under a swap — while a torus in any of them stays
-/// `Unsupported` naming the pair, C3's next plan.
-#[test]
-fn every_non_coaxial_quadric_pose_is_decided_but_a_torus() {
-    check(
-        (
+/// cylinder's axis traced and fitted (ADR-0018), and every torus pose —
+/// a plane oblique to the axis or parallel to it and off it, two tori on
+/// other axes, a sphere off the axis — traced in the torus's parameter
+/// plane and fitted (ADR-0019); each on both surfaces at and between its
+/// samples, and bit for bit under a swap. Sharded: a torus case traces
+/// and fits three times.
+every_non_coaxial_quadric_pose_is_decided
+    [shard_0 shard_1 shard_2 shard_3]
+    ((axis, pose, kind, pa, pb, through)) = (
             frame(),
             apart(),
             prop_oneof![
@@ -1748,8 +2017,7 @@ fn every_non_coaxial_quadric_pose_is_decided_but_a_torus() {
             placement(),
             placement(),
             any::<bool>(),
-        ),
-        |(axis, pose, kind, pa, pb, through)| {
+        ) => {
             let z = axis.z().into_inner();
             let carrier = on_axis(kind, &axis, pa);
             let around = tilted(&axis, FRAC_PI_2, pb.phase);
@@ -1790,25 +2058,10 @@ fn every_non_coaxial_quadric_pose_is_decided_but_a_torus() {
             // and the cylinder plan's arms, not this one's: a cylinder
             // carries the axis here only against an off-centre sphere.
             prop_assume!(kind != Coaxial::Cylinder || pose == Apart::OffCentre);
-            if kind == Coaxial::Torus {
-                for (x, y) in [(&carrier, &other), (&other, &carrier)] {
-                    match intersect_surfaces(x, y, &within(), tol()) {
-                        Err(GeomError::Unsupported { a, b }) => {
-                            prop_assert_eq!(a, GeomKind::Surface(x.kind()));
-                            prop_assert_eq!(b, GeomKind::Surface(y.kind()));
-                        }
-                        other => {
-                            return Err(TestCaseError::fail(format!("{x:?} vs {y:?}: {other:?}")));
-                        }
-                    }
-                }
-                return Ok(());
-            }
             let near = Aabb::of_point(axis.origin()).inflated(4.0 * DEFAULT_SCALE);
             common_properties_in(&carrier, &other, &near)?;
             Ok(())
-        },
-    );
+        }
 }
 
 // --- every quadric pair at a meeting pose (C3's accept line) -----------------
@@ -1825,9 +2078,16 @@ fn size(surface: &Surface) -> f64 {
     }
 }
 
-/// Every quadric but the torus, in a random pose.
+/// Every analytic surface, in a random pose.
 fn quadric() -> impl Strategy<Value = Surface> {
-    prop_oneof![plane(), cylinder(), elliptic_cylinder(), cone(), sphere()]
+    prop_oneof![
+        plane(),
+        cylinder(),
+        elliptic_cylinder(),
+        cone(),
+        sphere(),
+        torus()
+    ]
 }
 
 /// Two quadrics placed to meet: the second's origin within its own size
@@ -1863,15 +2123,15 @@ fn meeting() -> impl Strategy<Value = (Surface, Surface, Aabb)> {
 }
 
 prop_shards! {
-    /// C3's accept line for every quadric pair without a torus, at random
-    /// poses where the two meet: decided — by a closed form, an exact
-    /// conic or the tracer and a fit (ADR-0018) — every curve on both
-    /// surfaces at its samples, a fitted one densely and within the fit's
-    /// fraction of the tolerance, every point on both within the
-    /// tolerance, the same under a swap and on a second run. Sharded: a
-    /// case traces and fits three times.
-    every_quadric_pair_without_a_torus_meets_on_both_surfaces
-        [shard_0 shard_1 shard_2 shard_3]
+    /// C3's accept line for every quadric pair, the torus's among them, at
+    /// random poses where the two meet: decided — by a closed form, an
+    /// exact conic or a tracer and a fit (ADR-0018, ADR-0019) — every
+    /// curve on both surfaces at its samples, a fitted one densely and
+    /// within the fit's fraction of the tolerance, every point on both
+    /// within the tolerance, the same under a swap and on a second run.
+    /// Sharded: a case traces and fits three times.
+    every_quadric_pair_meets_on_both_surfaces
+        [shard_0 shard_1 shard_2 shard_3 shard_4 shard_5 shard_6 shard_7]
         ((a, b, within)) = meeting() => {
             common_properties_in(&a, &b, &within)?;
             Ok(())

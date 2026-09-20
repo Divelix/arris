@@ -17,10 +17,17 @@ use crate::{NurbsCurve, NurbsCurve2};
 
 /// The most spans a fit may refine to before it gives up with
 /// [`FitError::Diverged`]: a structural bound that makes every fit
-/// terminate, not a tolerance. A cubic on this many spans resolves a
+/// terminate, not a tolerance. A cubic on a thousand spans resolves a
 /// sinusoid of amplitude a thousand to `1e-7`; a caller that needs more
-/// asks for a higher degree.
-pub const MAX_FIT_SPANS: usize = 1024;
+/// asks for a higher degree. Four thousand because a torus section is
+/// as long as the two tori are big: the loop two metre-scale tori of
+/// nearly equal radii share runs 100 to 170 units, and a quintic holds
+/// it within `SECTION_FIT_FRACTION` of the default tolerance on 1000 to
+/// 1300 spans — the cap measured on the cylinder pairs (1024) cut those
+/// off with the fit a factor of two short (ADR-0019). The work per
+/// refinement is linear in the spans (a banded solve), so the bound
+/// costs nothing where it is not reached.
+pub const MAX_FIT_SPANS: usize = 4096;
 
 /// Spans the first fit tries; refinement splits from here.
 const INITIAL_SPANS: usize = 4;

@@ -8,7 +8,9 @@ cylinder–cylinder table in that pose), `c2-quadric-pairs` (the coaxial
 pairs with a cone, a sphere or a torus in them, and the pairs any sphere
 makes, in that pose), `c3-cylinder-pairs` (the cylinder pairs that
 meet in a quartic, in that pose), `c3-quadric-pairs` (the pairs with
-a cone or a sphere in them that share no axis, in that pose) and
+a cone or a sphere in them that share no axis, in that pose),
+`c3-torus-pairs` (the pairs a torus makes with a surface sharing no axis
+with it, in that pose) and
 `c3-nurbs-hits` (NURBS curves against every analytic surface the grammar
 has, in that pose) and `c3-nurbs-crossings` (the same curves against
 lines, circles and ellipses, in that pose). Plain Python, no Open CASCADE: the coordinates
@@ -540,6 +542,59 @@ def c3_quadric_pairs():
     }
 
 
+# --- c3-torus-pairs --------------------------------------------------------------
+
+
+def c3_torus_pairs():
+    f = POSES["tilt"]
+    R, r = 2.0, 0.5
+    surfaces = {"ring": {"type": "torus", **f.spec(major_radius=R, minor_radius=r)}}
+    pairs = []
+
+    def local_frame(origin, z, x):
+        return Frame(f.to_world(origin), f.vec(z), f.vec(x))
+
+    def other(name, spec, a="ring"):
+        surfaces[name] = spec
+        pairs.append({"a": a, "b": name})
+
+    # A plane parallel to the axis: through the hole two ovals, tangent to
+    # the hole a figure eight with one singular point, through the tube
+    # alone one oval. Oblique to the axis, two ovals again.
+    def wall(name, d):
+        other(name, {"type": "plane", **local_frame([d, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]).spec()})
+
+    wall("hole", 1.0)
+    wall("eight", R - r)
+    wall("tube", R)
+    other("oblique", {"type": "plane", **local_frame([0.0, 0.0, 0.1], [0.3, 0.1, 1.0], [0.0, 1.0, 0.0]).spec()})
+    # A drill of a fifth of the tube's radius straight through the tube:
+    # two loops. A pipe of the ring's own tube radius, its axis tangent to
+    # the centre circle — the elbow — shares that tube circle, exactly,
+    # and crosses the ring in two arms besides.
+    other("drill", {"type": "cylinder", **local_frame([R, 0.0, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]).spec(radius=0.2)})
+    other("elbow", {"type": "cylinder", **local_frame([R, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]).spec(radius=r)})
+    # A cone and a sphere off the axis, each through the tube.
+    other("cone", {"type": "cone", **local_frame([1.6, 0.4, -1.2], [0.15, 0.2, 1.0], [0.0, 1.0, 0.0]).spec(radius=0.6, half_angle_deg=30.0)})
+    other("ball", {"type": "sphere", **local_frame([1.7, 0.4, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]).spec(radius=0.8)})
+    # A second torus interlocked with the first, its axis tangent to the
+    # centre circle, and a larger one the ring stands in at an angle.
+    other("link", {"type": "torus", **local_frame([R, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]).spec(major_radius=1.0, minor_radius=0.3)})
+    other("hoop", {"type": "torus", **local_frame([0.4, 0.0, 0.3], [0.25, 0.0, 1.0], [1.0, 0.0, 0.0]).spec(major_radius=2.2, minor_radius=0.6)})
+    # Two the other way round: the walked torus is the ring either way
+    # (`link` is smaller, so it is walked against the ring).
+    pairs.append({"a": "hole", "b": "ring"})
+    pairs.append({"a": "link", "b": "ring"})
+    return {
+        "kind": "geometry",
+        "description": "a plane, a cylinder, a cone, a sphere and a second torus around one torus in the tilt pose, sharing no axis with it, which Arris traces in the torus's parameter plane and fits (ADR-0019) and Open CASCADE leaves unsolved in IntAna_QuadQuadGeo and walks in GeomAPI_IntSS: a plane parallel to the axis through the hole (two ovals), tangent to it (a figure eight through one singular point) and through the tube alone (one oval), an oblique plane (two ovals); a drill through the tube (two loops) and a pipe of the tube's radius tangent to the centre circle, which shares a tube circle with it exactly; a cone and a sphere off the axis; a torus interlocked with the ring and a larger one it stands in; two pairs swapped; written by generate.py",
+        "surfaces": surfaces,
+        "curves": {},
+        "samples": [],
+        "pairs": pairs,
+    }
+
+
 # --- c2-quadric-pairs --------------------------------------------------------------
 
 
@@ -884,5 +939,6 @@ if __name__ == "__main__":
     write("c2-quadric-pairs", c2_quadric_pairs())
     write("c3-cylinder-pairs", c3_cylinder_pairs())
     write("c3-quadric-pairs", c3_quadric_pairs())
+    write("c3-torus-pairs", c3_torus_pairs())
     write("c3-nurbs-hits", c3_nurbs_hits())
     write("c3-nurbs-crossings", c3_nurbs_crossings())

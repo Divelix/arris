@@ -217,7 +217,7 @@ bound has to be established here.
   topology. If the residual cannot be made robust here, the pose stays a
   named refusal, with the fixture-grade reproduction under
   `tests/fixtures/geom/` and a backlog line — open question 3.
-- [ ] Step 4 **[2]** — ADR-0019, and the torus pairs in
+- [x] Step 4 **[2]** — ADR-0019, and the torus pairs in
   `intersect_surfaces`: `off_axis`'s and the elliptic cylinder's torus
   arms through `section::traced` (the fit's deviation, fraction and degree
   as ADR-0018's; the control-point counts of metre-scale torus loops
@@ -482,6 +482,67 @@ and what it found that the plan did not have:
   times at the worst (two tori, a tangency, the circle on a column's
   edge), and every turning point of the rest was still certified.
 
+## Step 4's record (the intersector, and ADR-0019)
+
+- **The fit is the cost of a torus pair, not the trace.** The trace is
+  step 2's 0.7 to 1.1 ms; `intersect_surfaces` on the same pairs is 5 to
+  100 ms (dev profile, this machine), all but the trace in `fit_curve`.
+  The worst seen is a cone grazing the tube at 25°: one loop of 552
+  control points, 230 ms. The pose in the fixture was moved off it (a
+  wider cone, two loops of 60 and 79, 17 ms); the grazing one is not a
+  refusal and not wrong, only slow, and it is what step 5 measures S5
+  against.
+- **Control points per loop at `SECTION_FIT_DEGREE`**, metre-scale tori
+  (`R/r` 1.1 to 100) against each kind: 21 to 319 at degree 5. By degree,
+  on the same loops — 3: 117 to 803; 4: 58 to 398; 5: 37 to 319; 6: 38 to
+  362; 7: 39 to 382. The quintic is the fewest or within a span of it on
+  the smooth loops and clearly the fewest where the curvature varies most
+  (a cone's section, an interlocked torus's), so the degree stands; the
+  numbers are in ADR-0019 and in `SECTION_FIT_DEGREE`'s rustdoc.
+- **`MAX_FIT_SPANS` raised from 1024 to 4096** — a design delta this step
+  found, named in the commit body (a public constant's value). Two
+  metre-scale tori of nearly equal radii (6.06 by 5.87 against 13.1 by
+  5.4; 8.7 by 7.1 against 11.6 by 5.1, the property's own poses at 1000
+  cases) share one loop of 97 and 166 units, and a quintic holds it
+  within the fit's fraction of the tolerance on 1037 and 1238 spans. The
+  branch is not pathological — its samples are on both surfaces to 6e-15,
+  its tightest curvature radius is 0.33 and the normals stay 6° apart —
+  it is simply *long*, which a section on a torus is as the torus is big.
+  The old cap cut both off with the fit a factor of two short (4.3e-8
+  against a target of 2.5e-8) and, in the second, at a deviation the
+  refinement had not yet localised (0.039). Cost at the new cap: 0.37 and
+  0.50 s for the pair, dev profile, all of it in `fit_curve`; the work per
+  refinement is linear in the spans, so nothing that fits under 1024 pays
+  for it.
+- **Open question 2 answered: the Villarceau circles are fitted**, with a
+  backlog line. The tracer already returns the four arms through the two
+  singular points, each within the fit's fraction of the exact circles;
+  returning `Curve::Circle`s needs a second "bitangent within
+  `tol.linear`" detector to keep consistent with the tracer's own
+  singular-point rule, for one pose of measure zero. ADR-0019 records it,
+  and `a_bitangent_plane_meets_the_ring_in_fitted_villarceau_circles`
+  holds the arms to the exact circles.
+- **The oracle needed one change after all** (the delta said none was
+  expected): it drops the lines it walks along a tangency, and the elbow's
+  shared tube circle is one — so `check_walked` in
+  `crates/arris-geom/tests/oracle.rs` leaves a curve Arris *touches*
+  along out of the walk comparison when the oracle reports `dropped`, and
+  leaves out the walked samples that lie on it (the walked crossings end
+  there). The circle is still held to both surfaces, and exactly. No
+  change to `tools/oracle` or to the grammar.
+- **`coaxial` in `intersect_surfaces.rs`** — the tests' own reading of
+  ADR-0008 — was `unreachable!()` for an elliptic cylinder against a
+  carrier, a pose the property never reached while a torus pair was
+  `Unsupported`. It is `false` now, with the reason: an elliptic cylinder
+  is no surface of revolution.
+- **Measured**: `every_quadric_pair_meets_on_both_surfaces` (the torus in
+  the strategy now, eight shards), `every_non_coaxial_quadric_pose_is_
+  decided` (four shards, the torus arm no longer asserting `Unsupported`)
+  and `every_other_pair_is_unsupported` (a NURBS patch in the strategy,
+  the only `Unsupported` left) green at 256 and at 1000 cases;
+  `geom/c3-torus-pairs` — twelve pairs, ten partners — matching the
+  oracle's walked lines and pinned by name.
+
 ## Acceptance
 
 - `ARRIS_PROPTEST_CASES=1000 cargo nextest run --workspace` green: the
@@ -534,15 +595,12 @@ and what it found that the plan did not have:
   and a sphere only — with the other four pairs moved to C4 and the
   roadmap amended. Not planned here; the plan is rewritten if it comes
   to that.
-- ⚠ OPEN 2 — **are the Villarceau circles returned exact?** (agent, by
-  step 4; recorded in ADR-0019.) ADR-0018 says a conic is never fitted,
-  and a bitangent plane is a pose with a name. But it is one pose of
-  measure zero, the tracer already returns the two loops through their
-  two singular points, and "bitangent within `tol.linear`" is a second
-  detector to keep consistent with the first. Preferred: exact
-  `Curve::Circle`s if step 2's singular points make the detection a
-  lookup (two singular points on one plane section), fitted with a
-  backlog line otherwise.
+- OPEN 2, answered at step 4 — **are the Villarceau circles returned
+  exact?** No: fitted, with a backlog line, because the detection is not
+  a lookup — "bitangent within `tol.linear`" is a second detector to keep
+  consistent with the tracer's singular-point rule, for one pose of
+  measure zero. ADR-0019 records the decision; step 4's record has the
+  reasoning.
 - OPEN 3, answered at step 3 — **closed form or named refusal for a tube
   circle on the other surface**: the closed form, the circle exact and the
   rest traced on the quotient; step 3's record has what stays refused.

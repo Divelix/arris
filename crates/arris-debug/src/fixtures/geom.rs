@@ -603,7 +603,11 @@ pub struct PairResult {
     /// The hits of a curve against a surface or of two curves.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub hits: Vec<Hit>,
-    /// Hits the oracle reported and then found off an operand.
+    /// What the oracle reported and then dropped: hits it found off an
+    /// operand, or, for an `unsolved` surface pair, the lines it walked
+    /// along a tangency, whose samples it has no crossing to polish onto
+    /// — a curve the pair is tangent along is then the walk's, not a
+    /// missing one of Arris's.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dropped: Option<usize>,
 }

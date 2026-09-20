@@ -1,13 +1,14 @@
-//! The traced section of two quadrics as a `Meets` result: every branch
-//! of [`crate::trace_quadrics`] fitted to a `Curve::Nurbs`, every
-//! singular point a point of the result (ADR-0018, `docs/DATA-MODEL.md`
-//! §Curves).
+//! A traced section as a `Meets` result: every branch of
+//! [`crate::trace_quadrics`] or [`crate::trace_torus`] fitted to a
+//! `Curve::Nurbs`, every tube circle of a torus section exact, every
+//! singular point a point of the result (ADR-0018, ADR-0019,
+//! `docs/DATA-MODEL.md` §Curves).
 
 use arris_math::{Aabb, Tolerance};
 
 use crate::{
     Curve, GeomError, MeetCurve, MeetKind, MeetPoint, SectionBranch, Surface, SurfaceIntersection,
-    fit_curve, fit_curve_periodic, trace_quadrics,
+    fit_curve, fit_curve_periodic, trace_quadrics, trace_torus,
 };
 
 /// The fraction of the pair's `tol.linear` a fitted section curve is
@@ -27,36 +28,62 @@ pub const SECTION_FIT_FRACTION: f64 = 0.25;
 /// default tolerance: a loop takes 200 to 390 control points at degree
 /// 3, 70 to 160 at degree 4 and 60 to 120 at degree 5 — the quintic is
 /// the smallest, and the degree the pcurves fitted to it take
-/// ([`crate::PCURVE_FIT_DEGREE`]). A structural choice, not a
+/// ([`crate::PCURVE_FIT_DEGREE`]). Measured again on metre-scale torus
+/// sections (`R/r` from 1.1 to 100, against each of the six analytic
+/// kinds): a loop takes 21 to 319 control points at degree 5, against
+/// 117 to 803 at degree 3; degree 6 takes fewer on the smooth loops (38
+/// against 53) and more where the curvature varies most (362 against
+/// 319), so the quintic stays (ADR-0019). A structural choice, not a
 /// tolerance.
 pub const SECTION_FIT_DEGREE: usize = 5;
 
-/// The section of two quadrics, one of them ruled, inside `within`, as
-/// the intersector returns it: each traced branch a crossing curve, in
-/// the tracer's order and orientation, fitted at the branch's own
-/// parameter — periodic when the branch is closed — until neither
-/// surface is farther than [`SECTION_FIT_FRACTION`] of `tol.linear`
-/// from it beyond the exact branch's own distance (which is rounding,
-/// except within a singular point's reach, where the tracer lets the
-/// branch be within `tol.linear` of the other surface); each singular
-/// point a point of the result, `Touch` where it is isolated and
-/// `Crossing` where branches end at it. `Empty` when there is neither.
+/// The section of two surfaces with no closed form, as the intersector
+/// returns it: two quadrics one of which is ruled, traced inside
+/// `within` ([`trace_quadrics`]), or a pair with a torus in it, traced
+/// in the torus's parameter plane with no region at all
+/// ([`trace_torus`], ADR-0019).
+///
+/// Each tube circle of a torus section comes first, in the tracer's
+/// order, exact and never fitted — `Touch` where the surfaces do not
+/// cross along it, `Crossing` where they do. Then each traced branch, a
+/// crossing curve in the tracer's order and orientation, fitted at the
+/// branch's own parameter — periodic when the branch is closed — until
+/// neither surface is farther than [`SECTION_FIT_FRACTION`] of
+/// `tol.linear` from it beyond the exact branch's own distance (which is
+/// rounding, except within a singular point's reach, where the tracer
+/// lets the branch be within `tol.linear` of the other surface). Each
+/// singular point is a point of the result, `Touch` where it is isolated
+/// and `Crossing` where branches end at it. `Empty` when there is none of
+/// the three.
 pub(crate) fn traced(
     a: &Surface,
     b: &Surface,
     within: &Aabb,
     tol: Tolerance,
 ) -> Result<SurfaceIntersection, GeomError> {
-    let trace = trace_quadrics(a, b, within, tol)?;
-    let curves = trace
-        .branches()
-        .iter()
-        .map(|branch| {
+    let torus = |s: &Surface| matches!(s, Surface::Torus { .. });
+    let trace = if torus(a) || torus(b) {
+        trace_torus(a, b, tol)?
+    } else {
+        trace_quadrics(a, b, within, tol)?
+    };
+    let circles = trace.circles().iter().map(|c| {
+        Ok(MeetCurve {
+            curve: c.circle.clone(),
+            kind: if c.tangent {
+                MeetKind::Touch
+            } else {
+                MeetKind::Crossing
+            },
+        })
+    });
+    let curves = circles
+        .chain(trace.branches().iter().map(|branch| {
             fitted(branch, a, b, tol).map(|curve| MeetCurve {
                 curve,
                 kind: MeetKind::Crossing,
             })
-        })
+        }))
         .collect::<Result<Vec<_>, _>>()?;
     let points: Vec<MeetPoint> = trace
         .points()
