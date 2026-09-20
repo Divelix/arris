@@ -6,7 +6,9 @@ use core::f64::consts::{PI, TAU};
 use arris_math::roots::{self, RootError};
 use arris_math::{Frame, Interval, Point2, Point3, Tolerance, Vec2, Vec3, wrap_angle as wrap_turn};
 
+use crate::by_distance::hits_by_distance;
 use crate::conic2::{Conic2, ConicMeet, conic_pair, trig2_roots};
+use crate::implicit::Implicit;
 use crate::intersect::line_angle;
 use crate::intersect_spline::spline_surface;
 use crate::project::ellipse_distance;
@@ -101,7 +103,25 @@ pub enum CurveSurfaceIntersection {
 /// across the axis within `tol.angular` meets the elliptic cylinder where
 /// it meets the section, two conics in one plane by the quartic
 /// (`crate::conic2`): `Coincident`, or the touches and crossings as
-/// hits; a conic in any other plane is `Unsupported`.
+/// hits.
+///
+/// A **conic against a cone, a sphere, or an elliptic cylinder in any
+/// other plane** is the quadric's polynomial along the conic, which is a
+/// trigonometric polynomial of degree two: between two extrema of it —
+/// the roots of its derivative, the same quartic in `tan(t/2)` — it is
+/// monotone, and so is the signed distance, whose sign it carries. The
+/// distance's kinks go in beside them, a cone's apex plane and its axis
+/// as the line arm has them, and the extrema of the distance from the
+/// axis besides, which are where a conic concentric with and similar to
+/// the surface's section — the one shape whose polynomial is constant
+/// along it — is nearest the surface. What is decided there is decided
+/// on the distance, as in the NURBS arm below: every stop within
+/// `tol.linear` is `Coincident` — a parallel of a cone or a sphere is,
+/// and so is an oblique section lying on an elliptic cylinder — a stop
+/// within it is one touch absorbing the crossings beside it, and each
+/// other stretch whose ends differ in sign holds one crossing. A conic
+/// through a cone's apex touches it there, the apex being an extremum of
+/// the distance whose value is zero, and takes the apex's `uv`.
 ///
 /// A **NURBS curve** against a plane, a cylinder, an elliptic cylinder, a
 /// cone, a sphere or a torus: each span of the curve put into the
@@ -120,7 +140,8 @@ pub enum CurveSurfaceIntersection {
 /// only *ends* within `tol.linear` of the surface is a hit at that end
 /// and not `tangent`: a section edge ending on a face, not a graze. A
 /// closed curve that is not periodic has its two ends for two such hits.
-/// A NURBS curve against a NURBS surface is `Unsupported`.
+/// A conic against a **torus**, and any curve against a NURBS surface,
+/// are `Unsupported`.
 ///
 /// ```
 /// use arris_geom::{Curve, CurveSurfaceIntersection, Surface, intersect_curve_surface};
@@ -286,6 +307,17 @@ pub fn intersect_curve_surface(
             [*major_radius, *minor_radius],
             tol,
         ),
+        (Curve::Circle { frame: cf, radius }, Surface::Cone { .. } | Surface::Sphere { .. }) => {
+            conic_quadric(curve, surface, cf, [*radius, *radius], tol)
+        }
+        (
+            Curve::Ellipse {
+                frame: cf,
+                major_radius,
+                minor_radius,
+            },
+            Surface::Cone { .. } | Surface::Sphere { .. },
+        ) => conic_quadric(curve, surface, cf, [*major_radius, *minor_radius], tol),
         (
             Curve::Nurbs(spline),
             Surface::Plane { .. }
@@ -295,10 +327,7 @@ pub fn intersect_curve_surface(
             | Surface::Sphere { .. }
             | Surface::Torus { .. },
         ) => spline_surface(curve, spline, surface, tol),
-        (
-            Curve::Circle { .. } | Curve::Ellipse { .. },
-            Surface::Cone { .. } | Surface::Sphere { .. } | Surface::Torus { .. },
-        )
+        (Curve::Circle { .. } | Curve::Ellipse { .. }, Surface::Torus { .. })
         | (Curve::Line { .. } | Curve::Circle { .. } | Curve::Ellipse { .. }, Surface::Nurbs(_))
         | (Curve::Nurbs(_), Surface::Nurbs(_)) => Err(GeomError::Unsupported {
             a: GeomKind::Curve(curve.kind()),
@@ -477,11 +506,13 @@ fn line_elliptic_cylinder(
 }
 
 /// A circle or an ellipse against an elliptic cylinder, `radii` its
-/// `[a, b]` as in [`conic_plane`]: `Unsupported` unless the conic's plane
-/// is across the axis within `tol.angular`, and then the conic against
-/// the section in that plane (`crate::conic2::conic_pair`), the conic's
-/// own parameter kept through its axes projected into the section —
-/// `Coincident`, or each touch and crossing a hit.
+/// `[a, b]` as in [`conic_plane`]. A conic whose plane is across the
+/// axis within `tol.angular` meets the surface where it meets the
+/// section in that plane (`crate::conic2::conic_pair`), the conic's own
+/// parameter kept through its axes projected into the section —
+/// `Coincident`, or each touch and crossing a hit; a conic in any other
+/// plane goes to [`conic_quadric`], the elliptic cylinder being a
+/// quadric like the rest.
 fn conic_elliptic_cylinder(
     curve: &Curve,
     surface: &Surface,
@@ -492,10 +523,7 @@ fn conic_elliptic_cylinder(
     tol: Tolerance,
 ) -> Result<CurveSurfaceIntersection, GeomError> {
     if line_angle(&conic.z(), &cyl.z()) > tol.angular {
-        return Err(GeomError::Unsupported {
-            a: GeomKind::Curve(curve.kind()),
-            b: GeomKind::Surface(surface.kind()),
-        });
+        return conic_quadric(curve, surface, conic, radii, tol);
     }
     let degenerate = |reason: String| GeomError::Degenerate {
         kind: GeomKind::Curve(curve.kind()),
@@ -948,21 +976,29 @@ impl Radial {
         point.dot(&(-st * self.x + ct * self.y)) / rho
     }
 
-    /// The critical parameters of `ρ²` in `[0, 2π)`, ascending: the roots
-    /// of `P · P′ = a₁ cos t + b₁ sin t + a₂ cos 2t + b₂ sin 2t`, a
-    /// trigonometric polynomial of degree two, through
-    /// [`trig2_roots`]. `None` when the polynomial vanishes identically:
-    /// `ρ` is constant and the circle is a parallel of the axis.
+    /// The critical parameters of `ρ²` in `[0, 2π)`, ascending
+    /// ([`radial_critical`]).
     fn critical_parameters(&self) -> Result<Option<Vec<f64>>, GeomError> {
-        let a1 = self.p.dot(&self.y);
-        let b1 = -self.p.dot(&self.x);
-        let a2 = self.x.dot(&self.y);
-        let b2 = 0.5 * (self.y.norm_squared() - self.x.norm_squared());
-        trig2_roots(a1, b1, a2, b2, 0.0).map_err(|e| GeomError::Degenerate {
+        radial_critical(self.p, self.x, self.y).map_err(|e| GeomError::Degenerate {
             kind: GeomKind::Curve(self.kind),
             reason: format!("radial extrema: {e}"),
         })
     }
+}
+
+/// The critical parameters of `ρ²(t) = |p + cos t·x + sin t·y|²` in
+/// `[0, 2π)`, ascending: the roots of `P · P′ = a₁ cos t + b₁ sin t +
+/// a₂ cos 2t + b₂ sin 2t`, a trigonometric polynomial of degree two,
+/// through [`trig2_roots`]. `None` when the polynomial vanishes
+/// identically: `ρ` is constant and the conic is a parallel of the axis.
+/// Where `ρ` vanishes it has its kink, and that is a minimum of `ρ²`, so
+/// these are also the kinks of a distance measured from the axis.
+fn radial_critical(p: Vec2, x: Vec2, y: Vec2) -> Result<Option<Vec<f64>>, RootError> {
+    let a1 = p.dot(&y);
+    let b1 = -p.dot(&x);
+    let a2 = x.dot(&y);
+    let b2 = 0.5 * (y.norm_squared() - x.norm_squared());
+    trig2_roots(a1, b1, a2, b2, 0.0)
 }
 
 /// Newton steps that polish a candidate parameter from the half-angle
@@ -1044,6 +1080,95 @@ fn conic_cylinder(
         hits.push(hit(curve, surface, wrap_turn(t.rem_euclid(TAU)), false)?);
     }
     Ok(points(hits))
+}
+
+/// A circle or an ellipse against a cone, a sphere, or an elliptic
+/// cylinder in a plane that is not across its axis; `radii` is `[a, b]`
+/// as in [`conic_plane`]. A quadric's polynomial along a conic is a
+/// trigonometric polynomial of degree two ([`Implicit::along_conic`]),
+/// and between two extrema of it — the roots of its derivative, through
+/// [`trig2_roots`] — it is monotone, so the signed distance, whose sign
+/// it carries, crosses zero at most once there. The distance's own kinks
+/// go in beside them: a cone's apex plane, where `|h|` turns, and its
+/// axis, where `ρ` does — the latter among the extrema of `ρ²`, which
+/// are also where a conic whose polynomial is *constant* along it
+/// (concentric with and similar to the surface's own section, the one
+/// shape whose extrema the derivative cannot give) is nearest the
+/// surface and farthest from it. The verdict on them is
+/// [`hits_by_distance`]'s, shared with the NURBS arm.
+fn conic_quadric(
+    curve: &Curve,
+    surface: &Surface,
+    conic: &Frame,
+    radii: [f64; 2],
+    tol: Tolerance,
+) -> Result<CurveSurfaceIntersection, GeomError> {
+    let implicit = Implicit::of(surface).ok_or_else(|| GeomError::Unsupported {
+        a: GeomKind::Curve(curve.kind()),
+        b: GeomKind::Surface(surface.kind()),
+    })?;
+    let degenerate = |what: &str, e: RootError| GeomError::Degenerate {
+        kind: GeomKind::Curve(curve.kind()),
+        reason: format!("{what}: {e}"),
+    };
+    let centre = conic.origin();
+    let (u, v) = (
+        radii[0] * conic.x().into_inner(),
+        radii[1] * conic.y().into_inner(),
+    );
+    let Some([a1, b1, a2, b2, _]) = implicit.along_conic(centre, u, v) else {
+        // A torus's polynomial is quartic, and no arm of the table sends
+        // a conic against one here.
+        return Err(GeomError::Unsupported {
+            a: GeomKind::Curve(curve.kind()),
+            b: GeomKind::Surface(surface.kind()),
+        });
+    };
+    // The derivative of `a₁ cos t + b₁ sin t + a₂ cos 2t + b₂ sin 2t`;
+    // `None` when the polynomial is constant along the conic.
+    let extrema = trig2_roots(b1, -a1, 2.0 * b2, -2.0 * a2, 0.0)
+        .map_err(|e| degenerate("the extrema along the conic", e))?;
+    let constant = extrema.is_none();
+    let mut splits: Vec<f64> = extrema.into_iter().flatten().collect();
+    // The conic in the surface's frame, where `ρ` is the distance from
+    // the axis and `h` the height above a cone's apex.
+    let q = implicit.frame.to_local(centre);
+    let (lu, lv) = (
+        implicit.frame.vec_to_local(u),
+        implicit.frame.vec_to_local(v),
+    );
+    let flat = |w: Vec3| Vec2::new(w.x, w.y);
+    // A cone's distance has its kink where the conic crosses the axis,
+    // which is a minimum of `ρ²`; and where the polynomial is constant
+    // there is nothing else to look at, the distance turning where `ρ`
+    // does. Nowhere else are these extrema of the distance, and a split
+    // that is none can read as one against its neighbour a rounding
+    // away — a conic through a sphere's pole passes the axis there.
+    if constant || matches!(surface, Surface::Cone { .. }) {
+        if let Some(radial) = radial_critical(flat(q.coords), flat(lu), flat(lv))
+            .map_err(|e| degenerate("the radial extrema along the conic", e))?
+        {
+            splits.extend(radial);
+        }
+    }
+    if let Surface::Cone {
+        radius, half_angle, ..
+    } = *surface
+    {
+        let above = q.z + radius * half_angle.cos() / half_angle.sin();
+        if let Some(crossings) = trig2_roots(lu.z, lv.z, 0.0, 0.0, above)
+            .map_err(|e| degenerate("the crossings of the apex plane", e))?
+        {
+            splits.extend(crossings);
+        }
+    }
+    if splits.is_empty() {
+        // Neither the polynomial nor the distance from the axis turns
+        // anywhere: the conic is a parallel of the surface's axis, on it
+        // or clear of it, which one parameter decides.
+        splits.push(0.0);
+    }
+    hits_by_distance(curve, surface, &implicit, splits, tol)
 }
 
 #[cfg(test)]
@@ -1231,15 +1356,28 @@ mod tests {
             assert!(!h.tangent);
             assert!((h.point.coords.norm() - 2.5).abs() < 1e-12);
         }
-        // A tilted circle has no closed form.
+        // A circle in a plane through the axis: its distance from the
+        // axis reaches 2.5 across the section's minor half-axis of 2, so
+        // it crosses the wall four times.
         let tilted = Curve::Circle {
             frame: Frame::from_z(Point3::origin(), Vec3::x()).unwrap(),
             radius: 2.5,
         };
-        assert!(matches!(
-            intersect_curve_surface(&tilted, &wall, tol()),
-            Err(GeomError::Unsupported { .. })
-        ));
+        let CurveSurfaceIntersection::Points(hits) =
+            intersect_curve_surface(&tilted, &wall, tol()).unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!(hits.len(), 4, "{hits:?}");
+        assert!(hits.windows(2).all(|w| w[0].t < w[1].t));
+        for h in &hits {
+            assert!(!h.tangent);
+            let p = h.point;
+            assert!(
+                ((p.x / 3.0).powi(2) + (p.y / 2.0).powi(2) - 1.0).abs() < 1e-12,
+                "{h:?}"
+            );
+        }
     }
 
     #[test]

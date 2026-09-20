@@ -893,7 +893,14 @@ pairs an extrude's faces make — against those on other axes, a cone or
 a sphere by the ruled tracer, and against a torus by the torus's; the
 pave model's quadric guard
 refuses a face on it as it refuses a cone, a sphere or a torus, so a
-boolean never widens onto it silently. A
+boolean never widens onto it silently. A circle or an ellipse — the edge
+an operand face already carries — is decided against every analytic
+surface but the torus: by the closed forms of the table where there is
+one, and against a cone, a sphere or an elliptic cylinder in any plane
+by the quadric's polynomial along the conic, a trigonometric polynomial
+of degree two whose extrema leave the signed distance monotone in
+between, the verdict taken on that distance as everywhere else
+(`docs/DATA-MODEL.md` §Curves). A
 `Curve::Nurbs` — the fitted section edge the next boolean meets — is
 decided against every analytic surface by its spans put into the
 surface's implicit polynomial in Bernstein form, the extrema isolated by

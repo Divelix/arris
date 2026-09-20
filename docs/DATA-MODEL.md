@@ -382,10 +382,10 @@ operand order.
 Points(Vec<CurveSurfaceHit>), Coincident}` for the pairs with a closed form
 — line–plane, line–cylinder, conic–plane and conic–cylinder, *conic*
 being a circle or an ellipse, and a line against a cone, a sphere or a
-torus — for a `Nurbs` curve against every analytic surface (below), and
-`GeomError::Unsupported` naming the pair for every other (a conic
-against a cone, a sphere or a torus among them: no containment ray casts
-one; any curve against a `Nurbs` surface). A hit is
+torus — for a conic against a cone, a sphere or an elliptic cylinder in
+any plane (below), for a `Nurbs` curve against every analytic surface
+(below), and `GeomError::Unsupported` naming the pair for every other (a
+conic against a torus; any curve against a `Nurbs` surface). A hit is
 `CurveSurfaceHit { t, uv, point, tangent }`: `point` is the curve's point
 at `t`, `uv` the surface's own projection of it — except at a cone's
 apex, whose projection is `Ambiguous`, where it is `u = 0` and the apex's
@@ -430,8 +430,32 @@ farther misses, and one nearer crosses twice at the roots of the
 quadratic in the frame that scales the section to the unit circle. A
 conic in a plane across the axis within `tol.angular` meets the surface
 where it meets the section — the two-conic form above, the conic's own
-parameter kept — as `Coincident` or the touches and crossings as hits;
-a conic in any other plane is `Unsupported`.
+parameter kept — as `Coincident` or the touches and crossings as hits.
+
+**A conic against a cone, a sphere, or an elliptic cylinder in any other
+plane** is what a boolean asks of an operand face's own circle, or of
+the section edge a fillet or a chamfer left, against the face it is cut
+by (ADR-0020). A quadric's polynomial `F` along `c + cos t·u + sin t·v`
+is the trigonometric polynomial `a₁ cos t + b₁ sin t + a₂ cos 2t + b₂
+sin 2t + c₀`, its linear part the first harmonic and its quadratic part
+the second with half the constant; between two extrema of it — the roots
+of its derivative, the same quartic in `tan(t/2)` — `F` is monotone, so
+the signed distance, whose sign it carries, crosses zero at most once
+there. Beside those go the distance's kinks: for a cone the crossings of
+the plane through the apex, and the axis, which is a minimum of the
+distance from it. Where `F` is *constant* along the conic — a conic
+concentric with and similar to the surface's section, the one shape
+whose derivative says nothing — the extrema of the distance from the
+axis are looked at instead, which are where such a conic is nearest the
+surface and farthest from it; there is no crossing to find, the sign
+never changing. What is decided there is decided on the distance, by the
+stops the NURBS arm below has: `Coincident` for a parallel of a cone or
+a sphere and for an oblique section lying on an elliptic cylinder, one
+`tangent` hit at a stop within `tol.linear` absorbing the crossings
+beside it, and one crossing on each other stretch whose ends differ in
+sign. A conic through a cone's **apex** touches it there — the distance
+has its extremum, of value zero, at a point the conic does not cross —
+and takes the apex's `uv`. A conic against a torus is `Unsupported`.
 
 **A `Curve::Nurbs` against an analytic surface** (ADR-0018) is what the
 next boolean asks of a fitted section edge. Every analytic surface is

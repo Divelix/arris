@@ -19,6 +19,7 @@
 
 mod bernstein;
 mod bernstein2;
+mod by_distance;
 mod cone_section;
 mod conic2;
 mod curve;

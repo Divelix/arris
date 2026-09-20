@@ -1,12 +1,13 @@
-//! Line–plane, line–cylinder, conic–plane and conic–cylinder
-//! intersections — *conic* being a circle or an ellipse —
-//! follow the case table in any pose: the hit count is the
+//! Curve–surface intersections follow the case table in any pose — a
+//! line against every analytic surface, and a conic, being a circle or
+//! an ellipse, against every one but the torus: the hit count is the
 //! constructed case's, every hit lies on both operands, a hit is tangent
 //! when the case was built tangent, coincident when the curve was built
 //! on the surface, hits are sorted with `t` in the domain, two runs agree
-//! bit for bit, and every other pair is `Unsupported` — the ellipse
-//! arms among them, which an oblique boolean section edge needs
-//! (ADR-0004).
+//! bit for bit, and a conic against a torus is the one `Unsupported`
+//! analytic pair left. The ellipse arms are what an oblique boolean
+//! section edge needs (ADR-0004), and the quadric arms what an operand
+//! face's circle needs of the face it is cut by (ADR-0020).
 
 use core::f64::consts::{FRAC_PI_2, PI, TAU};
 
@@ -572,9 +573,11 @@ fn implicit_signed(s: &Surface, p: Point3) -> f64 {
 #[test]
 fn every_other_pair_is_unsupported() {
     check((curve(), surface()), |(c, s)| {
+        // Every analytic pair but a conic against a torus, which is the
+        // Bernstein isolation's and not a closed form's.
         let closed_form = c.kind() == CurveKind::Line
             || (matches!(c.kind(), CurveKind::Circle | CurveKind::Ellipse)
-                && matches!(s.kind(), SurfaceKind::Plane | SurfaceKind::Cylinder));
+                && s.kind() != SurfaceKind::Torus);
         match intersect_curve_surface(&c, &s, tol()) {
             Ok(_) => prop_assert!(closed_form, "{c:?} vs {s:?} should be unsupported"),
             Err(GeomError::Unsupported { a, b }) => {
@@ -1008,6 +1011,336 @@ fn a_random_ellipse_against_a_plane_or_a_cylinder_passes_the_common_properties()
             common_properties(&e, &p)?;
             common_properties(&e, &c)?;
             Ok(())
+        },
+    );
+}
+
+// --- conic–cone, conic–sphere and conic–elliptic cylinder -------------------
+
+/// Any conic in a random pose.
+fn conic() -> impl Strategy<Value = Curve> {
+    prop_oneof![circle(), arris_debug::prop::geom::ellipse()]
+}
+
+/// The quadrics a conic has no exact section of: a cone, a sphere, and
+/// an elliptic cylinder, which the conic meets in a plane of any tilt.
+fn conic_quadric() -> impl Strategy<Value = Surface> {
+    prop_oneof![
+        arris_debug::prop::geom::cone(),
+        arris_debug::prop::geom::sphere(),
+        arris_debug::prop::geom::elliptic_cylinder(),
+    ]
+}
+
+/// A quadric and a conic in a random pose whose centre has been moved
+/// onto it, its plane and radii kept: a surface and a curve drawn
+/// independently in a box a scale wide are almost always apart, and a
+/// pair that misses tests nothing.
+fn conic_on_a_quadric() -> impl Strategy<Value = (Curve, Surface)> {
+    (
+        conic(),
+        conic_quadric(),
+        finite_f64(0.0..=TAU),
+        finite_f64(-1.4..=1.4),
+    )
+        .prop_filter_map(
+            "the conic keeps its plane about its new centre",
+            |(c, s, u, v)| {
+                let centre = s.point(u, v);
+                let plane =
+                    |f: Frame| Frame::new(centre, f.z().into_inner(), f.x().into_inner()).ok();
+                let moved = match c {
+                    Curve::Circle { frame, radius } => Curve::Circle {
+                        frame: plane(frame)?,
+                        radius,
+                    },
+                    Curve::Ellipse {
+                        frame,
+                        major_radius,
+                        minor_radius,
+                    } => Curve::Ellipse {
+                        frame: plane(frame)?,
+                        major_radius,
+                        minor_radius,
+                    },
+                    Curve::Line { .. } | Curve::Nurbs(_) => return None,
+                };
+                Some((moved, s))
+            },
+        )
+}
+
+#[test]
+fn a_random_conic_crosses_a_quadric_where_its_distance_changes_sign() {
+    check(conic_on_a_quadric(), |(c, s)| {
+        let r = common_properties(&c, &s)?;
+        let hits = hits_of(&r);
+        let f = |t: f64| signed_distance(&s, c.point(t));
+        for h in hits.iter().filter(|h| !h.tangent) {
+            // `ACROSS` of length either side of a crossing, in the
+            // conic's own parameter.
+            let step = ACROSS / c.eval(h.t).d1.norm();
+            prop_assert!(
+                f(h.t - step) * f(h.t + step) < 0.0,
+                "{c:?} vs {s:?}: no sign change at the crossing t = {}",
+                h.t
+            );
+        }
+        let step = TAU / SAMPLES as f64;
+        let mut previous = f(0.0);
+        for i in 1..=SAMPLES {
+            let t = step * i as f64;
+            let now = f(t);
+            if (now < 0.0) != (previous < 0.0) {
+                prop_assert!(
+                    hits.iter()
+                        .any(|h| param_diff(Some(TAU), h.t, t) <= 2.0 * step),
+                    "{c:?} vs {s:?}: the distance changes sign before t = {t} but {r:?} has nothing there"
+                );
+            }
+            previous = now;
+        }
+        Ok(())
+    });
+}
+
+/// A conic built against a cone, a sphere or an elliptic cylinder.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum ConicCase {
+    /// A circle of the sphere — a great one through both poles when the
+    /// case is flipped.
+    SphereParallel,
+    /// A circle crossing the sphere at its pole.
+    SpherePole,
+    /// An ellipse through the centre, as long as the sphere's diameter:
+    /// inside it, touching at both major vertices.
+    SphereInside,
+    /// A circle clear of the sphere.
+    SphereOutside,
+    /// A parallel of the cone.
+    ConeParallel,
+    /// A circle through the cone's apex, in a plane through its axis.
+    ConeApex,
+    /// A circle in a plane across the axis, off it: the cone's parallel
+    /// there is one circle and this is another, in one plane.
+    ConeSection,
+    /// The same, touching that parallel from outside.
+    ConeSectionTangent,
+    /// An oblique section of the elliptic cylinder.
+    EllipticOblique,
+    /// The same section scaled about the axis: clear of the surface
+    /// everywhere, with the polynomial constant along it.
+    EllipticScaled,
+    /// A circle in a plane through the axis, reaching past the wall.
+    EllipticMeridian,
+    /// The same, just reaching it.
+    EllipticMeridianTangent,
+}
+
+fn conic_case() -> impl Strategy<Value = ConicCase> {
+    prop_oneof![
+        Just(ConicCase::SphereParallel),
+        Just(ConicCase::SpherePole),
+        Just(ConicCase::SphereInside),
+        Just(ConicCase::SphereOutside),
+        Just(ConicCase::ConeParallel),
+        Just(ConicCase::ConeApex),
+        Just(ConicCase::ConeSection),
+        Just(ConicCase::ConeSectionTangent),
+        Just(ConicCase::EllipticOblique),
+        Just(ConicCase::EllipticScaled),
+        Just(ConicCase::EllipticMeridian),
+        Just(ConicCase::EllipticMeridianTangent),
+    ]
+}
+
+/// How far a scaled section of an elliptic cylinder is taken past it.
+const SCALED: f64 = 1.2;
+
+#[test]
+fn a_conic_against_a_quadric_follows_the_case_table() {
+    check(
+        (
+            conic_case(),
+            arris_debug::prop::frame(),
+            finite_f64(0.5..=10.0),
+            finite_f64(0.1..=0.9),
+            finite_f64(0.1..=1.45),
+            finite_f64(0.0..=TAU),
+            any::<bool>(),
+        ),
+        |(case, frame, big, fraction, angle, phase, flip)| {
+            let z = frame.z().into_inner();
+            let (a, across) = around(&frame, phase);
+            let o = frame.origin();
+            let small = fraction * big;
+            let (sa, ca) = angle.sin_cos();
+            let sphere = Surface::Sphere { frame, radius: big };
+            let cone = Surface::Cone {
+                frame,
+                radius: big,
+                half_angle: angle,
+            };
+            let wall = Surface::EllipticCylinder {
+                frame,
+                major_radius: big,
+                minor_radius: small,
+            };
+            let apex = o - (big * ca / sa) * z;
+            let plane_of = |normal: Vec3, x: Vec3, centre: Point3| {
+                Frame::new(centre, normal, x).map_err(|e| TestCaseError::fail(e.to_string()))
+            };
+            match case {
+                ConicCase::SphereParallel => {
+                    // In a plane square to `a`: a great circle through
+                    // both poles when it holds the centre.
+                    let lift = if flip { 0.0 } else { small };
+                    let c = Curve::Circle {
+                        frame: plane_of(a, z, o + lift * a)?,
+                        radius: (big - lift).sqrt() * (big + lift).sqrt(),
+                    };
+                    expect_coincident(&common_properties(&c, &sphere)?)
+                }
+                ConicCase::SpherePole => {
+                    // Through the north pole, in the plane of the axis
+                    // and `a`: `|P|² − R² = 2c²(1 − cos t) + 2Rc sin t`
+                    // vanishes at `t = 0` and where `tan(t/2) = −R / c`.
+                    let c = Curve::Circle {
+                        frame: plane_of(across, -a, o + big * z + small * a)?,
+                        radius: small,
+                    };
+                    let r = common_properties(&c, &sphere)?;
+                    expect_hits(&c, &r, &[0.0, TAU - 2.0 * (big / small).atan()], false)?;
+                    let pole = o + big * z;
+                    let at_pole = hits_of(&r)
+                        .iter()
+                        .find(|h| (h.point - pole).norm() <= EXACT);
+                    prop_assert!(at_pole.is_some(), "{r:?} has no hit at the pole {pole}");
+                    Ok(())
+                }
+                ConicCase::SphereInside => {
+                    let c = Curve::Ellipse {
+                        frame: plane_of(across, a, o)?,
+                        major_radius: big,
+                        minor_radius: small,
+                    };
+                    expect_hits(&c, &common_properties(&c, &sphere)?, &[0.0, PI], true)
+                }
+                ConicCase::SphereOutside => {
+                    let c = Curve::Circle {
+                        frame: plane_of(across, a, o + (2.1 * big + small) * a)?,
+                        radius: small,
+                    };
+                    expect_empty(&common_properties(&c, &sphere)?)
+                }
+                ConicCase::ConeParallel => {
+                    // The cone's radius `R + tan α·s` at the height `s`.
+                    let c = Curve::Circle {
+                        frame: plane_of(z, a, o + small * z)?,
+                        radius: big + small * sa / ca,
+                    };
+                    expect_coincident(&common_properties(&c, &cone)?)
+                }
+                ConicCase::ConeApex => {
+                    // Through the apex at `t = π`, up the axis to `2r`:
+                    // on the cone where `|tan(t/2)| = tan α`.
+                    let c = Curve::Circle {
+                        frame: plane_of(across, z, apex + big * z)?,
+                        radius: big,
+                    };
+                    let r = common_properties(&c, &cone)?;
+                    let hits = hits_of(&r);
+                    prop_assert_eq!(hits.len(), 3, "{:?}", r);
+                    let touches: Vec<&CurveSurfaceHit> =
+                        hits.iter().filter(|h| h.tangent).collect();
+                    prop_assert_eq!(touches.len(), 1, "{:?}", r);
+                    prop_assert!((touches[0].t - PI).abs() * big <= EXACT, "{:?}", r);
+                    prop_assert_eq!(
+                        touches[0].uv,
+                        arris_math::Point2::new(0.0, -big / sa),
+                        "the apex takes u = 0"
+                    );
+                    for (h, t) in hits
+                        .iter()
+                        .filter(|h| !h.tangent)
+                        .zip([2.0 * angle, TAU - 2.0 * angle])
+                    {
+                        prop_assert!((h.t - t).abs() * big <= EXACT, "{h:?} vs {t}");
+                    }
+                    Ok(())
+                }
+                ConicCase::ConeSection | ConicCase::ConeSectionTangent => {
+                    // In the plane across the axis at the height `s`, the
+                    // cone is the circle of radius `R_h` about the axis,
+                    // and this is the two-circle case.
+                    let parallel = big + small * sa / ca;
+                    let radius = 0.5 * big;
+                    let (near, far) = ((radius - parallel).abs(), radius + parallel);
+                    let delta = match case {
+                        ConicCase::ConeSection => near + fraction * (far - near),
+                        _ => far,
+                    };
+                    let c = Curve::Circle {
+                        frame: plane_of(z, a, o + small * z + delta * a)?,
+                        radius,
+                    };
+                    let r = common_properties(&c, &cone)?;
+                    if case == ConicCase::ConeSectionTangent {
+                        return expect_hits(&c, &r, &[PI], true);
+                    }
+                    let x = (delta * delta + parallel * parallel - radius * radius) / (2.0 * delta);
+                    let y = (parallel - x).sqrt() * (parallel + x).sqrt();
+                    let t = y.atan2(x - delta);
+                    expect_hits(&c, &r, &[t, -t], false)
+                }
+                ConicCase::EllipticOblique | ConicCase::EllipticScaled => {
+                    // The plane `z = m·y` in the surface's frame, with
+                    // the tilt short of where the section's minor axis
+                    // would outgrow its major one.
+                    let m = 0.5 * ((big / small).powi(2) - 1.0).sqrt();
+                    let minor = small * (1.0 + m * m).sqrt();
+                    let scale = if case == ConicCase::EllipticOblique {
+                        1.0
+                    } else {
+                        SCALED
+                    };
+                    let along = (frame.y().into_inner() + m * z).normalize();
+                    let c = Curve::Ellipse {
+                        frame: plane_of(
+                            frame.x().into_inner().cross(&along),
+                            frame.x().into_inner(),
+                            o,
+                        )?,
+                        major_radius: scale * big,
+                        minor_radius: scale * minor,
+                    };
+                    let r = common_properties(&c, &wall)?;
+                    if case == ConicCase::EllipticOblique {
+                        expect_coincident(&r)
+                    } else {
+                        expect_empty(&r)
+                    }
+                }
+                ConicCase::EllipticMeridian | ConicCase::EllipticMeridianTangent => {
+                    // In the plane of the axis and `a`, the wall is the
+                    // two rulings the section reaches `M` along `a` at.
+                    let reach = 1.0 / ((phase.cos() / big).hypot(phase.sin() / small));
+                    let radius = match case {
+                        ConicCase::EllipticMeridian => reach * (1.2 + fraction),
+                        _ => reach,
+                    };
+                    let c = Curve::Circle {
+                        frame: plane_of(a.cross(&z), a, o)?,
+                        radius,
+                    };
+                    let r = common_properties(&c, &wall)?;
+                    if case == ConicCase::EllipticMeridianTangent {
+                        return expect_hits(&c, &r, &[0.0, PI], true);
+                    }
+                    let half = (reach / radius).acos();
+                    expect_hits(&c, &r, &[half, PI - half, PI + half, TAU - half], false)
+                }
+            }
         },
     );
 }

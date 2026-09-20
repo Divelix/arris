@@ -155,7 +155,7 @@ bound has to be established here.
   the band, 293 at `1e-2` of the radius, 10 to 110 ms (DATA-MODEL
   §Pcurves holds the series); the cylinder's fitted pcurves are the same
   to the bit, which took leaving its `u` unwrapped as `atan2` gives it.
-- [ ] Step 2 **[2]** — A conic against a cone, a sphere, and an elliptic
+- [x] Step 2 **[2]** — A conic against a cone, a sphere, and an elliptic
   cylinder in any plane. `spline_surface`'s verdict factored out and
   shared; the candidates from `trig2_roots` on the implicit's derivative
   along the conic, plus the distance's kinks — the cone's apex plane and
@@ -166,6 +166,17 @@ bound has to be established here.
   unreported, a touch one hit and not two; hand cases — a great circle
   through a pole, a circle through an apex, a parallel (`Coincident`), an
   ellipse tangent to a sphere from inside.
+  *Established:* the kinks are the cone's alone, and the extrema of `ρ²`
+  are added there and wherever the polynomial is **constant** along the
+  conic (a conic concentric with and similar to the section — for an
+  elliptic cylinder its distance still varies, and the derivative has
+  nothing to say). Added everywhere they cost a hit: a conic through a
+  sphere's pole passes the axis there, `ρ²` has a triple critical point,
+  and the two roots a rounding apart straddling the crossing read as an
+  extremum on the surface — a touch that absorbs the crossing. A
+  sphere's own extrema are its polynomial's exactly, so nothing is lost.
+  The random property moves the conic's centre onto the surface: drawn
+  independently, 97% of the pairs miss.
 - [ ] Step 3 **[2]** — A conic against a torus, two coplanar conics, and
   the fixture. The torus by four rational quarter arcs through the
   Bernstein isolation `spline_surface` uses, degree eight, the hit's `t`

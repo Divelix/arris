@@ -177,6 +177,48 @@ impl<'a> Implicit<'a> {
         }
     }
 
+    /// The coefficients `[a₁, b₁, a₂, b₂, c₀]` of `F` along the conic
+    /// `centre + cos t·u + sin t·v`, `u` and `v` its semi-axes in world
+    /// coordinates: the trigonometric polynomial `a₁ cos t + b₁ sin t +
+    /// a₂ cos 2t + b₂ sin 2t + c₀` that a quadratic `F` makes of one.
+    /// `F(c + λ) = F(c) + ∇F(c)·λ + A(λ, λ)` for every `λ`, so the
+    /// linear part is the first harmonic and the quadratic part the
+    /// second with half of the constant, `cos²` and `sin²` being `(1 ±
+    /// cos 2t) / 2` and `sin t cos t` half of `sin 2t`. `None` for a
+    /// torus, whose `F` is quartic and whose conics are isolated in the
+    /// Bernstein basis instead.
+    pub(crate) fn along_conic(&self, centre: Point3, u: Vec3, v: Vec3) -> Option<[f64; 5]> {
+        let q = self.frame.to_local(centre);
+        let (u, v) = (self.frame.vec_to_local(u), self.frame.vec_to_local(v));
+        let (uu, vv, uv) = (
+            self.quadratic(u, u)?,
+            self.quadratic(v, v)?,
+            self.quadratic(u, v)?,
+        );
+        let gradient = self.slope(q);
+        Some([
+            gradient.dot(&u),
+            gradient.dot(&v),
+            0.5 * (uu - vv),
+            uv,
+            self.value(q) + 0.5 * (uu + vv),
+        ])
+    }
+
+    /// The symmetric bilinear form `A(p, q)` of `F`'s quadratic part, in
+    /// the surface's frame; `None` for a torus, whose `F` is quartic.
+    fn quadratic(&self, p: Vec3, q: Vec3) -> Option<f64> {
+        let across = p.x * q.x + p.y * q.y;
+        Some(match self.form {
+            Form::Plane => 0.0,
+            Form::Cylinder { .. } => across,
+            Form::EllipticCylinder { a, b } => p.x * q.x / (a * a) + p.y * q.y / (b * b),
+            Form::Cone { sin, cos, .. } => cos * cos * across - sin * sin * p.z * q.z,
+            Form::Sphere { .. } => p.dot(&q),
+            Form::Torus { .. } => return None,
+        })
+    }
+
     /// The sum of the magnitudes of the terms of `g`, for homogeneous
     /// coordinates no larger than `reach` and weights no larger than
     /// `weight`: what a coefficient of `g` is zero to rounding against.
@@ -476,6 +518,32 @@ mod tests {
             }
             let on = implicit.frame.to_local(surface.point(0.8, 0.3));
             assert!(implicit.value(on).abs() < 1e-14, "{surface:?}");
+        }
+    }
+
+    /// `F` along a conic is the trigonometric polynomial
+    /// [`Implicit::along_conic`] gives the coefficients of, and a torus
+    /// has none.
+    #[test]
+    fn the_polynomial_along_a_conic_is_a_trigonometric_polynomial() {
+        let centre = Point3::new(0.4, -0.7, 0.25);
+        let (u, v) = (Vec3::new(0.9, 0.2, -0.3), Vec3::new(-0.1, 0.5, 0.7));
+        for surface in surfaces() {
+            let implicit = Implicit::of(&surface).unwrap();
+            let Some([a1, b1, a2, b2, c0]) = implicit.along_conic(centre, u, v) else {
+                assert!(matches!(surface, Surface::Torus { .. }), "{surface:?}");
+                continue;
+            };
+            for t in [0.0f64, 0.7, 2.4, -1.9] {
+                let (st, ct) = t.sin_cos();
+                let (s2, c2) = (2.0 * t).sin_cos();
+                let direct = implicit.value(implicit.frame.to_local(centre + ct * u + st * v));
+                let series = a1 * ct + b1 * st + a2 * c2 + b2 * s2 + c0;
+                assert!(
+                    (direct - series).abs() < 1e-12,
+                    "{surface:?} at {t}: {direct} vs {series}"
+                );
+            }
         }
     }
 

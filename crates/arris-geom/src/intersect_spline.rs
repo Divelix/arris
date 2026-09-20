@@ -24,48 +24,22 @@
 //! reference tree were read for how a conic is put into a quadric;
 //! nothing of either is here — they solve in power coefficients.
 
-use arris_math::roots;
-use arris_math::{Interval, Tolerance};
+use arris_math::Tolerance;
 
 use crate::bernstein::{Binomials, derivative, sign_change_candidates};
+use crate::by_distance::hits_by_distance;
 use crate::implicit::{BERNSTEIN_ROUNDING, Implicit};
-use crate::intersect_curve::{hit, points};
 use crate::nurbs::BezierSpan;
 use crate::{Curve, CurveSurfaceIntersection, GeomError, GeomKind, NurbsCurve, Surface};
-
-/// A parameter at which the distance is looked at: an extremum of it
-/// among its neighbours, or an end of an open curve.
-#[derive(Clone, Copy)]
-struct Stop {
-    t: f64,
-    distance: f64,
-    /// Within `tol.linear` of the surface.
-    touch: bool,
-    /// An extremum inside the curve rather than an end of it.
-    interior: bool,
-}
 
 /// A rational B-spline curve against an analytic surface.
 ///
 /// The parameters looked at are every distinct knot of the domain and,
 /// on every span, every candidate for a sign change of `g′`
 /// ([`sign_change_candidates`], against [`BERNSTEIN_ROUNDING`] of the
-/// span's magnitude): between two consecutive ones `g` is monotone. Of
-/// those, the **stops** are the ones where the distance `δ` is an
-/// extremum among its neighbours, and the two ends of a curve that is
-/// not periodic, which are extrema of a function on a closed interval.
-/// Then, as `line_by_distance` has it: every stop within `tol.linear`
-/// is the whole curve within it, `Coincident`; a stop within
-/// `tol.linear` is a hit that absorbs the crossings on the stretches
-/// beside it, and a run of such stops with no other between them is one
-/// hit, at the one nearest the surface; two consecutive other stops of
-/// opposite sign hold one crossing, by bracketed Newton on `δ`. A hit at
-/// a stop is `tangent` when its run holds an extremum inside the curve:
-/// a curve that only *ends* within `tol.linear` of the surface meets it
-/// there without touching it — that is a section edge ending on a face,
-/// which the pave model makes a vertex of, not a graze. A periodic
-/// curve's stops go round, and its hits come back in `[knots[p],
-/// knots[n])`.
+/// span's magnitude): between two consecutive ones `g` is monotone, and
+/// so is the distance, whose sign it carries. The verdict on them is
+/// [`hits_by_distance`]'s, shared with the conic arms.
 pub(crate) fn spline_surface(
     curve: &Curve,
     spline: &NurbsCurve,
@@ -101,111 +75,7 @@ pub(crate) fn spline_surface(
             *t = t.max(domain.lo());
         }
     }
-    splits.retain(|t| t.is_finite());
-    splits.sort_by(f64::total_cmp);
-    splits.dedup();
-    if splits.is_empty() {
-        // A validated curve has a span; one whose knots are not finite
-        // numbers could not have been built.
-        return Ok(CurveSurfaceIntersection::Points(Vec::new()));
-    }
-
-    let distance = |t: f64| implicit.distance(spline.eval(t).point);
-    let slope = |t: f64| {
-        let e = spline.eval(t);
-        implicit
-            .gradient(e.point)
-            .dot(&implicit.frame.vec_to_local(e.d1))
-    };
-    let values: Vec<f64> = splits.iter().map(|&t| distance(t)).collect();
-    let n = splits.len();
-    let cyclic = period.is_some();
-    let neighbour = |i: usize, step: isize| -> Option<f64> {
-        let j = i as isize + step;
-        if cyclic {
-            Some(values[j.rem_euclid(n as isize) as usize])
-        } else if j < 0 || j >= n as isize {
-            None
-        } else {
-            Some(values[j as usize])
-        }
-    };
-    let mut stops: Vec<Stop> = Vec::new();
-    for i in 0..n {
-        let v = values[i];
-        let (before, after) = (neighbour(i, -1), neighbour(i, 1));
-        let low = before.is_none_or(|b| b >= v) && after.is_none_or(|a| a >= v);
-        let high = before.is_none_or(|b| b <= v) && after.is_none_or(|a| a <= v);
-        if low || high {
-            stops.push(Stop {
-                t: splits[i],
-                distance: v,
-                touch: v.abs() <= tol.linear,
-                interior: before.is_some() && after.is_some(),
-            });
-        }
-    }
-    if stops.iter().all(|s| s.touch) {
-        return Ok(CurveSurfaceIntersection::Coincident);
-    }
-    if cyclic {
-        // Started at a stop clear of the surface, no run of touches goes
-        // round the end of the list.
-        let first = stops.iter().position(|s| !s.touch).unwrap_or(0);
-        stops.rotate_left(first);
-    }
-    let mut runs: Vec<Stop> = Vec::with_capacity(stops.len());
-    for stop in stops {
-        match runs.last_mut() {
-            Some(last) if last.touch && stop.touch => {
-                let interior = last.interior || stop.interior;
-                if stop.distance.abs() < last.distance.abs() {
-                    *last = stop;
-                }
-                last.interior = interior;
-            }
-            _ => runs.push(stop),
-        }
-    }
-
-    let crossing = |lo: f64, hi: f64| -> Result<f64, GeomError> {
-        let degenerate = |reason: String| GeomError::Degenerate {
-            kind: GeomKind::Curve(curve.kind()),
-            reason,
-        };
-        let bracket = Interval::new(lo, hi)
-            .map_err(|_| degenerate(format!("crossing bracket [{lo}, {hi}]")))?;
-        roots::newton_in_interval(distance, slope, bracket, 0.0)
-            .map_err(|e| degenerate(format!("crossing in [{lo}, {hi}]: {e}")))
-    };
-    let mut hits = Vec::new();
-    for (i, stop) in runs.iter().enumerate() {
-        if stop.touch {
-            hits.push(hit(curve, surface, stop.t, stop.interior)?);
-        }
-        // The stretch to the next stop; a periodic curve's goes round,
-        // past the end of the domain wherever the next stop is behind.
-        let next = match (runs.get(i + 1), period) {
-            (Some(next), _) => *next,
-            (None, Some(_)) if runs.len() > 1 => runs[0],
-            (None, _) => continue,
-        };
-        let next_t = match period {
-            Some(period) if next.t <= stop.t => next.t + period,
-            _ => next.t,
-        };
-        if stop.touch || next.touch || (stop.distance < 0.0) == (next.distance < 0.0) {
-            continue;
-        }
-        let mut t = crossing(stop.t, next_t)?;
-        if let Some(period) = period {
-            if t >= domain.hi() {
-                t = (t - period).max(domain.lo());
-            }
-        }
-        hits.push(hit(curve, surface, t, false)?);
-    }
-    Ok(points(hits))
+    hits_by_distance(curve, surface, &implicit, splits, tol)
 }
 
 /// The candidates for an extremum of `g` on one span, as parameters of
