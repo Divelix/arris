@@ -65,7 +65,19 @@ What steps 1 to 3 proved, recorded here as the decision's grounds:
   zero on the line between two boxes — where every symmetric pose puts
   one — inside both, to be merged after rather than followed down. The
   isolation may return a candidate too many and never one too few, as
-  `bernstein.rs`'s does in one variable.
+  `bernstein.rs`'s does in one variable. Subdivision is a **halving**
+  along the direction the system varies more along while a box is being
+  excluded, and along the one that narrows the Krawczyk iteration most
+  once the certificate is in reach — a drill through a tube a hundredth
+  of the ring across went from 11 104 boxes to 254 when quartering gave
+  way to it. Measured at `Precision::DEFAULT` over 216 posed sections
+  (six tori of `R/r` 1.1 to 100, twelve partners, three placements
+  including 1e3 away from the origin): **≤ 25 halvings and ≤ 740 boxes**
+  for the sixteen patches together, ≤ 18 halvings where the ring is
+  under a hundred tubes across. Over 420 tangencies, where the depth is
+  that of following a zero that is not simple down to where `f` is flat:
+  40 to 66 halvings, ≤ 1508 boxes. `MAX_DEPTH` is per direction, and no
+  pose reached it.
 - **A branch is graphs `v(u)` joined through their turning points** by
   ADR-0018's `u = u_T ± L(1 − cos θ)`, so `Arc1` and `SectionBranch` are
   shared with the ruled tracer and `section::traced` fits both with one

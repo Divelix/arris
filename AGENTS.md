@@ -31,11 +31,14 @@ lives under `tests/fixtures/regression/`. ADR-0001 to 0005.
 shapes pass the corpus in its own units: blends, lumps, cylinder–cylinder
 booleans, quadrics on a shared axis, the facade decisions, mesh formats,
 elliptic profiles. ADR-0006 to 0017.
-**C3 in progress:** every quadric pair without a torus meets, quartics
-traced and fitted to NURBS, one `Meets` result (ADR-0018). The direction
-after it is ADR-0020's. **Next:** C3's second plan — torus pairs, conic
-hits on curved quadrics, the quadric guard lifted — then the measuring
-harness beside it, and the reader cycle once C3 closes.
+**C3 in progress:** every pair of analytic surfaces meets in the
+intersector — conics exact, a ruled pair's quartics traced by its
+rulings, a torus's section traced in its own parameter plane, all fitted
+to NURBS, one `Meets` result (ADR-0018, ADR-0019); S5 and B1 decide them
+all. The direction after it is ADR-0020's. **Next:** C3's third plan —
+conic hits on curved quadrics, the fitted pcurve fallback, the quadric
+guard lifted — then the measuring harness beside it, and the reader
+cycle once C3 closes.
 
 ## Rules that are not derivable from the code
 

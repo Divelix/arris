@@ -18,7 +18,7 @@ re-exports the public API. Lower crates never name types from upper ones.
 | Crate | Owns | External deps | Layer |
 |---|---|---|---|
 | `arris-math` | `Point3`/`Vec3`/`UnitVec3` (over `nalgebra`, ADR-0001), `Frame`, `Frame2`, `Axis`, `Isometry`, `Interval`, `Aabb`, `wrap_angle`, exact orientation predicates (over `robust`), polynomial and interval-guarded Newton root finding, `Precision` and `Tolerance` | `nalgebra`, `robust`, `serde` (feature) | 0 — representation |
-| `arris-geom` | `Surface`, `Curve`, `Curve2` (analytic + NURBS): evaluation, derivatives, point projection, curve/curve, curve/surface and surface/surface intersection (`trace_quadrics`, the exact section of two quadrics that the intersector fits), bounding boxes over a parameter range, pcurves and the NURBS fit behind them; the (u, v) toolkit `region2` and `integrate` shared by the checker, tessellation, mass properties and classification; `Profile`, the planar sketch of lines, arcs and elliptic arcs a sweep takes, validated and oriented by `Profile::edges`; `GeomError` | `arris-math`, `thiserror`, `serde` (feature) | 0 — representation |
+| `arris-geom` | `Surface`, `Curve`, `Curve2` (analytic + NURBS): evaluation, derivatives, point projection, curve/curve, curve/surface and surface/surface intersection (`trace_quadrics`, the exact section of two quadrics by the rulings of one, and `trace_torus`, the exact section of a torus in its own parameter plane — both fitted by the intersector), bounding boxes over a parameter range, pcurves and the NURBS fit behind them; the (u, v) toolkit `region2` and `integrate` shared by the checker, tessellation, mass properties and classification; `Profile`, the planar sketch of lines, arcs and elliptic arcs a sweep takes, validated and oriented by `Profile::edges`; `GeomError` | `arris-math`, `thiserror`, `serde` (feature) | 0 — representation |
 | `arris-topo` | `Model` (the arena), typed ids, `Shape`/`Body`/`Face`/… handles, orientation, entities, pcurves, per-entity tolerances, Euler operators including the assembly seam (`Assembly::of_body`, `effective_uses`, `AssemblySlots`), the Euler line (`euler::EulerLine`), adjacency and iteration, `Provenance` and its audit; re-exports `arris-geom` and `arris-math` | `arris-geom`, `arris-math`, `thiserror`, `serde` (feature) | 0 — representation |
 | `arris-check` | The invariant checker: `check(&Model, Body, Level) -> Report` and the `Violation` list of data-model §Invariants; the shared face domain (`domain::FaceDomain`), point classifier (`classify::Classifier`, `classify_point`) and region flux (`flux::face_flux`) every `Full` row, the boolean and tessellation read a face through; re-exports `arris-topo` | `arris-topo`, `serde` (feature, forwarded to `arris-topo`) | 1 |
 | `arris-ops` | Primitives, extrude and revolve of a `Profile`, transform, booleans, the blends, each returning `Provenance`; the queries `measure` (mass properties) and `query` (projection onto a plane, a face's outward frame) | `arris-check`, `thiserror`, `rayon` (feature) | 2 — algorithms |
@@ -877,14 +877,21 @@ tube circles, a partial revolve's flat ends. In general position a
 plane meets a cone in an exact conic — an ellipse, or a parabola's or a
 hyperbola's branches as rational quadratic NURBS over the region — and
 a cylinder, a cone or a sphere meets a cone or a sphere in a traced and
-fitted section; a torus sharing no axis is `Unsupported`, C3's next
-plan. The elliptic cylinder an extruded elliptic segment sweeps
+fitted section. A torus sharing no axis with the other surface has no
+ruling to walk, so its section is traced by the second tracer,
+`trace_torus`, in the torus's own parametrisation — the torus put into
+the other surface's implicit polynomial in Bernstein form over sixteen
+quarter-turn patches, the branches proven by isolated turning and
+singular points rather than sampled, a tube circle the other surface
+holds returned as an exact `Curve::Circle` — and fitted by the same
+code path as a ruled pair's, over the whole torus rather than a region
+(ADR-0019). The elliptic cylinder an extruded elliptic segment sweeps
 (ADR-0014) is decided against a plane in every pose and against a
 cylinder or another elliptic cylinder with a parallel axis by closed
 form, through the two sections in the plane across the axes — the
 pairs an extrude's faces make — against those on other axes, a cone or
-a sphere by the tracer, and is `Unsupported` against a torus; the pave
-model's quadric guard
+a sphere by the ruled tracer, and against a torus by the torus's; the
+pave model's quadric guard
 refuses a face on it as it refuses a cone, a sphere or a torus, so a
 boolean never widens onto it silently. A
 `Curve::Nurbs` — the fitted section edge the next boolean meets — is

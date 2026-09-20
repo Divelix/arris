@@ -23,8 +23,8 @@ use arris_topo::{
 };
 
 /// The ring every test here is built around: a metre-scale torus at an
-/// `R/r` well away from 1, the size step 4 of `plans/c3-torus-pairs`
-/// poses its fixture's partners at.
+/// `R/r` well away from 1, the size `geom/c3-torus-pairs` poses its
+/// partners at.
 const R: f64 = 5.0;
 const MINOR: f64 = 2.0;
 
@@ -144,7 +144,7 @@ fn torus_band(m: &mut Model, u0: f64, u1: f64, shared: Option<EdgeId>) -> (FaceI
     (face, e_start)
 }
 
-/// The elbow's straight pipe (step 3 of `plans/c3-torus-pairs`): the
+/// The elbow's straight pipe, the pose ADR-0019's tube circle is about: the
 /// cylinder of the tube's radius about the centre circle's tangent at
 /// `u0`, over `v ∈ [v0, v1]` of its own parametrisation — which is
 /// [`tube_frame`]'s, so the cylinder at `(t, 0)` is the ring at `(u0, t)`
