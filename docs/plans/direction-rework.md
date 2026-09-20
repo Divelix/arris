@@ -137,7 +137,7 @@ bound has to be established here.
   `description` is in neither `SOLID_KEYS` nor `GEOMETRY_KEYS`
   (`tools/oracle/oracle/recipe.py`), so it is outside the hash and both
   were renamed, `expected.json` untouched and both fixtures re-run.
-- [ ] Step 5 **[1]** — `docs/ARCHITECTURE.md` (§How a consumer's kernel
+- [x] Step 5 **[1]** — `docs/ARCHITECTURE.md` (§How a consumer's kernel
   facade maps on: "the STEP reader is a later cycle" restated; §Operations'
   guard sentence checked against the roadmap's wording),
   `.agents/skills/close-cycle/SKILL.md` as *Design deltas*, `AGENTS.md`
@@ -155,8 +155,11 @@ bound has to be established here.
   descriptions were renamed after all, so the escape clause is gone.
 - Every item of the old "later cycles" list and every backlog line removed
   in step 3 is findable in `docs/ROADMAP.md` under a name.
-- ADR-0020's name table, the roadmap's named cycles and `/close-cycle`'s
-  text list the same names.
+- ADR-0020's name table and the roadmap's named cycles list the same
+  eight names (the reader cycle among them, as "Next"). **Amended in step
+  5:** `/close-cycle` names the reader cycle and points at the roadmap's
+  list for the rest rather than repeating it — a third copy of the names
+  is a third thing to keep in step.
 - The pre-commit hook is green on every step (step 4 touches rustdoc, so
   `cargo doc -D warnings` is the check that matters).
 

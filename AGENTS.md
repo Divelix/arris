@@ -32,9 +32,10 @@ shapes pass the corpus in its own units: blends, lumps, cylinder–cylinder
 booleans, quadrics on a shared axis, the facade decisions, mesh formats,
 elliptic profiles. ADR-0006 to 0017.
 **C3 in progress:** every quadric pair without a torus meets, quartics
-traced and fitted to NURBS, one `Meets` result (ADR-0018). **Next:** C3's
-second plan — torus pairs, conic hits on curved quadrics, the quadric
-guard lifted.
+traced and fitted to NURBS, one `Meets` result (ADR-0018). The direction
+after it is ADR-0020's. **Next:** C3's second plan — torus pairs, conic
+hits on curved quadrics, the quadric guard lifted — then the measuring
+harness beside it, and the reader cycle once C3 closes.
 
 ## Rules that are not derivable from the code
 
@@ -49,6 +50,11 @@ guard lifted.
   `inspect` skill. Never ask the human to describe a shape.
 - Decisions go in `docs/adr/`; `⚠ OPEN:` in a doc marks a deferred one.
   Kickoff decisions are in `SEED.md` §9 and are not re-litigated.
+- Closure before breadth: a cycle keeps its own output operable before the
+  kernel takes new input. An unopened cycle carries a name, never a
+  number — `/close-cycle` assigns that — and the cycle after the reader's
+  is picked from its refusal histogram and the first consumer's
+  regressions, not from a list (ADR-0020).
 - Update this file's "Current state" when a milestone lands; keep it under
   ~15 lines — the roadmap holds the detail.
 - Backlog line → `/idea` (brainstorm, `docs/ideas/`) → `/plan` (todo,

@@ -11,7 +11,7 @@ kickoff.
 |---|---|
 | [architecture](ARCHITECTURE.md) | Crate layout, layer rule, arena and handles, operation signature and error model, the checker, threading, how a consumer's kernel facade maps on |
 | [data-model](DATA-MODEL.md) | Geometry enums and parametrisations, topology entities, pcurves, tolerances, the invariant list, provenance, native format |
-| [roadmap](ROADMAP.md) | Cycles and milestones with acceptance corpora |
+| [roadmap](ROADMAP.md) | Cycles and milestones with acceptance corpora; the work that stands beside them, and the named cycles not yet opened |
 | [adr/](adr/README.md) | Architecture decision records |
 
 Conventions used in these docs: `⚠ OPEN:` marks a question deliberately left
@@ -47,8 +47,9 @@ list is empty. It is step 2 of `/close-cycle`.
 
 A finished cycle **compresses in place**: `ROADMAP.md` keeps one section per
 cycle — goal, status line, in/out/accept — and the next cycle is appended below
-it. There is never a second roadmap file; these docs are topics, not
-versions.
+it, taking its number at that moment (ADR-0020; until then it is one of the
+named cycles at the foot of the file). There is never a second roadmap file;
+these docs are topics, not versions.
 
 ## What is different from an application's docs
 

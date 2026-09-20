@@ -250,7 +250,10 @@ sphere or a torus is refused before any intersector is asked — the
 *quadric guard*, `OpError::Unsupported` naming the pair exactly as the
 intersector named it before the coaxial arm existed (ADR-0008) — so a
 new intersector arm widens no boolean silently; booleans with quadric
-operand faces are C3's, with their corpus. Every face pair is
+operand faces are C3's, with their corpus. The guard is the kernel's
+one open closure gap: `ops::fillet`, `ops::chamfer` and `ops::revolve`
+build tori, spheres and cones, so until C3 lifts it a body Arris
+returned is not a body a boolean takes (ADR-0020). Every face pair is
 intersected in one region for the whole boolean — the overlap of the
 operands' boxes grown by its own diagonal — so pairs on the same two
 surfaces get the same traced curve (ADR-0018). It holds every face
@@ -1226,8 +1229,10 @@ the backend behind it, on its own schedule (ADR-0017). Its surface maps onto
 Arris method for method, and nothing in the facade needs Arris types above
 it. What a method covers is a separate question, answered case by case: a
 blend between faces outside ADR-0007's table is refused where the old
-backend may build it, and the STEP reader is a later cycle. The consumer's
-run of its suite on both backends is what measures this.
+backend may build it, and the STEP reader is the cycle after C3
+(`docs/ROADMAP.md`, ADR-0020). The consumer's run of its suite on both
+backends is what measures this — and, beside the real-part corpus's
+refusal histogram, what picks the cycle after the reader's.
 
 | Facade needs | Arris provides |
 |---|---|

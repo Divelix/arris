@@ -34,11 +34,24 @@ second roadmap file would only ever raise "which one is current?".
    sentence, grep for the fact in `docs/`, `crates/` and `README.md` — a
    measurement or a rationale that lives *only* here is relocated to the
    doc or the code comment that wants it, never dropped.
-4. **Open the next section.** `## vN — <theme>` with goal, in, out and
-   accept, drawn from `docs/BACKLOG.md`. The theme and the in/out split are
-   the **human's call**: propose, do not decide. If the answer is not
-   obvious from the backlog, stop and ask.
-5. **`Spine:`** at the top of the roadmap gains the new cycle.
+4. **Open the next section, and give it its number.** An unopened cycle
+   carries a **name** in `docs/ROADMAP.md` and gets its number here
+   (ADR-0020) — which is what keeps "cycle Cn releases `0.n.0`"
+   (`.agents/rules/git.md` §Tags) lining up with the order cycles are
+   actually opened in. `## Cn — <name>` with goal, in, out and accept,
+   drawn from the roadmap's outline for that cycle and `docs/BACKLOG.md`.
+   **Which** name comes next: the reader cycle is next while it is
+   unopened; after it, apply ADR-0020's selection rule — the refusal
+   histogram over the real-part corpus and the first consumer's
+   side-by-side regressions, the consumer's ranking first while one waits
+   on a swap — and record in the new section's goal the numbers it was
+   chosen on, so the choice can be re-checked. The theme and the in/out
+   split are the **human's call**: propose, do not decide. If the answer
+   is not obvious from the rule and the backlog, stop and ask.
+5. **`Spine:`** at the top of the roadmap gains the new cycle, by number;
+   the name leaves the "Named cycles, unordered" list at the same time,
+   and the standing sections beside the cycles (the measuring harness,
+   the binding) keep their current numbers.
 6. **`AGENTS.md` "Current state"**: one sentence for the closed cycle, a
    new `**Next:**`, block still under ~15 lines.
 7. Commit as `docs: close <cycle>` with a body listing the docs updated and
