@@ -137,7 +137,8 @@ pub fn intersect_curves(
         (Curve::Circle { .. } | Curve::Ellipse { .. }, Curve::Nurbs(_)) => {
             Ok(swapped(through_plane(b, a, tol)?))
         }
-        // Two fitted curves meet where a marcher finds them, C4's; the
+        // Two fitted curves meet where a marcher finds them, the NURBS
+        // cycle's; the
         // pave model reads the crossings of one pair's traced curves from
         // the tracer's points instead (ADR-0018).
         (Curve::Nurbs(_), Curve::Nurbs(_)) => Err(GeomError::Unsupported {

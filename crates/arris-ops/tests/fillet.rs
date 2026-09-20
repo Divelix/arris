@@ -970,7 +970,8 @@ fn two_cap_edges_are_the_same_miter_rotated() {
 /// A corner whose two blended edges have different dihedrals — the
 /// slanted vertical edge of an extruded parallelogram and its cap edge
 /// — is not one ellipse: the two far contacts meet the third edge at two
-/// points. Refused by name, the model untouched (C6's).
+/// points. Refused by name, the model untouched (the blend-network
+/// cycle's).
 #[test]
 fn a_miter_of_unequal_dihedrals_is_a_vertex_blend() {
     let mut m = Model::default();
@@ -1114,7 +1115,8 @@ fn cut_corner(m: &mut Model) -> Body {
 }
 
 /// Three fillets at a corner the sphere's exact sides do not cover are
-/// refused by name, the model untouched (C6's): the L's reflex top
+/// refused by name, the model untouched (the blend-network cycle's): the
+/// L's reflex top
 /// corner, its rise concave and its top edges convex, and the corner of a
 /// cut where no face is square to the other two, so no meridian frame
 /// makes every side a line in (u, v).

@@ -253,7 +253,8 @@ through `Builder::assemble`, held to Pappus's theorems at a thousand
 random profiles. No ADRs.
 
 - A `geom::Profile` of lines and arcs with holes (no `ops::planar_face`:
-  a one-face sheet is C7's); `ops::extrude` (planes and cylinders);
+  a one-face sheet is the healing cycle's); `ops::extrude` (planes and
+  cylinders);
   `ops::revolve` (planes, cylinders, and cones/spheres/tori as *surfaces*
   where the profile demands them — their booleans are C2–C3's).
 - Extrude and revolve provenance: side faces `Generated` from profile
@@ -383,8 +384,9 @@ on curved quadrics, the quadric guard, features a tolerance apart.
   than first-come merging (`regression/seam-a-tolerance-from-crossing-fuse`),
   and a corpus of faces touching and coincident within a tolerance.
 
-**Out:** NURBS operands and NURBS–NURBS intersection (C4); blends on
-quadric face pairs (C6); a spindle torus; a revolve of an elliptic segment;
+**Out:** NURBS operands and NURBS–NURBS intersection (the NURBS cycle's);
+blends on quadric face pairs (the blend-network cycle's); a spindle
+torus; a revolve of an elliptic segment;
 the STEP reader.
 
 **Accept:** property tests at random poses of every quadric pair — every

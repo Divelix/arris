@@ -547,7 +547,7 @@ edge is shortened to that point, no arc enters any face, and the miter
 edge belongs to both blend faces. The two far contacts meet the third
 edge at one point exactly when the two edges' dihedrals are equal (a box
 corner, any right-angled prism), which the operation requires; a corner
-of unequal dihedrals is two arcs and C6's. Two chamfers at such a corner
+of unequal dihedrals is two arcs and the blend-network cycle's. Two chamfers at such a corner
 meet in the line between the same two points; their far contacts meet
 the third edge at one point exactly when the two edges make equal angles
 with it, which a chamfer corner requires instead. Three blended edges at
@@ -564,7 +564,7 @@ two sides meridians, every pcurve on the sphere a line; the meridians
 meet at the pole, that point, crossed by a degenerate edge as a
 revolve's sphere closes at its axis. A fillet corner with no face square
 to the other two would put a side on a tilted great circle with a fitted
-pcurve and is C6's. Three chamfers meet in the triangle of the three
+pcurve and is the blend-network cycle's. Three chamfers meet in the triangle of the three
 points, each side a chord in one chamfer's plane, at any such corner. The edges are blended in the
 body's iteration order, whatever order they are listed in, so the result
 and its ids are the same for any order of one set; disjoint blends share
@@ -690,7 +690,7 @@ rise its seam, used twice — walked that way when the sweep runs along the
 profile's normal and the other way otherwise, with the face use and the
 pcurves decided as for a revolve. Both sweeps share the cap, side-face
 and provenance construction. There is no `planar_face` operation — a
-sheet of one face is C7's sheet bodies, and the cap construction is the
+sheet of one face is the healing cycle's sheet bodies, and the cap construction is the
 sweeps' private helper.
 
 ### Errors

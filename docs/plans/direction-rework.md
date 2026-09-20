@@ -128,12 +128,15 @@ bound has to be established here.
   and `project` onto a NURBS surface as the reader's prerequisite where
   the existing M3 line only names mesh deviation. The hook-count line stays,
   pointing at the harness plan.
-- [ ] Step 4 **[1]** — `docs(sync)`: every `C4`–`C8` in living docs,
+- [x] Step 4 **[1]** — `docs(sync)`: every `C4`–`C8` in living docs,
   the backlog, `tests/fixtures/README.md`, `README.md` and rustdoc becomes
   the cycle's name ("the NURBS cycle", "the blend-network cycle", …). Two
   fixtures' `description`s name C6: read how `recipe_hash` is computed
   first; if the description is hashed, leave them and let ADR-0020's table
-  translate. Accepted ADRs are not touched.
+  translate. Accepted ADRs are not touched. **Found in the step:**
+  `description` is in neither `SOLID_KEYS` nor `GEOMETRY_KEYS`
+  (`tools/oracle/oracle/recipe.py`), so it is outside the hash and both
+  were renamed, `expected.json` untouched and both fixtures re-run.
 - [ ] Step 5 **[1]** — `docs/ARCHITECTURE.md` (§How a consumer's kernel
   facade maps on: "the STEP reader is a later cycle" restated; §Operations'
   guard sentence checked against the roadmap's wording),
@@ -143,10 +146,13 @@ bound has to be established here.
 
 ## Acceptance
 
-- `grep -rnw 'C[4-8]'` over `crates/`, `docs/` outside `docs/adr/` and
-  this plan, `tests/fixtures/README.md`, `README.md`, `AGENTS.md` and
-  `.agents/` prints nothing (or only the fixture descriptions step 4
-  deliberately left, named in its commit body).
+- `grep -rnw 'C[4-8]'` over `crates/`, `docs/` outside `docs/adr/`,
+  `docs/plans/` and `docs/notes/`, `tests/fixtures/`, `README.md`,
+  `AGENTS.md` and `.agents/` prints nothing. **Amended in step 4:** plans
+  are ephemeral and `docs/plans/c3-torus-pairs.md` is a stated non-goal,
+  and `docs/notes/` is gitignored personal notes, never a design doc —
+  neither is a living doc, so neither is in scope. The fixture
+  descriptions were renamed after all, so the escape clause is gone.
 - Every item of the old "later cycles" list and every backlog line removed
   in step 3 is findable in `docs/ROADMAP.md` under a name.
 - ADR-0020's name table, the roadmap's named cycles and `/close-cycle`'s

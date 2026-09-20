@@ -762,7 +762,8 @@ fn face_end(
     }
     // A corner edge whose two faces meet tangentially at the vertex — the
     // contact line every blend face meets its neighbours along — carries
-    // the edge on into a chain: C6's, before the face across is read.
+    // the edge on into a chain: the blend-network cycle's, before the
+    // face across is read.
     for &corner in &corner_edges {
         let ce = *m.edge(corner)?;
         let Some((_, crange)) = ce.curve() else {
@@ -1045,7 +1046,7 @@ fn miter(
     let (ea, eb) = (forward(a.edge), forward(b.edge));
     let vertex_blend = || degenerate(vec![ea, eb, v], Reason::VertexBlend);
     // A ruling blend's contact on its cylinder meets no other blend's
-    // contact on the third edge: two arcs, C6's.
+    // contact on the third edge: two arcs, the blend-network cycle's.
     if a.ruling || b.ruling {
         return Err(vertex_blend());
     }
@@ -1089,7 +1090,8 @@ fn miter(
     // Both convex or both concave, and two fillets of equal dihedrals:
     // what puts their axes through one centre and their far contacts
     // through one point of the third edge; anything else is a corner of
-    // two arcs, C6's.
+    // two arcs, the
+    // blend-network cycle's.
     let unequal = match (a.section, b.section) {
         (Section::Round { .. }, Section::Round { .. }) => (a.beta - b.beta).abs() > tol.angular,
         (Section::Flat, Section::Flat) => false,
@@ -1317,7 +1319,8 @@ fn miter(
 /// through one centre; a fillet corner also needs a face square to the
 /// other two, so that its sides are the sphere's equator and two meridians
 /// with exact pcurves. A corner that is not all planes, of mixed blends or,
-/// for fillets, with no such face is `Reason::VertexBlend`, C6's.
+/// for fillets, with no such face is `Reason::VertexBlend`, the
+/// blend-network cycle's.
 fn corner(
     m: &Model,
     view: &View,

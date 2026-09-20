@@ -363,7 +363,7 @@ fn a_bad_distance_is_refused_by_name() {
 /// third edge — the slanted vertical edge of an extruded parallelogram
 /// and its cap edge, 90° and 63.4° to the top of the slanted face — have
 /// far contacts that meet it at two points: refused by name, the model
-/// untouched (C6's). Each edge alone chamfers.
+/// untouched (the blend-network cycle's). Each edge alone chamfers.
 #[test]
 fn a_corner_of_unequal_angles_is_a_vertex_blend() {
     let mut m = Model::default();

@@ -502,7 +502,7 @@ answer, and a curve in both is `Coincident`. A crossing of the line is
 transversal to one of the two planes unless the curve runs along the
 line there, so it is found to rounding. `Nurbs`–`Nurbs` is `Unsupported`:
 where two fitted curves of one pair meet is the tracer's `points`
-(§Curves, below), and anything else a marcher's (C4).
+(§Curves, below), and anything else a marcher's (the NURBS cycle's).
 `curves_coincide(a, b, tol) -> Result<bool, GeomError>` is that
 `Coincident` verdict alone, by the same arms, so it answers the coplanar
 pair with an ellipse too — the same conic or not — without the quartic
