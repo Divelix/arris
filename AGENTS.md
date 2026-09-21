@@ -32,13 +32,12 @@ shapes pass the corpus in its own units: blends, lumps, cylinder–cylinder
 booleans, quadrics on a shared axis, the facade decisions, mesh formats,
 elliptic profiles. ADR-0006 to 0017.
 **C3 in progress:** every pair of analytic surfaces meets in the
-intersector — conics exact, a ruled pair's quartics traced by its
-rulings, a torus's section traced in its own parameter plane, all fitted
-to NURBS, one `Meets` result (ADR-0018, ADR-0019); S5 and B1 decide them
-all. The direction after it is ADR-0020's. **Next:** C3's third plan —
-conic hits on curved quadrics, the fitted pcurve fallback, the quadric
-guard lifted — then the measuring harness beside it, and the reader
-cycle once C3 closes.
+intersector, fitted to NURBS where no conic is exact (ADR-0018, 0019);
+the quadric guard is gone — a cone, sphere, torus or elliptic-cylinder
+face is a boolean operand, pcurves fitted by projection and split at an
+apex or a pole (ADR-0021). The direction after it is ADR-0020's.
+**Next:** C3's last plan — features a tolerance apart — then the
+measuring harness beside it, and the reader cycle once C3 closes.
 
 ## Rules that are not derivable from the code
 

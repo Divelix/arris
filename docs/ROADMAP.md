@@ -347,9 +347,8 @@ that meet within a tolerance, touching or coincident, are a corpus of
 their own and not left to luck.*
 
 *It comes first because it is closure: `ops::fillet`, `ops::chamfer` and
-`ops::revolve` already return the tori, spheres and cones the boolean's
-quadric guard refuses, so until this cycle ends a body Arris built is not
-a body Arris takes (ADR-0020).*
+`ops::revolve` return tori, spheres and cones, and a body Arris built has
+to be a body Arris takes (ADR-0020).*
 
 **Status: in progress.** Every pair of analytic surfaces meets in the
 intersector in every pose — conics exact, the quartics of a ruled pair
@@ -358,9 +357,13 @@ done 2026-09-19), a torus's section traced in the torus's own parameter
 plane and fitted whole (ADR-0019, done 2026-09-20) — with one `Meets`
 result for every meeting, and `Unsupported` left only where a
 `Surface::Nurbs` is in the pair; a boolean of cylinders cuts through the
-fitted edge it left, and S5 and B1 decide every such pair. Open: the
-conic hits on curved quadrics, the fitted pcurve fallback, the quadric
-guard, features a tolerance apart.
+fitted edge it left, and S5 and B1 decide every such pair. A boolean
+takes a cone, sphere, torus or elliptic-cylinder face as an operand, a
+section through an apex or a pole included and one beside it refused by
+name (ADR-0021, done 2026-09-22): every conic meets every analytic
+surface, every curve on one has a pcurve, and the M4 identities hold
+over quadric operands at random poses. Open: features a tolerance
+apart.
 
 - The general quadric pairs in `intersect_surfaces`. **Done**: a plane
   oblique to a cone's axis or parallel to it and off it; two
@@ -373,18 +376,20 @@ guard, features a tolerance apart.
   with a tube circle the other surface holds returned exact (ADR-0019).
 - Conics against a cone, a sphere or a torus in `intersect_curve_surface`,
   and two coplanar conics that are not the same conic in
-  `intersect_curves`, for the pave model's edge–face hits. (A fitted
-  `Curve::Nurbs` against every analytic surface and against a line, a
-  circle or an ellipse is done, ADR-0018.)
+  `intersect_curves`, for the pave model's edge–face hits. **Done**
+  (`geom/c3-conic-hits`), as is a fitted `Curve::Nurbs` against every
+  analytic surface and against a line, a circle or an ellipse (ADR-0018).
 - A fitted pcurve fallback on cones, spheres and tori for the oblique
-  sections a boolean leaves there — the torus's from the branch's own
-  exact (u, v), which the tracer already carries (`SectionBranch::uv`,
-  ADR-0019), rather than from a projection. Until it exists no face can
-  be bounded by a fitted torus section, so S5's shared-edge excuse over
-  a torus is untestable.
+  sections a boolean leaves there. **Done**, over the surface's own
+  projection on every analytic surface, the torus's too — the fitted
+  section is held to its two surfaces, not to the exact branch, so the
+  branch's (u, v) is no pcurve of the curve an edge carries — and split
+  at an apex or a pole (ADR-0021).
 - The pave model's quadric guard lifted: booleans with cone, sphere, torus
   and elliptic-cylinder operand faces, each a corpus fixture against the
-  oracle.
+  oracle. **Done**: the frustum, ball, ring, elliptic, filleted and
+  chamfered `boolean/*` fixtures, a section through an apex or a pole, a
+  contact along a circle, and `quadric_operands_obey_every_identity`.
 - S5 and B1 over every such pair, so a posed blend's cylinders on skew axes
   and a corner's sphere against a blend cylinder are checked, not listed as
   unchecked. **Done** for every pair of analytic surfaces (ADR-0018,
@@ -437,8 +442,7 @@ the pre-commit hook runs against CI's, which is the human's call.
 **The first-party binding.** Code-first and agent-driven modelling is one
 of the consumers `SEED.md` §1 names, and a binding in this repository is
 how that consumer exists before an application is written on top of it.
-It starts once C3 closes: until then a script that fillets and then cuts
-meets the quadric guard, and a second crate under every C3 API break pays
+It starts once C3 closes: a second crate under every C3 API break pays
 for the break twice. Its layer position, the `#![forbid(unsafe_code)]`
 exception a binding needs, `publish`, the wasm job and PyPI beside
 crates.io are its own idea and its own ADR.

@@ -1200,7 +1200,7 @@ prop_shards! {
     /// A frustum, a ball, a ring or an elliptic prism — the faces a
     /// revolve, a fillet, a chamfer or an extruded ellipse leaves — and a
     /// box or a cylinder through its interior, at a random pose
-    /// (plans/c3-conic-hits step 8): `fuse`, `common` and both cuts clean at
+    /// (C3's accept line, docs/ROADMAP.md): `fuse`, `common` and both cuts clean at
     /// `Full` with nothing unchecked and their provenance audited,
     /// additive, the cut identity both ways whatever the lumps, `fuse` and
     /// `common` commuting to the dump, and `(a − b) ∪ b` the union with its

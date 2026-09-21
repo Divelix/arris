@@ -933,7 +933,7 @@ impl QuadricTool {
 
 /// A [`QuadricSolid`] and a box or a cylinder through a point of its
 /// interior, both under one motion: the operands of the identities over
-/// quadric operands (plans/c3-conic-hits step 8). The tool's own pose
+/// quadric operands (C3's accept line, docs/ROADMAP.md). The tool's own pose
 /// places it in the solid's frame, then `pose`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct QuadricPair {

@@ -928,12 +928,16 @@ a sphere by the ruled tracer, and against a torus by the torus's; the
 pave model takes a face on it as an operand face like any other, its
 pcurves fitted over its own projection (ADR-0021). A circle or an ellipse — the edge
 an operand face already carries — is decided against every analytic
-surface but the torus: by the closed forms of the table where there is
-one, and against a cone, a sphere or an elliptic cylinder in any plane
-by the quadric's polynomial along the conic, a trigonometric polynomial
-of degree two whose extrema leave the signed distance monotone in
-between, the verdict taken on that distance as everywhere else
-(`docs/DATA-MODEL.md` §Curves). A
+surface: by the closed forms of the table where there is one; against a
+cone, a sphere or an elliptic cylinder in any plane by the quadric's
+polynomial along the conic, a trigonometric polynomial of degree two
+whose extrema leave the signed distance monotone in between; and against
+a torus by the conic's four exact rational quarter arcs put into the
+torus's polynomial, degree eight in Bernstein form — the verdict taken
+on that distance as everywhere else (`docs/DATA-MODEL.md` §Curves). Two
+coplanar conics that are not the same conic meet at the roots of one
+quartic in the second's plane (`conic2`), and `curves_coincide` is that
+verdict alone. A
 `Curve::Nurbs` — the fitted section edge the next boolean meets — is
 decided against every analytic surface by its spans put into the
 surface's implicit polynomial in Bernstein form, the extrema isolated by
