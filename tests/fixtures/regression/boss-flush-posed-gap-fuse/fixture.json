@@ -1,0 +1,14 @@
+{
+  "description": "a cylinder standing on a box's face (boss-flush's contact at the band survey's numbers and pose), lifted a tolerance (1e-7) off it. Arris fails: the cap and the plate's face, a hair off parallel once posed, have no closed form (OpError::Unsupported, plane against plane); the survey's own build of the same pair, posed by its quaternion rather than this recipe's axis and angle, gave a union that fails the checker, and unposed it is the flush body. The desired result is the flush body, as unposed (plans/c3-tolerance-apart step 1, the band survey)",
+  "params": {"d": -0.0000001, "t": 0, "g": 0},
+  "steps": [
+    {"name": "a", "op": "box", "min": [0, 0, 0], "max": [13.29969412370607, 14.740154651000502, 11.283683773621085]},
+    {"name": "b0", "op": "cylinder", "base": [6.038205439925655, 6.997573531309414, 11.283683773621085], "axis": [0, 0, 1], "radius": 5.588266075378282, "height": 18.58355213747582},
+    {"name": "b", "op": "transform", "of": "b0", "rotate": {"axis": [1, 0, 0], "origin": [6.038205439925655, 6.997573531309414, 11.283683773621085], "angle_deg": "degrees(2 * t / 11.176532150756564)"}, "translate": ["0 * d", "0 * d", "-1 * d"]},
+    {"name": "a_posed", "op": "transform", "of": "a", "rotate": {"axis": [-0.4750557014051346, 0.3703585902438835, -0.7982208937349604], "angle_deg": 153.5807530859922}, "translate": [20.723017858629156, -25.708241597289295, -74.69083512495062]},
+    {"name": "b_posed", "op": "transform", "of": "b", "rotate": {"axis": [-0.4750557014051346, 0.3703585902438835, -0.7982208937349604], "angle_deg": 153.5807530859922}, "translate": [20.723017858629156, -25.708241597289295, -74.69083512495062]},
+    {"name": "result", "op": "fuse", "a": "a_posed", "b": "b_posed"}
+  ],
+  "result": "result",
+  "analytic": {}
+}

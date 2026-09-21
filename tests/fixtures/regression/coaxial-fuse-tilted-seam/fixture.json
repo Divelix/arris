@@ -1,0 +1,14 @@
+{
+  "description": "a rod filling a tube's bore (coaxial-fuse's contact at the band survey's numbers), turned about its middle so its ends move a quarter of a tolerance (2.5e-8) against the bore's wall: the two walls, coincident at the contact, are now a skew pair within a tolerance of each other everywhere. Arris fails: a section edge crosses a seam without a pave there (Fault::Seam). The desired result is the flush body, the full cylinder (plans/c3-tolerance-apart step 1, the band survey)",
+  "params": {"d": 0, "t": -0.000000025, "g": 0},
+  "steps": [
+    {"name": "a_wall", "op": "cylinder", "base": [0, 0, 0], "axis": [0, 0, 1], "radius": 1.2510950430465217, "height": 2.1986523157735243},
+    {"name": "a_bore", "op": "cylinder", "base": [0, 0, -1], "axis": [0, 0, 1], "radius": 1.105024924909873, "height": 4.198652315773524},
+    {"name": "a", "op": "cut", "target": "a_wall", "tool": "a_bore"},
+    {"name": "b0", "op": "cylinder", "base": [0, 0, 0], "axis": [0, 0, 1], "radius": 1.105024924909873, "height": 2.1986523157735243},
+    {"name": "b", "op": "transform", "of": "b0", "rotate": {"axis": [-0.15591659383956258, -0.9877702241743618, 0], "origin": [0, 0, 1.0993261578867621], "angle_deg": "degrees(2 * t / 2.1986523157735243)"}, "translate": ["-0.9877702241743618 * d", "0.15591659383956258 * d", "0 * d"]},
+    {"name": "result", "op": "fuse", "a": "a", "b": "b"}
+  ],
+  "result": "result",
+  "analytic": {}
+}

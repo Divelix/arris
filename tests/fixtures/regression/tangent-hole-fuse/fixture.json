@@ -1,0 +1,15 @@
+{
+  "description": "tangent-hole's operands fused rather than cut, at the contact and with the hole a tolerance (1e-7) out through the side face: the cylinder's wall touches the face x = 0 along a ruling inside the plate, and its section with the top face is a circle tangent to the top face's edge at one point. Arris fails at both: an edge used by one coedge (Fault::Builder, EdgeUses); the common fails the same. The desired result is the tangent contact's refusal by name, as for the cut: the top face would keep a section curve tangent to its own edge at a vertex (Reason::TangentContact). Open CASCADE builds a shell of odd Euler characteristic, as for tangent-hole (plans/c3-tolerance-apart step 1, the band survey)",
+  "params": {"d": 0, "t": 0, "g": 0},
+  "variants": {
+    "out-1": {"d": 0.0000001, "t": 0, "g": 0}
+  },
+  "steps": [
+    {"name": "a", "op": "box", "min": [0, 0, 0], "max": [40, 30, 10]},
+    {"name": "b0", "op": "cylinder", "base": [3, 15, 4], "axis": [0, 0, 1], "radius": 3, "height": 12},
+    {"name": "b", "op": "transform", "of": "b0", "rotate": {"axis": [0, 1, 0], "origin": [0, 15, 7], "angle_deg": "degrees(2 * t / 6)"}, "translate": ["-1 * d", "0 * d", "0 * d"]},
+    {"name": "result", "op": "fuse", "a": "a", "b": "b"}
+  ],
+  "result": "result",
+  "analytic": {"expect_error": "tangent-contact"}
+}

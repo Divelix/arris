@@ -1,0 +1,14 @@
+{
+  "description": "a blind hole whose wall touches a side face from inside (tangent-hole's contact at the band survey's numbers and pose), turned about the contact's middle so its ends move a tolerance (1e-7) out through the face and back. Arris builds a body the checker refuses: S5, two faces intersect away from their shared edges — the section of the face's plane and the hole's wall, a hair off tangent, fitted apart from what the checker traces. Unposed it is Fault::Split, Dangling, as in tangent-hole-a-tolerance-out. The desired result is the tangent contact's refusal by name, as at the contact and in tangent-hole-a-tolerance-out. Open CASCADE builds a shell of odd Euler characteristic, as for tangent-hole (plans/c3-tolerance-apart step 1, the band survey)",
+  "params": {"d": 0, "t": 0.0000001, "g": 0},
+  "steps": [
+    {"name": "a", "op": "box", "min": [0, 0, 0], "max": [3.632277611476652, 15.896098047342235, 7.49890094949159]},
+    {"name": "b0", "op": "cylinder", "base": [1.5924974206090445, 12.202544056513974, 3.7240102069202212], "axis": [0, 0, 1], "radius": 1.5924974206090445, "height": 11.273791692062959},
+    {"name": "b", "op": "transform", "of": "b0", "rotate": {"axis": [0, 1, 0], "origin": [0, 12.202544056513974, 5.611455578205906], "angle_deg": "degrees(2 * t / 3.774890742571369)"}, "translate": ["-1 * d", "0 * d", "0 * d"]},
+    {"name": "a_posed", "op": "transform", "of": "a", "rotate": {"axis": [-0.11673173213020561, 0.9891639932057269, -0.08904098640054939], "angle_deg": 148.90313292346914}, "translate": [58.29072792698249, 63.745280489678805, 92.35670512946588]},
+    {"name": "b_posed", "op": "transform", "of": "b", "rotate": {"axis": [-0.11673173213020561, 0.9891639932057269, -0.08904098640054939], "angle_deg": 148.90313292346914}, "translate": [58.29072792698249, 63.745280489678805, 92.35670512946588]},
+    {"name": "result", "op": "cut", "target": "a_posed", "tool": "b_posed"}
+  ],
+  "result": "result",
+  "analytic": {"expect_error": "tangent-contact"}
+}

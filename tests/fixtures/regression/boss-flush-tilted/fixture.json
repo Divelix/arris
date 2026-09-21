@@ -1,0 +1,15 @@
+{
+  "description": "boss-flush's boss turned about a diameter of its cap so the cap's rim dips a quarter of a tolerance, or two, into the plate on one side and lifts off it on the other. The cap and the plate's face are two planes a hair off parallel, which have no closed form in Arris (OpError::Unsupported, a quarter); from about a tolerance and a half they meet in a line, and the wall's section with the plate's face, an ellipse within a tolerance or two of the rim circle all the way round, is paved without the rim's own vertices (Fault::Split, a section edge of the face ends at a node nothing else reaches). The desired result is a clean union: the flush body within the tolerance, the generic one beyond (plans/c3-tolerance-apart step 1, the band survey)",
+  "params": {"d": 0, "t": 0.000000025, "g": 0},
+  "variants": {
+    "tilt-2": {"d": 0, "t": 0.0000002, "g": 0}
+  },
+  "steps": [
+    {"name": "a", "op": "box", "min": [0, 0, 0], "max": [40, 30, 10]},
+    {"name": "b0", "op": "cylinder", "base": [20, 15, 10], "axis": [0, 0, 1], "radius": 4, "height": 10},
+    {"name": "b", "op": "transform", "of": "b0", "rotate": {"axis": [1, 0, 0], "origin": [20, 15, 10], "angle_deg": "degrees(2 * t / 8)"}, "translate": ["0 * d", "0 * d", "-1 * d"]},
+    {"name": "result", "op": "fuse", "a": "a", "b": "b"}
+  ],
+  "result": "result",
+  "analytic": {}
+}

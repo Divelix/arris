@@ -1,0 +1,18 @@
+{
+  "description": "flush-union's boxes with the second moved off the shared face by about a tolerance (1e-7): one tolerance away, two into the first, or turned about the face's middle line so its ends move one or two tolerances in and out. Arris fails at each: a pave within the tolerance of an edge's end without being its vertex (Fault::Split, EmptySubEdge; one tolerance away and the turn by one), a piece of an edge that matches no piece of the coincident face's boundary (Fault::CommonBlock; two in), a cycle that does not turn once (Fault::Split, Turn; the turn by two) and two planes a hair off parallel with no closed form (OpError::Unsupported; the turn back by two). The desired result is a clean union at each, the flush body or the generic one (plans/c3-tolerance-apart step 1, the band survey)",
+  "params": {"d": -0.0000001, "t": 0, "g": 0},
+  "variants": {
+    "into-2": {"d": 0.0000002, "t": 0, "g": 0},
+    "tilt-1": {"d": 0, "t": 0.0000001, "g": 0},
+    "tilt-2": {"d": 0, "t": 0.0000002, "g": 0},
+    "tilt-back-2": {"d": 0, "t": -0.0000002, "g": 0}
+  },
+  "steps": [
+    {"name": "a", "op": "box", "min": [0, 0, 0], "max": [40, 30, 10]},
+    {"name": "b0", "op": "box", "min": [40, 0, 0], "max": [80, 30, 10]},
+    {"name": "b", "op": "transform", "of": "b0", "rotate": {"axis": [0, 1, 0], "origin": [40, 15, 5], "angle_deg": "degrees(2 * t / 10)"}, "translate": ["-1 * d", "0 * d", "0 * d"]},
+    {"name": "result", "op": "fuse", "a": "a", "b": "b"}
+  ],
+  "result": "result",
+  "analytic": {}
+}

@@ -1,0 +1,15 @@
+{
+  "description": "tangent-cylinders-cut's operands intersected with the tool moved into the target by two tolerances (2e-7), or grown by two: the common is a sliver 8.9e-4 wide and two tolerances thick along the contact. Arris's result fails the checker (a panic in a debug build): L4, the sliver's faces have loops of zero signed area. The desired result is a refusal by name (OpError::Degenerate), as at the contact: Open CASCADE builds no solid of the sliver (plans/c3-tolerance-apart step 1, the band survey)",
+  "params": {"d": 0.0000002, "t": 0, "g": 0},
+  "variants": {
+    "grown-2": {"d": 0, "t": 0, "g": 0.0000002}
+  },
+  "steps": [
+    {"name": "a", "op": "cylinder", "base": [0, 0, 0], "axis": [0, 0, 1], "radius": 1, "height": 2},
+    {"name": "b0", "op": "cylinder", "base": [0, 2, -1], "axis": [0, 0, 1], "radius": "1 + g", "height": 4},
+    {"name": "b", "op": "transform", "of": "b0", "rotate": {"axis": [1, 0, 0], "origin": [0, 1, 1], "angle_deg": "degrees(2 * t / 2)"}, "translate": ["0 * d", "-1 * d", "0 * d"]},
+    {"name": "result", "op": "common", "a": "a", "b": "b"}
+  ],
+  "result": "result",
+  "analytic": {"degenerate": true}
+}

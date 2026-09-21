@@ -364,6 +364,153 @@ fn regression_ball_beside_pole_slice_cut() {
     run("regression/ball-beside-pole-slice-cut");
 }
 
+/// flush-union's second box a tolerance off the shared face: moved away, into the first, or turned about the face's middle line.
+#[test]
+#[ignore = "Fault::Split EmptySubEdge, Fault::CommonBlock, Fault::Split Turn, and plane against plane Unsupported a hair off parallel (plans/c3-tolerance-apart step 1)"]
+fn regression_flush_union_a_tolerance_off() {
+    run("regression/flush-union-a-tolerance-off");
+}
+
+/// boss-flush's boss turned about a diameter of its cap by a quarter of a tolerance, or two.
+#[test]
+#[ignore = "plane against plane Unsupported a hair off parallel; beyond it Fault::Split, a section edge ends at a node nothing else reaches (plans/c3-tolerance-apart step 1)"]
+fn regression_boss_flush_tilted() {
+    run("regression/boss-flush-tilted");
+}
+
+/// A boss lifted a tolerance off its plate, posed: the union fails the checker.
+#[test]
+#[ignore = "plane against plane Unsupported a hair off parallel once posed; the survey built the same pair into a union that fails the checker (plans/c3-tolerance-apart step 1)"]
+fn regression_boss_flush_posed_gap_fuse() {
+    run("regression/boss-flush-posed-gap-fuse");
+}
+
+/// pin-in-bore-fuse's pin a tolerance or two out through the bore's wall, turned, or grown.
+#[test]
+#[ignore = "Fault::Split Dangling and NoInterior, and a union that fails the checker (plans/c3-tolerance-apart step 1)"]
+fn regression_pin_in_bore_a_tolerance_off() {
+    run("regression/pin-in-bore-a-tolerance-off");
+}
+
+/// coaxial-fuse's rod a tolerance or two off the tube's axis, turned about its middle, or grown.
+#[test]
+#[ignore = "Fault::CommonBlock, Fault::Split NoInterior and Dangling, Fault::Builder EdgeUses, circle against plane Unsupported (plans/c3-tolerance-apart step 1)"]
+fn regression_coaxial_fuse_a_tolerance_off() {
+    run("regression/coaxial-fuse-a-tolerance-off");
+}
+
+/// A rod filling a tube's bore, turned a quarter of a tolerance: a section edge crosses a seam.
+#[test]
+#[ignore = "Fault::Seam, a section edge crosses a seam without a pave there (plans/c3-tolerance-apart step 1)"]
+fn regression_coaxial_fuse_tilted_seam() {
+    run("regression/coaxial-fuse-tilted-seam");
+}
+
+/// A rod filling a tube's bore, turned a quarter of a tolerance: a cylinder is placed with no frame.
+#[test]
+#[ignore = "Fault::Geometry, a degenerate cylinder surface with a non-finite frame (plans/c3-tolerance-apart step 1)"]
+fn regression_coaxial_fuse_tilted_frame() {
+    run("regression/coaxial-fuse-tilted-frame");
+}
+
+/// tangent-cylinders-cut's tool a tolerance into the target, or turned two about the contact's middle.
+#[test]
+#[ignore = "Fault::Split, a section edge ends at a node nothing else reaches (plans/c3-tolerance-apart step 1)"]
+fn regression_tangent_cylinders_a_tolerance_in() {
+    run("regression/tangent-cylinders-a-tolerance-in");
+}
+
+/// tangent-cylinders-cut's operands two tolerances into each other, intersected: a sliver the oracle builds no solid of.
+#[test]
+#[ignore = "the common fails the checker, a panic in a debug build: L4, sliver loops of zero signed area, where the desired is a refusal (plans/c3-tolerance-apart step 1)"]
+fn regression_tangent_cylinders_overlap_common() {
+    run("regression/tangent-cylinders-overlap-common");
+}
+
+/// tangent-cylinders-fuse's tool turned a tolerance and a half about the contact's middle.
+#[test]
+#[ignore = "Fault::Lumps, two shells of the result meet, where the desired is TangentContact (plans/c3-tolerance-apart step 1)"]
+fn regression_tangent_cylinders_tilted_fuse() {
+    run("regression/tangent-cylinders-tilted-fuse");
+}
+
+/// tangent-hole's operands fused, at the contact and a tolerance out: the section circle is tangent to the top face's edge.
+#[test]
+#[ignore = "Fault::Builder EdgeUses, where the desired is TangentContact (plans/c3-tolerance-apart step 1)"]
+fn regression_tangent_hole_fuse() {
+    run("regression/tangent-hole-fuse");
+}
+
+/// tangent-hole's hole a tolerance and a half out through the side face, or turned about the contact's middle.
+#[test]
+#[ignore = "Fault::Split NoInterior and Dangling, plane against cylinder Unsupported, where the desired is TangentContact (plans/c3-tolerance-apart step 1)"]
+fn regression_tangent_hole_a_tolerance_out() {
+    run("regression/tangent-hole-a-tolerance-out");
+}
+
+/// A blind hole touching a side face, turned a tolerance, posed: a body the checker refuses.
+#[test]
+#[ignore = "a body where TangentContact is desired, which S5 refuses: two faces intersect away from their shared edges (plans/c3-tolerance-apart step 1)"]
+fn regression_tangent_hole_tilted_posed_cut() {
+    run("regression/tangent-hole-tilted-posed-cut");
+}
+
+/// tangent-outside-cut's tool a tolerance into the plate, or turned a quarter or a half about the contact's middle.
+#[test]
+#[ignore = "Fault::Split NoInterior and Dangling, and a section fit that still deviates at its most spans (plans/c3-tolerance-apart step 1)"]
+fn regression_tangent_outside_a_tolerance_in() {
+    run("regression/tangent-outside-a-tolerance-in");
+}
+
+/// A cylinder touching a box face from outside, grown a tolerance, intersected: a hole of the arrangement in no region.
+#[test]
+#[ignore = "Fault::Split Hole, where the desired is a refusal (plans/c3-tolerance-apart step 1)"]
+fn regression_tangent_outside_grown_common() {
+    run("regression/tangent-outside-grown-common");
+}
+
+/// A cylinder touching a box face from outside, turned four tolerances, posed, intersected: a sliver the checker refuses.
+#[test]
+#[ignore = "a body where a refusal is desired, which B1 refuses: no outer shell (plans/c3-tolerance-apart step 1)"]
+fn regression_tangent_outside_tilted_posed_common() {
+    run("regression/tangent-outside-tilted-posed-common");
+}
+
+/// A cylinder touching a box face from outside, turned a quarter of a tolerance, posed, fused.
+#[test]
+#[ignore = "Fault::Geometry, the ellipse section is off the surfaces by 1.2e-7, where the desired is TangentContact (plans/c3-tolerance-apart step 1)"]
+fn regression_tangent_outside_tilted_posed_fuse() {
+    run("regression/tangent-outside-tilted-posed-fuse");
+}
+
+/// pipe-elbow-fuse's pipe a tolerance or so into the bend, turned about its cap's middle, or grown.
+#[test]
+#[ignore = "Fault::CommonBlock, Fault::Split Turn, torus sections called degenerate (Fault::Geometry), plane against plane and circle against plane Unsupported (plans/c3-tolerance-apart step 1)"]
+fn regression_pipe_elbow_a_tolerance_off() {
+    run("regression/pipe-elbow-a-tolerance-off");
+}
+
+/// A pipe pushed a tolerance into its bend, posed: a fit's normal equations are singular.
+#[test]
+#[ignore = "Fault::Split, a cycle does not turn once; the survey built the same pair into a fit whose normal equations are singular (plans/c3-tolerance-apart step 1)"]
+fn regression_pipe_elbow_posed_fuse() {
+    run("regression/pipe-elbow-posed-fuse");
+}
+
+/// Two boxes touching along an edge, the second turned a tolerance about the edge's middle, cut: two points a tolerance and a half apart are one vertex.
+#[test]
+#[ignore = "the cut fails the checker, a panic in a debug build: E2, two edges whose ends are 1.41e-7 apart hold one vertex (plans/c3-tolerance-apart step 1)"]
+fn regression_edge_touching_tilted_cut() {
+    run("regression/edge-touching-tilted-cut");
+}
+
+/// Two boxes touching along an edge, the second turned half a tolerance, posed, cut.
+#[test]
+#[ignore = "Fault::Builder NotClosed (plans/c3-tolerance-apart step 1)"]
+fn regression_edge_touching_tilted_posed_cut() {
+    run("regression/edge-touching-tilted-posed-cut");
+}
+
 /// A tee of equal radii: the branch's rim circle touches the main wall
 /// exactly at the two crossing vertices, and each touch cuts the rim
 /// there.

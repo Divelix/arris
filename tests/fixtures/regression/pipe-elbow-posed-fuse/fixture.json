@@ -1,0 +1,15 @@
+{
+  "description": "a quarter bend and the pipe it runs into (pipe-elbow-fuse's contact at the band survey's numbers and pose), the pipe pushed into the bend by a tolerance (1e-7). Arris fails: a cycle of the arrangement does not turn once (Fault::Split, Turn), as unposed in pipe-elbow-a-tolerance-off; the survey's own build of the same pair, posed by its quaternion rather than this recipe's axis and angle, failed a section fit whose normal equations are singular (Fault::Geometry). The desired result is a clean union, the flush body (plans/c3-tolerance-apart step 1, the band survey)",
+  "params": {"d": 0.0000001, "t": 0, "g": 0},
+  "steps": [
+    {"name": "a_disc", "op": "profile", "plane": {"origin": [0, 0, 0], "x": [1, 0, 0], "y": [0, 0, 1]}, "outer": {"circle": {"center": [5.374371132492579, 0], "radius": 2.3542795752148837}}},
+    {"name": "a", "op": "revolve", "profile": "a_disc", "axis": {"origin": [0, 0, 0], "direction": [0, 0, 1]}, "angle_deg": 90},
+    {"name": "b0", "op": "cylinder", "base": [5.374371132492579, 0, 0], "axis": [0, -1, 0], "radius": 2.3542795752148837, "height": 12.349023369519513},
+    {"name": "b", "op": "transform", "of": "b0", "rotate": {"axis": [0, 0, 1], "origin": [5.374371132492579, 0, 0], "angle_deg": "degrees(2 * t / 4.7085591504297675)"}, "translate": ["0 * d", "1 * d", "0 * d"]},
+    {"name": "a_posed", "op": "transform", "of": "a", "rotate": {"axis": [-0.6986282480927302, 0.6618212250135064, 0.27186621174486647], "angle_deg": 115.76604163005703}, "translate": [-18.586196084069528, -59.565292223468425, 55.96701083225865]},
+    {"name": "b_posed", "op": "transform", "of": "b", "rotate": {"axis": [-0.6986282480927302, 0.6618212250135064, 0.27186621174486647], "angle_deg": 115.76604163005703}, "translate": [-18.586196084069528, -59.565292223468425, 55.96701083225865]},
+    {"name": "result", "op": "fuse", "a": "a_posed", "b": "b_posed"}
+  ],
+  "result": "result",
+  "analytic": {}
+}

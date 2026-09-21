@@ -1069,6 +1069,505 @@ pub fn quadric_pair() -> impl Strategy<Value = QuadricPair> {
         )
 }
 
+/// A designed contact the corpus holds, which a [`BandPair`] moves off
+/// by a fraction of the tolerance to a few tolerances (plans/
+/// c3-tolerance-apart step 1). Each names the fixtures it stands for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum BandContact {
+    /// Two boxes sharing a whole face, their side faces coplanar:
+    /// `boolean/flush-union`.
+    FlushBoxes,
+    /// A cylinder standing on a box's face, its cap flush with it:
+    /// `boolean/boss-flush`.
+    FlushBoss,
+    /// A pin inside a bore, the walls touching along a ruling from
+    /// inside: `boolean/pin-in-bore-*`.
+    PinInBore,
+    /// A rod filling a tube's bore, walls coincident and caps flush:
+    /// `boolean/coaxial-fuse`.
+    CoaxialRod,
+    /// A bore through a cylinder on its axis: `boolean/coaxial-cut`.
+    CoaxialBore,
+    /// Two cylinders on parallel axes whose walls touch from outside:
+    /// `boolean/tangent-cylinders-*`.
+    TangentCylinders,
+    /// A blind hole whose wall touches a side face from inside:
+    /// `boolean/tangent-hole`.
+    TangentHole,
+    /// A cylinder whose wall touches a box face from outside:
+    /// `boolean/tangent-outside-cut`.
+    TangentOutside,
+    /// A quarter bend and the pipe it runs into, caps flush and the tube
+    /// circle shared: `boolean/pipe-elbow-fuse`.
+    PipeElbow,
+    /// Two boxes touching along an edge: `boolean/edge-touching-fuse`.
+    EdgeOnEdge,
+}
+
+/// How a [`BandPair`]'s moving operand leaves the contact.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum BandMotion {
+    /// Moved along the contact's normal: a positive offset into the
+    /// fixed operand, a negative one away.
+    Offset,
+    /// Turned about a line through the contact's middle, so each end of
+    /// the contact moves by the offset, one into the fixed operand and
+    /// one away.
+    Tilt,
+    /// Its cylinder's radius grown by the offset, the axis kept.
+    Radius,
+}
+
+/// A solid of a [`BandPair`], before any motion.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum BandSolid {
+    /// An axis-aligned box.
+    Block {
+        /// One corner.
+        min: Point3,
+        /// The opposite one.
+        max: Point3,
+    },
+    /// A cylinder, its axis's origin the base cap's centre.
+    Rod {
+        /// The axis.
+        axis: Axis,
+        /// The radius.
+        radius: f64,
+        /// The height.
+        height: f64,
+    },
+    /// A cylinder less a coaxial bore that runs past both its caps, built
+    /// by a `cut`, as `boolean/coaxial-fuse` builds its tube.
+    Tube {
+        /// The axis.
+        axis: Axis,
+        /// The outer radius.
+        outer: f64,
+        /// The bore's radius.
+        bore: f64,
+        /// The height.
+        height: f64,
+    },
+    /// A disc of radius `minor` about `(major, 0, 0)` in the plane
+    /// `y = 0` revolved a quarter turn about `z`, toward `+y`.
+    Bend {
+        /// The distance from `z` to the tube's centre circle.
+        major: f64,
+        /// The tube's radius.
+        minor: f64,
+    },
+}
+
+impl BandSolid {
+    /// The solid as a body of `m`, moved by `pose`.
+    pub fn build(&self, m: &mut Model, pose: &Isometry) -> Result<Body, OpError> {
+        let body = match *self {
+            BandSolid::Block { min, max } => primitive_box(m, min, max)?.0,
+            BandSolid::Rod {
+                axis,
+                radius,
+                height,
+            } => primitive_cylinder(m, axis, radius, height)?.0,
+            BandSolid::Tube {
+                axis,
+                outer,
+                bore,
+                height,
+            } => {
+                let (wall, _) = primitive_cylinder(m, axis, outer, height)?;
+                let past = Axis {
+                    origin: axis.at(-1.0),
+                    direction: axis.direction,
+                };
+                let (hole, _) = primitive_cylinder(m, past, bore, height + 2.0)?;
+                arris_ops::cut(m, wall, hole)?.0
+            }
+            BandSolid::Bend { major, minor } => {
+                let plane = Frame::from_rotation(
+                    Point3::origin(),
+                    &UnitQuaternion::from_axis_angle(&Vec3::x_axis(), core::f64::consts::FRAC_PI_2),
+                );
+                let profile = Profile {
+                    plane,
+                    outer: ProfileLoop::Circle {
+                        center: Point2::new(major, 0.0),
+                        radius: minor,
+                    },
+                    holes: Vec::new(),
+                };
+                revolve(
+                    m,
+                    &profile,
+                    Axis::z_at(Point3::origin()),
+                    core::f64::consts::FRAC_PI_2,
+                )?
+                .0
+            }
+        };
+        Ok(transform(m, body, pose)?.0)
+    }
+
+    /// The same solid with its cylinder's radius grown by `by`: a rod's
+    /// radius, a tube's bore, a bend's tube. A block has none and is
+    /// itself.
+    pub fn grown(&self, by: f64) -> BandSolid {
+        match *self {
+            BandSolid::Block { .. } => *self,
+            BandSolid::Rod {
+                axis,
+                radius,
+                height,
+            } => BandSolid::Rod {
+                axis,
+                radius: radius + by,
+                height,
+            },
+            BandSolid::Tube {
+                axis,
+                outer,
+                bore,
+                height,
+            } => BandSolid::Tube {
+                axis,
+                outer,
+                bore: bore + by,
+                height,
+            },
+            BandSolid::Bend { major, minor } => BandSolid::Bend {
+                major,
+                minor: minor + by,
+            },
+        }
+    }
+}
+
+/// A designed contact of the corpus, in its own frame, and a way off it:
+/// the operands of the tolerance band (plans/c3-tolerance-apart). The
+/// `fixed` solid stays where it is; the `moving` one is moved off the
+/// contact by [`BandPair::build`]'s offset — a multiple of the tolerance
+/// — along `normal`, turned about `hinge`, or grown, as `motion` says.
+/// Both are then placed by `pose`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BandPair {
+    /// The contact.
+    pub contact: BandContact,
+    /// How the moving solid leaves it.
+    pub motion: BandMotion,
+    /// The solid that stays.
+    pub fixed: BandSolid,
+    /// The solid that moves, at the contact.
+    pub moving: BandSolid,
+    /// The unit direction a positive offset moves `moving` in: into
+    /// `fixed`.
+    pub normal: Vec3,
+    /// The middle of the contact, which a tilt turns about.
+    pub pivot: Point3,
+    /// The unit direction a tilt turns about, through `pivot`.
+    pub hinge: Vec3,
+    /// The contact's extent across the hinge: a tilt by `δ` turns by
+    /// `2δ / lever`, so each end of the contact moves by `δ`.
+    pub lever: f64,
+    /// The area of the contact, zero where it is a line or a point.
+    pub area: f64,
+    /// Where the contact is a line: its length and the radius of the
+    /// relative curvature across it — zero for an edge on an edge.
+    pub line: Option<(f64, f64)>,
+    /// The motion of both.
+    pub pose: Isometry,
+}
+
+impl BandPair {
+    /// Both solids in `m`, `fixed` first, the moving one off the contact
+    /// by `delta` (a length, positive into `fixed`).
+    pub fn build(&self, m: &mut Model, delta: f64) -> Result<(Body, Body), OpError> {
+        let a = self.fixed.build(m, &self.pose)?;
+        let (solid, off) = self.moved(delta);
+        let b = solid.build(m, &off.then(&self.pose))?;
+        Ok((a, b))
+    }
+
+    /// The moving solid and the motion taking it off the contact by
+    /// `delta`, before `pose`.
+    pub fn moved(&self, delta: f64) -> (BandSolid, Isometry) {
+        match self.motion {
+            BandMotion::Offset => (
+                self.moving,
+                Isometry::new(UnitQuaternion::identity(), delta * self.normal),
+            ),
+            BandMotion::Tilt => {
+                let turn = UnitQuaternion::from_axis_angle(
+                    &UnitVec3::new_normalize(self.hinge),
+                    2.0 * delta / self.lever,
+                );
+                let p = self.pivot.coords;
+                (self.moving, Isometry::new(turn, p - turn * p))
+            }
+            BandMotion::Radius => (self.moving.grown(delta), Isometry::identity()),
+        }
+    }
+
+    /// A bound on how far the volume of any boolean of the pair moves
+    /// when the moving solid is `delta` off the contact: the contact's
+    /// area times the offset, and along a line contact the strip the
+    /// offset opens across it, `√(8ρδ)` wide, times the offset — plus,
+    /// on a line of no curvature (an edge on an edge), the offset squared
+    /// along it.
+    pub fn volume_bound(&self, delta: f64) -> f64 {
+        let d = delta.abs();
+        let line = self.line.map_or(0.0, |(len, rho)| {
+            len * d * (8.0 * rho * d).sqrt() + len * d * d
+        });
+        self.area * d + line
+    }
+}
+
+/// The multiples of the tolerance a band property moves each
+/// [`BandPair`] off its contact by, both signs of each: a fraction of it
+/// to several (plans/c3-tolerance-apart step 1).
+pub const BAND_STEPS: [f64; 7] = [0.25, 0.5, 1.0, 1.5, 2.0, 4.0, 16.0];
+
+/// [`BandPair`]s: a contact from [`BandContact`] a tenth each, its sizes
+/// drawn in `[MIN_EXTENT, MAX_EXTENT]` (radii half that) with every
+/// feature a tenth of its room clear of the next, a motion among those
+/// that move it — a radius only where the moving solid has one that
+/// reaches the contact — and a pose at [`DEFAULT_SCALE`]. Each is its
+/// fixture's contact exactly at an offset of zero, with the fixture's
+/// numbers free.
+pub fn band_pair() -> impl Strategy<Value = BandPair> {
+    let unit = || finite_f64(0.0..=1.0);
+    (
+        0u8..10,
+        0u8..3,
+        [unit(), unit(), unit(), unit(), unit(), unit()],
+        pose_in(DEFAULT_SCALE),
+    )
+        .prop_filter_map("a contact moved off", |(kind, motion, f, pose)| {
+            let e = |x: f64| MIN_EXTENT + x * (MAX_EXTENT - MIN_EXTENT);
+            let r = |x: f64| e(x) / 2.0;
+            let within = |x: f64| 0.1 + 0.8 * x;
+            let p = Point3::new;
+            let x = Vec3::x();
+            let y = Vec3::y();
+            let z = Vec3::z();
+            let pi = core::f64::consts::PI;
+            let block = |min: Point3, max: Point3| BandSolid::Block { min, max };
+            let rod = |at: Point3, d: Vec3, radius: f64, height: f64| {
+                Some(BandSolid::Rod {
+                    axis: Axis::new(at, d).ok()?,
+                    radius,
+                    height,
+                })
+            };
+            let all = [BandMotion::Offset, BandMotion::Tilt, BandMotion::Radius];
+            let rigid = [BandMotion::Offset, BandMotion::Tilt];
+            let (contact, motions, fixed, moving, normal, pivot, hinge, lever, area, line) =
+                match kind {
+                    0 => {
+                        let (ax, ay, az, bx) = (e(f[0]), e(f[1]), e(f[2]), e(f[3]));
+                        (
+                            BandContact::FlushBoxes,
+                            &rigid[..],
+                            block(p(0.0, 0.0, 0.0), p(ax, ay, az)),
+                            block(p(ax, 0.0, 0.0), p(ax + bx, ay, az)),
+                            -x,
+                            p(ax, ay / 2.0, az / 2.0),
+                            y,
+                            az,
+                            ay * az,
+                            None,
+                        )
+                    }
+                    1 => {
+                        let (px, py, pz) = (e(f[0]), e(f[1]), e(f[2]));
+                        let radius = px.min(py) / 2.0 * within(f[3]);
+                        let (cx, cy) = (
+                            radius + (px - 2.0 * radius) * within(f[4]),
+                            radius + (py - 2.0 * radius) * within(f[5]),
+                        );
+                        (
+                            BandContact::FlushBoss,
+                            &rigid[..],
+                            block(p(0.0, 0.0, 0.0), p(px, py, pz)),
+                            rod(p(cx, cy, pz), z, radius, e(f[3]))?,
+                            -z,
+                            p(cx, cy, pz),
+                            x,
+                            2.0 * radius,
+                            pi * radius * radius,
+                            None,
+                        )
+                    }
+                    2 => {
+                        let big = r(f[0]);
+                        let small = big * within(f[1]);
+                        let tall = e(f[2]);
+                        let h = tall * within(f[3]);
+                        let z0 = (tall - h) * within(f[4]);
+                        (
+                            BandContact::PinInBore,
+                            &all[..],
+                            rod(p(0.0, 0.0, 0.0), z, big, tall)?,
+                            rod(p(0.0, big - small, z0), z, small, h)?,
+                            y,
+                            p(0.0, big, z0 + h / 2.0),
+                            x,
+                            h,
+                            0.0,
+                            Some((h, small * big / (big - small))),
+                        )
+                    }
+                    3 => {
+                        let outer = r(f[0]);
+                        let bore = outer * within(f[1]);
+                        let tall = e(f[2]);
+                        let phi = core::f64::consts::TAU * f[3];
+                        let (s, c) = phi.sin_cos();
+                        (
+                            BandContact::CoaxialRod,
+                            &all[..],
+                            BandSolid::Tube {
+                                axis: Axis::z_at(p(0.0, 0.0, 0.0)),
+                                outer,
+                                bore,
+                                height: tall,
+                            },
+                            rod(p(0.0, 0.0, 0.0), z, bore, tall)?,
+                            Vec3::new(c, s, 0.0),
+                            p(0.0, 0.0, tall / 2.0),
+                            Vec3::new(-s, c, 0.0),
+                            tall,
+                            2.0 * pi * bore * tall,
+                            None,
+                        )
+                    }
+                    4 => {
+                        let outer = r(f[0]);
+                        let bore = outer * within(f[1]);
+                        let tall = e(f[2]);
+                        let phi = core::f64::consts::TAU * f[3];
+                        let (s, c) = phi.sin_cos();
+                        (
+                            BandContact::CoaxialBore,
+                            &rigid[..],
+                            rod(p(0.0, 0.0, 0.0), z, outer, tall)?,
+                            rod(p(0.0, 0.0, -tall / 2.0), z, bore, 2.0 * tall)?,
+                            Vec3::new(c, s, 0.0),
+                            p(0.0, 0.0, tall / 2.0),
+                            Vec3::new(-s, c, 0.0),
+                            tall,
+                            0.0,
+                            None,
+                        )
+                    }
+                    5 => {
+                        let (big, other, tall) = (r(f[0]), r(f[1]), e(f[2]));
+                        let past = tall * within(f[3]) / 2.0;
+                        (
+                            BandContact::TangentCylinders,
+                            &all[..],
+                            rod(p(0.0, 0.0, 0.0), z, big, tall)?,
+                            rod(p(0.0, big + other, -past), z, other, tall + 2.0 * past)?,
+                            -y,
+                            p(0.0, big, tall / 2.0),
+                            x,
+                            tall,
+                            0.0,
+                            Some((tall, big * other / (big + other))),
+                        )
+                    }
+                    6 => {
+                        let (px, py, pz) = (e(f[0]), e(f[1]), e(f[2]));
+                        let radius = (px / 2.0).min(py / 2.0) * within(f[3]);
+                        let cy = radius + (py - 2.0 * radius) * within(f[4]);
+                        let z0 = pz * within(f[5]);
+                        (
+                            BandContact::TangentHole,
+                            &all[..],
+                            block(p(0.0, 0.0, 0.0), p(px, py, pz)),
+                            rod(p(radius, cy, z0), z, radius, 2.0 * pz - z0)?,
+                            -x,
+                            p(0.0, cy, (z0 + pz) / 2.0),
+                            y,
+                            pz - z0,
+                            0.0,
+                            Some((pz - z0, radius)),
+                        )
+                    }
+                    7 => {
+                        let (px, py, pz, radius) = (e(f[0]), e(f[1]), e(f[2]), r(f[3]));
+                        let cy = py * within(f[4]);
+                        // Past the bottom cap, or ending inside the face;
+                        // past the top always.
+                        let z0 = if f[5] < 0.5 {
+                            -pz * within(2.0 * f[5]) / 2.0
+                        } else {
+                            pz * within(2.0 * f[5] - 1.0)
+                        };
+                        let low = z0.max(0.0);
+                        (
+                            BandContact::TangentOutside,
+                            &all[..],
+                            block(p(0.0, 0.0, 0.0), p(px, py, pz)),
+                            rod(p(px + radius, cy, z0), z, radius, 1.5 * pz - z0)?,
+                            -x,
+                            p(px, cy, (low + pz) / 2.0),
+                            y,
+                            pz - low,
+                            0.0,
+                            Some((pz - low, radius)),
+                        )
+                    }
+                    8 => {
+                        let major = r(f[0]);
+                        let minor = major * within(f[1]);
+                        (
+                            BandContact::PipeElbow,
+                            &all[..],
+                            BandSolid::Bend { major, minor },
+                            rod(p(major, 0.0, 0.0), -y, minor, e(f[2]))?,
+                            y,
+                            p(major, 0.0, 0.0),
+                            z,
+                            2.0 * minor,
+                            pi * minor * minor,
+                            None,
+                        )
+                    }
+                    _ => {
+                        let (ax, ay, az) = (e(f[0]), e(f[1]), e(f[2]));
+                        let (bx, by) = (e(f[3]), e(f[4]));
+                        let s = core::f64::consts::FRAC_1_SQRT_2;
+                        (
+                            BandContact::EdgeOnEdge,
+                            &rigid[..],
+                            block(p(0.0, 0.0, 0.0), p(ax, ay, az)),
+                            block(p(ax, ay, 0.0), p(ax + bx, ay + by, az)),
+                            Vec3::new(-s, -s, 0.0),
+                            p(ax, ay, az / 2.0),
+                            Vec3::new(s, -s, 0.0),
+                            az,
+                            0.0,
+                            Some((az, 0.0)),
+                        )
+                    }
+                };
+            Some(BandPair {
+                contact,
+                motion: motions[usize::from(motion) % motions.len()],
+                fixed,
+                moving,
+                normal,
+                pivot,
+                hinge,
+                lever,
+                area,
+                line,
+                pose,
+            })
+        })
+}
+
 /// Box extents, each in `[MIN_EXTENT, MAX_EXTENT]`.
 fn extents() -> impl Strategy<Value = Vec3> {
     (
@@ -1355,6 +1854,29 @@ mod tests {
                     prop_assert!(ahead.coords.norm() > reach);
                 }
             }
+            Ok(())
+        });
+    }
+
+    /// The band pairs build clean operands at the contact and at the
+    /// band's widest step either way, and the normal and the hinge are
+    /// unit and square to each other.
+    #[test]
+    fn the_band_pairs_build_clean_bodies_across_the_band() {
+        check(band_pair(), |pair| {
+            let tol = Model::default().precision().default_tolerance;
+            for step in [0.0, -BAND_STEPS[6], BAND_STEPS[6]] {
+                let mut m = Model::default();
+                let (a, b) = pair
+                    .build(&mut m, step * tol)
+                    .map_err(|e| TestCaseError::fail(e.to_string()))?;
+                prop_assert!(check_body(&m, a, Level::Fast).is_ok());
+                prop_assert!(check_body(&m, b, Level::Fast).is_ok());
+            }
+            prop_assert!((pair.normal.norm() - 1.0).abs() < 1e-12);
+            prop_assert!((pair.hinge.norm() - 1.0).abs() < 1e-12);
+            prop_assert!(pair.normal.dot(&pair.hinge).abs() < 1e-12);
+            prop_assert!(pair.lever > 0.0 && pair.area >= 0.0);
             Ok(())
         });
     }

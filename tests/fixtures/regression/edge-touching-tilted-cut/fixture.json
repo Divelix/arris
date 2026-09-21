@@ -1,0 +1,12 @@
+{
+  "description": "edge-touching-fuse's boxes, the second turned as in edge-touching-tilted by one tolerance (1e-7) and cut from the first: the result fails the checker (a panic in a debug build): E2, two edges whose curves end 1.41e-7 apart hold one vertex — two points a tolerance and a half apart taken as one without the edge between them going. The desired result is the first box, clean (plans/c3-tolerance-apart step 1, the band survey)",
+  "params": {"d": 0, "t": 0.0000001, "g": 0},
+  "steps": [
+    {"name": "a", "op": "box", "min": [0, 0, 0], "max": [10, 10, 10]},
+    {"name": "b0", "op": "box", "min": [10, 10, 0], "max": [20, 20, 10]},
+    {"name": "b", "op": "transform", "of": "b0", "rotate": {"axis": [0.7071067811865476, -0.7071067811865476, 0], "origin": [10, 10, 5], "angle_deg": "degrees(2 * t / 10)"}, "translate": ["-0.7071067811865476 * d", "-0.7071067811865476 * d", "0 * d"]},
+    {"name": "result", "op": "cut", "target": "a", "tool": "b"}
+  ],
+  "result": "result",
+  "analytic": {}
+}

@@ -1,0 +1,21 @@
+{
+  "description": "pipe-elbow-fuse's pipe pushed into the bend by one or one and a half tolerances (1e-7), turned about its cap's middle by a quarter of one or sixteen, or grown by a half to two. Arris fails: a cycle that does not turn once (Fault::Split, Turn; one in and the quarter turn), the torus and the cap's plane, or the pipe's wall, called tangent along a curve (Fault::Geometry, the section is degenerate; one and a half in, grown by one), the cap planes with no closed form (OpError::Unsupported; the turn by sixteen), a piece of the rim matching no piece of the coincident cap (Fault::CommonBlock; grown by a half) and the rim circle a hair off the cap's plane with no closed form (OpError::Unsupported; grown by two). The desired result is a clean union: the flush body within the tolerance, the generic one beyond (plans/c3-tolerance-apart step 1, the band survey)",
+  "params": {"d": 0.0000001, "t": 0, "g": 0},
+  "variants": {
+    "into-1-5": {"d": 0.00000015, "t": 0, "g": 0},
+    "tilt-quarter": {"d": 0, "t": 0.000000025, "g": 0},
+    "tilt-16": {"d": 0, "t": 0.0000016, "g": 0},
+    "grown-half": {"d": 0, "t": 0, "g": 0.00000005},
+    "grown-1": {"d": 0, "t": 0, "g": 0.0000001},
+    "grown-2": {"d": 0, "t": 0, "g": 0.0000002}
+  },
+  "steps": [
+    {"name": "a_disc", "op": "profile", "plane": {"origin": [0, 0, 0], "x": [1, 0, 0], "y": [0, 0, 1]}, "outer": {"circle": {"center": [3, 0], "radius": 1}}},
+    {"name": "a", "op": "revolve", "profile": "a_disc", "axis": {"origin": [0, 0, 0], "direction": [0, 0, 1]}, "angle_deg": 90},
+    {"name": "b0", "op": "cylinder", "base": [3, 0, 0], "axis": [0, -1, 0], "radius": "1 + g", "height": 4},
+    {"name": "b", "op": "transform", "of": "b0", "rotate": {"axis": [0, 0, 1], "origin": [3, 0, 0], "angle_deg": "degrees(2 * t / 2)"}, "translate": ["0 * d", "1 * d", "0 * d"]},
+    {"name": "result", "op": "fuse", "a": "a", "b": "b"}
+  ],
+  "result": "result",
+  "analytic": {}
+}

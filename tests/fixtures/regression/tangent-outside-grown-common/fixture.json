@@ -1,0 +1,12 @@
+{
+  "description": "a cylinder whose wall touches a box face from outside, ending inside the face (tangent-outside-cut's contact at the band survey's numbers), grown by a tolerance (1e-7) into the box and intersected with it. Arris fails: a hole of the face's arrangement lies inside no region (Fault::Split, Hole). The desired result is a refusal by name (OpError::Degenerate), as at the contact: Open CASCADE builds no solid of the sliver (plans/c3-tolerance-apart step 1, the band survey)",
+  "params": {"d": 0, "t": 0, "g": 0.0000001},
+  "steps": [
+    {"name": "a", "op": "box", "min": [0, 0, 0], "max": [16.597042848160626, 15.565344083597541, 4.902676834429423]},
+    {"name": "b0", "op": "cylinder", "base": [26.42221384383608, 4.7552691838145975, 3.2232075961632978], "axis": [0, 0, 1], "radius": "9.825170995675453 + g", "height": 4.130807655480837},
+    {"name": "b", "op": "transform", "of": "b0", "rotate": {"axis": [0, 1, 0], "origin": [16.597042848160626, 4.7552691838145975, 4.06294221529636], "angle_deg": "degrees(2 * t / 1.6794692382661252)"}, "translate": ["-1 * d", "0 * d", "0 * d"]},
+    {"name": "result", "op": "common", "a": "a", "b": "b"}
+  ],
+  "result": "result",
+  "analytic": {"degenerate": true}
+}

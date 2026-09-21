@@ -44,7 +44,7 @@ and the cycle can close.
   recorded as such in ADR-0022.
 - `Curve::Nurbs` against `Curve::Nurbs` in `intersect_curves` and
   `curves_coincide` for two different splines in general: the NURBS
-  cycle's marcher. Step 5 makes the boolean stop *asking* where the
+  cycle's marcher. Step 6 makes the boolean stop *asking* where the
   surfaces already answer.
 - A pinched vertex admitted into a `Solid` (open question 1, decided):
   a data-model change with the `General` body, an idea of its own when a
@@ -84,22 +84,22 @@ and the cycle can close.
 - **`arris_geom` conic hits** (step 3): a root of `conic2::trig2_roots`
   within its own rounding of a whole turn is reported at `0`, stated in
   `intersect_curve_surface`'s guarantee. No signature change.
-- **`arris_geom::SECTION_FIT_FRACTION` and `section::fitted`** (step 4):
+- **`arris_geom::SECTION_FIT_FRACTION` and `section::fitted`** (step 5):
   the constant's guarantee changes — measured from the two surfaces *and
   from the exact branch* — a change to what a public item promises, named
   in the commit body; `intersect_surfaces`' rustdoc and
   `docs/DATA-MODEL.md` §Tolerances and §Curves restated in the same
   commit.
 - **`boolean::pave::section_curve`, `coincident`, `common_block`**
-  (steps 5 and 6): the `along` verdict asks the surfaces before it asks
+  (steps 6 and 4): the `along` verdict asks the surfaces before it asks
   `curves_coincide`; a block-level verdict beside the whole-curve one. No
-  public type changes expected; `CommonBlock`'s doc if step 6 makes one.
+  public type changes expected; `CommonBlock`'s doc if step 4 makes one.
 - **`Reason::NonManifold`** (step 7): its doc gains "a shell touching
   itself at a vertex"; the entity is the vertex. No new variant.
-- **`arris_debug::prop::body::SEAM_CLEARANCE`** (step 6): removed from
+- **`arris_debug::prop::body::SEAM_CLEARANCE`** (step 4): removed from
   `singular_slice`'s spin; kept for a ball's tilt from `90°`, which is
   `BesideSingularity` by design. `QuadricPair`'s sparing in
-  `boolean_prop.rs` removed (step 5). A new strategy `band_pair` and test
+  `boolean_prop.rs` removed (step 6). A new strategy `band_pair` and test
   file `crates/arris-ops/tests/tolerance_band.rs` (steps 1 and 9).
 - **`tools/oracle`**: none expected; a band-end fixture whose counts the
   oracle gets wrong says so in `analytic.counts_differ` (ADR-0015).
@@ -116,7 +116,7 @@ mechanical; **[2]** careful — a geometric or numeric case to get right
 within a given design; **[3]** unproven — an algorithm whose robustness or
 bound has to be established here.
 
-- [ ] Step 1 **[2]** — Size the unknown: the band survey. `band_pair` in
+- [x] Step 1 **[2]** — Size the unknown: the band survey. `band_pair` in
   `arris_debug::prop::body`: each designed contact the corpus holds —
   flush planes (`flush-union`, `boss-flush`), coincident and coaxial
   cylinders (`pin-in-bore-*`, `coaxial-*`), tangent walls
@@ -134,6 +134,74 @@ bound has to be established here.
   values. Nothing is fixed here. The histogram orders what follows by
   open question 5's rule, and the agent rewrites the step list in the
   same commit if it changes.
+
+  **Done 2026-09-22.** `band_pair` holds ten contacts (the nine named
+  and `coaxial-cut`'s bore); `the_band_survey` runs 256 pairs, 10752
+  booleans off their contact, and `the_band_at_the_fixtures_numbers`
+  the same band unposed at each fixture's own numbers, where nearly
+  every failure reproduces. The histogram (`tolerance_band.rs`' doc):
+  flush 3430, generic 2612, designed refusals 462, **failed 4248** —
+  a third of the booleans at ±¼ of a tolerance, three quarters at +1½,
+  still a fifth at ±16 — and TangentHole's fuse and common fail at the
+  contact itself. Only `coaxial-cut`'s bore is held across the band.
+  By the mechanism the fault names (`mechanism` in the test, the steps
+  as renumbered below): two points a tolerance apart (step 2) 157, a
+  section edge ending where nothing else does (step 2 or 4) 1356, two
+  curves crossing with no vertex there (step 4, the block along an
+  operand edge) 459, a fit off its branch (step 5) 56, two splines of
+  one section (step 6) 0 — and **none of steps 2 to 6's, 2284: the
+  larger part.** Those are
+  no verdict for two surfaces, a curve and a surface or a point and a
+  surface a hair off parallel or tangent (`Unsupported` 498, torus
+  sections called degenerate at a tangency 672, 69 more in
+  `Fault::Geometry`), sliver faces the polygons do not resolve (560),
+  the builder and the checker refusing the result (458, 64 of them at
+  TangentHole's contact) and shells that meet (27). They are the
+  "faces" level of this plan's goal with no mechanism among steps 2
+  to 6: the next plan's subject, three backlog lines, and what the
+  roadmap bullet's "Done" has to say this plan left — step 9 asserts
+  what steps 2 to 6 make hold and lists the rest. The volume was past
+  its bound 17 times, every one a posed pipe-elbow flush fuse at a
+  radius off by a quarter or half a tolerance, the same either sign:
+  the measurement's drift with the distance from the origin
+  (`docs/BACKLOG.md`), not a boolean's.
+
+  Twenty-one `regression/` fixtures with oracle values, one per
+  distinct failure: `flush-union-a-tolerance-off` (2: EmptySubEdge,
+  CommonBlock; 4: Turn; none: plane–plane), `boss-flush-tilted` (none:
+  plane–plane; 2/4), `boss-flush-posed-gap-fuse` (none),
+  `pin-in-bore-a-tolerance-off` (2/4; none: NoInterior, a checker
+  panic), `coaxial-fuse-a-tolerance-off` (2: CommonBlock; 2/4; none:
+  NoInterior, EdgeUses, circle–plane), `coaxial-fuse-tilted-seam` (4:
+  Seam), `coaxial-fuse-tilted-frame` (none),
+  `tangent-cylinders-a-tolerance-in` (2/4),
+  `tangent-cylinders-overlap-common` (none: L4 slivers),
+  `tangent-cylinders-tilted-fuse` (none: Lumps), `tangent-hole-fuse`
+  (none: EdgeUses at the contact), `tangent-hole-a-tolerance-out`
+  (none: NoInterior, plane–cylinder; 2/4),
+  `tangent-hole-tilted-posed-cut` (5: S5),
+  `tangent-outside-a-tolerance-in` (none: NoInterior; 5: the fit; 2/4),
+  `tangent-outside-grown-common` (none: Hole),
+  `tangent-outside-tilted-posed-common` (none: B1),
+  `tangent-outside-tilted-posed-fuse` (none: the ellipse off its
+  surfaces), `pipe-elbow-a-tolerance-off` (2: CommonBlock; 4: Turn;
+  none: torus sections, plane–plane, circle–plane),
+  `pipe-elbow-posed-fuse` (4: Turn), `edge-touching-tilted-cut` (2: E2,
+  two ends 1.41e-7 apart on one vertex) and
+  `edge-touching-tilted-posed-cut` (none: NotClosed). The tangent-hole
+  three want `TangentContact` by name, as `tangent-hole` does and as
+  `Reason::TangentContact` names a section curve tangent to a loop edge
+  at a vertex; the three commons of slivers want a refusal, the oracle
+  building no solid of them. An edge-on-edge overlap (`Unsupported`,
+  plane against point) has no fixture: Open CASCADE builds a shell of
+  odd Euler characteristic there too, so it is a backlog line alone.
+
+  Open question 5's rule applied: step 2 stays first; of steps 4 to 6
+  the block along an operand edge has the most failures (459, and a
+  share of the 1356), the fit next (56), the section edge known by its
+  surfaces none — so the old step 6 is now step 4, the fit step 5 and
+  the surfaces step 6, the fit still before the surfaces. References to
+  them in this plan are renumbered.
 - [ ] Step 2 **[3]** — Section vertices by closure. `merge` takes the
   components of the candidate points; to establish: the relation
   (pairwise within the larger of the two tolerances, or to a fixpoint
@@ -154,29 +222,7 @@ bound has to be established here.
   `intersect_curve.rs` compare parameters plainly instead of in the turn
   metric; a boolean test whose closed edge is hit at its start vertex
   paves no block shorter than the edge's tolerance.
-- [ ] Step 4 **[2]** — The fit held to the exact branch.
-  `section::fitted`'s deviation is the larger of today's surface term and
-  the fit's distance from `branch.point` — to decide: at the same
-  parameter, or to the branch as a curve (⚠ OPEN 3). Property in
-  `arris-geom`: every traced pair of the existing strategies, the fit
-  within `SECTION_FIT_FRACTION · tol` of the branch at 2000 parameters,
-  and two fits of one pair over two regions within half a tolerance of
-  each other. The control-point counts of `SECTION_FIT_DEGREE`'s doc
-  measured again on the metre probes and at meeting angles of 20°, 5° and
-  1°, recorded there. `grazing-ball-bar-cut` passes S5 at `Full` and
-  moves to `boolean/` with oracle values; the blessed dumps of fitted
-  edges that change are staged as `fixtures:` with the reason.
-- [ ] Step 5 **[2]** — A section edge known by its surfaces. In
-  `section_curve`'s `along` verdict, and wherever else `pave` asks whether
-  an operand edge lies along a section (`coincident`, `common_block`,
-  `resolve_touch`): an edge of face `fa` whose other face in its own
-  operand lies on a surface `Coincident` with `fb`'s is on `fa ∩ fb` to
-  its own tolerance (E4), so it is along the branch its midpoint projects
-  onto within that tolerance, and `curves_coincide` is not asked. Sound at
-  a grazing pair because of step 4. `frustum-stub-cut-then-fuse` moves to
-  `boolean/` with oracle values; the frustum–cylinder sparing in
-  `quadric_identities` is deleted and the property is green at 1000.
-- [ ] Step 6 **[3]** — A block that is an operand edge's.
+- [ ] Step 4 **[3]** — A block that is an operand edge's.
   `pole-slice-beside-seam-cut`: the seam and the section leave the pole
   2e-4 of a radian apart and cross again 1.8e-4 on — a touch in depth
   that stands for two crossings far apart in length, ADR-0016's case one
@@ -193,6 +239,28 @@ bound has to be established here.
   fixture moves to `boolean/`; `singular_slice`'s spin loses
   `SEAM_CLEARANCE` and `a_plane_through_an_apex_or_a_pole_cuts_additively`
   is green at 8000.
+- [ ] Step 5 **[2]** — The fit held to the exact branch.
+  `section::fitted`'s deviation is the larger of today's surface term and
+  the fit's distance from `branch.point` — to decide: at the same
+  parameter, or to the branch as a curve (⚠ OPEN 3). Property in
+  `arris-geom`: every traced pair of the existing strategies, the fit
+  within `SECTION_FIT_FRACTION · tol` of the branch at 2000 parameters,
+  and two fits of one pair over two regions within half a tolerance of
+  each other. The control-point counts of `SECTION_FIT_DEGREE`'s doc
+  measured again on the metre probes and at meeting angles of 20°, 5° and
+  1°, recorded there. `grazing-ball-bar-cut` passes S5 at `Full` and
+  moves to `boolean/` with oracle values; the blessed dumps of fitted
+  edges that change are staged as `fixtures:` with the reason.
+- [ ] Step 6 **[2]** — A section edge known by its surfaces. In
+  `section_curve`'s `along` verdict, and wherever else `pave` asks whether
+  an operand edge lies along a section (`coincident`, `common_block`,
+  `resolve_touch`): an edge of face `fa` whose other face in its own
+  operand lies on a surface `Coincident` with `fb`'s is on `fa ∩ fb` to
+  its own tolerance (E4), so it is along the branch its midpoint projects
+  onto within that tolerance, and `curves_coincide` is not asked. Sound at
+  a grazing pair because of step 5. `frustum-stub-cut-then-fuse` moves to
+  `boolean/` with oracle values; the frustum–cylinder sparing in
+  `quadric_identities` is deleted and the property is green at 1000.
 - [ ] Step 7 **[2]** — The pinch is refused by name (open question 1).
   `singular-bore-cut`: a result vertex whose face uses close into more
   than one fan is found in `result.rs` before `assemble` and returned as
@@ -203,7 +271,7 @@ bound has to be established here.
   `#[ignore]` reason restated; a backlog line for a shell that touches
   itself at a vertex, with the `General` body.
 - [ ] Step 8 **[1]** — ADR-0022, indexed in `docs/adr/README.md`, with
-  the measurements of steps 2, 4 and 6 as its grounds and the amendment
+  the measurements of steps 2, 4 and 5 as its grounds and the amendment
   of ADR-0018/0019's fit target stated as such.
 - [ ] Step 9 **[3]** — The band held. `tolerance_band.rs` un-ignored and
   asserting: every outcome is the flush body, the generic body or one of
@@ -236,12 +304,14 @@ with nothing unchecked, `docs/DATA-MODEL.md` with no `⚠ OPEN`.
   what it refuses by name; the status line; "Open:" gone. The cycle is
   then `/close-cycle`'s.
 - `docs/DATA-MODEL.md` §Tolerances, §Curves — drift-check against steps 2
-  and 4, which change them in their own commits.
+  and 5, which change them in their own commits.
 - `docs/ARCHITECTURE.md` — the pave model's merge (components, the
-  numbering rule), the section-edge verdicts of steps 5 and 6, the pinch
+  numbering rule), the section-edge verdicts of steps 4 and 6, the pinch
   beside `TangentContact`.
-- `docs/BACKLOG.md` — step 7's line; step 9's residue; nothing else this
-  plan absorbed returns.
+- `docs/BACKLOG.md` — step 7's line; step 9's residue; step 1's three
+  lines for the classes none of steps 2 to 6 takes, trimmed by what
+  steps 2 to 6 fixed of their fixtures; nothing else this plan absorbed
+  returns.
 - `docs/adr/README.md` — ADR-0022 (step 8 indexes it; check).
 - `AGENTS.md` current state — C3's last plan done; next is
   `/close-cycle`, then the measuring harness and the reader.
@@ -267,21 +337,24 @@ with nothing unchecked, `docs/DATA-MODEL.md` with no `⚠ OPEN`.
   if any corpus fixture or property case at a generic pose grows a vertex
   tolerance it did not have, stop — closure then needs a diameter bound,
   and the step reports the measurement before choosing one.
-- ⚠ OPEN 3 (agent, step 4): same-parameter or curve distance to the
+- ⚠ OPEN 3 (agent, step 5): same-parameter or curve distance to the
   branch. Tripwire: control points more than doubled on the metre probes
   means stop and report; the fallback is parking `grazing-ball-bar-cut`
   with the measuring harness, never an S5 excuse.
-- ⚠ OPEN 4 (agent, step 6): whether the block verdict alone suffices or
+- ⚠ OPEN 4 (agent, step 4): whether the block verdict alone suffices or
   the curve–curve touch must first be resolved into its far crossing, as
-  ADR-0016 resolves an edge–face touch; step 6 records which and why in
+  ADR-0016 resolves an edge–face touch; step 4 records which and why in
   ADR-0022's grounds.
 - 5, **decided 2026-09-22** (the human delegated it): the agent reads
   step 1's histogram by a rule and does not wait. Step 2 stays first
   whatever it shows — the accept line names its fixture. Steps 4 to 6
   are taken in the order of the failures the survey attributes to each,
-  most first, keeping 4 before 5 (5 is sound at a grazing pair only
-  after 4). A class that is none of their mechanisms is fixtures and
-  backlog lines, by the non-goal above, however large — and if it is the
+  most first, keeping the fit before the section edge known by its
+  surfaces (that one is sound at a grazing pair only after the fit).
+  Applied in step 1: the block, then the fit, then the surfaces —
+  steps 4, 5 and 6 as now numbered. A class that is none of their
+  mechanisms is fixtures and backlog lines, by the non-goal above,
+  however large — and if it is the
   larger part of the band, the agent says so in step 1's commit body and
   in its reply, because that is the next plan's subject and the roadmap
   bullet's "Done" will have to say what it left. A band already held

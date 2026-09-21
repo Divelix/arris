@@ -1,0 +1,14 @@
+{
+  "description": "two boxes touching along an edge (edge-touching-fuse's contact at the band survey's numbers and pose), the second turned about the line through the middle of the shared edge along the first's diagonal so the edge's ends move half a tolerance (5e-8) in and out, and cut from the first. Arris fails: the builder cannot close the shell (Fault::Builder, NotClosed). The desired result is the first box, clean (plans/c3-tolerance-apart step 1, the band survey)",
+  "params": {"d": 0, "t": -0.00000005, "g": 0},
+  "steps": [
+    {"name": "a", "op": "box", "min": [0, 0, 0], "max": [4.698363133748883, 9.891199901462349, 15.650162494008441]},
+    {"name": "b0", "op": "box", "min": [4.698363133748883, 9.891199901462349, 0], "max": [12.462456175168693, 14.506027100579487, 15.650162494008441]},
+    {"name": "b", "op": "transform", "of": "b0", "rotate": {"axis": [0.7071067811865476, -0.7071067811865476, 0], "origin": [4.698363133748883, 9.891199901462349, 7.825081247004221], "angle_deg": "degrees(2 * t / 15.650162494008441)"}, "translate": ["-0.7071067811865476 * d", "-0.7071067811865476 * d", "0 * d"]},
+    {"name": "a_posed", "op": "transform", "of": "a", "rotate": {"axis": [-0.6232433137825775, 0.4418427378477808, -0.6452462838610455], "angle_deg": 132.99602745748476}, "translate": [-68.82990340131828, -34.514608171593565, 26.27565623531297]},
+    {"name": "b_posed", "op": "transform", "of": "b", "rotate": {"axis": [-0.6232433137825775, 0.4418427378477808, -0.6452462838610455], "angle_deg": 132.99602745748476}, "translate": [-68.82990340131828, -34.514608171593565, 26.27565623531297]},
+    {"name": "result", "op": "cut", "target": "a_posed", "tool": "b_posed"}
+  ],
+  "result": "result",
+  "analytic": {}
+}

@@ -1,0 +1,14 @@
+{
+  "description": "a cylinder whose wall touches a box face from outside (tangent-outside-cut's contact at the band survey's numbers and pose), turned about the contact's middle so its ends move a quarter of a tolerance (2.5e-8) into the box and away, and fused with it. Arris fails: the ellipse section of the face's plane and the wall is off the surfaces by 1.2e-7 at a sample (Fault::Geometry, the ellipse curve is off); unposed it is a fit that still deviates at its most spans, as in tangent-outside-a-tolerance-in. The desired result is the tangent contact's refusal by name, as at the contact; Open CASCADE builds the two operands as two shells touching (plans/c3-tolerance-apart step 1, the band survey)",
+  "params": {"d": 0, "t": -0.000000025, "g": 0},
+  "steps": [
+    {"name": "a", "op": "box", "min": [0, 0, 0], "max": [9.898797826664142, 5.166109038892625, 17.388439066346848]},
+    {"name": "b0", "op": "cylinder", "base": [12.03087537104248, 4.446953015177458, 4.746039575542334], "axis": [0, 0, 1], "radius": 2.132077544378338, "height": 21.33661902397794},
+    {"name": "b", "op": "transform", "of": "b0", "rotate": {"axis": [0, 1, 0], "origin": [9.898797826664142, 4.446953015177458, 11.06723932094459], "angle_deg": "degrees(2 * t / 12.642399490804515)"}, "translate": ["-1 * d", "0 * d", "0 * d"]},
+    {"name": "a_posed", "op": "transform", "of": "a", "rotate": {"axis": [-0.4207942540063376, -0.09442918797014949, 0.9022279779825874], "angle_deg": 107.03009118575719}, "translate": [-26.349918363498862, 30.44223162782567, 66.68511273341885]},
+    {"name": "b_posed", "op": "transform", "of": "b", "rotate": {"axis": [-0.4207942540063376, -0.09442918797014949, 0.9022279779825874], "angle_deg": 107.03009118575719}, "translate": [-26.349918363498862, 30.44223162782567, 66.68511273341885]},
+    {"name": "result", "op": "fuse", "a": "a_posed", "b": "b_posed"}
+  ],
+  "result": "result",
+  "analytic": {"expect_error": "tangent-contact"}
+}

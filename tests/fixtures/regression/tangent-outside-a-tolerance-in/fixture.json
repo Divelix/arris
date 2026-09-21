@@ -1,0 +1,16 @@
+{
+  "description": "tangent-outside-cut's tool moved into the plate by a tolerance (1e-7), or turned about the contact's middle so its ends move a quarter or a half of one in and out. Arris fails: a piece with no interior point at its clearance (Fault::Split, NoInterior; the offset), a fit of the section of the face's plane and the tool's wall that still deviates past the tolerance at its most spans (Fault::Geometry; the quarter turn), a section edge ending at a node nothing else reaches (Fault::Split, Dangling; the half). The desired result is a clean cut: the plate within the tolerance, the plate less a sliver beyond. Open CASCADE imprints the contact on the face (10/14/6/6, and 10/15/7/7 at the half turn) where Arris keeps a face whole that a touch removes no material from (tangent-outside-cut's counts_differ); the step that fixes this states Arris's counts per variant (plans/c3-tolerance-apart step 1, the band survey)",
+  "params": {"d": 0.0000001, "t": 0, "g": 0},
+  "variants": {
+    "tilt-quarter": {"d": 0, "t": 0.000000025, "g": 0},
+    "tilt-half": {"d": 0, "t": 0.00000005, "g": 0}
+  },
+  "steps": [
+    {"name": "a", "op": "box", "min": [0, 0, 0], "max": [40, 30, 10]},
+    {"name": "b0", "op": "cylinder", "base": [44, 15, -1], "axis": [0, 0, 1], "radius": 4, "height": 12},
+    {"name": "b", "op": "transform", "of": "b0", "rotate": {"axis": [0, 1, 0], "origin": [40, 15, 5], "angle_deg": "degrees(2 * t / 10)"}, "translate": ["-1 * d", "0 * d", "0 * d"]},
+    {"name": "result", "op": "cut", "target": "a", "tool": "b"}
+  ],
+  "result": "result",
+  "analytic": {}
+}

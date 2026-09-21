@@ -1,0 +1,16 @@
+{
+  "description": "tangent-hole's hole moved out through the side face by a tolerance and a half (1.5e-7), or turned about the contact's middle so its ends move a quarter of a tolerance, or one, through the face and back. Arris fails: a piece with no interior point at its clearance (Fault::Split, NoInterior; the offset), the face's plane and the hole's wall a hair off tangent with no closed form (OpError::Unsupported; the quarter turn) and a section edge ending at a node nothing else reaches (Fault::Split, Dangling; the turn by one). The desired result is the tangent contact's refusal by name, as at the contact: the hole's wall and the face are within a tolerance or two of each other along the whole stretch. Open CASCADE builds a shell of odd Euler characteristic at every variant, as for tangent-hole (plans/c3-tolerance-apart step 1, the band survey)",
+  "params": {"d": 0.00000015, "t": 0, "g": 0},
+  "variants": {
+    "tilt-quarter": {"d": 0, "t": 0.000000025, "g": 0},
+    "tilt-1": {"d": 0, "t": 0.0000001, "g": 0}
+  },
+  "steps": [
+    {"name": "a", "op": "box", "min": [0, 0, 0], "max": [40, 30, 10]},
+    {"name": "b0", "op": "cylinder", "base": [3, 15, 4], "axis": [0, 0, 1], "radius": 3, "height": 12},
+    {"name": "b", "op": "transform", "of": "b0", "rotate": {"axis": [0, 1, 0], "origin": [0, 15, 7], "angle_deg": "degrees(2 * t / 6)"}, "translate": ["-1 * d", "0 * d", "0 * d"]},
+    {"name": "result", "op": "cut", "target": "a", "tool": "b"}
+  ],
+  "result": "result",
+  "analytic": {"expect_error": "tangent-contact"}
+}

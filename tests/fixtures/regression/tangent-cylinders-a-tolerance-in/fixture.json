@@ -1,0 +1,15 @@
+{
+  "description": "tangent-cylinders-cut's tool moved into the target by a tolerance (1e-7), or turned about the contact's middle so its ends move two tolerances in and out. The walls cross in two rulings 6.3e-4 apart, or a skew section beside the contact, around a sliver a tolerance thick. Arris fails: a section edge of the target's cap ends at a node nothing else reaches (Fault::Split, Dangling). The desired result is a clean cut: the target within the tolerance, the target less the sliver beyond. Open CASCADE imprints the two rulings on the wall (4/6/4/4, and 4/5/3/3 at the turn) where Arris keeps the wall whole at the contact (tangent-cylinders-cut, 2/3/3/3); the step that fixes this states Arris's counts per variant (plans/c3-tolerance-apart step 1, the band survey)",
+  "params": {"d": 0.0000001, "t": 0, "g": 0},
+  "variants": {
+    "tilt-2": {"d": 0, "t": 0.0000002, "g": 0}
+  },
+  "steps": [
+    {"name": "a", "op": "cylinder", "base": [0, 0, 0], "axis": [0, 0, 1], "radius": 1, "height": 2},
+    {"name": "b0", "op": "cylinder", "base": [0, 2, -1], "axis": [0, 0, 1], "radius": 1, "height": 4},
+    {"name": "b", "op": "transform", "of": "b0", "rotate": {"axis": [1, 0, 0], "origin": [0, 1, 1], "angle_deg": "degrees(2 * t / 2)"}, "translate": ["0 * d", "-1 * d", "0 * d"]},
+    {"name": "result", "op": "cut", "target": "a", "tool": "b"}
+  ],
+  "result": "result",
+  "analytic": {}
+}
