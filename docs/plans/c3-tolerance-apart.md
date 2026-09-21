@@ -46,8 +46,9 @@ and the cycle can close.
   `curves_coincide` for two different splines in general: the NURBS
   cycle's marcher. Step 5 makes the boolean stop *asking* where the
   surfaces already answer.
-- A pinched vertex admitted into a `Solid` (⚠ OPEN 1's other answer): a
-  data-model change with the `General` body, its own idea if chosen.
+- A pinched vertex admitted into a `Solid` (open question 1, decided):
+  a data-model change with the `General` body, an idea of its own when a
+  consumer's regression asks.
 - A resolved tangent contact; `Reason::BesideSingularity` lifted (the
   polygon plan on the backlog); the tracers' `SectionFault` refusals; S5's
   coincident-surface grid (backlog); mass properties that depend on the
@@ -130,8 +131,9 @@ bound has to be established here.
   unperturbed body's. The property lands `#[ignore]`d with the histogram
   in its doc and in this plan under the step; each distinct failure is
   shrunk to a `regression/` fixture with its desired assertion and oracle
-  values. Nothing is fixed here. If the histogram shows a failure class
-  larger than steps 2 to 6 together, stop and say so: the human reorders.
+  values. Nothing is fixed here. The histogram orders what follows by
+  open question 5's rule, and the agent rewrites the step list in the
+  same commit if it changes.
 - [ ] Step 2 **[3]** — Section vertices by closure. `merge` takes the
   components of the candidate points; to establish: the relation
   (pairwise within the larger of the two tolerances, or to a fixpoint
@@ -191,7 +193,7 @@ bound has to be established here.
   fixture moves to `boolean/`; `singular_slice`'s spin loses
   `SEAM_CLEARANCE` and `a_plane_through_an_apex_or_a_pole_cuts_additively`
   is green at 8000.
-- [ ] Step 7 **[2]** — The pinch is refused by name (⚠ OPEN 1).
+- [ ] Step 7 **[2]** — The pinch is refused by name (open question 1).
   `singular-bore-cut`: a result vertex whose face uses close into more
   than one fan is found in `result.rs` before `assemble` and returned as
   `OpError::Degenerate { reason: Reason::NonManifold }` naming the vertex,
@@ -249,12 +251,18 @@ with nothing unchecked, `docs/DATA-MODEL.md` with no `⚠ OPEN`.
 
 ## Open questions
 
-- ⚠ OPEN 1 (human, before step 7): a pinched vertex in a `Solid` — the
-  plan's default is the named refusal, `Reason::NonManifold`, consistent
-  with ADR-0006's vertex two lumps share and ADR-0004's `TangentContact`.
-  Open CASCADE builds the body. Admitting it is a data-model change
-  (Euler's parity, L5, every vertex-fan walk) and would leave this plan
-  for an idea of its own.
+- 1, **decided 2026-09-22** (the human delegated it): a pinched vertex
+  in a `Solid` is refused by name, `Reason::NonManifold` with the vertex.
+  A `Solid` is a manifold here at every level already — ADR-0006 refuses
+  a vertex two lumps share and ADR-0004 a slit two faces touch along, and
+  one shell touching itself at a point is the same statement; Euler's
+  parity and L5 both read it as broken, so admitting it changes what
+  every vertex-fan walk downstream may assume, for a pose that is exact
+  tangency from inside, leaving a wall of zero thickness no consumer
+  designs for. Open CASCADE builds the body, so it may
+  come back as a consumer's regression: the fixture keeps the desired
+  body in `regression/` and the backlog line says where it would go, the
+  `General` body. ADR-0022 records this.
 - ⚠ OPEN 2 (agent, step 2): the closure's relation and bound. Tripwire:
   if any corpus fixture or property case at a generic pose grows a vertex
   tolerance it did not have, stop — closure then needs a diameter bound,
@@ -267,6 +275,14 @@ with nothing unchecked, `docs/DATA-MODEL.md` with no `⚠ OPEN`.
   the curve–curve touch must first be resolved into its far crossing, as
   ADR-0016 resolves an edge–face touch; step 6 records which and why in
   ADR-0022's grounds.
-- ⚠ OPEN 5 (human, after step 1): the survey's histogram may reorder
-  steps 2 to 6 or show the band is already held; the agent reports it and
-  proceeds in the written order unless told otherwise.
+- 5, **decided 2026-09-22** (the human delegated it): the agent reads
+  step 1's histogram by a rule and does not wait. Step 2 stays first
+  whatever it shows — the accept line names its fixture. Steps 4 to 6
+  are taken in the order of the failures the survey attributes to each,
+  most first, keeping 4 before 5 (5 is sound at a grazing pair only
+  after 4). A class that is none of their mechanisms is fixtures and
+  backlog lines, by the non-goal above, however large — and if it is the
+  larger part of the band, the agent says so in step 1's commit body and
+  in its reply, because that is the next plan's subject and the roadmap
+  bullet's "Done" will have to say what it left. A band already held
+  makes step 9 the assertion and the fixtures alone.
