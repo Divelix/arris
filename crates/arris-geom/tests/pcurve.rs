@@ -944,6 +944,53 @@ fn a_small_circle_through_a_pole_is_split_there_and_both_halves_fit() {
 }
 
 #[test]
+fn a_circle_cut_at_the_pole_it_runs_through_fits_as_one_range() {
+    // What a boolean paves it into (ADR-0021): one block from the pole
+    // round to the pole, a range that ends on the one singular point
+    // twice, half a turn of `u` apart — each end read on its own side.
+    let (sphere, circle) = beside_the_pole(0.0);
+    let range = Interval::new(PI / 2.0, PI / 2.0 + TAU).unwrap();
+    let pc = pcurve_on(&circle, range, &sphere, tol()).unwrap();
+    let off = worst_image(&pc, &circle, &sphere, range);
+    assert!(off <= tol().linear, "{off} off");
+    for (t, u) in [(range.lo(), 3.0 * PI / 2.0), (range.hi(), PI / 2.0)] {
+        let at = pc.point(t);
+        assert_eq!(at.y, PI / 2.0);
+        assert!(same_angle(at.x, u), "u = {} at {t}, not {u}", at.x);
+    }
+}
+
+#[test]
+fn a_half_meridian_is_a_line_in_the_sphere_s_own_latitudes() {
+    // From the south pole to the north by way of `t = π`: `v = t − π`,
+    // and not the `t + π` the circle's phase alone gives — a sphere's
+    // `v` is no periodic parameter, and nothing downstream could put a
+    // whole turn of it back.
+    let sphere = Surface::Sphere {
+        frame: Frame::world(),
+        radius: 0.5,
+    };
+    let circle = Curve::Circle {
+        frame: Frame::new(Point3::origin(), Vec3::y(), Vec3::x()).unwrap(),
+        radius: 0.5,
+    };
+    for range in [
+        Interval::new(PI / 2.0, 3.0 * PI / 2.0).unwrap(),
+        Interval::new(-PI / 2.0, PI / 2.0).unwrap(),
+        Interval::new(3.0 * PI / 2.0, 5.0 * PI / 2.0).unwrap(),
+    ] {
+        let pc = pcurve_on(&circle, range, &sphere, tol()).unwrap();
+        assert!(matches!(pc, Curve2::Line { .. }), "{pc:?}");
+        let off = worst_image(&pc, &circle, &sphere, range);
+        assert!(off <= tol().linear, "{off} off over {range:?}");
+        for i in 0..=8 {
+            let v = pc.point(range.lerp(f64::from(i) / 8.0)).y;
+            assert!(v.abs() <= PI / 2.0 + 1e-12, "v = {v} over {range:?}");
+        }
+    }
+}
+
+#[test]
 fn a_circle_beside_a_pole_fits_from_the_band_to_a_hundredth_of_the_radius() {
     // `u` swings by nearly π over a stretch as long as the miss, and the
     // fit follows it by halving spans there: measured at the default

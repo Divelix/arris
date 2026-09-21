@@ -335,6 +335,25 @@ fn regression_grazing_ball_bar_cut() {
     run("regression/grazing-ball-bar-cut");
 }
 
+/// A ball sliced through its pole by a face turned 2e-4 of a radian off
+/// the seam's meridian: the circle crosses the seam again beside the
+/// pole, where the two are one curve within the tolerance, and nothing
+/// paves it there.
+#[test]
+#[ignore = "Fault::Seam, a section edge of the sphere and the face crosses the seam without a pave: the seam against the face's plane is one touch that resolves into no crossing (docs/BACKLOG.md, features a tolerance apart)"]
+fn regression_pole_slice_beside_seam_cut() {
+    run("regression/pole-slice-beside-seam-cut");
+}
+
+/// A ball sliced by a face 3.7e-7 from its pole: not through the singular
+/// point and nearer than the sphere's (u, v) polygons resolve, refused by
+/// name rather than built.
+#[test]
+#[ignore = "Reason::BesideSingularity, a section passes the sphere's pole without running through it, nearer than the face's (u, v) resolves (docs/BACKLOG.md, polygons by span and chords in length)"]
+fn regression_ball_beside_pole_slice_cut() {
+    run("regression/ball-beside-pole-slice-cut");
+}
+
 /// A tee of equal radii: the branch's rim circle touches the main wall
 /// exactly at the two crossing vertices, and each touch cuts the rim
 /// there.
@@ -567,6 +586,27 @@ fn boolean_filleted_boss_drill_cut() {
 #[test]
 fn boolean_filleted_corner_notch_cut() {
     run("boolean/filleted-corner-notch-cut");
+}
+
+/// A cone sliced by a plane through its apex: two rulings ending at the
+/// operand's singular vertex, which paves them (ADR-0021).
+#[test]
+fn boolean_cone_apex_slice_cut() {
+    run("boolean/cone-apex-slice-cut");
+}
+
+/// A ball sliced by an oblique plane through a pole: a small circle
+/// through the sphere's singular vertex, split there (ADR-0021).
+#[test]
+fn boolean_ball_pole_slice_cut() {
+    run("boolean/ball-pole-slice-cut");
+}
+
+/// A drill whose wall runs through both of a ball's poles: two traced
+/// loops, each through a singular vertex of the sphere.
+#[test]
+fn boolean_ball_pole_drill_cut() {
+    run("boolean/ball-pole-drill-cut");
 }
 
 /// A rectangle with a circular hole extruded: `boolean/through-hole`'s

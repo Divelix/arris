@@ -1,0 +1,99 @@
+{
+  "occt": "8.0.1.0.0",
+  "recipe_sha256": "a81d62b52630cd06437aaf187c19b735f88081cfe4ab9f949fe030babf576cb9",
+  "results": {
+    "default": {
+      "area": 60.351834365082055,
+      "centroid": [
+        -0.02886623840456641,
+        -0.038488317641635586,
+        -6.847746923133433e-10
+      ],
+      "counts": {
+        "edges": 8,
+        "faces": 2,
+        "loops": 2,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 6
+      },
+      "degenerate": false,
+      "euler_characteristic": 0,
+      "genus": 1,
+      "inertia": [
+        [
+          49.30326385572789,
+          0.3800218490245174,
+          1.2145486192087246e-09
+        ],
+        [
+          0.3800218490245174,
+          49.52494325122919,
+          1.597427636425365e-09
+        ],
+        [
+          1.2145486192087246e-09,
+          1.597427636425365e-09,
+          52.453283757691
+        ]
+      ],
+      "probes": [
+        {
+          "class": "in",
+          "label": "inside",
+          "point": [
+            -1.0,
+            -1.0,
+            0.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "in_the_bore",
+          "point": [
+            0.3,
+            0.4,
+            0.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "outside",
+          "point": [
+            0.0,
+            0.0,
+            3.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_the_pole",
+          "point": [
+            0.0,
+            0.0,
+            2.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_the_bore_at_the_axis",
+          "point": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_the_sphere",
+          "point": [
+            -2.0,
+            0.0,
+            0.0
+          ]
+        }
+      ],
+      "volume": 30.521578549016702
+    }
+  }
+}

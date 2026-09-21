@@ -3,12 +3,28 @@
 //! point on me" — and its boxes; every edge with its curve, range, ends
 //! and box.
 
-use arris_check::arris_topo::arris_geom::{Curve, Surface};
+use arris_check::arris_topo::arris_geom::{Curve, Curve2, Surface};
 use arris_check::arris_topo::arris_math::{Aabb, Interval, Point2, Point3};
 use arris_check::arris_topo::{
     Body, EdgeId, FaceId, Model, NotFound, Orientation, Shape, VertexId,
 };
 use arris_check::domain::{FaceDomain, shifts};
+
+/// A singular point of a face's surface on its boundary — a cone's apex,
+/// a sphere's pole — as the face holds it: the degenerate edge there, a
+/// whole line of (u, v) over one vertex (ADR-0021).
+pub(crate) struct Singular<'m> {
+    /// The degenerate edge.
+    pub edge: EdgeId,
+    /// The vertex it starts and ends on.
+    pub vertex: VertexId,
+    pub point: Point3,
+    /// The vertex's tolerance.
+    pub tolerance: f64,
+    /// The edge's pcurve on the face, along the singular parameter line.
+    pub pcurve: &'m Curve2,
+    pub range: Interval,
+}
 
 /// A face of an operand, read once.
 pub(crate) struct FaceInfo<'m> {
@@ -22,6 +38,9 @@ pub(crate) struct FaceInfo<'m> {
     pub uv_hi: Point2,
     /// The 3D box, grown by the tolerance.
     pub bounds: Aabb,
+    /// The degenerate edges of the loops, in loop order: the edges
+    /// [`EdgeInfo`] leaves out.
+    pub singular: Vec<Singular<'m>>,
 }
 
 impl<'m> FaceInfo<'m> {
@@ -49,6 +68,22 @@ impl<'m> FaceInfo<'m> {
         let bounds = domain
             .bounds()
             .unwrap_or_else(|| Aabb::of_point(surface.point(uv_lo.x, uv_lo.y)).inflated(tolerance));
+        let mut singular = Vec::new();
+        for c in face.loops().iter().flat_map(|l| l.coedges()) {
+            let edge = m.edge(c.edge())?;
+            if !edge.is_degenerate() {
+                continue;
+            }
+            let vertex = m.vertex(edge.start())?;
+            singular.push(Singular {
+                edge: c.edge(),
+                vertex: edge.start(),
+                point: vertex.point(),
+                tolerance: vertex.tolerance(),
+                pcurve: m.curve2(c.pcurve())?,
+                range: edge.range(),
+            });
+        }
         Ok(FaceInfo {
             id,
             surface,
@@ -57,6 +92,7 @@ impl<'m> FaceInfo<'m> {
             uv_lo,
             uv_hi,
             bounds,
+            singular,
         })
     }
 

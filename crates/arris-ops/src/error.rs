@@ -70,6 +70,15 @@ pub enum Reason {
     /// a section curve tangent to a loop edge at a vertex — which a
     /// manifold `Solid` cannot represent (ADR-0004, plan `⚠ OPEN` 1).
     TangentContact,
+    /// A section curve passes a face's singular point — a cone's apex, a
+    /// sphere's pole — without running through it, nearer than the face's
+    /// (u, v) can carry: its pcurve turns through up to half a turn of
+    /// `u` over a stretch as long as the miss, which the face's polygons
+    /// do not resolve at their finest, and by an apex the curve itself
+    /// doubles back within a tolerance (ADR-0021). Through the point is
+    /// built, and so is clear of it; the error's entities are the face,
+    /// the other face of the pair and the singular vertex.
+    BesideSingularity,
     /// The result's shells would touch along an edge or at a vertex — an
     /// edge used by four faces, a vertex two lumps share, a full revolve's
     /// profile touching its axis at a vertex with no segment along it —
@@ -168,6 +177,9 @@ impl core::fmt::Display for Reason {
             Reason::TangentContact => {
                 f.write_str("the faces touch along a curve interior to both result faces")
             }
+            Reason::BesideSingularity => f.write_str(
+                "a section passes a face's apex or pole without running through it, nearer than the face's (u, v) resolves",
+            ),
             Reason::NonManifold => f.write_str(
                 "the result's shells would touch along an edge or at a vertex, which a solid does not hold",
             ),

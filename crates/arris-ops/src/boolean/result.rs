@@ -1199,6 +1199,8 @@ pub(super) fn boolean(
                     p.add_generated(forward(i.pairs[pair].a), forward(*id));
                     p.add_generated(forward(i.pairs[pair].b), forward(*id));
                 }
+                // Always an operand's vertex, never a new one.
+                VertexSource::Singular => {}
             }
         }
         // `i.sections` is curve order and then along each curve, so the

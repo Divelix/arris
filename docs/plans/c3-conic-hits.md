@@ -341,7 +341,7 @@ bound has to be established here.
   will want `measure_differs` or another pose. For step 8: the scratch
   run is its ball and ring strategies; it took about three minutes per
   two hundred poses in release.
-- [ ] Step 6 **[3]** — A section through an apex or a pole, and ADR-0021.
+- [x] Step 6 **[3]** — A section through an apex or a pole, and ADR-0021.
   The operand's singular vertex paves every section curve within the
   tolerance of it, so no block has the point inside and step 1's
   `ThroughSingularity` is never met from a boolean; the result's faces
@@ -354,6 +354,57 @@ bound has to be established here.
   ball's pole, cut and common, additive in volume. If a pose cannot be
   made robust here it is refused by name and committed under
   `tests/fixtures/regression/` with its desired assertion — ⚠ OPEN 2.
+  *Established:* **through is built, beside is refused by name**
+  (ADR-0021, ⚠ OPEN 2 answered). The vertex was mostly there already —
+  the seam ends on the apex or the pole and pierces the other face at it,
+  an ordinary hit on a vertex — and what the faces lacked was the
+  **node**: the vertex is a whole line of (u, v), both rulings reached
+  the one corner of the box and read as a `TangentContact`, a traced
+  loop as an arrangement that does not turn once. The degenerate edge is
+  now paved at every `u` a section edge arrives with, and `result`,
+  `rebuild` and the checker took its degenerate pieces as they were.
+  `VertexSource::Singular` is for where the seam only *touches* the other
+  surface at the point (`ball-pole-slice-cut`'s `along_seam`) or the face
+  has no seam there. Two faults in `pcurve_on`, neither the fit's: a
+  range that ends on the one pole **twice** — what a circle through it
+  is, once paved — read the first end's `u` at both and wound by π at
+  the last sample; and a sphere's **meridian** took its `v` from the
+  circle's phase alone, a whole turn off the latitudes for the half
+  circle by way of `t = π`, which nothing downstream can put back since
+  `v` is no period of a sphere (the property's shrunk case: a face in
+  the seam's plane). All three fixtures pass every stage on the recipes
+  as drawn, the two slices against closed forms; `ball-pole-drill-cut`
+  is the pose Open CASCADE *does* build, a wall through both poles, and
+  states 3e-9 and 5e-9 because the oracle is the far side — single
+  integrals by Gauss–Legendre, Arris 1.1e-11 and 2.3e-11 from them, Open
+  CASCADE 2.3e-9 and 1.9e-9, its centroid 6.8e-10 off the symmetry plane.
+  The property runs eight thousand poses clean. **What it and a sweep of
+  misses found is the other half of step 1's open note**, and it is
+  larger than the note thought: from the band (a quarter tolerance) out
+  to a miss of about `1e-5` on a ball of radius 2 nothing builds — a
+  `SplitFault::NoInterior` after tens of seconds, a traced loop not
+  finishing at all, and by an apex an **invalid body in a release
+  build** (a hyperbola doubling back within a tolerance, E8) or a false
+  `TangentContact` (the intersector's two lines through the apex, in
+  length, against a seam piercing the plane 3e-7 down its ruling). The
+  fit is not the fault — step 1's 917 control points hold — the
+  **polygon** is: evenly cut in the parameter by the largest second
+  derivative on the piece, capped at 65536. So the pave model decides
+  *through* by `pcurve_on`'s own band (and on a cone by the tangent:
+  along a ruling, or across them), and refuses the rest by name,
+  `Reason::BesideSingularity`, out to four polygon segments of the
+  face's diagonal, before anything is fitted: milliseconds, typed, the
+  model untouched. Two regression fixtures, each failing as its
+  `#[ignore]` says: `regression/ball-beside-pole-slice-cut` (the
+  refusal; ten times nearer, Open CASCADE's own cut returns the whole
+  ball in two shells) and `regression/pole-slice-beside-seam-cut` (a
+  circle leaving the pole 2e-4 of a radian off the seam's meridian,
+  `Fault::Seam`, one pose in eight thousand — the strategy now keeps
+  0.05 from the seam, and exactly along it is a variant that passes).
+  Two backlog lines. For step 8: a ball or a cone at a random pose meets
+  `BesideSingularity` rarely and not never, and the property takes it as
+  it takes `TangentContact`. New variants of public enums, named in the
+  commit body: `VertexSource::Singular`, `Reason::BesideSingularity`.
 - [ ] Step 7 **[2]** — A `Meets` of both kinds, and a contact along a
   circle. The `mixed` invariant removed; `contact_curve` for a closed
   curve, its blocks wrapping as a section loop's do. Fixtures:
@@ -435,12 +486,14 @@ bound has to be established here.
   rebuildable for a block of an edge a later boolean cuts, and for the
   reader's edges, when no branch exists, and a second source for the
   same pcurve is a second thing to keep consistent.
-- ⚠ OPEN 2 — **a section through an apex or a pole: built, or refused by
-  name?** (agent, at step 6.) Planned as built. The fallback, if the
-  result's degenerate edges cannot be made robust in one step, is a named
-  refusal with the regression fixtures above and the pose handed to the
-  tolerance plan with the tracers' singular points.
-- For step 6, from step 1: a section that passes an apex or a pole
+- OPEN 2, answered at step 6: **through is built, beside is refused by
+  name** (ADR-0021). The degenerate edges were never the difficulty;
+  the (u, v) polygons of a pcurve passing beside the point are, and they
+  are a backlog line of their own, not the tolerance plan's.
+- From step 1, answered at step 6 — none of the three, as written: the
+  loop in (u, v) does not take it, and the pave model now reads *through*
+  by `pcurve_on`'s band, so a block never ends "up to a tolerance short"
+  of a vertex it was paved by. The note as it stood: a section that passes an apex or a pole
   *between* the band (a quarter tolerance) and the vertex's tolerance is
   not through it for `pcurve_on`. Paved at the singular vertex, each
   block ends up to a tolerance short of the point, and its pcurve is the
@@ -452,8 +505,10 @@ bound has to be established here.
   whether the loop in (u, v) takes that, or the section is refitted
   through the vertex, or the pose is ⚠ OPEN 2's refusal.
 - The exact arms are untouched by the singular rule: a ruling's `Line`
-  runs through the apex and a meridian's over a pole, as before. Whether
-  ADR-0021's "never" covers them is step 6's to say when it writes it.
+  runs through the apex and a meridian's over a pole, as before.
+  ADR-0021 says so: "never" is the fitted pcurve's, and the exact lines
+  are outside the rule — though a boolean paves them at the vertex all
+  the same, so no edge it makes runs through either.
 - ⚠ OPEN 3 — **does the guard's removal slow the existing corpus?**
   (agent, at step 8; the human if it does.) Plane and cylinder operands
   pay nothing new; the question is a filleted body's many blend faces,

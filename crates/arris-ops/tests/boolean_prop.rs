@@ -13,7 +13,7 @@
 //! failures).
 
 use arris_debug::prop::body::{
-    Boxed, CrossingPair, Cylindrical, OverlappingPair, QuarticPair, TangentPair,
+    Boxed, CrossingPair, Cylindrical, OverlappingPair, QuarticPair, SingularSlice, TangentPair,
 };
 use arris_debug::testing::{REL, close_to, fail, fitted_rel};
 use arris_debug::{dump_text, prop, prop_shards};
@@ -839,6 +839,47 @@ prop_shards! {
          shard_8 shard_9 shard_10 shard_11 shard_12 shard_13 shard_14
          shard_15]
         (pair) = prop::body::quartic_pair() => { quartic_identities(&pair) }
+}
+
+/// The singular property over one slice.
+fn singular_identities(slice: &SingularSlice) -> Result<(), TestCaseError> {
+    let back = slice.pose.inverse();
+    let (mut m, a, b, _, _) = operands_by(|m| slice.build(m))?;
+    let (pa, pb) = (
+        measured_at(&mut m, a, &back)?,
+        measured_at(&mut m, b, &back)?,
+    );
+    let (c, _) = run(&mut m, "common(a, b)", common, a, b)?;
+    let (diff, _) = run(&mut m, "cut(a, b)", cut, a, b)?;
+    let inter = measured_at(&mut m, c, &back)?;
+    assert_cut_identity(&measured_at(&mut m, diff, &back)?, &inter, &pa, &pb)?;
+    // Both keep the singular vertex, and the degenerate edge on it.
+    for body in [c, diff] {
+        let mut degenerate = 0;
+        for e in m.edges(body).map_err(fail)? {
+            degenerate += usize::from(m.edge(e.id).map_err(fail)?.is_degenerate());
+        }
+        prop_assert!(
+            degenerate > 0,
+            "no degenerate edge left\n{}",
+            dump_text(&m, body).map_err(fail)?
+        );
+    }
+    Ok(())
+}
+
+prop_shards! {
+    /// A plane through a revolved cone's apex or a ball's pole, at a
+    /// random pose (ADR-0021): the operand's singular vertex paves the
+    /// section — two rulings ending on the apex, a circle through the
+    /// pole — and the section's arrivals pave its degenerate edge. `common` and
+    /// `cut` clean at `Full` with nothing unchecked and their provenance
+    /// audited, together the solid in volume, each still holding a
+    /// degenerate edge — measured in the pair's own frame
+    /// ([`measured_at`]).
+    a_plane_through_an_apex_or_a_pole_cuts_additively
+        [shard_0 shard_1 shard_2 shard_3 shard_4 shard_5 shard_6 shard_7]
+        (slice) = prop::body::singular_slice() => { singular_identities(&slice) }
 }
 
 /// The first shrunk failure of the property above (seed, count and shard

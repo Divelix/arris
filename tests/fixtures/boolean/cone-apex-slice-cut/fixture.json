@@ -1,0 +1,194 @@
+{
+  "description": "a cone of radius 2 and height 4 revolved about z, its apex at (0, 0, 2), less a half-space whose face runs through the apex and the chord y = 1 of the base: the plane meets the cone in two rulings that end on the apex. The section vertex there is the operand's own — the seam ends on the apex and pierces the plane at it — but the apex is a whole line of (u, v) on the cone, held by a degenerate edge that has no curve and is hit by nothing, so that edge is paved at the two `u` the rulings arrive with (ADR-0021), which is where the face's arrangement needs its nodes: without them both rulings reached the one corner of the (u, v) box and read as a tangent contact. The result keeps the apex and the piece of the degenerate edge between the rulings. The tilt is atan(1/4), written out, so the chord is at half the radius and the segment it cuts from the base is 4π/3 − √3 exactly: the solid is the cone over the rest of the disc, a third of the height times that area, its centroid a quarter of the way from the base region's to the apex; the wall kept is two thirds of the cone's, and the cut face the triangle of base 2√3 and height √17",
+  "params": {
+    "tilt": 14.036243467926479
+  },
+  "steps": [
+    {
+      "name": "triangle",
+      "op": "profile",
+      "plane": {
+        "origin": [
+          0,
+          0,
+          0
+        ],
+        "x": [
+          1,
+          0,
+          0
+        ],
+        "y": [
+          0,
+          0,
+          1
+        ]
+      },
+      "outer": {
+        "start": [
+          0,
+          -2
+        ],
+        "segments": [
+          {
+            "line_to": [
+              2,
+              -2
+            ]
+          },
+          {
+            "line_to": [
+              0,
+              2
+            ]
+          },
+          {
+            "line_to": [
+              0,
+              -2
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "cone",
+      "op": "revolve",
+      "profile": "triangle",
+      "axis": {
+        "origin": [
+          0,
+          0,
+          0
+        ],
+        "direction": [
+          0,
+          0,
+          1
+        ]
+      },
+      "angle_deg": 360
+    },
+    {
+      "name": "half0",
+      "op": "box",
+      "min": [
+        -5,
+        0,
+        -8
+      ],
+      "max": [
+        5,
+        5,
+        8
+      ]
+    },
+    {
+      "name": "half",
+      "op": "transform",
+      "of": "half0",
+      "rotate": {
+        "axis": [
+          1,
+          0,
+          0
+        ],
+        "origin": [
+          0,
+          0,
+          2
+        ],
+        "angle_deg": "tilt"
+      }
+    },
+    {
+      "name": "result",
+      "op": "cut",
+      "target": "cone",
+      "tool": "half"
+    }
+  ],
+  "result": "result",
+  "probes": [
+    {
+      "label": "inside",
+      "point": [
+        0,
+        -1,
+        -1
+      ],
+      "expect": "in"
+    },
+    {
+      "label": "cut_away",
+      "point": [
+        0,
+        1.5,
+        -1.8
+      ],
+      "expect": "out"
+    },
+    {
+      "label": "outside",
+      "point": [
+        0,
+        0,
+        3
+      ],
+      "expect": "out"
+    },
+    {
+      "label": "on_the_apex",
+      "point": [
+        0,
+        0,
+        2
+      ],
+      "expect": "on"
+    },
+    {
+      "label": "on_the_cut_face",
+      "point": [
+        0,
+        0.5,
+        0
+      ],
+      "expect": "on"
+    },
+    {
+      "label": "on_the_wall",
+      "point": [
+        0,
+        -1,
+        0
+      ],
+      "expect": "on"
+    },
+    {
+      "label": "on_the_base",
+      "point": [
+        0,
+        -1,
+        -2
+      ],
+      "expect": "on"
+    }
+  ],
+  "analytic": {
+    "volume": "4 / 3 * (8 * pi / 3 + sqrt(3))",
+    "area": "8 * pi / 3 + sqrt(3) + 2 / 3 * pi * 2 * sqrt(20) + sqrt(51)",
+    "centroid": [
+      0,
+      "-0.75 * 2 * sqrt(3) / (8 * pi / 3 + sqrt(3))",
+      -1
+    ],
+    "counts": {
+      "vertices": 4,
+      "edges": 6,
+      "faces": 4,
+      "loops": 4,
+      "shells": 1
+    },
+    "genus": 0
+  }
+}

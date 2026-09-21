@@ -1568,3 +1568,120 @@ fn a_touch_from_outside_is_the_plate_and_a_slit_is_refused_by_name() {
         "the model is as it was"
     );
 }
+
+/// The degenerate edge of `body` on the vertex section vertex `k` of `i`
+/// stands over, and its paves.
+fn degenerate_paves(m: &Model, body: Body, i: &Interferences, k: usize) -> Vec<f64> {
+    let over = i.vertices[k].existing[0];
+    let degenerate: Vec<EdgeId> = (m.edges(body).unwrap().into_iter())
+        .filter(|e| {
+            let edge = m.edge(e.id).unwrap();
+            edge.is_degenerate() && edge.start() == over
+        })
+        .map(|e| e.id)
+        .collect();
+    let [degenerate] = degenerate[..] else {
+        panic!("{degenerate:?}");
+    };
+    let paves = i.paves.get(&degenerate).map_or(&[][..], |p| &p[..]);
+    assert!(paves.iter().all(|p| p.vertex == k), "{i}");
+    paves.iter().map(|p| p.t).collect()
+}
+
+/// A plane through a cone's apex (ADR-0021): the section vertex there is
+/// the operand's own — the seam ends on the apex and pierces the plane at
+/// it, an ordinary hit on a vertex — both rulings end on it, and the
+/// apex's degenerate edge, which has no curve and is hit by nothing, is
+/// paved once for each `u` a ruling arrives with: the nodes the cone
+/// face's arrangement needs, one vertex standing for a whole line of
+/// (u, v).
+#[test]
+fn a_degenerate_edge_is_paved_where_a_section_arrives_at_its_vertex() {
+    let (m, a, _, i) = interferences_of("boolean/cone-apex-slice-cut");
+    let apex = (i.vertices.iter())
+        .position(|v| v.point == Point3::new(0.0, 0.0, 2.0))
+        .unwrap_or_else(|| panic!("{i}"));
+    assert_eq!(i.vertices[apex].existing.len(), 1, "{i}");
+    let ending: Vec<_> = (i.sections.iter())
+        .filter(|s| s.start == apex || s.end == apex)
+        .collect();
+    assert_eq!(ending.len(), 2, "{i}");
+    for s in ending {
+        assert!(matches!(i.curves[s.curve].curve, Curve::Line { .. }), "{i}");
+    }
+    let paves = degenerate_paves(&m, a, &i, apex);
+    assert_eq!(paves.len(), 2, "{i}");
+    assert!(paves[0] < paves[1], "{i}");
+}
+
+/// The same through a ball's pole with the face turned about the seam's
+/// own tangent there: the seam only touches the face's plane at the
+/// pole, and a touch makes no vertex, so nothing an edge does puts one
+/// on the circle — the face's singular vertex does, its source
+/// `Singular`, the touch joining it. The circle is one block from the
+/// pole to the pole; it leaves along the seam's meridian, a corner of the
+/// (u, v) box the degenerate edge already ends on, and comes back half a
+/// turn from it, the one pave.
+#[test]
+fn a_singular_vertex_paves_a_section_no_edge_pierces_at_it() {
+    let dir = fixtures::corpus_root().join("boolean/ball-pole-slice-cut");
+    let inputs = corpus::inputs(&dir, "along_seam").unwrap();
+    let (a, b) = inputs.operands().unwrap();
+    let m = inputs.model;
+    let i = interferences(&m, a, b).unwrap();
+    let singular: Vec<usize> = (0..i.vertices.len())
+        .filter(|&k| i.vertices[k].source == VertexSource::Singular)
+        .collect();
+    let [pole] = singular[..] else {
+        panic!("{i}");
+    };
+    assert_eq!(i.vertices[pole].point, Point3::new(0.0, 0.0, 2.0), "{i}");
+    assert_eq!(i.vertices[pole].existing.len(), 1, "{i}");
+    assert!(
+        i.vertices[pole].hits.iter().all(|&h| i.hits[h].tangent),
+        "{i}"
+    );
+    let [s] = &i.sections[..] else {
+        panic!("{i}");
+    };
+    assert_eq!((s.start, s.end), (pole, pole), "{i}");
+    assert!((s.range.length() - TAU).abs() < 1e-12, "{i}");
+    let paves = degenerate_paves(&m, a, &i, pole);
+    assert_eq!(paves.len(), 1, "{i}");
+    assert!((paves[0] - TAU / 2.0).abs() < 1e-9, "{i}");
+}
+
+/// A face a hair off a ball's pole: the section neither runs through the
+/// singular point nor stays clear of it by what the sphere's (u, v)
+/// resolves, and the boolean refuses it by name — the sphere's face, the
+/// block's and the pole's vertex — before anything is fitted, the model
+/// as it was (ADR-0021, `regression/ball-beside-pole-slice-cut`).
+#[test]
+fn a_section_beside_a_pole_is_refused_by_name() {
+    let (mut m, ball, half) = inputs("regression/ball-beside-pole-slice-cut");
+    let before = arris_debug::dump_text(&m, ball).unwrap();
+    let pole = (m.closure(ball).unwrap().vertices.iter().copied())
+        .find(|&v| m.vertex(v).unwrap().point().z > 0.0)
+        .unwrap();
+    for op in [cut, common, fuse] {
+        match op(&mut m, ball, half).unwrap_err() {
+            OpError::Degenerate {
+                reason: Reason::BesideSingularity,
+                entities,
+            } => {
+                let ball_faces: Vec<_> = m.faces(ball).unwrap().iter().map(|f| f.id).collect();
+                let half_faces: Vec<_> = m.faces(half).unwrap().iter().map(|f| f.id).collect();
+                assert_eq!(entities.len(), 3, "{entities:?}");
+                assert!(matches!(entities[0].id, EntityId::Face(f) if ball_faces.contains(&f)));
+                assert!(matches!(entities[1].id, EntityId::Face(f) if half_faces.contains(&f)));
+                assert_eq!(entities[2].id, EntityId::Vertex(pole));
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+    assert_eq!(
+        arris_debug::dump_text(&m, ball).unwrap(),
+        before,
+        "the model is as it was"
+    );
+}

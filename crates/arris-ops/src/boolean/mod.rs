@@ -137,6 +137,14 @@ pub enum VertexSource {
         /// Which of the pair's curves.
         curve: usize,
     },
+    /// A singular vertex of an operand face — a cone's apex, a sphere's
+    /// pole — that a section curve runs through where no edge pierces
+    /// (ADR-0021): the seam that ends there only touches the other
+    /// surface, or the face has none. No crossing hit, the operand's
+    /// vertex in `existing`. Where a seam does pierce, the vertex is that
+    /// hit's and its source [`VertexSource::Hits`]; either way the face's
+    /// degenerate edge is paved for every section edge that ends there.
+    Singular,
 }
 
 /// A point of the section, made once and shared: a pave on the edge
@@ -384,7 +392,10 @@ pub struct Interferences {
     /// The section vertices.
     pub vertices: Vec<SectionVertex>,
     /// The paves on every operand edge that has one, ascending by `t`,
-    /// one per section vertex.
+    /// one per section vertex — but on a degenerate edge, which has no
+    /// curve and is paved in its pcurve's parameter, one for every `u` a
+    /// section edge arrives at its vertex with, so a circle through a
+    /// pole paves it twice with the one vertex (ADR-0021).
     pub paves: BTreeMap<EdgeId, Vec<Pave>>,
     /// The section curves of every crossing pair, in pair order.
     pub curves: Vec<SectionCurve>,
@@ -852,6 +863,7 @@ impl fmt::Display for Interferences {
                 VertexSource::CurveStart { pair, curve } => {
                     format!(" start of curve {curve} of p{pair}")
                 }
+                VertexSource::Singular => " singular".to_string(),
             };
             writeln!(
                 f,

@@ -1,0 +1,155 @@
+{
+  "description": "a ball of radius 2 revolved about z less a drill of radius 0.5 whose axis stands 0.5 from the ball's: the wall runs through both poles, so each of the two traced section loops (ADR-0018) passes through a singular point of the sphere. The operand's pole vertex paves each loop (ADR-0021) into one block from the pole back to it, its pcurve fitted over a range ending on the point twice, and the pole's degenerate edge is paved at the two `u` the loop arrives with. Open CASCADE builds this pose; the pose of plans/c3-conic-hits step 5's note, a wall through one pole only, it does not. The tolerances are stated at 3e-9 and 5e-9 because the oracle's own measurement is the far side: in polar coordinates about the ball's axis the bore is r ≤ cos φ, so the volume is 32π/3 − ∫ 2/3 (8 − (4 − cos² φ)^{3/2}) dφ and the area 16π − ∫ 4 (2 − √(4 − cos² φ)) dφ + ∫ 2 √(4 − cos² φ) dφ over [−π/2, π/2], single integrals of smooth integrands that Gauss–Legendre gives as 30.5215784780915 and 60.3518342528646; Arris measures 30.5215784777700 and 60.3518342514656 at the default tolerance, 1.1e-11 and 2.3e-11 away, and moves toward them as the model tolerance goes to 1e-9, while Open CASCADE's 30.5215785490 and 60.3518343651 are 2.3e-9 and 1.9e-9 away, its centroid 6.8e-10 off the plane z = 0 the solid is symmetric in where Arris's is 1.8e-16",
+  "tolerances": {
+    "volume_rel": 3e-09,
+    "area_rel": 3e-09,
+    "inertia_rel": 5e-09
+  },
+  "steps": [
+    {
+      "name": "half_disc",
+      "op": "profile",
+      "plane": {
+        "origin": [
+          0,
+          0,
+          0
+        ],
+        "x": [
+          1,
+          0,
+          0
+        ],
+        "y": [
+          0,
+          0,
+          1
+        ]
+      },
+      "outer": {
+        "start": [
+          0,
+          -2
+        ],
+        "segments": [
+          {
+            "arc_to": [
+              0,
+              2
+            ],
+            "via": [
+              2,
+              0
+            ]
+          },
+          {
+            "line_to": [
+              0,
+              -2
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "ball",
+      "op": "revolve",
+      "profile": "half_disc",
+      "axis": {
+        "origin": [
+          0,
+          0,
+          0
+        ],
+        "direction": [
+          0,
+          0,
+          1
+        ]
+      },
+      "angle_deg": 360
+    },
+    {
+      "name": "drill",
+      "op": "cylinder",
+      "base": [
+        0.3,
+        0.4,
+        -3
+      ],
+      "axis": [
+        0,
+        0,
+        1
+      ],
+      "radius": 0.5,
+      "height": 6
+    },
+    {
+      "name": "result",
+      "op": "cut",
+      "target": "ball",
+      "tool": "drill"
+    }
+  ],
+  "result": "result",
+  "probes": [
+    {
+      "label": "inside",
+      "point": [
+        -1,
+        -1,
+        0
+      ],
+      "expect": "in"
+    },
+    {
+      "label": "in_the_bore",
+      "point": [
+        0.3,
+        0.4,
+        0
+      ],
+      "expect": "out"
+    },
+    {
+      "label": "outside",
+      "point": [
+        0,
+        0,
+        3
+      ],
+      "expect": "out"
+    },
+    {
+      "label": "on_the_pole",
+      "point": [
+        0,
+        0,
+        2
+      ],
+      "expect": "on"
+    },
+    {
+      "label": "on_the_bore_at_the_axis",
+      "point": [
+        0,
+        0,
+        0
+      ],
+      "expect": "on"
+    },
+    {
+      "label": "on_the_sphere",
+      "point": [
+        -2,
+        0,
+        0
+      ],
+      "expect": "on"
+    }
+  ],
+  "analytic": {
+    "genus": 1
+  }
+}

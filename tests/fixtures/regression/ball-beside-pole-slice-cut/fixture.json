@@ -1,0 +1,139 @@
+{
+  "description": "`boolean/ball-pole-slice-cut` with the face through (0, 0, 2.00001) instead of the pole: the small circle passes the sphere's singular point 3.7e-6 away, outside the quarter tolerance within which it runs *through* it (ADR-0021) and is paved there. Its honest pcurve on the sphere turns `u` by nearly π over a stretch as long as the miss, which `pcurve_on` fits (917 control points at worst, docs/DATA-MODEL.md §Pcurves) and the face's (u, v) polygons do not resolve: a piece is cut into at most 65536 segments evenly in its parameter, the bound on the polygon's deviation from a pcurve that sharp is larger than the face, and the split finds no interior point for the region beside it — after twenty-five seconds. Measured on this ball: built from a miss of 1e-4, not at 1e-5, the same for a traced loop as for this circle. The boolean refuses the pose by name, `Reason::BesideSingularity`, from the band out to four polygon segments of the face's diagonal (4.2e-4 here); by an apex the same refusal covers the hyperbola that doubles back within a tolerance (E8) and the two lines the intersector gives for a plane a hair off the apex while the seam pierces it 3e-7 down the ruling. The desired body is the oracle's — at this miss; ten times nearer Open CASCADE's own cut returns the whole ball in two shells. What lifts it is a polygon cut by each span's own curvature and a chord converted to length where the pcurve is, not once per face (docs/BACKLOG.md; plans/c3-conic-hits step 6)",
+  "steps": [
+    {
+      "name": "half_disc",
+      "op": "profile",
+      "plane": {
+        "origin": [
+          0,
+          0,
+          0
+        ],
+        "x": [
+          1,
+          0,
+          0
+        ],
+        "y": [
+          0,
+          0,
+          1
+        ]
+      },
+      "outer": {
+        "start": [
+          0,
+          -2
+        ],
+        "segments": [
+          {
+            "arc_to": [
+              0,
+              2
+            ],
+            "via": [
+              2,
+              0
+            ]
+          },
+          {
+            "line_to": [
+              0,
+              -2
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "ball",
+      "op": "revolve",
+      "profile": "half_disc",
+      "axis": {
+        "origin": [
+          0,
+          0,
+          0
+        ],
+        "direction": [
+          0,
+          0,
+          1
+        ]
+      },
+      "angle_deg": 360
+    },
+    {
+      "name": "half0",
+      "op": "box",
+      "min": [
+        -5,
+        0,
+        -8
+      ],
+      "max": [
+        5,
+        5,
+        8
+      ]
+    },
+    {
+      "name": "half",
+      "op": "transform",
+      "of": "half0",
+      "rotate": {
+        "axis": [
+          1,
+          0.7,
+          0
+        ],
+        "origin": [
+          0,
+          0,
+          2.00001
+        ],
+        "angle_deg": 25
+      }
+    },
+    {
+      "name": "result",
+      "op": "cut",
+      "target": "ball",
+      "tool": "half"
+    }
+  ],
+  "result": "result",
+  "probes": [
+    {
+      "label": "inside",
+      "point": [
+        0,
+        -1,
+        0
+      ],
+      "expect": "in"
+    },
+    {
+      "label": "cut_away",
+      "point": [
+        0,
+        1.5,
+        0
+      ],
+      "expect": "out"
+    },
+    {
+      "label": "outside",
+      "point": [
+        0,
+        0,
+        3
+      ],
+      "expect": "out"
+    }
+  ],
+  "analytic": {
+    "genus": 0
+  }
+}

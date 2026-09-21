@@ -5,9 +5,10 @@
 //! primitives and `ops::transform`, so a failing case prints as numbers a
 //! fixture can be written from.
 
+use arris_geom::{Profile, ProfileLoop, ProfileSegment};
 use arris_math::nalgebra::UnitQuaternion;
-use arris_math::{Axis, Frame, Isometry, Point3, UnitVec3, Vec3};
-use arris_ops::{OpError, primitive_box, primitive_cylinder, transform};
+use arris_math::{Axis, Frame, Isometry, Point2, Point3, UnitVec3, Vec3};
+use arris_ops::{OpError, primitive_box, primitive_cylinder, revolve, transform};
 use arris_topo::{Body, Model};
 use proptest::prelude::*;
 
@@ -548,6 +549,190 @@ pub fn quartic_pair() -> impl Strategy<Value = QuarticPair> {
                     psi,
                     offset,
                 })
+            },
+        )
+}
+
+/// A solid of revolution whose surface has a singular point on its
+/// boundary, before its motion: about `z`, the point on the axis.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SingularSolid {
+    /// A cone on its base disc in `z = 0`, the apex at `(0, 0, height)`.
+    Cone {
+        /// The base radius.
+        radius: f64,
+        /// The height of the apex over the base.
+        height: f64,
+    },
+    /// A ball about the origin, the pole at `(0, 0, radius)`.
+    Ball {
+        /// The radius.
+        radius: f64,
+    },
+}
+
+impl SingularSolid {
+    /// The apex, or the ball's north pole.
+    pub fn singular_point(&self) -> Point3 {
+        match *self {
+            SingularSolid::Cone { height, .. } => Point3::new(0.0, 0.0, height),
+            SingularSolid::Ball { radius } => Point3::new(0.0, 0.0, radius),
+        }
+    }
+
+    /// The solid as a body of `m`: a triangle or a half disc in the
+    /// `(x, z)` plane revolved a whole turn about `z`, so the singular
+    /// point is a vertex holding a degenerate edge, as a revolve makes it.
+    pub fn build(&self, m: &mut Model) -> Result<Body, OpError> {
+        let p = Point2::new;
+        let outer = match *self {
+            SingularSolid::Cone { radius, height } => ProfileLoop::Path {
+                start: p(0.0, 0.0),
+                segments: vec![
+                    ProfileSegment::LineTo(p(radius, 0.0)),
+                    ProfileSegment::LineTo(p(0.0, height)),
+                    ProfileSegment::LineTo(p(0.0, 0.0)),
+                ],
+            },
+            SingularSolid::Ball { radius } => ProfileLoop::Path {
+                start: p(0.0, -radius),
+                segments: vec![
+                    ProfileSegment::ArcTo {
+                        to: p(0.0, radius),
+                        via: p(radius, 0.0),
+                    },
+                    ProfileSegment::LineTo(p(0.0, -radius)),
+                ],
+            },
+        };
+        // The (x, z) plane: the world frame a quarter turn about `x`.
+        let plane = Frame::from_rotation(
+            Point3::origin(),
+            &UnitQuaternion::from_axis_angle(&Vec3::x_axis(), core::f64::consts::FRAC_PI_2),
+        );
+        let profile = Profile {
+            plane,
+            outer,
+            holes: Vec::new(),
+        };
+        Ok(revolve(
+            m,
+            &profile,
+            Axis::z_at(Point3::origin()),
+            core::f64::consts::TAU,
+        )?
+        .0)
+    }
+}
+
+/// A cone or a ball and a block one of whose faces runs through the apex
+/// or the pole, both under one motion: the section is two rulings ending
+/// on the apex, or a circle through the pole — through both poles when
+/// the face holds the axis — and no edge of the block comes near the
+/// solid, so the singular vertex and the seam's crossings are all that
+/// pave it (ADR-0021).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SingularSlice {
+    /// The solid, before `pose`.
+    pub solid: SingularSolid,
+    /// The block; its pose takes its `z = 0` face through the singular
+    /// point, then `pose`.
+    pub block: Boxed,
+    /// The angle between the face's normal and the solid's axis, radians.
+    pub tilt: f64,
+    /// The motion of both.
+    pub pose: Isometry,
+}
+
+impl SingularSlice {
+    /// Both bodies in `m`, the solid first.
+    pub fn build(&self, m: &mut Model) -> Result<(Body, Body), OpError> {
+        let solid = self.solid.build(m)?;
+        let solid = transform(m, solid, &self.pose)?.0;
+        Ok((solid, self.block.build(m)?))
+    }
+}
+
+/// How far, in radians about the axis, a [`singular_slice`]'s section
+/// leaves the singular point from the seam, and how far from the axis a
+/// ball's face that does not hold it is tilted: three degrees, fifty
+/// times the `√(2 tol / R)` of the smallest ball at the default
+/// tolerance. A strategy's margin, not a tolerance.
+pub const SEAM_CLEARANCE: f64 = 0.05;
+
+/// [`SingularSlice`]s, a cone or a ball a half each. The face's normal is
+/// tilted from the axis by `90° ± 0.8 α` for a cone of half-angle `α` —
+/// a plane through the apex nearer the axis than the rulings are, so it
+/// cuts two of them, and a fifth of `α` clear of the plane that touches
+/// along one — and by `15°` to `165°` for a ball, a quarter of those at
+/// `90°` exactly: the great circle through both poles. The tilted face is
+/// turned about the solid's axis and the block about the face's own
+/// normal by random angles, so neither the seam nor the block's edges are
+/// anywhere special; the block is four times the solid across.
+///
+/// The turn about the axis is the `u` a ball's section leaves its pole
+/// at, and it stays [`SEAM_CLEARANCE`] from the seam's: nearer than
+/// `√(2 tol / R)` the seam and the section are one curve within the
+/// tolerance over a stretch beside the pole, a feature a tolerance apart
+/// that `regression/pole-slice-beside-seam-cut` holds for the plan that
+/// takes those. Along the seam exactly, and in its plane, are the
+/// variants of `boolean/ball-pole-slice-cut`. A ball's tilt keeps the
+/// same clearance from `90°` unless it is `90°` exactly: a circle through
+/// one pole at `90° + δ` passes the other `2R sin δ` away, and beside a
+/// pole is `Reason::BesideSingularity` by design (ADR-0021), met at
+/// `δ = 8e-5` in eight thousand poses.
+pub fn singular_slice() -> impl Strategy<Value = SingularSlice> {
+    (
+        any::<bool>(),
+        radius(MIN_EXTENT / 2.0..=MAX_EXTENT / 2.0),
+        finite_f64(MIN_EXTENT..=MAX_EXTENT),
+        (0u8..4, finite_f64(-1.0..=1.0)),
+        (
+            any::<bool>(),
+            finite_f64(SEAM_CLEARANCE..=core::f64::consts::PI - SEAM_CLEARANCE),
+        ),
+        finite_f64(0.0..=core::f64::consts::TAU),
+        pose_in(DEFAULT_SCALE),
+    )
+        .prop_map(
+            |(cone, radius, height, (kind, s), (far, spin), turn, pose)| {
+                let spin = if far {
+                    spin + core::f64::consts::PI
+                } else {
+                    spin
+                };
+                let solid = if cone {
+                    SingularSolid::Cone { radius, height }
+                } else {
+                    SingularSolid::Ball { radius }
+                };
+                let quarter = core::f64::consts::FRAC_PI_2;
+                let tilt = match solid {
+                    SingularSolid::Cone { radius, height } => {
+                        quarter + 0.8 * s * (radius / height).atan()
+                    }
+                    SingularSolid::Ball { .. } if kind == 0 => quarter,
+                    SingularSolid::Ball { .. } => {
+                        let most = 75f64.to_radians() - SEAM_CLEARANCE;
+                        quarter + s.signum() * (SEAM_CLEARANCE + s.abs() * most)
+                    }
+                };
+                let reach = 4.0 * radius.max(height);
+                let at = solid.singular_point();
+                let q = UnitQuaternion::from_axis_angle(&Vec3::z_axis(), spin)
+                    * UnitQuaternion::from_axis_angle(&Vec3::x_axis(), tilt)
+                    * UnitQuaternion::from_axis_angle(&Vec3::z_axis(), turn);
+                let through = Isometry::new(q, at.coords);
+                SingularSlice {
+                    solid,
+                    block: Boxed {
+                        min: Point3::new(-reach, -reach, 0.0),
+                        max: Point3::new(reach, reach, reach),
+                        pose: through.then(&pose),
+                    },
+                    tilt,
+                    pose,
+                }
             },
         )
 }

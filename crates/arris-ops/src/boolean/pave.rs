@@ -10,11 +10,11 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use arris_check::arris_topo::arris_geom::region2::Side;
+use arris_check::arris_topo::arris_geom::region2::{MAX_SEGMENTS_PER_PIECE, Side};
 use arris_check::arris_topo::arris_geom::{
     Curve, Curve2, CurveIntersection, CurveSurfaceIntersection, GeomError, MeetKind,
-    SurfaceIntersection, curves_coincide, intersect_curve_surface, intersect_curves,
-    intersect_surfaces, pcurve_on,
+    PCURVE_SINGULAR_BAND, Surface, SurfaceIntersection, curves_coincide, intersect_curve_surface,
+    intersect_curves, intersect_surfaces, pcurve_on,
 };
 use arris_check::arris_topo::arris_math::{
     Aabb, Interval, Point2, Point3, Precision, Tolerance, Vec2, period_end,
@@ -30,7 +30,7 @@ use super::{
     CommonBlock, Contact, EdgeEdgeHit, EdgeFaceHit, EdgeImage, FacePair, Interferences, Landing,
     Pave, SectionCrossing, SectionCurve, SectionEdge, SectionVertex, VertexSource, meet_curves,
 };
-use crate::error::{Fault, OpError};
+use crate::error::{Fault, OpError, Reason};
 
 /// A section vertex while hits are still being merged into it.
 struct VertexBuild {
@@ -173,6 +173,7 @@ pub(super) fn build(m: &Model, a: Body, b: Body) -> Result<Interferences, OpErro
     build.pave_edges();
     build.pave_coincident_edges();
     build.sections()?;
+    build.pave_singular_edges()?;
     build.contacts()?;
     build.coincident()?;
     Ok(build.finish())
@@ -212,6 +213,44 @@ fn shape_of(body: Body) -> Shape {
 /// larger of their tolerances for lengths, the model's angle.
 fn tolerance_of(precision: &Precision, a: f64, b: f64) -> Tolerance {
     Tolerance::new(a.max(b), precision.angular_tolerance)
+}
+
+/// How near a face's singular point a section curve may pass without
+/// running through it, in polygon segments: the face's box diagonal over
+/// [`MAX_SEGMENTS_PER_PIECE`] is the length of one segment of the finest
+/// polygon a pcurve across the face is given, and a pcurve passing a pole
+/// at a distance `d` turns `u` by up to `π` over a stretch `d` long —
+/// nearer than a few segments the polygon cannot follow it, and the
+/// split finds no region beside it. Measured on a ball of radius 2 under
+/// an oblique plane: built from a miss of `1e-4`, not at `1e-5`, where a
+/// segment is `1e-4`; four segments is that with a margin for a section
+/// that is not a circle. A ratio of the polygon's resolution, not a
+/// tolerance (ADR-0021).
+const SINGULAR_CLEARANCE: f64 = 4.0;
+
+/// `true` when `curve`, within the band of a singular point of `surface`
+/// at `t`, runs straight through it, which is what carrying its pcurve
+/// onto the point assumes ([`pcurve_on`]). A sphere's pole is a smooth
+/// point of the surface and every curve through it does. A cone's apex is
+/// not: a curve on the cone through the apex leaves it along a ruling,
+/// its tangent at the half-angle to the axis, while one that only comes
+/// within the band — the hyperbola of a plane a hair off the apex — turns
+/// back there between two rulings `r₁` and `r₂` with its tangent along
+/// `r₁ − r₂`, which is perpendicular to the axis whatever the plane. Half
+/// of the ruling's own `cos α` along the axis tells the two apart: a
+/// ratio between the two cases, not a tolerance.
+fn straight_through(surface: &Surface, curve: &Curve, t: f64) -> bool {
+    let Surface::Cone {
+        frame, half_angle, ..
+    } = surface
+    else {
+        return true;
+    };
+    curve
+        .eval(t)
+        .d1
+        .try_normalize(0.0)
+        .is_some_and(|d| d.dot(&frame.z()).abs() > 0.5 * half_angle.cos())
 }
 
 /// The points [`at_shared_end`] samples along the stretch from a
@@ -868,6 +907,7 @@ impl<'m> Build<'m> {
             self.vertices[k].section_crossings.push(i);
             self.section_crossings[i].vertex = Some(k);
         }
+        self.singular_vertices()?;
         // A touch makes no vertex of its own, but one landing on a vertex
         // made above passes through it: a ruling or a rim circle through
         // the crossing of two ellipses, where the walls are tangent to
@@ -931,6 +971,135 @@ impl<'m> Build<'m> {
                     })
                     .unwrap_or_else(|| shape_of(self.a));
                 return Err(OpError::Tolerance { entity, wanted });
+            }
+        }
+        Ok(())
+    }
+
+    /// Every singular vertex of an operand face — a cone's apex, a
+    /// sphere's pole, held by a degenerate edge that pierces nothing and
+    /// makes no hit — that a crossing curve of one of the face's pairs
+    /// runs through, on the other face of the pair, as a section vertex
+    /// over that operand vertex: the one a seam ending there made by
+    /// piercing the other face, where it did, and a new one where the
+    /// seam only touches it or the face has no seam there. It then paves
+    /// the curve like any other,
+    /// so no block has the singular point inside it and every pcurve on
+    /// the face ends there or stays clear (ADR-0021). *Through* is
+    /// [`pcurve_on`]'s own band, decided in length, so the pave and the
+    /// pcurve of the block it ends never disagree; a curve outside the
+    /// band and inside [`SINGULAR_CLEARANCE`] is
+    /// [`Reason::BesideSingularity`].
+    fn singular_vertices(&mut self) -> Result<(), OpError> {
+        let mut wanted: Vec<(Point3, f64, VertexId)> = Vec::new();
+        for (pi, pair) in self.pairs.iter().enumerate() {
+            let (ia, ib) = self.pair_faces[pi];
+            let (fa, fb) = (&self.faces[0][ia], &self.faces[1][ib]);
+            let tol = tolerance_of(&self.precision, fa.tolerance, fb.tolerance);
+            let band = PCURVE_SINGULAR_BAND * tol.linear;
+            for (f, other) in [(fa, fb), (fb, fa)] {
+                let clearance =
+                    SINGULAR_CLEARANCE * f.bounds.diagonal() / MAX_SEGMENTS_PER_PIECE as f64;
+                for s in &f.singular {
+                    let (mut through, mut beside) = (false, false);
+                    for (_, curve) in meet_curves(&pair.intersection, MeetKind::Crossing) {
+                        let Ok(on) = curve.project(s.point) else {
+                            continue;
+                        };
+                        if on.distance <= band && straight_through(f.surface, curve, on.t) {
+                            through = true;
+                        } else if on.distance <= band.max(clearance) {
+                            beside = true;
+                        }
+                    }
+                    // A hit of either face's edge on the other is a point
+                    // of the true section. Beside the singular point and
+                    // not on its vertex, it says the section misses the
+                    // point whatever the curves say: a plane a hair off an
+                    // apex meets the cone in two lines through it, decided
+                    // in length, and the seam all the same pierces the
+                    // plane several tolerances down the ruling.
+                    for (k, h) in self.hits.iter().enumerate() {
+                        let on_pair = (h.face == other.id && f.edges().contains(&h.edge))
+                            || (h.face == f.id && other.edges().contains(&h.edge));
+                        let miss = (h.point - s.point).norm();
+                        if on_pair
+                            && !h.tangent
+                            && miss > s.tolerance.max(self.hit_tolerance[k])
+                            && miss <= clearance
+                        {
+                            beside = true;
+                        }
+                    }
+                    if !(through || beside) || self.on_face(other, s.point)?.is_none() {
+                        continue;
+                    }
+                    if beside {
+                        return Err(OpError::Degenerate {
+                            entities: vec![
+                                f.shape(),
+                                other.shape(),
+                                Shape::new(s.vertex, self.a.orientation),
+                            ],
+                            reason: Reason::BesideSingularity,
+                        });
+                    }
+                    wanted.push((s.point, s.tolerance, s.vertex));
+                }
+            }
+        }
+        for (point, tolerance, vertex) in wanted {
+            self.merge_point(point, tolerance, vec![vertex], VertexSource::Singular)?;
+        }
+        Ok(())
+    }
+
+    /// The paves on the degenerate edges: a section edge ending on a
+    /// face's singular vertex arrives there at one `u` of the whole line
+    /// of (u, v) the vertex stands for, and the face's arrangement needs a
+    /// node at it, so the degenerate edge is paved by that vertex at the
+    /// parameter its own pcurve has that (u, v) at — once per arrival, a
+    /// curve through a pole leaving it half a turn from where it came in.
+    /// An arrival within the angular tolerance of an end of the edge, or
+    /// of a pave already there, is that node.
+    fn pave_singular_edges(&mut self) -> Result<(), OpError> {
+        let mut wanted: Vec<(EdgeId, f64, usize, f64)> = Vec::new();
+        for section in &self.sections {
+            let pair = self.curves[section.curve].pair;
+            let (ia, ib) = self.pair_faces[pair];
+            for (side, f) in [(0, &self.faces[0][ia]), (1, &self.faces[1][ib])] {
+                let ends = [
+                    (section.start, section.range.lo()),
+                    (section.end, section.range.hi()),
+                ];
+                for (vertex, t) in ends {
+                    for s in &f.singular {
+                        if !self.vertices[vertex].existing.contains(&s.vertex) {
+                            continue;
+                        }
+                        let uv = section.pcurves[side].point(t);
+                        let on = s
+                            .pcurve
+                            .project(uv)
+                            .map_err(|e| geometry(e, f.shape(), f.shape()))?;
+                        let speed = s.pcurve.eval(on.t).d1.norm();
+                        let slack = if speed > 0.0 {
+                            self.precision.angular_tolerance / speed
+                        } else {
+                            0.0
+                        };
+                        if on.t > s.range.lo() + slack && on.t < s.range.hi() - slack {
+                            wanted.push((s.edge, on.t, vertex, slack));
+                        }
+                    }
+                }
+            }
+        }
+        for (edge, t, vertex, slack) in wanted {
+            let list = self.paves.entry(edge).or_default();
+            if list.iter().all(|p| (p.t - t).abs() > slack) {
+                list.push(Pave { t, vertex });
+                list.sort_by(|x, y| x.t.total_cmp(&y.t));
             }
         }
         Ok(())
@@ -1081,9 +1250,11 @@ impl<'m> Build<'m> {
         for pi in 0..self.pairs.len() {
             let intersection = &self.pairs[pi].intersection;
             // A pair meeting in curves of both kinds at once wants a
-            // surface met at its apex or its pole, or along a tangent
-            // circle — C3's remaining steps. Until they land the mixed
-            // pair is a tripwire, not a wrong answer: no fixture and no
+            // surface met along a tangent circle beside a section — a
+            // sphere through a cone's apex on its axis — which is C3's
+            // next step; a section *through* an apex or a pole is one
+            // kind, and built (ADR-0021). Until it lands the mixed pair
+            // is a tripwire, not a wrong answer: no fixture and no
             // random pose of a ball or a ring has tripped it. Points
             // here are a traced section's singular
             // points, which `section_crossings` read.

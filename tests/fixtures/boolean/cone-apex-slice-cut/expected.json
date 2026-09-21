@@ -1,0 +1,108 @@
+{
+  "occt": "8.0.1.0.0",
+  "recipe_sha256": "1c2da7f5233436fa29562c0b5da96944ad43234b95540227c03e5e17e9c86491",
+  "results": {
+    "default": {
+      "area": 35.98389892845978,
+      "centroid": [
+        6.589101031159403e-17,
+        -0.25699020622513696,
+        -1.0
+      ],
+      "counts": {
+        "edges": 6,
+        "faces": 4,
+        "loops": 4,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 4
+      },
+      "degenerate": false,
+      "euler_characteristic": 2,
+      "genus": 0,
+      "inertia": [
+        [
+          13.206708789884917,
+          -5.058089113997406e-16,
+          -1.1102230246251565e-15
+        ],
+        [
+          -5.058089113997406e-16,
+          16.86823027045421,
+          -0.6928203230275498
+        ],
+        [
+          -1.1102230246251565e-15,
+          -0.6928203230275498,
+          13.899529112912475
+        ]
+      ],
+      "probes": [
+        {
+          "class": "in",
+          "label": "inside",
+          "point": [
+            0.0,
+            -1.0,
+            -1.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "cut_away",
+          "point": [
+            0.0,
+            1.5,
+            -1.8
+          ]
+        },
+        {
+          "class": "out",
+          "label": "outside",
+          "point": [
+            0.0,
+            0.0,
+            3.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_the_apex",
+          "point": [
+            0.0,
+            0.0,
+            2.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_the_cut_face",
+          "point": [
+            0.0,
+            0.5,
+            0.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_the_wall",
+          "point": [
+            0.0,
+            -1.0,
+            0.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_the_base",
+          "point": [
+            0.0,
+            -1.0,
+            -2.0
+          ]
+        }
+      ],
+      "volume": 13.479508289522212
+    }
+  }
+}

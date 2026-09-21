@@ -130,8 +130,11 @@ fn degenerate(kind: GeomKind, reason: impl Into<String>) -> GeomError {
 /// the nearest approach, and both sides of a split there fit. A range
 /// that *ends* there is fitted, and ends on the point's own `v` with the
 /// `u` the curve arrives with — the limit along it, read from its
-/// tangent. The exact arms are as they were: a ruling keeps its one `u`
-/// through the apex, a meridian its one `u` over a pole.
+/// tangent — and a range may end on the one point twice, a closed curve
+/// through a pole cut there, each end read on its own side (ADR-0021).
+/// The exact arms are as they were: a ruling keeps its one `u` through
+/// the apex, a meridian its one `u` over a pole, its `v` the sphere's
+/// own latitudes over the range asked.
 ///
 /// Errors: [`GeomError::NotOnSurface`] when the curve is farther than
 /// `tol.linear` from the surface at any of [`PCURVE_SAMPLES`] + 1 parameters
@@ -491,18 +494,30 @@ fn parallel_pcurve(surface: &Frame, circle: &Frame, v: f64, flipped: bool) -> Cu
 /// not, so `v` is `φ + t` one way and `φ − t` the other.
 ///
 /// `radial` is the unit direction, in the surface's local frame and in the
-/// equatorial plane, that `u` points along; `period` wraps `φ` into
-/// `[0, 2π)` on a surface whose `v` is periodic and leaves it alone on a
-/// sphere, whose `v` is an angle in `[−π/2, π/2]`.
-fn meridian_pcurve(surface: &Frame, circle: &Frame, radial: Vec3, periodic_v: bool) -> Curve2 {
+/// equatorial plane, that `u` points along. `within` is `None` on a
+/// surface whose `v` is periodic, where `φ` is wrapped into `[0, 2π)` and
+/// the caller places the line by whole periods; on a sphere, whose `v` is
+/// an angle in `[−π/2, π/2]` and no period of anything, it is the range
+/// the pcurve is for, and `φ` is the turn of it that puts the range's
+/// middle there — the half circle from pole to pole by way of `t = π` is
+/// `v = t − π`, not the `t + π` the angle alone gives.
+fn meridian_pcurve(
+    surface: &Frame,
+    circle: &Frame,
+    radial: Vec3,
+    within: Option<Interval>,
+) -> Curve2 {
     let u = wrap_turn(radial.y.atan2(radial.x));
     let x = surface.vec_to_local(circle.x().into_inner());
     let y = surface.vec_to_local(circle.y().into_inner());
     let (a, b) = (x.dot(&radial), x.z);
     let (c, d) = (y.dot(&radial), y.z);
     let phi = b.atan2(a);
-    let phi = if periodic_v { wrap_turn(phi) } else { phi };
     let sense = if a * d - c * b >= 0.0 { 1.0 } else { -1.0 };
+    let phi = match within {
+        None => wrap_turn(phi),
+        Some(range) => phi - TAU * ((phi + sense * range.midpoint()) / TAU).round(),
+    };
     Curve2::Line {
         origin: Point2::new(u, phi),
         direction: UnitVec2::new_unchecked(Vec2::new(0.0, sense)),
@@ -621,7 +636,7 @@ fn on_sphere(
                 return fitted_on(curve, range, surface, tol);
             };
             let radial = meridian_radial(sphere, curve, range, candidate, radius);
-            Ok(meridian_pcurve(sphere, frame, radial, false))
+            Ok(meridian_pcurve(sphere, frame, radial, Some(range)))
         }
         Curve::Line { .. } | Curve::Ellipse { .. } | Curve::Nurbs(_) => {
             fitted_on(curve, range, surface, tol)
@@ -665,7 +680,7 @@ fn on_torus(
             if !of_the_tube {
                 return fitted_on(curve, range, surface, tol);
             }
-            Ok(meridian_pcurve(torus, frame, radial, true))
+            Ok(meridian_pcurve(torus, frame, radial, None))
         }
         Curve::Line { .. } | Curve::Ellipse { .. } | Curve::Nurbs(_) => {
             fitted_on(curve, range, surface, tol)
@@ -871,19 +886,26 @@ fn fitted_on(
     let band = PCURVE_SINGULAR_BAND * tol.linear;
     let raw = |t: f64| -> Result<Point2, GeomError> {
         let mut p = curve.point(t);
-        for (side, end) in ends.iter().enumerate() {
-            let Some(end) = end else { continue };
-            let carried = if side == 0 {
+        // An end is read on its own side of the range only: a closed curve
+        // through a pole, cut there, ends on the one point twice, half a
+        // turn of `u` apart.
+        let carried = |side: usize, end: &SingularEnd| {
+            if side == 0 {
                 t <= end.exit
             } else {
                 t >= end.exit
-            };
-            if carried {
+            }
+        };
+        for (side, end) in ends.iter().enumerate() {
+            let Some(end) = end else { continue };
+            if carried(side, end) {
                 p -= fade((p - end.point).norm() / band) * end.miss;
             }
         }
-        for end in ends.iter().flatten() {
-            if is_negligible((p - end.point).norm(), p.coords.norm() + origin) {
+        for (side, end) in ends.iter().enumerate() {
+            let Some(end) = end else { continue };
+            if carried(side, end) && is_negligible((p - end.point).norm(), p.coords.norm() + origin)
+            {
                 return Ok(end.uv);
             }
         }

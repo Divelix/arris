@@ -31,3 +31,4 @@ here; the first ADR is the first decision taken *after* the seed.
 | [0018](0018-quadric-sections-are-fitted-nurbs-and-one-meets-result.md) | Quadric sections are fitted NURBS under the faces' tolerance, traced by ruling families in a region; one `Meets` result | accepted |
 | [0019](0019-torus-sections-are-traced-in-the-torus-parameter-plane.md) | Torus sections are traced in the torus's parameter plane: a second tracer beside the ruling families, ADR-0018's storage unchanged | accepted |
 | [0020](0020-the-direction-after-c3-closure-then-measurement.md) | The direction after C3: closure before breadth, measured then chosen, cycles named not numbered | accepted |
+| [0021](0021-a-pcurve-never-runs-through-a-singular-point.md) | A pcurve never runs through a surface's singular point: fitted by projection, split at the apex and the pole, refused beside them | accepted |

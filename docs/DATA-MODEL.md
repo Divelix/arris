@@ -784,12 +784,36 @@ quarter, so both sides of a split always fit — and it is how near its
 surfaces a fitted section is held (`SECTION_FIT_FRACTION`). Within one
 tolerance of such an end the curve is carried onto the point, fading out
 by four, so that `u` is read as the curve's own end sees it and not as
-the point does, to which the miss, however small, is a right angle. The exact arms are as they were: a ruling keeps its one `u`
-through the apex onto the other nappe, a meridian its one `u` over a
-pole. A curve that changes a cone's nappe *beside* the apex — farther
+the point does, to which the miss, however small, is a right angle. A
+range may end on the one point twice — a circle through a pole, cut
+there, which is what a boolean makes of it — and each end is read on its
+own side of the range, half a turn of `u` apart. The exact arms are as
+they were: a ruling keeps its one `u` through the apex onto the other
+nappe, a meridian its one `u` over a pole — at the sphere's own latitudes
+for the range asked, `v = t − π` for the half circle by way of `t = π`
+and not the `t + π` the circle's phase alone gives, since a sphere's `v`
+is no period of anything and no caller could put a whole turn of it back.
+A curve that changes a cone's nappe *beside* the apex — farther
 than the band from it and within the tolerance of the surface, which
 only a very flat cone has room for — jumps by `π` in `u` and is refused
 as winding.
+
+**What a boolean does there** (ADR-0021). A section within the band of
+a face's singular vertex is paved by that operand vertex, so no block has
+the point inside it and `ThroughSingularity` is never met from a boolean;
+the vertex's degenerate edge is paved in turn at each `u` a section edge
+arrives with — the node the face's arrangement needs, one vertex standing
+for a whole line of (u, v) — and cut there into degenerate pieces on the
+same vertex. On a cone *through* also means straight through: a curve
+that only comes within the band of an apex turns back there, its tangent
+perpendicular to the axis, where one through it leaves along a ruling.
+A section that passes the point outside the band and within four polygon
+segments of the face's box diagonal (`diagonal × 4 /
+MAX_SEGMENTS_PER_PIECE`) is `Reason::BesideSingularity`: the fit above
+follows it, and the face's polygons — cut evenly in the parameter, at most
+`MAX_SEGMENTS_PER_PIECE` to a piece — do not, built from a miss of `1e-4`
+on a ball of radius 2 and not at `1e-5`, for a circle and a traced loop
+alike.
 
 **The (u, v) toolkit** is what every algorithm that reasons about a
 face's domain shares — the checker's loop, face and body rows,
