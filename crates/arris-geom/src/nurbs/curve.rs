@@ -191,6 +191,30 @@ impl NurbsCurve {
         self.spline.period()
     }
 
+    /// The distinct knots strictly inside `range`, ascending: where the
+    /// curve's polynomial pieces change over it, which is where a
+    /// quadrature or a polygon of the curve is split. A periodic curve's
+    /// knots are repeated by whole periods, so a range that runs past the
+    /// knots' end — a block of a closed section wrapping round to its
+    /// first pave — is broken at every span it covers, as a range inside
+    /// the domain is.
+    ///
+    /// ```
+    /// use arris_geom::NurbsCurve;
+    /// use arris_math::{Interval, Point3};
+    ///
+    /// let c = NurbsCurve::new(
+    ///     2,
+    ///     vec![0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 2.0],
+    ///     vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 2.0, 0.0), Point3::new(3.0, 2.0, 0.0), Point3::new(4.0, 0.0, 0.0)],
+    ///     vec![1.0; 4],
+    /// ).unwrap();
+    /// assert_eq!(c.breaks_within(Interval::new(0.5, 2.0).unwrap()), vec![1.0]);
+    /// ```
+    pub fn breaks_within(&self, range: Interval) -> Vec<f64> {
+        self.spline.breaks_within(range)
+    }
+
     /// The point and its derivatives at `t` (de Boor on the homogeneous
     /// control points, then the quotient rule).
     pub fn eval(&self, t: f64) -> CurveEval {
@@ -340,6 +364,30 @@ impl NurbsCurve2 {
         self.spline.period()
     }
 
+    /// The distinct knots strictly inside `range`, ascending: where the
+    /// curve's polynomial pieces change over it, which is where a
+    /// quadrature or a polygon of the curve is split. A periodic curve's
+    /// knots are repeated by whole periods, so a range that runs past the
+    /// knots' end — a block of a closed section wrapping round to its
+    /// first pave — is broken at every span it covers, as a range inside
+    /// the domain is.
+    ///
+    /// ```
+    /// use arris_geom::NurbsCurve2;
+    /// use arris_math::{Interval, Point2};
+    ///
+    /// let c = NurbsCurve2::new(
+    ///     2,
+    ///     vec![0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 2.0],
+    ///     vec![Point2::new(0.0, 0.0), Point2::new(1.0, 2.0), Point2::new(3.0, 2.0), Point2::new(4.0, 0.0)],
+    ///     vec![1.0; 4],
+    /// ).unwrap();
+    /// assert_eq!(c.breaks_within(Interval::new(0.5, 2.0).unwrap()), vec![1.0]);
+    /// ```
+    pub fn breaks_within(&self, range: Interval) -> Vec<f64> {
+        self.spline.breaks_within(range)
+    }
+
     /// The point and its derivatives at `t`.
     pub fn eval(&self, t: f64) -> Curve2Eval {
         let d = self.spline.eval(t);
@@ -477,5 +525,37 @@ mod tests {
         let unwrapped = c.insert_knot(3.5, 1).unwrap();
         assert_eq!(unwrapped.period(), None);
         assert!((unwrapped.eval(4.2).point - c.eval(4.2).point).norm() < 1e-14);
+    }
+
+    #[test]
+    fn a_periodic_curves_breaks_follow_a_range_past_its_knots() {
+        let pts = [
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+        ];
+        // Domain [2, 5], period 3, stored knots 0 to 7.
+        let c = NurbsCurve::new(
+            2,
+            (0..8).map(f64::from).collect(),
+            vec![pts[0], pts[1], pts[2], pts[0], pts[1]],
+            vec![1.0; 5],
+        )
+        .unwrap();
+        let within = |lo, hi| c.breaks_within(Interval::new(lo, hi).unwrap());
+        // Inside the stored knots: those, as they are.
+        assert_eq!(within(2.5, 4.5), vec![3.0, 4.0]);
+        assert_eq!(within(4.5, 7.4), vec![5.0, 6.0, 7.0]);
+        // Past either end: the domain's knots a whole period on.
+        assert_eq!(within(6.5, 9.2), vec![7.0, 8.0, 9.0]);
+        assert_eq!(within(-2.5, -0.2), vec![-2.0, -1.0]);
+        assert_eq!(within(10.5, 12.5), vec![11.0, 12.0]);
+        // A clamped curve has no knots but its own, its end among them.
+        let clamped = c.segment(Interval::new(2.0, 5.0).unwrap()).unwrap();
+        assert_eq!(clamped.period(), None);
+        assert_eq!(
+            clamped.breaks_within(Interval::new(2.5, 9.0).unwrap()),
+            vec![3.0, 4.0, 5.0]
+        );
     }
 }

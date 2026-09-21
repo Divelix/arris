@@ -1,0 +1,90 @@
+{
+  "occt": "8.0.1.0.0",
+  "recipe_sha256": "5b365dea4ad1b8a39170c682a148ebb9c4906a214ee41803b694b878cefb1080",
+  "results": {
+    "default": {
+      "area": 102.22508973264831,
+      "centroid": [
+        3.9972178582092197,
+        -2.3147151084919986e-10,
+        2.7299391480210864e-10
+      ],
+      "counts": {
+        "edges": 12,
+        "faces": 6,
+        "loops": 6,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 8
+      },
+      "degenerate": false,
+      "euler_characteristic": 2,
+      "genus": 0,
+      "inertia": [
+        [
+          343.297473617263,
+          -1.7528082412583604e-09,
+          5.504053849435147e-10
+        ],
+        [
+          -1.7528082412583604e-09,
+          36.58624027112717,
+          1.1406729780939792e-08
+        ],
+        [
+          5.504053849435147e-10,
+          1.1406729780939792e-08,
+          310.083725038474
+        ]
+      ],
+      "probes": [
+        {
+          "class": "in",
+          "label": "inside",
+          "point": [
+            4.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "class": "in",
+          "label": "inside_far",
+          "point": [
+            4.0,
+            4.0,
+            0.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "in_the_ring_only",
+          "point": [
+            -5.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "in_the_slab_only",
+          "point": [
+            4.0,
+            0.0,
+            3.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_the_slab_side",
+          "point": [
+            3.6,
+            0.0,
+            0.0
+          ]
+        }
+      ],
+      "volume": 31.778369025025526
+    }
+  }
+}

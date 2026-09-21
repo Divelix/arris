@@ -1,0 +1,17 @@
+{
+  "description": "the same ring with a pin of radius 1 drilled through its tube, leaning (0.1, 0.2, 1) beside the profile plane: a torus and a cylinder, two traced loops (ADR-0019), each across the tube-circle seam, the bore's wall one face between them. Genus 2: the ring's own hole and the bore",
+  "steps": [
+    {"name": "circle", "op": "profile", "plane": {"origin": [0, 0, 0], "x": [1, 0, 0], "y": [0, 0, 1]}, "outer": {"circle": {"center": [5, 0], "radius": 2}}},
+    {"name": "ring", "op": "revolve", "profile": "circle", "axis": {"origin": [0, 0, 0], "direction": [0, 0, 1]}, "angle_deg": 360},
+    {"name": "pin", "op": "cylinder", "base": [4.6, -0.2, -4], "axis": [0.1, 0.2, 1], "radius": 1, "height": 8.5},
+    {"name": "result", "op": "cut", "target": "ring", "tool": "pin"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [-5, 0, 0], "expect": "in"},
+    {"label": "in_the_bore", "point": [5, 0.6, 0], "expect": "out"},
+    {"label": "in_the_hole", "point": [0, 0, 0], "expect": "out"},
+    {"label": "on_the_ring", "point": [-7, 0, 0], "expect": "on"}
+  ],
+  "analytic": {"genus": 2}
+}

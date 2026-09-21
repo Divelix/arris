@@ -866,7 +866,9 @@ the face's loops are written in, a whole number of periods along `u`.
 `integrate::region_integral(pieces, inner_step, f)` is `∬ f du dv` over
 the region by Green's theorem — `∮ G dv` with `G = ∫_{u₀}^{u} f ds` —
 with Gauss–Legendre quadrature of `GAUSS_ORDER` points per interval, a
-conic piece split at quarter turns and a NURBS at its knots, signed by
+conic piece split at quarter turns and a NURBS at its knots — a
+periodic one's repeated by whole periods, since a block of a closed
+section wraps past the knots' end (`NurbsCurve2::breaks_within`) — signed by
 the loop's turn so holes subtract themselves: `f = |∂P/∂u × ∂P/∂v|` is
 an area, `f = P · (∂P/∂u × ∂P/∂v) / 3` summed over a solid's faces with
 their use orientation is Gauss's volume (B2, `measure`). The *inner*

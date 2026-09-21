@@ -1,0 +1,17 @@
+{
+  "description": "a bar of radius 1.43 on z less a ball of radius 2 centred (0.39, 0.78, 1.48): the ball's section with the bar's wall leaves the top cap where the two walls meet at about 5°. The body is right — Open CASCADE measures the STEP Arris writes at its own volume — but the checker's S5 refuses it: S5 traces the wall pair again, clipped to the two faces' own boxes rather than to the boolean's region, and two fits of one grazing section, each held to a quarter tolerance of both *surfaces* (ADR-0019), lie 1.06e-7 apart along the surfaces where the edge's tolerance is 1e-7, so a sample of the checker's curve is on no shared edge and interior to both faces. Found at a random pose in two hundred (plans/c3-conic-hits step 5). Whether a section edge is held to the exact branch, or S5's excuse reads the lateral slack a grazing angle gives, is the tolerance plan's — features a tolerance apart",
+  "steps": [
+    {"name": "half_disc", "op": "profile", "plane": {"origin": [0, 0, 0], "x": [1, 0, 0], "y": [0, 0, 1]}, "outer": {"start": [0, -2], "segments": [{"arc_to": [0, 2], "via": [2, 0]}, {"line_to": [0, -2]}]}},
+    {"name": "ball0", "op": "revolve", "profile": "half_disc", "axis": {"origin": [0, 0, 0], "direction": [0, 0, 1]}, "angle_deg": 360},
+    {"name": "ball", "op": "transform", "of": "ball0", "translate": [0.39, 0.78, 1.48]},
+    {"name": "bar", "op": "cylinder", "base": [0.3, 0.2, -1.58], "axis": [0, 0, 1], "radius": 1.43, "height": 3.16},
+    {"name": "result", "op": "cut", "target": "bar", "tool": "ball"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [0.3, 0.2, -1.2], "expect": "in"},
+    {"label": "in_the_ball", "point": [0.4, 0.7, 1], "expect": "out"},
+    {"label": "outside", "point": [3, 0, 0], "expect": "out"}
+  ],
+  "analytic": {"genus": 0}
+}

@@ -501,6 +501,9 @@ fn two_runs_are_identical() {
     assert!(i.to_string().starts_with("interferences "));
 }
 
+/// The one surface kind the intersector has no arm for is a NURBS patch
+/// (the NURBS cycle's): the refusal names the pair, the first operand's
+/// face first.
 #[test]
 fn an_unsupported_surface_pair_names_the_faces() {
     let mut m = Model::default();
@@ -510,31 +513,37 @@ fn an_unsupported_surface_pair_names_the_faces() {
         Point3::new(1.0, 1.0, 1.0),
     )
     .unwrap();
-    let ball = sample::sphere(&mut m, Point3::origin(), 1.5).unwrap();
-    let err = interferences(&m, cube, ball).unwrap_err();
+    let patchwork =
+        sample::cuboid_nurbs(&mut m, Point3::origin(), Point3::new(2.0, 2.0, 2.0)).unwrap();
+    let err = interferences(&m, cube, patchwork).unwrap_err();
     match err {
         OpError::Unsupported { a, b } => {
             assert_eq!(a.0, GeomKind::Surface(SurfaceKind::Plane));
-            assert_eq!(b.0, GeomKind::Surface(SurfaceKind::Sphere));
+            assert_eq!(b.0, GeomKind::Surface(SurfaceKind::Nurbs));
             assert!(
                 m.faces(cube)
                     .unwrap()
                     .iter()
                     .any(|f| f.shape().id == a.1.id)
             );
+            assert!(
+                m.faces(patchwork)
+                    .unwrap()
+                    .iter()
+                    .any(|f| f.shape().id == b.1.id)
+            );
         }
         other => panic!("{other}"),
     }
 }
 
-/// What is left of the quadric guard (ADR-0008, ADR-0020): the revolve
-/// with a cone face against a box through it, which was refused before
-/// any intersector was asked, is an operand like any other — the box's
-/// two cap planes cut the cone in circles and its four sides in
-/// hyperbolas, and the cut is a body the checker passes at `Full`. A
-/// sphere and a torus face are still refused, as the same `Unsupported`
-/// naming the box's plane face and theirs; the box's face is the first
-/// operand's, the quadric the second's.
+/// No guard stands before the intersector (ADR-0008, ADR-0020): the
+/// revolve with a cone face against a box through it is an operand like
+/// any other — the box's two cap planes cut the cone in circles and its
+/// four sides in hyperbolas — and so are a whole sphere face, closed on
+/// its two degenerate edges, and a whole torus face, periodic both ways
+/// between its two seams. Each cut is a body the checker passes at
+/// `Full` with nothing undecided.
 #[test]
 fn a_cone_face_is_an_operand_like_any_other() {
     let mut m = Model::default();
@@ -578,33 +587,18 @@ fn a_cone_face_is_an_operand_like_any_other() {
 
     for quadric in [
         sample::sphere(&mut m, Point3::origin(), 1.5).unwrap(),
-        sample::torus(&mut m, Point3::origin(), 3.0, 0.5).unwrap(),
+        sample::torus(&mut m, Point3::origin(), 3.0, 0.8).unwrap(),
     ] {
-        let kind = m
-            .surface(m.face(m.faces(quadric).unwrap()[0].id).unwrap().surface())
-            .unwrap()
-            .kind();
-        for err in [
-            interferences(&m, cube, quadric).unwrap_err(),
-            cut(&mut m, cube, quadric).unwrap_err(),
+        let i = interferences(&m, cube, quadric).unwrap();
+        assert!(!i.sections.is_empty(), "{i}");
+        assert_sections_consistent(&m, &i).unwrap();
+        for kept in [
+            cut(&mut m, cube, quadric).unwrap().0,
+            cut(&mut m, quadric, cube).unwrap().0,
         ] {
-            let OpError::Unsupported { a, b } = err else {
-                panic!("{err}");
-            };
-            assert_eq!(a.0, GeomKind::Surface(SurfaceKind::Plane));
-            assert_eq!(b.0, GeomKind::Surface(kind));
-            assert!(
-                m.faces(cube)
-                    .unwrap()
-                    .iter()
-                    .any(|f| f.shape().id == a.1.id)
-            );
-            assert!(
-                m.faces(quadric)
-                    .unwrap()
-                    .iter()
-                    .any(|f| f.shape().id == b.1.id)
-            );
+            let report = check(&m, kept, Level::Full);
+            assert!(report.is_empty(), "{report}");
+            assert!(report.unchecked().is_empty(), "{report}");
         }
     }
 }

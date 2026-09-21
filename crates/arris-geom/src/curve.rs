@@ -247,13 +247,7 @@ impl Curve {
             Curve::Circle { radius, .. } => (per_turn(length), radius.abs()),
             Curve::Ellipse { major_radius, .. } => (per_turn(length), major_radius.abs()),
             Curve::Nurbs(n) => {
-                let mut knots: Vec<f64> = n
-                    .knots()
-                    .iter()
-                    .copied()
-                    .filter(|&k| range.lo() < k && k < range.hi())
-                    .collect();
-                knots.dedup();
+                let knots = n.breaks_within(range);
                 let spans = knots.len() + 1;
                 let samples = spans * CURVATURE_SAMPLES_PER_SPAN;
                 let d2 = (0..=samples)

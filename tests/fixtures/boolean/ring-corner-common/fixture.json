@@ -1,0 +1,21 @@
+{
+  "description": "a ring torus, R 3 and r 1 about z, in common with a block at a general pose, five of whose planes cut the tube: closed toric sections cut into blocks by the block's edges, and a block of a closed curve may wrap past the end of its periodic knots. On a plane that matters: a plane's pcurve of a fitted section is exact — the same periodic NURBS in the plane's coordinates — so the wrapped block is a range past the knots' end, and its quadrature and its polygon are split at the domain's knots a period on (`NurbsCurve2::breaks_within`). Taken in one Gauss interval across its spans, as it was, this result measured 8e-4 off in volume with every row of the checker green, a random pose in three hundred. The tolerances are stated at 1e-6 because the oracle's own solid is the far side here: Open CASCADE leaves a section edge of it at a tolerance of 2.4e-5, and its volume 12.98893543 is 1.2e-7 from the 12.9889338178 Arris converges to as the model tolerance goes from 1e-7 to 1e-9 — and which Open CASCADE itself measures, to 3e-12, on the STEP Arris writes",
+  "tolerances": {"volume_rel": 1e-06, "area_rel": 1e-06, "inertia_rel": 1e-06, "centroid_abs": 1e-06},
+  "steps": [
+    {"name": "circle", "op": "profile", "plane": {"origin": [0, 0, 0], "x": [1, 0, 0], "y": [0, 0, 1]}, "outer": {"circle": {"center": [3, 0], "radius": 1}}},
+    {"name": "ring", "op": "revolve", "profile": "circle", "axis": {"origin": [0, 0, 0], "direction": [0, 0, 1]}, "angle_deg": 360},
+    {"name": "block0", "op": "box", "min": [-2.96, -1.35, -2.75], "max": [2.07, 1.21, 2.2]},
+    {"name": "block1", "op": "transform", "of": "block0", "translate": [1.33, -0.12, 0.07]},
+    {"name": "block", "op": "transform", "of": "block1", "rotate": {"axis": [0.36, -0.14, -0.08], "origin": [0, 0, 0], "angle_deg": -55.6}},
+    {"name": "result", "op": "common", "a": "ring", "b": "block"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [3, 0, 0], "expect": "in"},
+    {"label": "on_the_ring", "point": [2, 0, 0], "expect": "on"},
+    {"label": "in_the_ring_only", "point": [-3, 0, 0], "expect": "out"},
+    {"label": "in_the_block_only", "point": [0, 0, 0], "expect": "out"},
+    {"label": "outside", "point": [0, 0, 5], "expect": "out"}
+  ],
+  "analytic": {"genus": 0}
+}

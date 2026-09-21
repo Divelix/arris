@@ -94,20 +94,15 @@ impl<'a> Piece<'a> {
     }
 
     /// The interior knots of a NURBS piece within its range, ascending:
-    /// where its polygon and its integration are split. Empty for the
+    /// where its polygon and its integration are split — a periodic
+    /// pcurve's repeated by whole periods where the range wraps past the
+    /// knots' end ([`crate::NurbsCurve2::breaks_within`]). Empty for the
     /// analytic variants.
     pub fn interior_knots(&self) -> Vec<f64> {
         let Curve2::Nurbs(n) = self.curve else {
             return Vec::new();
         };
-        let mut knots: Vec<f64> = n
-            .knots()
-            .iter()
-            .copied()
-            .filter(|&k| self.range.lo() < k && k < self.range.hi())
-            .collect();
-        knots.dedup();
-        knots
+        n.breaks_within(self.range)
     }
 
     /// How many straight segments approximate this piece within

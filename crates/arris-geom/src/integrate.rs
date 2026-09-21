@@ -275,6 +275,52 @@ mod tests {
     use arris_math::{Frame2, Interval, Point2, UnitVec2, Vec2};
     use core::f64::consts::{FRAC_PI_8, TAU};
 
+    /// A closed periodic NURBS loop walked as two blocks, the second
+    /// wrapping past the end of the knots, encloses what the whole loop
+    /// does: the wrapped block is split at the knots a period on, not
+    /// taken in one interval across them.
+    #[test]
+    fn a_block_wrapping_a_periodic_pcurve_is_split_at_its_knots() {
+        use crate::NurbsCurve2;
+        let n = 12;
+        let ring: Vec<Point2> = (0..n)
+            .map(|i| {
+                let a = TAU * i as f64 / n as f64;
+                let r = 2.0 + 0.7 * (3.0 * a).cos();
+                Point2::new(r * a.cos(), r * a.sin())
+            })
+            .collect();
+        let degree = 3;
+        let points: Vec<Point2> = ring.iter().chain(&ring[..degree]).copied().collect();
+        let knots: Vec<f64> = (0..points.len() + degree + 1).map(|i| i as f64).collect();
+        let weights = vec![1.0; points.len()];
+        let curve = Curve2::Nurbs(NurbsCurve2::new(degree, knots, points, weights).unwrap());
+        let period = curve.period().unwrap();
+        let lo = curve.domain().lo();
+        let whole = region_integral(
+            &[Piece::along(
+                &curve,
+                Interval::new(lo, lo + period).unwrap(),
+            )],
+            f64::INFINITY,
+            |u, v| 1.0 + u * v,
+        );
+        let (a, b) = (lo + 0.6 * period, lo + 0.9 * period);
+        let blocks = region_integral(
+            &[
+                Piece::along(&curve, Interval::new(a, b).unwrap()),
+                Piece::along(&curve, Interval::new(b, a + period).unwrap()),
+            ],
+            f64::INFINITY,
+            |u, v| 1.0 + u * v,
+        );
+        assert!(whole.abs() > 1.0);
+        assert!(
+            (blocks - whole).abs() < 1e-12 * whole.abs(),
+            "{blocks} {whole}"
+        );
+    }
+
     #[test]
     fn nodes_are_symmetric_and_weights_sum_to_two() {
         let table = gauss_legendre();

@@ -217,13 +217,7 @@ impl Curve2 {
                 if !(range.is_bounded() && range.length() > 0.0) {
                     return [0.0; 2];
                 }
-                let mut knots: Vec<f64> = n
-                    .knots()
-                    .iter()
-                    .copied()
-                    .filter(|&k| range.lo() < k && k < range.hi())
-                    .collect();
-                knots.dedup();
+                let knots = n.breaks_within(range);
                 let samples = (knots.len() + 1) * crate::region2::CURVATURE_SAMPLES_PER_SPAN;
                 (0..=samples)
                     .map(|i| n.eval(range.lerp(i as f64 / samples as f64)).d1)

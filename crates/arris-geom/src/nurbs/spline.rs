@@ -106,6 +106,44 @@ impl<const D: usize> Spline<D> {
         self.period
     }
 
+    /// The distinct knots strictly inside `range`, ascending: where the
+    /// curve's polynomial pieces change over it. A periodic spline takes a
+    /// range wherever it lies — an edge's past the knots' end among them —
+    /// so beyond the stored knots its domain's knots are repeated by whole
+    /// periods; inside them the stored values are returned as they are. A
+    /// range longer than two periods is no range of a periodic curve, and
+    /// gets the stored knots alone rather than a count that grows with it.
+    pub(crate) fn breaks_within(&self, range: Interval) -> Vec<f64> {
+        let inside = |k: f64| range.lo() < k && k < range.hi();
+        let mut out: Vec<f64> = self.knots.iter().copied().filter(|&k| inside(k)).collect();
+        if let (Some(period), true) = (self.period, range.is_bounded()) {
+            let (first, last) = (self.knots[0], self.knots[self.knots.len() - 1]);
+            let domain = self.domain();
+            if range.length() <= 2.0 * period && (range.lo() < first || range.hi() > last) {
+                let base: Vec<f64> = self
+                    .knots
+                    .iter()
+                    .copied()
+                    .filter(|&k| domain.lo() <= k && k < domain.hi())
+                    .collect();
+                let mut shift = ((range.lo() - domain.hi()) / period).floor();
+                let end = ((range.hi() - domain.lo()) / period).ceil();
+                while shift <= end {
+                    for &k in &base {
+                        let x = k + shift * period;
+                        if inside(x) && (x < first || x > last) {
+                            out.push(x);
+                        }
+                    }
+                    shift += 1.0;
+                }
+                out.sort_by(f64::total_cmp);
+            }
+        }
+        out.dedup();
+        out
+    }
+
     /// `t` moved into `[knots[p], knots[n])` by the period; unchanged for
     /// a curve without one.
     pub(crate) fn wrap(&self, t: f64) -> f64 {

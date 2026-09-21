@@ -1,0 +1,20 @@
+{
+  "description": "blend/boss-base-fillet's body — a boss on a disc, its base filleted at r — drilled by a cylinder of radius 0.4 parallel to the axis through the blend: the torus Arris made taken back as a boolean operand, the closure ADR-0020 names. The drill cuts the boss's top, its wall, the quarter torus — a traced loop piece across the torus's seam, which lies in the boss's own seam's half-plane — the disc's top and its bottom",
+  "params": {"r": 0.25},
+  "steps": [
+    {"name": "sketch", "op": "profile", "plane": {"origin": [0, 0, 0], "x": [1, 0, 0], "y": [0, 0, 1]},
+     "outer": {"start": [0, 0], "segments": [{"line_to": [3, 0]}, {"line_to": [3, 1]}, {"line_to": [1, 1]}, {"line_to": [1, 2]}, {"line_to": [0, 2]}, {"line_to": [0, 0]}]}},
+    {"name": "disc", "op": "revolve", "profile": "sketch", "axis": {"origin": [0, 0, 0], "direction": [0, 0, 1]}, "angle_deg": 360},
+    {"name": "blended", "op": "fillet", "of": "disc", "edges": [[-1, 0, 1]], "radius": "r"},
+    {"name": "drill", "op": "cylinder", "base": [1.15, 0.3, -1], "axis": [0, 0, 1], "radius": 0.4, "height": 4},
+    {"name": "result", "op": "cut", "target": "blended", "tool": "drill"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [-2, 0, 0.5], "expect": "in"},
+    {"label": "in_the_bore", "point": [1.15, 0.3, 1], "expect": "out"},
+    {"label": "on_the_blend_behind", "point": [0, "-(1 + r - r * cos(radians(45)))", "1 + r - r * sin(radians(45))"], "expect": "on"},
+    {"label": "outside", "point": [2, 0, 1.5], "expect": "out"}
+  ],
+  "analytic": {"genus": 1}
+}

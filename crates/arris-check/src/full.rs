@@ -86,13 +86,7 @@ impl<'m> Checker<'m> {
             if !(range.lo().is_finite() && range.hi().is_finite() && range.lo() < range.hi()) {
                 continue;
             }
-            let mut breaks: Vec<f64> = nurbs
-                .knots()
-                .iter()
-                .copied()
-                .filter(|&k| range.lo() < k && k < range.hi())
-                .collect();
-            breaks.dedup();
+            let breaks = nurbs.breaks_within(range);
             let mut parameters: Vec<f64> = Vec::new();
             let mut lo = range.lo();
             for hi in breaks.iter().copied().chain([range.hi()]) {

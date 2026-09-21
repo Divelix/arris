@@ -1,0 +1,19 @@
+{
+  "description": "a ring torus, R 5 and r 2 about z, in common with a slab 3.6 ≤ x ≤ 4.4 parallel to its axis: each side plane meets the torus in one spiric oval, traced in the torus's own parameter plane and fitted (ADR-0019), that crosses both of the torus's seams twice — the tube circle in the profile plane and the outer equator — so the band of the torus between the ovals is four faces, as Open CASCADE's is. The first boolean a whole torus face, periodic both ways, is an operand of. inertia_rel is stated at 3e-9 because the oracle's own solid is the far side: a quadrature of the closed integrand ∫ 2√(r² − (ρ − R)²) ρ Δφ(ρ) dρ to thirty digits gives the volume 31.7783690362 and I_xx 343.297474063, from which Arris is 1.8e-10 and 7e-11 and Open CASCADE's own build — its section edges at 1e-6 — 3.5e-10 and 1.3e-9",
+  "tolerances": {"inertia_rel": 3e-09},
+  "steps": [
+    {"name": "circle", "op": "profile", "plane": {"origin": [0, 0, 0], "x": [1, 0, 0], "y": [0, 0, 1]}, "outer": {"circle": {"center": [5, 0], "radius": 2}}},
+    {"name": "ring", "op": "revolve", "profile": "circle", "axis": {"origin": [0, 0, 0], "direction": [0, 0, 1]}, "angle_deg": 360},
+    {"name": "slab", "op": "box", "min": [3.6, -10, -5], "max": [4.4, 10, 5]},
+    {"name": "result", "op": "common", "a": "ring", "b": "slab"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [4, 0, 0], "expect": "in"},
+    {"label": "inside_far", "point": [4, 4, 0], "expect": "in"},
+    {"label": "in_the_ring_only", "point": [-5, 0, 0], "expect": "out"},
+    {"label": "in_the_slab_only", "point": [4, 0, 3], "expect": "out"},
+    {"label": "on_the_slab_side", "point": [3.6, 0, 0], "expect": "on"}
+  ],
+  "analytic": {"genus": 0}
+}

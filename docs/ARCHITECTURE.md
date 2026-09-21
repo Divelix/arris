@@ -244,19 +244,28 @@ cone's apex — where the surface has no normal (`Reason::Singular`).
 
 `ops::boolean::interferences(&Model, a, b) -> Result<Interferences,
 OpError>` is another query: the boolean decomposition of ADR-0004 as
-a value, computed without building anything. A face pair, or an edge
-against a face, whose boxes overlap and that has a face on a **sphere
-or a torus** is refused before any intersector is asked — what is left
-of the *quadric guard*, `OpError::Unsupported` naming the pair exactly
-as the intersector named it before the coaxial arm existed (ADR-0008) —
-so a new intersector arm widens no boolean silently. A cone and an
-elliptic cylinder are past it: an operand face on either is paved like
-any other, with its corpus (`boolean/frustum-*`,
-`boolean/chamfered-boss-slot-cut`, `boolean/elliptic-*`), which is why
-a chamfer's cone is a body a later boolean takes. The guard is what is
-left of the kernel's closure gap: `ops::fillet` and `ops::revolve` also
-build tori and spheres, so until it goes a *blended* body Arris
-returned is not a body a boolean takes (ADR-0020). Every face pair is
+a value, computed without building anything. **No guard stands before
+the intersector**: every face pair, and every edge against a face, whose
+boxes overlap is asked about, whatever analytic surface either lies on,
+and `OpError::Unsupported` names a pair only where the intersector
+itself has no arm — a NURBS operand. A cone, an elliptic cylinder, a
+sphere and a torus face are paved like any other, each with its corpus
+(`boolean/frustum-*`, `boolean/chamfered-boss-slot-cut`,
+`boolean/elliptic-*`, `boolean/ball-*`, `boolean/ring-*`,
+`boolean/filleted-*`), so a body `ops::revolve`, `ops::fillet` or
+`ops::chamfer` returned is a body a boolean takes — the closure ADR-0020
+asks for. A whole sphere face, closed on its two degenerate edges, and a
+whole torus face, periodic both ways between its two seams, needed
+nothing of the pave model but one conversion: the slack a section
+edge's pcurve is allowed past the face's (u, v) box is the 3D tolerance
+converted *where the pcurve is* and in the direction held
+(`check::domain::bands`), not once at the block's midpoint — a section
+loop round a pole crosses the seam where a tolerance is a far wider `u`
+than it is at the loop's far side (`boolean/ball-polar-drill-cut`). A
+section *through* an apex or a pole has no vertex put there yet, and a
+pair meeting in curves of both kinds is a tripwire
+(`Fault::Invariant`).
+Every face pair is
 intersected in one region for the whole boolean — the overlap of the
 operands' boxes grown by its own diagonal — so pairs on the same two
 surfaces get the same traced curve (ADR-0018). It holds every face
@@ -648,8 +657,8 @@ on the axis a sphere, elsewhere a torus of `R` its centre's distance and
 `r` its radius. Every pair of faces a revolve makes shares its axis or
 has a plane through it, so S5 and B1 decide them by the meridian arm and
 `classify_point` casts against them by the line arms (ADR-0008); a
-revolve's cone, cylinder and plane faces are boolean operands, its
-spheres and tori still behind what is left of the guard (§Operations). The
+revolve's faces are all boolean operands, its spheres and tori
+included (§Operations). The
 surfaces of revolution share one frame: origin on the axis, `X` the unit
 radial from the axis into the profile's plane — so `u = 0` *is* the
 profile plane and every seam lies in it — `Z` the axis direction, except

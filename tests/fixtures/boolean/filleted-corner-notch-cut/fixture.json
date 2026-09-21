@@ -1,0 +1,18 @@
+{
+  "description": "blend/box-corner-three-fillets' body at r 0.5 — three blend cylinders meeting in an octant of a sphere — with a notch cut into the corner: x ≥ 1.7, y ≥ 1.65, z ≤ 1.8, under the sphere's pole at (1.5, 1.5, 2), which the notch leaves alone. The notch's top cuts the corner sphere in a parallel and its two sides in small circles with fitted pcurves, and the sides cut the vertical blend cylinder below it: a fillet's cylinders and its corner sphere cut after they were made (ADR-0020)",
+  "params": {"r": 0.5},
+  "steps": [
+    {"name": "cube", "op": "box", "min": [0, 0, 0], "max": [2, 2, 2]},
+    {"name": "blended", "op": "fillet", "of": "cube", "edges": [[2, 2, 1], [1, 2, 2], [2, 1, 2]], "radius": "r"},
+    {"name": "notch", "op": "box", "min": [1.7, 1.65, 1], "max": [3, 3, 1.8]},
+    {"name": "result", "op": "cut", "target": "blended", "tool": "notch"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [1, 1, 1], "expect": "in"},
+    {"label": "in_the_notch", "point": [1.8, 1.75, 1.5], "expect": "out"},
+    {"label": "under_the_pole", "point": [1.5, 1.5, 1.9], "expect": "in"},
+    {"label": "far_vertex", "point": [0, 0, 0], "expect": "on"}
+  ],
+  "analytic": {"genus": 0}
+}

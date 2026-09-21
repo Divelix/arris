@@ -1,0 +1,23 @@
+{
+  "description": "two balls, of radius 2 about z at the origin and of radius 1.5 revolved about x and moved to (cx, cy, cz): two sphere faces on different axes meeting in one exact circle clear of all four poles, its pcurve fitted on both. The lens between two spherical caps: with d the centres' distance, π (R + r − d)² (d² + 2d(R + r) − 3(R − r)²) / (12 d)",
+  "params": {"cx": 1.5, "cy": 0.5, "cz": 0.4},
+  "steps": [
+    {"name": "half_disc", "op": "profile", "plane": {"origin": [0, 0, 0], "x": [1, 0, 0], "y": [0, 0, 1]}, "outer": {"start": [0, -2], "segments": [{"arc_to": [0, 2], "via": [2, 0]}, {"line_to": [0, -2]}]}},
+    {"name": "ball", "op": "revolve", "profile": "half_disc", "axis": {"origin": [0, 0, 0], "direction": [0, 0, 1]}, "angle_deg": 360},
+    {"name": "half_disc_b", "op": "profile", "plane": {"origin": [0, 0, 0], "x": [0, 1, 0], "y": [1, 0, 0]}, "outer": {"start": [0, -1.5], "segments": [{"arc_to": [0, 1.5], "via": [1.5, 0]}, {"line_to": [0, -1.5]}]}},
+    {"name": "ball_b0", "op": "revolve", "profile": "half_disc_b", "axis": {"origin": [0, 0, 0], "direction": [1, 0, 0]}, "angle_deg": 360},
+    {"name": "ball_b", "op": "transform", "of": "ball_b0", "translate": ["cx", "cy", "cz"]},
+    {"name": "result", "op": "common", "a": "ball", "b": "ball_b"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [1.2, 0.4, 0.3], "expect": "in"},
+    {"label": "in_a_only", "point": [-1, 0, 0], "expect": "out"},
+    {"label": "in_b_only", "point": [2.6, 0.6, 0.5], "expect": "out"},
+    {"label": "outside", "point": [0, 0, 3], "expect": "out"}
+  ],
+  "analytic": {
+    "volume": "pi * (3.5 - sqrt(cx^2 + cy^2 + cz^2))^2 * (cx^2 + cy^2 + cz^2 + 7 * sqrt(cx^2 + cy^2 + cz^2) - 0.75) / (12 * sqrt(cx^2 + cy^2 + cz^2))",
+    "genus": 0
+  }
+}

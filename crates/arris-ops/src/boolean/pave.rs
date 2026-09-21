@@ -12,9 +12,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use arris_check::arris_topo::arris_geom::region2::Side;
 use arris_check::arris_topo::arris_geom::{
-    Curve, Curve2, CurveIntersection, CurveSurfaceIntersection, GeomError, GeomKind, MeetKind,
-    Surface, SurfaceIntersection, SurfaceKind, curves_coincide, intersect_curve_surface,
-    intersect_curves, intersect_surfaces, pcurve_on,
+    Curve, Curve2, CurveIntersection, CurveSurfaceIntersection, GeomError, MeetKind,
+    SurfaceIntersection, curves_coincide, intersect_curve_surface, intersect_curves,
+    intersect_surfaces, pcurve_on,
 };
 use arris_check::arris_topo::arris_math::{
     Aabb, Interval, Point2, Point3, Precision, Tolerance, Vec2, period_end,
@@ -23,7 +23,7 @@ use arris_check::arris_topo::{
     Body, EdgeId, FaceId, Model, Shape, Vertex as VertexHandle, VertexId,
 };
 
-use arris_check::domain::band;
+use arris_check::domain::bands;
 
 use super::faces::{EdgeInfo, FaceInfo};
 use super::{
@@ -208,19 +208,6 @@ fn shape_of(body: Body) -> Shape {
     Shape::new(body.id, body.orientation)
 }
 
-/// What is left of the quadric guard: a face on a sphere or a torus is
-/// refused before any intersector is asked — as the same
-/// [`OpError::Unsupported`] naming the pair it got while the intersector
-/// had no arm for it — so the coaxial arm (ADR-0008) widens no boolean
-/// silently. The ruled kinds are past it: a cone and an elliptic
-/// cylinder are operand faces, with their corpus
-/// (`docs/ARCHITECTURE.md` §Operations). A sphere's and a torus's faces
-/// are the closing kinds, whose periodic and degenerate boundaries the
-/// face splitter has yet to meet.
-fn quadric(s: &Surface) -> bool {
-    matches!(s.kind(), SurfaceKind::Sphere | SurfaceKind::Torus)
-}
-
 /// The tolerance a geometric query between two entities runs at: the
 /// larger of their tolerances for lengths, the model's angle.
 fn tolerance_of(precision: &Precision, a: f64, b: f64) -> Tolerance {
@@ -362,12 +349,6 @@ impl<'m> Build<'m> {
     ) -> Result<Vec<SurfaceIntersection>, OpError> {
         let one = |&(ia, ib): &(usize, usize)| {
             let (fa, fb) = (&self.faces[0][ia], &self.faces[1][ib]);
-            if quadric(fa.surface) || quadric(fb.surface) {
-                return Err(OpError::Unsupported {
-                    a: (GeomKind::Surface(fa.surface.kind()), fa.shape()),
-                    b: (GeomKind::Surface(fb.surface.kind()), fb.shape()),
-                });
-            }
             let tol = tolerance_of(&self.precision, fa.tolerance, fb.tolerance);
             intersect_surfaces(fa.surface, fb.surface, &self.within, tol)
                 .map_err(|e| geometry(e, fa.shape(), fb.shape()))
@@ -422,12 +403,6 @@ impl<'m> Build<'m> {
         found: &mut Vec<(EdgeFaceHit, f64)>,
         coincident: &mut Vec<(EdgeId, FaceId)>,
     ) -> Result<(), OpError> {
-        if quadric(f.surface) {
-            return Err(OpError::Unsupported {
-                a: (GeomKind::Curve(e.curve.kind()), e.shape()),
-                b: (GeomKind::Surface(f.surface.kind()), f.shape()),
-            });
-        }
         let tol = tolerance_of(&self.precision, e.tolerance, f.tolerance);
         let hits = match intersect_curve_surface(e.curve, f.surface, tol)
             .map_err(|err| geometry(err, e.shape(), f.shape()))?
@@ -1106,11 +1081,11 @@ impl<'m> Build<'m> {
         for pi in 0..self.pairs.len() {
             let intersection = &self.pairs[pi].intersection;
             // A pair meeting in curves of both kinds at once wants a
-            // sphere, a torus, or a cone or an elliptic cylinder met at
-            // its apex or along a tangent circle — the first two the
-            // guard still refuses, the rest C3's remaining plans. Until
-            // they land the mixed pair is a tripwire, not a wrong
-            // answer. Points here are a traced section's singular
+            // surface met at its apex or its pole, or along a tangent
+            // circle — C3's remaining steps. Until they land the mixed
+            // pair is a tripwire, not a wrong answer: no fixture and no
+            // random pose of a ball or a ring has tripped it. Points
+            // here are a traced section's singular
             // points, which `section_crossings` read.
             let mixed = intersection
                 .curves()
@@ -1422,8 +1397,13 @@ impl<'m> Build<'m> {
     /// The pcurve translated by whole periods so its point at the block's
     /// midpoint is the face's own (u, v) there, and held to the face's
     /// (u, v) box in every periodic direction within `tolerance` converted
-    /// there: a block that still leaves it crosses a seam inside itself,
-    /// which the seam's own hit should have paved (ADR-0004).
+    /// at each point checked, in that direction: a block that still
+    /// leaves it crosses a seam inside itself, which the seam's own hit
+    /// should have paved (ADR-0004). Converted where the pcurve is and not
+    /// once at the midpoint, because on a sphere or a cone a tolerance is
+    /// no one step in `u`: a loop round a pole ends on the seam at a
+    /// latitude where the fit's rounding in `u` is many times what the
+    /// same length allows at the loop's far side.
     fn place(
         &self,
         f: &FaceInfo<'m>,
@@ -1442,15 +1422,14 @@ impl<'m> Build<'m> {
             }
         }
         let pc = pc.translated(by);
-        let near = band(f.surface, uv_mid, tolerance);
         for (d, period) in periods.iter().enumerate() {
             if period.is_none() {
                 continue;
             }
-            let (lo, hi) = (f.uv_lo[d] - near, f.uv_hi[d] + near);
             for t in samples(range, self.precision.check_samples) {
-                let x = pc.point(t)[d];
-                if x < lo || x > hi {
+                let at = pc.point(t);
+                let near = bands(f.surface, at, tolerance)[d];
+                if at[d] < f.uv_lo[d] - near || at[d] > f.uv_hi[d] + near {
                     return Err(OpError::Internal(Fault::Seam {
                         face: f.id,
                         other: other.id,

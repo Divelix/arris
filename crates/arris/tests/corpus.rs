@@ -325,6 +325,16 @@ fn regression_singular_bore_cut() {
     run("regression/singular-bore-cut");
 }
 
+/// A ball cut from a bar whose wall it meets at about 5° where the
+/// section leaves the cap: the body is right, and S5 refuses it, because
+/// the checker's own fit of that grazing section and the edge's lie
+/// further apart along the surfaces than the edge's tolerance.
+#[test]
+#[ignore = "S5, the bar's wall and the ball's face intersect away from their shared edges: two fits of one grazing section are 1.06e-7 apart at a tolerance of 1e-7 (docs/BACKLOG.md, features a tolerance apart)"]
+fn regression_grazing_ball_bar_cut() {
+    run("regression/grazing-ball-bar-cut");
+}
+
 /// A tee of equal radii: the branch's rim circle touches the main wall
 /// exactly at the two crossing vertices, and each touch cuts the rim
 /// there.
@@ -451,7 +461,7 @@ fn boolean_short_cross_cylinders_fuse() {
 }
 
 /// A box with an elliptic cylinder cut through it: an elliptic-cylinder
-/// operand face, past what is left of the quadric guard (ADR-0014).
+/// operand face (ADR-0014).
 #[test]
 fn boolean_elliptic_operand_cut() {
     run("boolean/elliptic-operand-cut");
@@ -491,6 +501,72 @@ fn boolean_frustum_cross_drill_cut() {
 #[test]
 fn boolean_chamfered_boss_slot_cut() {
     run("boolean/chamfered-boss-slot-cut");
+}
+
+/// A ball with a box's corner cut out of it: three small circles on a
+/// whole sphere face, each pcurve fitted over the sphere's own projection.
+#[test]
+fn boolean_ball_corner_cut() {
+    run("boolean/ball-corner-cut");
+}
+
+/// A drill through a ball beside its axis: a sphere and a cylinder on
+/// skew axes, two traced loops.
+#[test]
+fn boolean_ball_offset_drill_cut() {
+    run("boolean/ball-offset-drill-cut");
+}
+
+/// A bar through a ball that swallows one of its poles: the section loop
+/// winds once round `u`, from the seam back to the seam, and ends there
+/// at a latitude where a tolerance is a wide step in `u`.
+#[test]
+fn boolean_ball_polar_drill_cut() {
+    run("boolean/ball-polar-drill-cut");
+}
+
+/// Two balls revolved about different axes, in common: a lens between
+/// two sphere faces meeting in one circle.
+#[test]
+fn boolean_ball_ball_common() {
+    run("boolean/ball-ball-common");
+}
+
+/// A ring and a slab parallel to its axis, in common: two spiric ovals,
+/// each across both of the torus's seams.
+#[test]
+fn boolean_ring_slab_common() {
+    run("boolean/ring-slab-common");
+}
+
+/// A ring in common with a block at a general pose: closed toric
+/// sections cut by the block's edges into blocks, one of which wraps
+/// past the end of its periodic knots — on a plane, whose exact pcurve
+/// carries those knots.
+#[test]
+fn boolean_ring_corner_common() {
+    run("boolean/ring-corner-common");
+}
+
+/// A pin drilled through a ring's tube: a torus and a cylinder, two
+/// traced loops in the torus's own parameter plane (ADR-0019).
+#[test]
+fn boolean_ring_pin_cut() {
+    run("boolean/ring-pin-cut");
+}
+
+/// A boss filleted at its base and then drilled through the blend: the
+/// torus Arris made taken back as a boolean operand (ADR-0020).
+#[test]
+fn boolean_filleted_boss_drill_cut() {
+    run("boolean/filleted-boss-drill-cut");
+}
+
+/// A cube's corner filleted and then notched: a fillet's cylinders and
+/// its corner sphere cut after they were made (ADR-0020).
+#[test]
+fn boolean_filleted_corner_notch_cut() {
+    run("boolean/filleted-corner-notch-cut");
 }
 
 /// A rectangle with a circular hole extruded: `boolean/through-hole`'s

@@ -279,7 +279,7 @@ bound has to be established here.
   `sections` is kept as a tripwire with its reason restated (a cone or
   an elliptic cylinder met at its apex or along a tangent circle is
   steps 6 and 7's), and no fixture here trips it.
-- [ ] Step 5 **[3]** — The guard gone: a sphere and a torus as operand
+- [x] Step 5 **[3]** — The guard gone: a sphere and a torus as operand
   faces, clear of the poles. What is unproven is the face, not the
   section: a whole torus face is periodic both ways with two seam edges,
   a sphere's closes on two degenerate edges, and `place`, `band` and the
@@ -294,6 +294,53 @@ bound has to be established here.
   `Full` with `Report::unchecked` empty, which is also S5's shared-edge
   excuse over a fitted torus section, untestable until now. `fn quadric`
   deleted; ARCHITECTURE §Operations restated in this commit.
+  *Established:* the face needed **nothing** — `fn quadric` deleted is
+  the whole of the guard's removal, and all seven fixtures pass every
+  corpus stage on the recipe as first written, a torus band split at
+  both seams into the four faces Open CASCADE makes of it, a sphere
+  keeping or losing its degenerate edges with the pole. What the step
+  found it found at random poses (a scratch run of a ball and a ring
+  against a box and a cylinder, fourteen hundred poses, all four
+  booleans, `Full` and the volume identities — step 8's property in
+  outline), and neither fault was the splitter's. (a) **`place`'s seam
+  check converted the tolerance once, at the block's midpoint**: a
+  section loop round a pole ends on the seam where `R·cos v` is small
+  and the same length is sixteen times the `u`, so a fit 7.1e-8 of `u`
+  past the seam was `Fault::Seam`. It converts where the pcurve is, in
+  the direction held (`check::domain::bands`);
+  `boolean/ball-polar-drill-cut` is that pose. (b) **A wrong number
+  with the checker green**: a plane's pcurve of a closed fitted section
+  is exact — the same periodic NURBS — so a block that wraps is a range
+  past the knots' end, and five places filtered the stored knots for
+  their breaks and found none there: `region_integral` took the wrapped
+  part in one Gauss interval, and the volume of a right body came out
+  8e-4 off (the body itself Open CASCADE measured, from Arris's STEP,
+  at its own volume to 2e-9). **`NurbsCurve::breaks_within` and
+  `NurbsCurve2::breaks_within`**, new public methods, repeat a periodic
+  curve's knots by whole periods, and the quadrature, both polygon
+  segment counts, `Curve2::speed_bounds` and the checker's edge
+  sampling read them; `boolean/ring-corner-common` is that pose, with
+  a unit test of the integral in `integrate`. Two fixtures the plan did
+  not list, then, each failing on the commit before. (c) **Out of
+  scope, and a fixture:** `regression/grazing-ball-bar-cut` — where a
+  ball and a bar meet at 5°, S5's own fit of the section and the
+  edge's lie 1.06e-7 apart at a tolerance of 1e-7, and a right body is
+  refused; OPEN 1's lateral slack met from the checker's side, a
+  backlog line for the tolerance plan. One pose in five hundred.
+  Three fixtures state oracle-comparison tolerances of their own, each
+  with the evidence in its description that **Open CASCADE's own solid
+  is the far side** — its section edges carry 1e-6 where Arris's carry
+  1e-7, and 2.4e-5 on one edge of `ring-corner-common`:
+  `ring-slab-common` (`inertia_rel` 3e-9, against a thirty-digit
+  quadrature Arris is 7e-11 from), `ball-polar-drill-cut` (3e-9) and
+  `ring-corner-common` (1e-6), the last two against the value Arris
+  converges to as the model tolerance goes from 1e-7 to 1e-9, which
+  Open CASCADE itself measures on Arris's STEP. For step 6: with a
+  cylinder's wall through a ball's pole **Open CASCADE builds no solid
+  at all** (`degenerate` in `expected.json`), so `ball-pole-drill-cut`
+  will want `measure_differs` or another pose. For step 8: the scratch
+  run is its ball and ring strategies; it took about three minutes per
+  two hundred poses in release.
 - [ ] Step 6 **[3]** — A section through an apex or a pole, and ADR-0021.
   The operand's singular vertex paves every section curve within the
   tolerance of it, so no block has the point inside and step 1's

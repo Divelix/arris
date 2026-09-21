@@ -1,0 +1,18 @@
+{
+  "description": "a ball of radius 2 at a general pose less a bar of radius 1.1776 on z that swallows one of its poles by 0.056: the section loop winds once round u, from the sphere's seam back to it, so its blocks' pcurves on the sphere run the whole period between them and end on the seam 0.127 from the pole, where R·cos v is 0.127 and a tolerance of 1e-7 is 7.9e-7 of u — sixteen times the 5e-8 the same length allows at the loop's far side. The pave model's seam check (`place`) converts the tolerance where the pcurve is, in the direction it holds; converted once at the block's midpoint, the fit's 7.1e-8 of u past the seam was `Fault::Seam`. The pose is the one a random run found it at, one in two hundred (plans/c3-conic-hits step 5). The tolerances are stated at 3e-9 because the oracle's own solid is the far side: Arris's measure converges to the volume 21.0626236052 and the area 52.8334381816 as the model tolerance goes from 1e-7 to 1e-9, from which it is 1.2e-10 and 1.3e-10 at 1e-7 and Open CASCADE's own build 8.8e-10 and 1.0e-9",
+  "tolerances": {"volume_rel": 3e-9, "area_rel": 3e-9, "inertia_rel": 3e-9},
+  "steps": [
+    {"name": "half_disc", "op": "profile", "plane": {"origin": [0, 0, 0], "x": [1, 0, 0], "y": [0, 0, 1]}, "outer": {"start": [0, -2], "segments": [{"arc_to": [0, 2], "via": [2, 0]}, {"line_to": [0, -2]}]}},
+    {"name": "ball0", "op": "revolve", "profile": "half_disc", "axis": {"origin": [0, 0, 0], "direction": [0, 0, 1]}, "angle_deg": 360},
+    {"name": "ball", "op": "transform", "of": "ball0", "rotate": {"axis": [0.653, 0.0861, -0.1435], "origin": [0, 0, 0], "angle_deg": 234.6223}, "translate": [1.2282, -0.1745, 0.6099]},
+    {"name": "drill", "op": "cylinder", "base": [0.3, 0.2, -2.7], "axis": [0, 0, 1], "radius": 1.1776, "height": 5.4},
+    {"name": "result", "op": "cut", "target": "ball", "tool": "drill"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [2.5, -0.5, 1], "expect": "in"},
+    {"label": "in_the_bore", "point": [0.3, 0.2, 0.5], "expect": "out"},
+    {"label": "outside", "point": [5, 0, 0], "expect": "out"}
+  ],
+  "analytic": {"genus": 0}
+}
