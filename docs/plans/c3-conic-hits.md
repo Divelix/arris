@@ -442,7 +442,7 @@ bound has to be established here.
   (a wrong solid, caught by the lumps check); the wrap block, and a
   whole-period block for a closed curve no edge reaches, give it its
   `TangentContact`.
-- [ ] Step 8 **[2]** — The identities over quadric operands.
+- [x] Step 8 **[2]** — The identities over quadric operands.
   `boolean_prop.rs` strategies for a frustum, a ball, a ring and an
   elliptic prism in random poses against a box and a cylinder: volume
   additivity, cut-then-fuse, commutativity, each result checker-green at
@@ -452,6 +452,45 @@ bound has to be established here.
   since every face pair now reaches the intersector (there is no bench
   yet — that is the measuring harness's — so this is a stopwatch, and
   ⚠ OPEN 3 reads it).
+  *Established:* `quadric_operands_obey_every_identity`, sixteen shards
+  over `prop::body::quadric_pair` — the solid a revolve or an extrude
+  makes, the tool through a point of its interior — runs 1000 cases
+  clean in 150 s: `fuse`, `common` and both cuts at `Full`, additive,
+  the cut identity both ways, `fuse` and `common` commuting to the dump,
+  `(a − b) ∪ b` the union with its counts. The **kernel needed
+  nothing**; what the first runs found was the strategy's, three times,
+  each where a shrink runs to a bound: a stub swallowed by the ring's
+  tube, a box that holds the solid or one side of it exactly tangent (a
+  side as long as the thickness, centred on the middle), and a stub of
+  a tenth of the thickness a tenth of the height from a cap. The tool
+  is now sized so that neither holds the other and no bound is a
+  tangency, and the strategy's own test says so. Two findings. (a) The
+  identities hold to **`fitted_rel`, not `REL`**: every section on the
+  four kinds has a fitted pcurve there, each result fits its own, and
+  the three shrunk cases `REL` failed — a pipe through an elliptic
+  prism, obliquely and across, and a slab through a ring — were 6.4e-9,
+  2.3e-9 and 1.4e-9 off in additivity at the default 1e-7 and 5e-12,
+  5e-12 and 5e-11 at 1e-9, a tenth of the bound; the quadric property's
+  doc holds the series. (b) **Out of scope, and a fixture:**
+  `regression/frustum-stub-cut-then-fuse` — a stub leaving a frustum
+  through its wall, cut and fused back, is `Unsupported`, NURBS against
+  NURBS. The cone–cylinder section's seeds and knots depend on the
+  region the boolean traces in (27, 37 and 43 knots, other start
+  points, for boxes of half-width 1, 2 and 3), which ADR-0018 makes one
+  per boolean and the restoring fuse does not share with the cut, so
+  `curves_coincide` meets two splines of one section over different
+  knots; the two cylinders' loops never depend on the region, which is
+  why the quartic property never saw it. One pose in 256, found at the
+  default seed, shard 0 of 16. A backlog line; the property spares the
+  frustum–cylinder pair that one identity, naming the fixture, and
+  holds it to every other. A `BesideSingularity` of a ball is taken as
+  step 6 said, the pair holding nothing further. **The stopwatch**
+  (nextest, the corpus binary alone, dev profile, best of two, 32
+  threads): before step 4 (`7ef83fd`) 123 tests, 7.3 s wall, 176.6 s
+  summed; after step 7 (`2c6850f`) 143 tests, 8.6 s wall, 176.2 s
+  summed over the same 123 and 40.8 s over the twenty new ones — the
+  only old fixture that moved is `boolean/elliptic-operand-cut`, from a
+  refusal in 8 ms to its solid in 1.6 s.
 
 ## Acceptance
 
@@ -537,9 +576,14 @@ bound has to be established here.
   ADR-0021 says so: "never" is the fitted pcurve's, and the exact lines
   are outside the rule — though a boolean paves them at the vertex all
   the same, so no edge it makes runs through either.
-- ⚠ OPEN 3 — **does the guard's removal slow the existing corpus?**
-  (agent, at step 8; the human if it does.) Plane and cylinder operands
-  pay nothing new; the question is a filleted body's many blend faces,
-  each pair now traced and fitted at up to 100 ms (ADR-0019). If a
-  fixture goes past seconds, the shared-fit backlog line becomes a step
-  here or a plan of its own — the human's call.
+- OPEN 3, answered at step 8: **no.** The corpus's 123 fixtures from
+  before step 4 take 176.2 s summed against 176.6 s then; the only one
+  that moved is `boolean/elliptic-operand-cut`, which became a solid. The
+  slowest fixture of the cycle is `boolean/ball-pole-slice-cut` at 4.8 s
+  and the filleted bodies cut after they were made are under 2 s, so no
+  fixture goes past seconds and the shared-fit backlog line stays one.
+  The question as it stood: plane and cylinder operands pay nothing
+  new; the question is a filleted body's many blend faces, each pair
+  now traced and fitted at up to 100 ms (ADR-0019). If a fixture goes
+  past seconds, the shared-fit backlog line becomes a step here or a
+  plan of its own — the human's call.

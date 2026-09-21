@@ -1,7 +1,8 @@
 //! The booleans at random poses (ADR-0004): a
 //! box and a cylinder, and two cylinders on parallel or crossing axes —
 //! of one radius, or of two meeting in a traced, fitted quartic
-//! (ADR-0018) — from `prop::body`, both operand orders — volume
+//! (ADR-0018) — and a frustum, a ball, a ring or an elliptic prism
+//! against a box or a cylinder, from `prop::body`, both operand orders — volume
 //! and area additivity, the cut identity, commutativity of `fuse` and
 //! `common`, results of several lumps held to the same identities
 //! (ADR-0006), two runs dumping identically, a turn of the tool about its
@@ -13,7 +14,8 @@
 //! failures).
 
 use arris_debug::prop::body::{
-    Boxed, CrossingPair, Cylindrical, OverlappingPair, QuarticPair, SingularSlice, TangentPair,
+    Boxed, CrossingPair, Cylindrical, OverlappingPair, QuadricPair, QuadricSolid, QuadricTool,
+    QuarticPair, SingularSlice, TangentPair,
 };
 use arris_debug::testing::{REL, close_to, fail, fitted_rel};
 use arris_debug::{dump_text, prop, prop_shards};
@@ -45,14 +47,28 @@ fn run(
     a: Body,
     b: Body,
 ) -> Result<(Body, MassProperties), TestCaseError> {
-    let (body, provenance) = op(m, a, b).map_err(|e| fail(format!("{name}: {e}")))?;
+    let result = op(m, a, b);
+    let body = clean(m, name, result, a, b)?;
+    let props = mass_properties(m, body).map_err(|e| fail(format!("{name}: measure: {e}")))?;
+    Ok((body, props))
+}
+
+/// The body `result` holds, clean at `Full` with nothing unchecked and its
+/// provenance audited against `a` and `b`.
+fn clean(
+    m: &Model,
+    name: &str,
+    result: Result<(Body, Provenance), OpError>,
+    a: Body,
+    b: Body,
+) -> Result<Body, TestCaseError> {
+    let (body, provenance) = result.map_err(|e| fail(format!("{name}: {e}")))?;
     let report = check(m, body, Level::Full);
     if !report.is_ok() || !report.unchecked().is_empty() {
         return Err(fail(format!("{name}: not clean at Full\n{report}")));
     }
     audit(m, &[a, b], body, &provenance).map_err(|e| fail(format!("{name}: provenance: {e}")))?;
-    let props = mass_properties(m, body).map_err(|e| fail(format!("{name}: measure: {e}")))?;
-    Ok((body, props))
+    Ok(body)
 }
 
 /// The operands of `pair` in a fresh model, with their mass properties.
@@ -83,9 +99,21 @@ fn assert_additive(
     pa: &MassProperties,
     pb: &MassProperties,
 ) -> Result<(), TestCaseError> {
+    assert_additive_to(union, inter, pa, pb, REL)
+}
+
+/// [`assert_additive`] to `rel`: [`fitted_rel`] where the union and the
+/// common each fitted their own pcurves of the same sections.
+fn assert_additive_to(
+    union: &MassProperties,
+    inter: &MassProperties,
+    pa: &MassProperties,
+    pb: &MassProperties,
+    rel: f64,
+) -> Result<(), TestCaseError> {
     let (v, s) = (pa.volume + pb.volume, pa.area + pb.area);
     prop_assert!(
-        close(union.volume + inter.volume, v, v),
+        close_to(union.volume + inter.volume, v, v, rel),
         "V(A ∪ B) + V(A ∩ B) = {} + {}, V(A) + V(B) = {} + {}",
         union.volume,
         inter.volume,
@@ -93,7 +121,7 @@ fn assert_additive(
         pb.volume
     );
     prop_assert!(
-        close(union.area + inter.area, s, s),
+        close_to(union.area + inter.area, s, s, rel),
         "A(A ∪ B) + A(A ∩ B) = {} + {}, A(A) + A(B) = {} + {}",
         union.area,
         inter.area,
@@ -110,8 +138,24 @@ fn assert_cut_identity(
     pa: &MassProperties,
     pb: &MassProperties,
 ) -> Result<(), TestCaseError> {
+    assert_cut_identity_to(diff, inter, pa, pb, REL)
+}
+
+/// [`assert_cut_identity`] to `rel`, as [`assert_additive_to`].
+fn assert_cut_identity_to(
+    diff: &MassProperties,
+    inter: &MassProperties,
+    pa: &MassProperties,
+    pb: &MassProperties,
+    rel: f64,
+) -> Result<(), TestCaseError> {
     prop_assert!(
-        close(diff.volume + inter.volume, pa.volume, pa.volume + pb.volume),
+        close_to(
+            diff.volume + inter.volume,
+            pa.volume,
+            pa.volume + pb.volume,
+            rel
+        ),
         "V(A − B) + V(A ∩ B) = {} + {}, V(A) = {}",
         diff.volume,
         inter.volume,
@@ -1054,4 +1098,132 @@ fn cut_then_fuse_across_a_shallow_seam_crossing() {
     ] {
         quartic_identities(&pair).unwrap();
     }
+}
+
+// -- a quadric or a torus against a box or a cylinder ---------------------
+
+/// `op(a, b)` checked as [`clean`] does, or `None` where it is the
+/// designed `BesideSingularity`: a tool wall passing a ball's pole closer
+/// than the polygons of a pcurve can follow and not through it, refused by
+/// name before anything is built (ADR-0021).
+fn run_unless_beside(
+    m: &mut Model,
+    name: &str,
+    op: Boolean,
+    a: Body,
+    b: Body,
+) -> Result<Option<Body>, TestCaseError> {
+    match op(m, a, b) {
+        Err(OpError::Degenerate {
+            reason: Reason::BesideSingularity,
+            ..
+        }) => Ok(None),
+        result => clean(m, name, result, a, b).map(Some),
+    }
+}
+
+/// The quadric property over one pair; a pair any of whose booleans is
+/// the designed `BesideSingularity` holds nothing further.
+fn quadric_identities(pair: &QuadricPair) -> Result<(), TestCaseError> {
+    let back = pair.pose.inverse();
+    let (mut m, a, b, _, _) = operands_by(|m| pair.build(m))?;
+    let (pa, pb) = (
+        measured_at(&mut m, a, &back)?,
+        measured_at(&mut m, b, &back)?,
+    );
+    let mut bodies = Vec::new();
+    for (name, op, x, y) in [
+        ("fuse(a, b)", fuse as Boolean, a, b),
+        ("common(a, b)", common as Boolean, a, b),
+        ("cut(a, b)", cut as Boolean, a, b),
+        ("cut(b, a)", cut as Boolean, b, a),
+        ("fuse(b, a)", fuse as Boolean, b, a),
+        ("common(b, a)", common as Boolean, b, a),
+    ] {
+        match run_unless_beside(&mut m, name, op, x, y)? {
+            Some(body) => bodies.push(body),
+            None => return Ok(()),
+        }
+    }
+    let [u, c, diff, back_cut, u_ba, c_ba] = bodies[..] else {
+        return Err(fail("six booleans, six bodies"));
+    };
+    let union = measured_at(&mut m, u, &back)?;
+    let inter = measured_at(&mut m, c, &back)?;
+    // Every result fits its own pcurves of the sections: see the doc of
+    // the property.
+    let rel = fitted_rel(&m, &inter);
+    assert_additive_to(&union, &inter, &pa, &pb, rel)?;
+    let pdiff = measured_at(&mut m, diff, &back)?;
+    assert_cut_identity_to(&pdiff, &inter, &pa, &pb, rel)?;
+    let pback = measured_at(&mut m, back_cut, &back)?;
+    assert_cut_identity_to(&pback, &inter, &pb, &pa, rel)?;
+    for (name, first, other, props) in [("fuse", u, u_ba, &union), ("common", c, c_ba, &inter)] {
+        let pother = measured_at(&mut m, other, &back)?;
+        assert_same_properties_to(props, &pother, name, rel)?;
+        let (da, db) = (
+            dump_text(&m, first).map_err(fail)?,
+            dump_text(&m, other).map_err(fail)?,
+        );
+        prop_assert_eq!(
+            up_to_ids(&da),
+            up_to_ids(&db),
+            "{}: dumps\n{}\n{}",
+            name,
+            da,
+            db
+        );
+    }
+    // A cylinder meets a frustum's cone in a traced section whose fit
+    // depends on the boolean's region, which the restoring fuse does not
+    // share with the cut: `regression/frustum-stub-cut-then-fuse`.
+    if matches!(
+        (pair.solid, pair.tool),
+        (QuadricSolid::Frustum { .. }, QuadricTool::Cylinder(_))
+    ) {
+        return Ok(());
+    }
+    let Some(restored) = run_unless_beside(&mut m, "fuse(a − b, b)", fuse, diff, b)? else {
+        return Ok(());
+    };
+    let prestored = measured_at(&mut m, restored, &back)?;
+    assert_same_properties_to(&prestored, &union, "(a − b) ∪ b against a ∪ b", rel)?;
+    prop_assert_eq!(
+        arris_debug::dump::euler_line(&m, restored).map_err(fail)?,
+        arris_debug::dump::euler_line(&m, u).map_err(fail)?,
+        "(a − b) ∪ b: counts"
+    );
+    Ok(())
+}
+
+prop_shards! {
+    /// A frustum, a ball, a ring or an elliptic prism — the faces a
+    /// revolve, a fillet, a chamfer or an extruded ellipse leaves — and a
+    /// box or a cylinder through its interior, at a random pose
+    /// (plans/c3-conic-hits step 8): `fuse`, `common` and both cuts clean at
+    /// `Full` with nothing unchecked and their provenance audited,
+    /// additive, the cut identity both ways whatever the lumps, `fuse` and
+    /// `common` commuting to the dump, and `(a − b) ∪ b` the union with its
+    /// counts — every body measured in the pair's own frame
+    /// ([`measured_at`]). A tool wall passing a ball's pole is the designed
+    /// `BesideSingularity`, and the pair holds nothing further. The one
+    /// identity a frustum and a cylinder are spared is the last: the cone
+    /// and the wall meet in a traced section fitted over the boolean's
+    /// region, the restoring fuse's region is not the cut's, and two fits
+    /// of one section over different knots are a pair `curves_coincide`
+    /// refuses — `regression/frustum-stub-cut-then-fuse`, one pose in 256.
+    ///
+    /// Every identity is held to [`fitted_rel`], not `REL`: a section on a
+    /// sphere, a torus, a cone or an elliptic cylinder has a fitted pcurve
+    /// there, which each result fits for itself. Measured on the three
+    /// shrunk cases `REL` failed — a pipe through an elliptic prism,
+    /// obliquely and across it, and a slab through a ring — additivity was
+    /// 6.4e-9, 2.3e-9 and 1.4e-9 off at the default tolerance of 1e-7 and
+    /// 5e-12, 5e-12 and 5e-11 at 1e-9: the fits', scaling with the
+    /// tolerance, and a tenth of the bound.
+    quadric_operands_obey_every_identity
+        [shard_0 shard_1 shard_2 shard_3 shard_4 shard_5 shard_6 shard_7
+         shard_8 shard_9 shard_10 shard_11 shard_12 shard_13 shard_14
+         shard_15]
+        (pair) = prop::body::quadric_pair() => { quadric_identities(&pair) }
 }

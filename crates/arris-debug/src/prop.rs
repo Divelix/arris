@@ -24,8 +24,9 @@
 //! The geometric strategies produce `arris-math` types in random poses;
 //! every one is uniform over its space so a property that holds "at 1000
 //! cases" has seen the seams, the poles and the octants. `geom` places
-//! every surface and curve kind and random NURBS; `body` describes boxes
-//! and cylinders in random poses that a test builds into a model;
+//! every surface and curve kind and random NURBS; `body` describes boxes,
+//! cylinders and the revolved or extruded quadric solids in random poses
+//! that a test builds into a model;
 //! `profile` draws sketches, with an axis and the sweep parameters for
 //! them, and `sweep` is the Pappus oracle a sweep's volume and area are
 //! held to.

@@ -335,6 +335,16 @@ fn regression_grazing_ball_bar_cut() {
     run("regression/grazing-ball-bar-cut");
 }
 
+/// A stub leaving a frustum through its cone wall, cut and then fused
+/// back: the restoring fuse traces the cone and the stub's wall over
+/// another region than the cut did, and the one section comes back a
+/// second spline over other knots.
+#[test]
+#[ignore = "OpError::Unsupported, NURBS curve against NURBS curve: the cut's section edge and the fuse's own section are two fits of one section over different knots, which curves_coincide cannot decide (docs/BACKLOG.md)"]
+fn regression_frustum_stub_cut_then_fuse() {
+    run("regression/frustum-stub-cut-then-fuse");
+}
+
 /// A ball sliced through its pole by a face turned 2e-4 of a radian off
 /// the seam's meridian: the circle crosses the seam again beside the
 /// pole, where the two are one curve within the tolerance, and nothing

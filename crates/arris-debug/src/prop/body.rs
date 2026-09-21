@@ -8,13 +8,13 @@
 use arris_geom::{Profile, ProfileLoop, ProfileSegment};
 use arris_math::nalgebra::UnitQuaternion;
 use arris_math::{Axis, Frame, Isometry, Point2, Point3, UnitVec3, Vec3};
-use arris_ops::{OpError, primitive_box, primitive_cylinder, revolve, transform};
+use arris_ops::{OpError, extrude, primitive_box, primitive_cylinder, revolve, transform};
 use arris_topo::{Body, Model};
 use proptest::prelude::*;
 
 use core::ops::RangeInclusive;
 
-use super::{DEFAULT_SCALE, finite_f64, pose_in, radius, unit_vec3};
+use super::{DEFAULT_SCALE, finite_f64, pose_in, radius, rotation, unit_vec3};
 
 /// The smallest extent (a box side, a cylinder's diameter or height) the
 /// strategies produce.
@@ -737,6 +737,338 @@ pub fn singular_slice() -> impl Strategy<Value = SingularSlice> {
         )
 }
 
+/// A solid whose curved face is a quadric other than a circular cylinder,
+/// or a torus, before its motion: each built as Arris builds one for a
+/// caller — a revolve or an extrude — about `z`, so a boolean meets the
+/// face kinds a fillet, a chamfer or an extruded ellipse leaves behind.
+/// None has a singular point on its boundary but the ball, whose poles
+/// the revolve makes vertices.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum QuadricSolid {
+    /// A cone's frustum on its base disc in `z = 0`: radius `bottom` there
+    /// and `top` at `z = height`, the two never equal, the apex off the
+    /// body.
+    Frustum {
+        /// The radius in `z = 0`.
+        bottom: f64,
+        /// The radius in `z = height`.
+        top: f64,
+        /// The height.
+        height: f64,
+    },
+    /// A ball about the origin.
+    Ball {
+        /// The radius.
+        radius: f64,
+    },
+    /// A ring torus about `z` centred at the origin, `minor < major`.
+    Ring {
+        /// The distance from the axis to the tube's centre circle.
+        major: f64,
+        /// The tube's radius.
+        minor: f64,
+    },
+    /// An elliptic cylinder's prism on its base in `z = 0`, the ellipse's
+    /// semi-axes along `x` and `y`, never equal.
+    EllipticPrism {
+        /// The semi-axis along `x`.
+        a: f64,
+        /// The semi-axis along `y`.
+        b: f64,
+        /// The height.
+        height: f64,
+    },
+}
+
+impl QuadricSolid {
+    /// The point `(s, t, w)` of the unit cube names inside the solid, each
+    /// coordinate kept a tenth clear of the boundary: `s` across the
+    /// section, `t` round the axis, `w` along it (on a ring, round the
+    /// tube). Strictly interior for every input in `[0, 1]³`.
+    pub fn interior(&self, s: f64, t: f64, w: f64) -> Point3 {
+        let turn = core::f64::consts::TAU * t;
+        let (sin, cos) = turn.sin_cos();
+        let s = 0.9 * s;
+        let along = 0.1 + 0.8 * w;
+        match *self {
+            QuadricSolid::Frustum {
+                bottom,
+                top,
+                height,
+            } => {
+                let z = along * height;
+                let r = s * (bottom + (top - bottom) * along);
+                Point3::new(r * cos, r * sin, z)
+            }
+            QuadricSolid::Ball { radius } => {
+                // `w` as the latitude, `s` the fraction of the radius.
+                let lat = core::f64::consts::PI * (w - 0.5);
+                let r = s * radius;
+                Point3::new(r * lat.cos() * cos, r * lat.cos() * sin, r * lat.sin())
+            }
+            QuadricSolid::Ring { major, minor } => {
+                let tube = core::f64::consts::TAU * w;
+                let rho = major + s * minor * tube.cos();
+                Point3::new(rho * cos, rho * sin, s * minor * tube.sin())
+            }
+            QuadricSolid::EllipticPrism { a, b, height } => {
+                Point3::new(s * a * cos, s * b * sin, along * height)
+            }
+        }
+    }
+
+    /// The radius of the smallest ball about the origin holding the solid.
+    pub fn reach(&self) -> f64 {
+        match *self {
+            QuadricSolid::Frustum {
+                bottom,
+                top,
+                height,
+            } => bottom.max(top).hypot(height),
+            QuadricSolid::Ball { radius } => radius,
+            QuadricSolid::Ring { major, minor } => major + minor,
+            QuadricSolid::EllipticPrism { a, b, height } => a.max(b).hypot(height),
+        }
+    }
+
+    /// The solid's least thickness: what a tool is sized against so it
+    /// neither vanishes in the solid nor swallows it.
+    pub fn thickness(&self) -> f64 {
+        match *self {
+            QuadricSolid::Frustum {
+                bottom,
+                top,
+                height,
+            } => (2.0 * bottom.min(top)).min(height),
+            QuadricSolid::Ball { radius } => 2.0 * radius,
+            QuadricSolid::Ring { minor, .. } => 2.0 * minor,
+            QuadricSolid::EllipticPrism { a, b, height } => (2.0 * a.min(b)).min(height),
+        }
+    }
+
+    /// The solid as a body of `m`, before any motion: the frustum, ball
+    /// and ring a profile in the `(x, z)` plane revolved a whole turn about
+    /// `z`, the prism an ellipse in `z = 0` extruded along `z`.
+    pub fn build(&self, m: &mut Model) -> Result<Body, OpError> {
+        let p = Point2::new;
+        let outer = match *self {
+            QuadricSolid::Frustum {
+                bottom,
+                top,
+                height,
+            } => ProfileLoop::Path {
+                start: p(0.0, 0.0),
+                segments: vec![
+                    ProfileSegment::LineTo(p(bottom, 0.0)),
+                    ProfileSegment::LineTo(p(top, height)),
+                    ProfileSegment::LineTo(p(0.0, height)),
+                    ProfileSegment::LineTo(p(0.0, 0.0)),
+                ],
+            },
+            QuadricSolid::Ball { radius } => ProfileLoop::Path {
+                start: p(0.0, -radius),
+                segments: vec![
+                    ProfileSegment::ArcTo {
+                        to: p(0.0, radius),
+                        via: p(radius, 0.0),
+                    },
+                    ProfileSegment::LineTo(p(0.0, -radius)),
+                ],
+            },
+            QuadricSolid::Ring { major, minor } => ProfileLoop::Circle {
+                center: p(major, 0.0),
+                radius: minor,
+            },
+            QuadricSolid::EllipticPrism { a, b, height } => {
+                let profile = Profile {
+                    plane: Frame::world(),
+                    outer: ProfileLoop::Ellipse {
+                        center: p(0.0, 0.0),
+                        major: arris_math::Vec2::new(a, 0.0),
+                        minor_radius: b,
+                    },
+                    holes: Vec::new(),
+                };
+                return Ok(extrude(m, &profile, Vec3::z(), height)?.0);
+            }
+        };
+        // The (x, z) plane: the world frame a quarter turn about `x`.
+        let plane = Frame::from_rotation(
+            Point3::origin(),
+            &UnitQuaternion::from_axis_angle(&Vec3::x_axis(), core::f64::consts::FRAC_PI_2),
+        );
+        let profile = Profile {
+            plane,
+            outer,
+            holes: Vec::new(),
+        };
+        Ok(revolve(
+            m,
+            &profile,
+            Axis::z_at(Point3::origin()),
+            core::f64::consts::TAU,
+        )?
+        .0)
+    }
+}
+
+/// The tool a [`QuadricPair`]'s solid is cut with.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum QuadricTool {
+    /// A box.
+    Box(Boxed),
+    /// A cylinder.
+    Cylinder(Cylindrical),
+}
+
+impl QuadricTool {
+    /// The tool as a body of `m`.
+    pub fn build(&self, m: &mut Model) -> Result<Body, OpError> {
+        match self {
+            QuadricTool::Box(b) => b.build(m),
+            QuadricTool::Cylinder(c) => c.build(m),
+        }
+    }
+}
+
+/// A [`QuadricSolid`] and a box or a cylinder through a point of its
+/// interior, both under one motion: the operands of the identities over
+/// quadric operands (plans/c3-conic-hits step 8). The tool's own pose
+/// places it in the solid's frame, then `pose`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct QuadricPair {
+    /// The solid, before `pose`.
+    pub solid: QuadricSolid,
+    /// The tool, its pose already `pose` after its own placing.
+    pub tool: QuadricTool,
+    /// The motion of both.
+    pub pose: Isometry,
+}
+
+impl QuadricPair {
+    /// Both bodies in `m`, the solid first.
+    pub fn build(&self, m: &mut Model) -> Result<(Body, Body), OpError> {
+        let solid = self.solid.build(m)?;
+        let solid = transform(m, solid, &self.pose)?.0;
+        Ok((solid, self.tool.build(m)?))
+    }
+}
+
+/// [`QuadricSolid`]s, a quarter of each kind: a size from `MIN_EXTENT / 2`
+/// to `MAX_EXTENT / 2` and the shape's ratios — a frustum's radii apart
+/// by a fifth to four fifths, either end the wider, as tall as a fifth to
+/// twice its base; a ring's tube a fifth to seven tenths of its major
+/// radius; a prism's semi-axes apart by the same fifth to four fifths.
+pub fn quadric_solid() -> impl Strategy<Value = QuadricSolid> {
+    (
+        0u8..4,
+        radius(MIN_EXTENT / 2.0..=MAX_EXTENT / 2.0),
+        finite_f64(0.2..=0.8),
+        finite_f64(0.2..=2.0),
+        any::<bool>(),
+    )
+        .prop_map(|(kind, size, ratio, tall, flip)| match kind {
+            0 => {
+                let (bottom, top) = if flip {
+                    (size, ratio * size)
+                } else {
+                    (ratio * size, size)
+                };
+                QuadricSolid::Frustum {
+                    bottom,
+                    top,
+                    height: tall * 2.0 * size,
+                }
+            }
+            1 => QuadricSolid::Ball { radius: size },
+            2 => QuadricSolid::Ring {
+                major: size,
+                minor: (0.2 + 0.5 * (ratio - 0.2) / 0.6) * size,
+            },
+            _ => QuadricSolid::EllipticPrism {
+                a: size,
+                b: ratio * size,
+                height: tall * 2.0 * size,
+            },
+        })
+}
+
+/// [`QuadricPair`]s: a solid from [`quadric_solid`], a point of its
+/// interior ([`QuadricSolid::interior`]), and a tool through it that
+/// neither holds the solid nor is held by it, so every boolean has
+/// material. Half the time a box centred there and turned at random: one
+/// side a fifth to four fifths of the solid's thickness, which no width of
+/// the solid is under, so the box cannot hold it; one two and a half to
+/// three times its reach, past its diameter, so the solid cannot hold the
+/// box; the third between 1.3 times the thickness and twice the reach — a
+/// side of exactly the thickness centred on the solid's middle is tangent
+/// to it, and so is one of `1.25` times a frustum's narrow end whose wide
+/// end is `1.25` times wider, a pair a shrink runs straight to. Half the
+/// time a cylinder whose axis runs through the point in a random
+/// direction, of radius 0.15 to 0.4 of the thickness — a tenth, from a
+/// point a tenth of the height from a cap, is tangent to it — reaching
+/// twice the solid's reach ahead of the point, so past it, and behind it
+/// as far again or, a third of the time, ending inside it, so a cap meets
+/// the curved face as well. Both under a pose at [`DEFAULT_SCALE`].
+pub fn quadric_pair() -> impl Strategy<Value = QuadricPair> {
+    (
+        quadric_solid(),
+        (
+            finite_f64(0.0..=1.0),
+            finite_f64(0.0..=1.0),
+            finite_f64(0.0..=1.0),
+        ),
+        any::<bool>(),
+        (
+            rotation(),
+            finite_f64(0.2..=0.8),
+            finite_f64(2.5..=3.0),
+            finite_f64(0.0..=1.0),
+        ),
+        (
+            unit_vec3(),
+            finite_f64(0.15..=0.4),
+            0u8..3,
+            finite_f64(0.5..=2.0),
+        ),
+        pose_in(DEFAULT_SCALE),
+    )
+        .prop_filter_map(
+            "a tool through a quadric solid",
+            |(solid, (s, t, w), boxed, (turn, ex, ey, ez), (d, rf, long, short), pose)| {
+                let at = solid.interior(s, t, w);
+                let (thick, reach) = (solid.thickness(), solid.reach());
+                let tool = if boxed {
+                    let (least, most) = (1.3 * thick, (2.0 * reach).max(1.3 * thick));
+                    let half = Vec3::new(ex * thick, ey * reach, least + ez * (most - least)) / 2.0;
+                    QuadricTool::Box(Boxed {
+                        min: Point3::from(-half),
+                        max: Point3::from(half),
+                        pose: Isometry::new(turn, at.coords).then(&pose),
+                    })
+                } else {
+                    // Behind the point: past the solid, or a stub ending
+                    // inside it. Ahead, always past it — every point of the
+                    // solid is within `2 reach` of every other — so the
+                    // cylinder is never swallowed whole.
+                    let behind = if long == 0 {
+                        short * thick / 2.0
+                    } else {
+                        2.0 * reach
+                    };
+                    let d = d.into_inner();
+                    QuadricTool::Cylinder(Cylindrical {
+                        axis: Axis::new(at - behind * d, d).ok()?,
+                        radius: rf * thick,
+                        height: behind + 2.0 * reach,
+                        pose,
+                    })
+                };
+                Some(QuadricPair { solid, tool, pose })
+            },
+        )
+}
+
 /// Box extents, each in `[MIN_EXTENT, MAX_EXTENT]`.
 fn extents() -> impl Strategy<Value = Vec3> {
     (
@@ -993,6 +1325,35 @@ mod tests {
                     .map_err(|e| TestCaseError::fail(e.to_string()))?;
                 let seam = turn.apply_vec(frame.x().into_inner());
                 prop_assert!((seam.y.abs() - 1.0).abs() < 1e-12);
+            }
+            Ok(())
+        });
+    }
+
+    /// The quadric pairs build clean bodies, and the tool neither holds
+    /// the solid nor is held by it: a box has a side under the solid's
+    /// thickness and one over its diameter, a cylinder is thinner than the
+    /// solid and reaches past it ahead of the point it runs through.
+    #[test]
+    fn the_quadric_pairs_build_clean_bodies_neither_holding_the_other() {
+        check(quadric_pair(), |pair| {
+            let mut m = Model::default();
+            let (a, b) = pair
+                .build(&mut m)
+                .map_err(|e| TestCaseError::fail(e.to_string()))?;
+            prop_assert!(check_body(&m, a, Level::Fast).is_ok());
+            prop_assert!(check_body(&m, b, Level::Fast).is_ok());
+            let (thick, reach) = (pair.solid.thickness(), pair.solid.reach());
+            match pair.tool {
+                QuadricTool::Box(boxed) => {
+                    let e = boxed.max - boxed.min;
+                    prop_assert!(e.min() < thick && e.max() > 2.0 * reach);
+                }
+                QuadricTool::Cylinder(c) => {
+                    prop_assert!(2.0 * c.radius < thick);
+                    let ahead = c.axis.at(c.height);
+                    prop_assert!(ahead.coords.norm() > reach);
+                }
             }
             Ok(())
         });
