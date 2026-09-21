@@ -53,11 +53,11 @@ pub struct FacePair {
     /// [`Interferences::crossings`], [`Interferences::images`] and
     /// [`Interferences::blocks`] — and the touching curves of a `Meets`
     /// by its [`Interferences::contacts`] — the blocks of the tangent
-    /// ruling interior to both faces — and the curvature rule at each;
-    /// neither contributes a section edge. Every pair the intersector is
-    /// asked about meets in curves of one kind: a *crossing pair* or a
-    /// *touching pair*; its only points are a traced section's singular
-    /// points, where its branches end (ADR-0018), each a section
+    /// curve interior to both faces — and the curvature rule at each;
+    /// neither contributes a section edge. A `Meets` holding both kinds
+    /// is read as both, its crossing curves sections and its touching
+    /// curves contacts. Its points are read only as a traced section's
+    /// singular points, where its branches end (ADR-0018), each a section
     /// crossing.
     pub intersection: SurfaceIntersection,
 }
@@ -96,7 +96,7 @@ pub struct EdgeFaceHit {
     pub point: Point3,
     /// `true` when the edge touches the surface here without crossing
     /// it. A touch pierces nothing: it makes no section vertex of its
-    /// own; it paves the tangent ruling of a touching pair, whose blocks
+    /// own; it paves a touching curve of the pair, whose blocks
     /// between touches are the pair's [`Interferences::contacts`]. A
     /// touch that lands on a section vertex the hits and crossings made —
     /// a ruling or a rim circle through the crossing of two ellipses,
@@ -260,12 +260,14 @@ pub struct SectionEdge {
     pub pcurves: [Curve2; 2],
 }
 
-/// A block of a touching pair's ruling interior to both faces: where the
-/// two faces touch along a curve. The ruling is paved by every hit of
+/// A block of a pair's touching curve interior to both faces: where the
+/// two faces touch along a curve. The curve is paved by every hit of
 /// either face's edges on the other face that lies on it — the touches,
-/// which are where the ruling leaves one face inside the other — and a
+/// which are where the curve leaves one face inside the other — and a
 /// block between consecutive paves whose midpoint is inside both faces
-/// is a contact. A contact contributes no section edge and splits
+/// is a contact; on a closed curve the last block wraps round to the
+/// first pave, and a closed curve with none is one block of a whole
+/// period. A contact contributes no section edge and splits
 /// nothing; the boolean decides at its midpoint, by the curvature rule,
 /// whether the piece of each face through it would survive, and refuses
 /// with [`crate::Reason::TangentContact`] when both would — the slit no
@@ -403,8 +405,8 @@ pub struct Interferences {
     /// the split order a pair's section edges reach the record in
     /// (ADR-0009, `docs/DATA-MODEL.md` §Provenance).
     pub sections: Vec<SectionEdge>,
-    /// The contacts of every touching pair, in pair order and then along
-    /// each ruling.
+    /// The contacts of every pair with a touching curve, in pair order
+    /// and then along each curve.
     pub contacts: Vec<Contact>,
     /// Edges of one operand lying in the surface of a face of the other
     /// within their tolerances; no hit is recorded for them. Where the
@@ -441,11 +443,11 @@ pub struct Interferences {
 /// their midpoint is inside both faces, and each kept block carries a
 /// pcurve on each face that is same-parameter with the curve within the
 /// edge's tolerance, translated into the copy of the domain the face's
-/// loops are written in. For a touching pair, the ruling is paved by
-/// the touches — the hits of either face's edges on the other face
-/// lying on it — and every block between consecutive paves whose
-/// midpoint is inside both faces is a [`Contact`], with no section edge
-/// and no pave on any operand edge. For a `Coincident` pair, the two faces' edges
+/// loops are written in. A touching curve is paved by the touches —
+/// the hits of either face's edges on the other face lying on it — and
+/// every block between consecutive paves whose midpoint is inside both
+/// faces, the last wrapping round on a closed curve, is a [`Contact`],
+/// with no section edge and no pave on any operand edge. For a `Coincident` pair, the two faces' edges
 /// have been intersected with one another and every crossing is a
 /// section vertex; every edge of either face is paved by every section
 /// vertex on it; and each piece of each edge between consecutive paves
@@ -530,12 +532,13 @@ pub fn interferences(m: &Model, a: Body, b: Body) -> Result<Interferences, OpErr
 /// tool's piece is always dropped; a piece of the tool's edge that is
 /// a piece of the target's is one edge of the result, the target's
 /// (`docs/ARCHITECTURE.md` §Operations, the selection table). A face
-/// of the target tangent to a face of the tool along a ruling — a plane
-/// and a cylinder, or two parallel cylinders, touching — is the other
-/// named case: the ruling is no section edge and splits nothing, a piece
-/// whose interior point lies on it is classified by the curvature rule
-/// (it lies inside the other operand exactly when its surface's normal
-/// curvature across the ruling, signed against the other face's outward
+/// of the target tangent to a face of the tool along a curve — a plane
+/// and a cylinder, or two parallel cylinders, touching along a ruling, a
+/// sphere and a cylinder along a circle — is the other named case: the
+/// curve is no section edge and splits nothing, a piece whose interior
+/// point lies on it is classified by the curvature rule (it lies inside
+/// the other operand exactly when its surface's normal curvature across
+/// the curve, signed against the other face's outward
 /// normal, is below the other surface's), and a tool touching from
 /// outside leaves the target as it was, every id kept.
 ///
@@ -551,8 +554,9 @@ pub fn interferences(m: &Model, a: Body, b: Body) -> Result<Interferences, OpErr
 /// a face), [`crate::Reason::NonManifold`] naming the shared edges or
 /// vertices when two shells of the result would touch along an edge or at
 /// a vertex, [`crate::Reason::TangentContact`] when two faces touch along a
-/// ruling interior to both and both pieces through it would survive —
-/// a hole wall tangent to a side face — or a section edge is tangent to
+/// curve interior to both and both pieces through it would survive —
+/// a hole wall tangent to a side face, a ball in a bore of its radius —
+/// or a section edge is tangent to
 /// a loop edge at a vertex;
 /// [`OpError::Tolerance`] when a section vertex or edge would exceed the
 /// model's maximum; [`OpError::Internal`] for a kernel bug the operation

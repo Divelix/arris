@@ -641,7 +641,7 @@ impl<'m> Build<'m> {
                 .get(c.curve)
                 .filter(|m| m.kind == MeetKind::Touch)
                 .ok_or(OpError::Internal(Fault::Invariant {
-                    what: "a contact's ruling touches",
+                    what: "a contact's curve touches",
                 }))?
                 .curve
                 .eval(c.range.midpoint())
@@ -710,7 +710,7 @@ impl<'m> Build<'m> {
                             }
                             (false, Some(g.id))
                         } else if let Some(g) = self.tangent_partner(side, f.id, shape) {
-                            // The interior point lies on the ruling the
+                            // The interior point lies on the curve the
                             // two faces touch along; the piece lies to one
                             // side of the other operand everywhere else.
                             let inside =

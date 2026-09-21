@@ -405,7 +405,7 @@ bound has to be established here.
   `BesideSingularity` rarely and not never, and the property takes it as
   it takes `TangentContact`. New variants of public enums, named in the
   commit body: `VertexSource::Singular`, `Reason::BesideSingularity`.
-- [ ] Step 7 **[2]** — A `Meets` of both kinds, and a contact along a
+- [x] Step 7 **[2]** — A `Meets` of both kinds, and a contact along a
   circle. The `mixed` invariant removed; `contact_curve` for a closed
   curve, its blocks wrapping as a section loop's do. Fixtures:
   `boolean/pipe-elbow-fuse` (a quarter bend and the straight pipe it runs
@@ -414,6 +414,34 @@ bound has to be established here.
   ball touching a bore along a circle interior to both),
   `boolean/ball-on-apex-common` (a sphere through a cone's apex on its
   axis: a circle and a point in one `Meets`).
+  *Established:* `ball-on-apex-common` needed **nothing**: step 6's
+  vertex and the coaxial arm's circle and point pass every stage as first
+  drawn. The mixed `Meets` is the **elbow's**: the torus meets the pipe's
+  cylinder in the touch circle *and* in the crossing quartic
+  `x = R − y²/12`, two traced branches whose singular points (3, 0, ±1)
+  lie on that circle, and neither branch enters either face. With the
+  tripwire gone, two faults showed behind it, both in the pave model's
+  handling of coincident edges, not in the contacts. (a) The pipe's cap
+  circle lies in the torus, and with no coincident neighbour on the
+  torus side the pass for edges lying in a face placed its pieces as
+  **images inside the torus face**, on top of the torus's own boundary
+  circle: the splitter met two equal curves at each node and refused a
+  right body as a `TangentContact`. That pass now does what the
+  coincident pairs' pass always did: a piece `matching_block` puts on
+  the other face's boundary is that face's edge, and the caps' common
+  block holds it (a piece matching with no common block is a
+  `Fault::Invariant` tripwire, which no fixture or property trips). (b) The
+  branches' crossing at (3, 0, 1) is a section vertex that **nothing
+  ends at**, and it still paved the coincident caps' rim: one vertex and
+  one edge more than Open CASCADE. `pave_coincident_edges` now runs
+  after `sections` and skips a vertex with no hit, no edge crossing, no
+  operand vertex and no section edge; no existing dump moved. The closed
+  contact itself was the step's one-line guess: `ball-in-bore-cut`'s two
+  seams pave the equator at one point, so with no wrap block the circle
+  had no contact at all and the cut came back as two shells that meet
+  (a wrong solid, caught by the lumps check); the wrap block, and a
+  whole-period block for a closed curve no edge reaches, give it its
+  `TangentContact`.
 - [ ] Step 8 **[2]** — The identities over quadric operands.
   `boolean_prop.rs` strategies for a frustum, a ball, a ring and an
   elliptic prism in random poses against a box and a cylinder: volume

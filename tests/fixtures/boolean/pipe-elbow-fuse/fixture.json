@@ -1,0 +1,26 @@
+{
+  "description": "a quarter bend — a disc of radius r about (R, 0, 0) in the plane y = 0 revolved a quarter turn about z — fused with the straight pipe it runs into, a cylinder of radius r from the bend's start cap along −y: the two caps coincide and the torus and the wall are tangent along the tube circle they share, interior to neither face. The torus meets the cylinder in that circle, a touch, and in the crossing quartic x = R − y²/12 beside it, which reaches both faces only at the circle's two points on z = ±r: one `Meets` holding curves of both kinds, which the pave model reads as sections and contacts at once (plans/c3-conic-hits step 7). An ordinary shape: the bend and the pipe, the volume π r² (π R / 2 + L)",
+  "params": {"R": 3, "r": 1, "L": 4},
+  "steps": [
+    {"name": "tube", "op": "profile", "plane": {"origin": [0, 0, 0], "x": [1, 0, 0], "y": [0, 0, 1]},
+     "outer": {"circle": {"center": ["R", 0], "radius": "r"}}},
+    {"name": "bend", "op": "revolve", "profile": "tube", "axis": {"origin": [0, 0, 0], "direction": [0, 0, 1]}, "angle_deg": 90},
+    {"name": "pipe", "op": "cylinder", "base": ["R", 0, 0], "axis": [0, -1, 0], "radius": "r", "height": "L"},
+    {"name": "result", "op": "fuse", "a": "bend", "b": "pipe"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "in_the_bend", "point": ["R * cos(radians(45))", "R * sin(radians(45))", 0], "expect": "in"},
+    {"label": "in_the_pipe", "point": ["R", "-L / 2", 0], "expect": "in"},
+    {"label": "at_the_joint", "point": ["R", 0, 0], "expect": "in"},
+    {"label": "on_the_joint_circle", "point": ["R", 0, "r"], "expect": "on"},
+    {"label": "on_the_bend", "point": ["(R + r) * cos(radians(30))", "(R + r) * sin(radians(30))", 0], "expect": "on"},
+    {"label": "on_the_far_cap", "point": ["R", "-L", 0.5], "expect": "on"},
+    {"label": "outside", "point": [0, 0, 0], "expect": "out"}
+  ],
+  "analytic": {
+    "volume": "pi * r^2 * (pi * R / 2 + L)",
+    "area": "pi^2 * r * R + 2 * pi * r * L + 2 * pi * r^2",
+    "genus": 0
+  }
+}

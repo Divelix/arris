@@ -609,6 +609,28 @@ fn boolean_ball_pole_drill_cut() {
     run("boolean/ball-pole-drill-cut");
 }
 
+/// A quarter bend fused with the straight pipe it runs into: the torus
+/// and the wall touch along the tube circle and cross in a quartic
+/// beside it, one `Meets` of both kinds.
+#[test]
+fn boolean_pipe_elbow_fuse() {
+    run("boolean/pipe-elbow-fuse");
+}
+
+/// A ball cut from a bore of its radius: a contact along a closed curve
+/// interior to both faces, refused as a tangent contact.
+#[test]
+fn boolean_ball_in_bore_cut() {
+    run("boolean/ball-in-bore-cut");
+}
+
+/// A cone in common with a ball through its apex on its axis: a circle
+/// and a point in one `Meets`.
+#[test]
+fn boolean_ball_on_apex_common() {
+    run("boolean/ball-on-apex-common");
+}
+
 /// A rectangle with a circular hole extruded: `boolean/through-hole`'s
 /// solid and numbers by the other path.
 #[test]

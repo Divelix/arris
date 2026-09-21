@@ -1,0 +1,18 @@
+{
+  "description": "a ball of radius R revolved about the axis of a solid cylinder of the same radius, cut from it: the sphere touches the wall along its equator, a circle interior to both faces, and both survive a cut — the wall outside the ball, the sphere inside the cylinder — so the result would carry two faces sharing a circle with no material between them. pin-in-bore-cut's refusal along a closed contact curve, whose blocks wrap as a section loop's do: both seams pass through the one point (R, 0, H / 2), so the circle is paved once. Open CASCADE builds it; Arris refuses with OpError::Degenerate and Reason::TangentContact naming the pair, decided by the curvature rule (plans/c3-conic-hits step 7)",
+  "params": {"R": 2, "H": 6},
+  "steps": [
+    {"name": "bore", "op": "cylinder", "base": [0, 0, 0], "axis": [0, 0, 1], "radius": "R", "height": "H"},
+    {"name": "half_disc", "op": "profile", "plane": {"origin": [0, 0, 0], "x": [1, 0, 0], "y": [0, 0, 1]},
+     "outer": {"start": [0, "H / 2 - R"], "segments": [{"arc_to": [0, "H / 2 + R"], "via": ["R", "H / 2"]}, {"line_to": [0, "H / 2 - R"]}]}},
+    {"name": "ball", "op": "revolve", "profile": "half_disc", "axis": {"origin": [0, 0, 0], "direction": [0, 0, 1]}, "angle_deg": 360},
+    {"name": "result", "op": "cut", "target": "bore", "tool": "ball"}
+  ],
+  "result": "result",
+  "probes": [],
+  "analytic": {
+    "expect_error": "tangent-contact",
+    "volume": "pi * R^2 * H - 4 / 3 * pi * R^3",
+    "area": "2 * pi * R^2 + 2 * pi * R * H + 4 * pi * R^2"
+  }
+}

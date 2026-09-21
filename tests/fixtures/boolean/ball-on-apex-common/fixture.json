@@ -1,0 +1,29 @@
+{
+  "description": "a cone of radius 2 and height 4 revolved about z, its apex at (0, 0, 2), in common with a ball of radius 3/2 about (0, 0, 1/2), on the axis and through the apex: the two meet in the circle of radius 6/5 at z = −2/5, a crossing, and at the apex, a point — one `Meets` of a circle and a point (plans/c3-conic-hits step 7). Near the apex the cone is inside the ball and below the circle the ball is inside the cone, so the common is the cone down to the circle over the ball's cap below it, the apex kept as the operand's singular vertex (ADR-0021): a cone of radius 6/5 and height 12/5 and a cap of height 3/5",
+  "steps": [
+    {"name": "triangle", "op": "profile", "plane": {"origin": [0, 0, 0], "x": [1, 0, 0], "y": [0, 0, 1]},
+     "outer": {"start": [0, -2], "segments": [{"line_to": [2, -2]}, {"line_to": [0, 2]}, {"line_to": [0, -2]}]}},
+    {"name": "cone", "op": "revolve", "profile": "triangle", "axis": {"origin": [0, 0, 0], "direction": [0, 0, 1]}, "angle_deg": 360},
+    {"name": "half_disc", "op": "profile", "plane": {"origin": [0, 0, 0], "x": [1, 0, 0], "y": [0, 0, 1]},
+     "outer": {"start": [0, -1], "segments": [{"arc_to": [0, 2], "via": [1.5, 0.5]}, {"line_to": [0, -1]}]}},
+    {"name": "ball", "op": "revolve", "profile": "half_disc", "axis": {"origin": [0, 0, 0], "direction": [0, 0, 1]}, "angle_deg": 360},
+    {"name": "result", "op": "common", "a": "cone", "b": "ball"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [0, 0, 0], "expect": "in"},
+    {"label": "in_the_cap", "point": [0, 0, -0.8], "expect": "in"},
+    {"label": "outside_the_cone", "point": [0.8, 0, 0.5], "expect": "out"},
+    {"label": "below_the_ball", "point": [0, 0, -1.5], "expect": "out"},
+    {"label": "on_the_apex", "point": [0, 0, 2], "expect": "on"},
+    {"label": "on_the_circle", "point": [1.2, 0, -0.4], "expect": "on"},
+    {"label": "on_the_wall", "point": [0, 0.6, 0.8], "expect": "on"},
+    {"label": "on_the_cap", "point": [0, 0, -1], "expect": "on"}
+  ],
+  "analytic": {
+    "volume": "pi * 1.2^2 * 2.4 / 3 + pi * 0.6^2 * (3 * 1.5 - 0.6) / 3",
+    "area": "pi * 1.2 * sqrt(1.2^2 + 2.4^2) + 2 * pi * 1.5 * 0.6",
+    "centroid": [0, 0, "(pi * 1.2^2 * 2.4 / 3 * (2 - 0.75 * 2.4) + pi * 0.6^2 * (3 * 1.5 - 0.6) / 3 * (0.5 - 3 * (2 * 1.5 - 0.6)^2 / (4 * (3 * 1.5 - 0.6)))) / (pi * 1.2^2 * 2.4 / 3 + pi * 0.6^2 * (3 * 1.5 - 0.6) / 3)"],
+    "genus": 0
+  }
+}

@@ -1,0 +1,117 @@
+{
+  "occt": "8.0.1.0.0",
+  "recipe_sha256": "4269843101a05528dc8d3de7d7253aa723fbe8e0208a3147d284a84e82eba5f2",
+  "results": {
+    "default": {
+      "area": 15.77059998916019,
+      "centroid": [
+        -1.2897825482958356e-15,
+        1.4771216212483024e-17,
+        -0.03333333333333001
+      ],
+      "counts": {
+        "edges": 3,
+        "faces": 2,
+        "loops": 2,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 3
+      },
+      "degenerate": false,
+      "euler_characteristic": 2,
+      "genus": 0,
+      "inertia": [
+        [
+          2.6442157046734245,
+          6.798673468204887e-17,
+          -1.0232555543628745e-15
+        ],
+        [
+          6.798673468204887e-17,
+          2.6442157046734236,
+          6.612714429089897e-19
+        ],
+        [
+          -1.0232555543628745e-15,
+          6.612714429089897e-19,
+          2.300399804664532
+        ]
+      ],
+      "probes": [
+        {
+          "class": "in",
+          "label": "inside",
+          "point": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "class": "in",
+          "label": "in_the_cap",
+          "point": [
+            0.0,
+            0.0,
+            -0.8
+          ]
+        },
+        {
+          "class": "out",
+          "label": "outside_the_cone",
+          "point": [
+            0.8,
+            0.0,
+            0.5
+          ]
+        },
+        {
+          "class": "out",
+          "label": "below_the_ball",
+          "point": [
+            0.0,
+            0.0,
+            -1.5
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_the_apex",
+          "point": [
+            0.0,
+            0.0,
+            2.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_the_circle",
+          "point": [
+            1.2,
+            0.0,
+            -0.4
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_the_wall",
+          "point": [
+            0.0,
+            0.6,
+            0.8
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_the_cap",
+          "point": [
+            0.0,
+            0.0,
+            -1.0
+          ]
+        }
+      ],
+      "volume": 5.0893800988154
+    }
+  }
+}

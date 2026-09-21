@@ -262,18 +262,20 @@ converted *where the pcurve is* and in the direction held
 (`check::domain::bands`), not once at the block's midpoint — a section
 loop round a pole crosses the seam where a tolerance is a far wider `u`
 than it is at the loop's far side (`boolean/ball-polar-drill-cut`). A
-section *through* an apex or a pole has no vertex put there yet, and a
-pair meeting in curves of both kinds is a tripwire
-(`Fault::Invariant`).
+pair meeting in curves of both kinds is read as both: its crossing
+curves are its sections and its touching curves its contacts, whatever
+else the `Meets` holds — a pipe's bend and the straight run it joins,
+tangent along the tube circle and crossing in a quartic beside it
+(`boolean/pipe-elbow-fuse`).
 Every face pair is
 intersected in one region for the whole boolean — the overlap of the
 operands' boxes grown by its own diagonal — so pairs on the same two
 surfaces get the same traced curve (ADR-0018). It holds every face
-pair whose boxes overlap with its `SurfaceIntersection` — a *crossing
-pair* when its `Meets` curves all cross, a *touching pair* when they
-all touch, and a pair the intersector is asked about is always one or
-the other; its only points are a traced section's singular points, where
-its branches end; every point where
+pair whose boxes overlap with its `SurfaceIntersection` — its crossing
+curves the *section curves*, its touching curves the *contact curves*,
+one pair holding either or both; its points matter only as a traced
+section's singular points, where its branches end, or as an apex or a
+pole an operand's own vertex already stands on; every point where
 an edge of one operand pierces a face of the other, kept when the
 parameter is in the edge's range and the (u, v) is on the face
 (`region2::point_side` on the face's loops, a `Boundary` verdict
@@ -367,15 +369,22 @@ edge that lies in a face of the other operand
 (`Interferences::coincident`) is paved and placed the same way whether
 or not a face of its own is coincident with that face: a seam on the
 ruling two parallel walls cross along splits the other wall as an image,
-since no coincident neighbour is there to place it. A touching pair — a
-plane and a cylinder, or two parallel cylinders, touching along a ruling
-— contributes no section edge and no pave on any operand edge: the
-ruling is paved by the *touches*, the hits of either face's edges on the
-other face that lie on it (every curve in a face tangent to the other
-surface is tangent to it there, so these are where the ruling leaves one
-face inside the other), and each block between consecutive touches whose
-midpoint is inside both faces is a *contact*, the segment the two faces
-share. Every list is in a deterministic order and `Display` prints the
+since no coincident neighbour is there to place it — unless the piece
+runs along that face's own boundary, a pipe's cap circle on the bend it
+joins: then it is the face's edge, and the coincident caps beside it
+hold the common block. A section vertex nothing ends at — two traced
+branches crossing on the faces' boundary and leaving both — paves no
+edge of a coincident face. A contact curve — a plane and a cylinder, or
+two parallel cylinders, touching along a ruling; a ball in a bore of its
+radius, along a circle — contributes no section edge and no pave on any
+operand edge: it is paved by the *touches*, the hits of either face's
+edges on the other face that lie on it (every curve in a face tangent to
+the other surface is tangent to it there, so these are where the curve
+leaves one face inside the other), and each block between consecutive
+touches whose midpoint is inside both faces is a *contact*, the segment
+the two faces share; on a closed curve the last block wraps round to the
+first touch, and a closed curve no edge reaches is one block
+(`boolean/ball-in-bore-cut`, refused as `Reason::TangentContact`). Every list is in a deterministic order and `Display` prints the
 whole model, which is what the `inspect` skill reads when a boolean is
 wrong. The property tests build their
 operands through `arris_debug::prop::body` — a box and a cylinder whose

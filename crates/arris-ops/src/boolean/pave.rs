@@ -171,8 +171,8 @@ pub(super) fn build(m: &Model, a: Body, b: Body) -> Result<Interferences, OpErro
     build.section_crossings()?;
     build.merge()?;
     build.pave_edges();
-    build.pave_coincident_edges();
     build.sections()?;
+    build.pave_coincident_edges();
     build.pave_singular_edges()?;
     build.contacts()?;
     build.coincident()?;
@@ -1176,9 +1176,23 @@ impl<'m> Build<'m> {
     /// vertex that lies on it within the vertex's tolerance and is not
     /// one of its ends: the vertices the other operand's edges made on
     /// neighbouring faces, which the pieces along the shared surface
-    /// have to meet at (ADR-0004).
+    /// have to meet at (ADR-0004). A vertex nothing ends at — two branches
+    /// of a traced section crossing on the faces' boundary and leaving
+    /// both, no hit, no operand vertex and no section edge there — has
+    /// nothing for the pieces to meet, and paves nothing.
     fn pave_coincident_edges(&mut self) {
         let m = self.m;
+        let mut used = vec![false; self.vertices.len()];
+        for (k, v) in self.vertices.iter().enumerate() {
+            used[k] = !(v.hits.is_empty() && v.crossings.is_empty() && v.existing.is_empty());
+        }
+        for s in &self.sections {
+            for k in [s.start, s.end] {
+                if let Some(u) = used.get_mut(k) {
+                    *u = true;
+                }
+            }
+        }
         let mut edges: BTreeSet<(usize, EdgeId)> = BTreeSet::new();
         for (pi, pair) in self.pairs.iter().enumerate() {
             if pair.intersection != SurfaceIntersection::Coincident {
@@ -1200,6 +1214,9 @@ impl<'m> Build<'m> {
                 continue;
             };
             for (k, v) in self.vertices.iter().enumerate() {
+                if !used[k] {
+                    continue;
+                }
                 let point = v.point(m);
                 if e.vertex_at(point).is_some() || e.ends.iter().any(|x| v.existing.contains(&x.0))
                 {
@@ -1244,32 +1261,18 @@ impl<'m> Build<'m> {
         Some(out)
     }
 
-    /// The section curves of every crossing pair, paved and cut into
-    /// blocks, the blocks interior to both faces kept as section edges.
+    /// The section curves of every pair, paved and cut into blocks, the
+    /// blocks interior to both faces kept as section edges. A pair's
+    /// crossing curves are its sections whatever else its `Meets` holds:
+    /// a touching curve beside them — a pipe's bend tangent to the
+    /// straight run along the tube circle and crossing it in a quartic —
+    /// is [`Self::contacts`]'.
     fn sections(&mut self) -> Result<(), OpError> {
         for pi in 0..self.pairs.len() {
-            let intersection = &self.pairs[pi].intersection;
-            // A pair meeting in curves of both kinds at once wants a
-            // surface met along a tangent circle beside a section — a
-            // sphere through a cone's apex on its axis — which is C3's
-            // next step; a section *through* an apex or a pole is one
-            // kind, and built (ADR-0021). Until it lands the mixed pair
-            // is a tripwire, not a wrong answer: no fixture and no
-            // random pose of a ball or a ring has tripped it. Points
-            // here are a traced section's singular
-            // points, which `section_crossings` read.
-            let mixed = intersection
-                .curves()
-                .windows(2)
-                .any(|w| w[0].kind != w[1].kind);
-            if mixed {
-                return Err(OpError::Internal(Fault::Invariant {
-                    what: "a face pair meeting in curves of both kinds",
-                }));
-            }
-            let curves: Vec<(usize, Curve)> = meet_curves(intersection, MeetKind::Crossing)
-                .map(|(ci, c)| (ci, c.clone()))
-                .collect();
+            let curves: Vec<(usize, Curve)> =
+                meet_curves(&self.pairs[pi].intersection, MeetKind::Crossing)
+                    .map(|(ci, c)| (ci, c.clone()))
+                    .collect();
             for (ci, curve) in &curves {
                 self.section_curve(pi, *ci, curve)?;
             }
@@ -1277,7 +1280,7 @@ impl<'m> Build<'m> {
         Ok(())
     }
 
-    /// The touching rulings of every pair, paved by the touches and cut
+    /// The touching curves of every pair, paved by the touches and cut
     /// into blocks, the blocks interior to both faces kept as contacts.
     fn contacts(&mut self) -> Result<(), OpError> {
         for pi in 0..self.pairs.len() {
@@ -1292,15 +1295,18 @@ impl<'m> Build<'m> {
         Ok(())
     }
 
-    /// One tangent ruling: its paves are the hits of either face's edges
-    /// on the other face that lie on it — where the ruling leaves one
+    /// One tangent curve: its paves are the hits of either face's edges
+    /// on the other face that lie on it — where the curve leaves one
     /// face inside the other, a touch, since every curve in a face
     /// tangent to the other surface is tangent to it there — and each
     /// block between consecutive paves whose midpoint is inside both
-    /// faces is a contact. A ruling is a line, so a block that is
-    /// interior to both faces has a pave at each end: the ends of the
-    /// overlap of the two faces' spans along it are each an end of one
-    /// span inside the other.
+    /// faces is a contact. A block that is interior to both faces has a
+    /// pave at each end: the ends of the overlap of the two faces' spans
+    /// along it are each an end of one span inside the other. On a
+    /// closed curve — a ball in a bore of its radius, along the circle
+    /// they share — the last block wraps round to the first pave, as a
+    /// section loop's does, and a curve no edge reaches is one block, a
+    /// contact when it is interior to both faces.
     fn contact_curve(&mut self, pi: usize, ci: usize, curve: &Curve) -> Result<(), OpError> {
         let (ia, ib) = self.pair_faces[pi];
         let (fa, fb) = (&self.faces[0][ia], &self.faces[1][ib]);
@@ -1315,12 +1321,24 @@ impl<'m> Build<'m> {
                 continue;
             };
             if projection.distance <= self.hit_tolerance[k] {
-                paves.push(projection.t);
+                paves.push(wrap_on(curve, projection.t));
             }
         }
         paves.sort_by(f64::total_cmp);
-        for w in paves.windows(2) {
-            let Ok(range) = Interval::new(w[0], w[1]) else {
+        let mut blocks: Vec<(f64, f64)> = paves.windows(2).map(|w| (w[0], w[1])).collect();
+        if let Some(period) = curve.period() {
+            match (paves.first(), paves.last()) {
+                (Some(&first), Some(&last)) => {
+                    blocks.push((last, (first + period).min(period_end(last, period))));
+                }
+                _ => {
+                    let lo = curve.domain().lo();
+                    blocks.push((lo, period_end(lo, period)));
+                }
+            }
+        }
+        for (lo, hi) in blocks {
+            let Ok(range) = Interval::new(lo, hi) else {
                 continue;
             };
             if range.length() <= 0.0 {
@@ -1878,6 +1896,22 @@ impl<'m> Build<'m> {
                 continue;
             }
             for block in self.blocks_of(e) {
+                // A piece along the other face's boundary is that face's
+                // edge, not a curve inside it — a pipe's cap circle on the
+                // bend it runs into, the two walls tangent along it — and
+                // the coincident caps beside it hold the common block.
+                if let Some((gid, gb, _)) = self.matching_block(side, e, &block, other)? {
+                    let (ours, theirs) = ((e.id, block.index), (gid, gb.index));
+                    let held = blocks.iter().any(|x: &CommonBlock| {
+                        (x.a, x.b) == (theirs, ours) || (x.a, x.b) == (ours, theirs)
+                    });
+                    if !held {
+                        return Err(OpError::Internal(Fault::Invariant {
+                            what: "an edge along a face's boundary with no common block",
+                        }));
+                    }
+                    continue;
+                }
                 if let Some(image) = self.image(pi, side, e, f, other, &block)? {
                     floors.push((block.start, image.tolerance));
                     floors.push((block.end, image.tolerance));
