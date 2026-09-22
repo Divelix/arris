@@ -714,28 +714,37 @@ prop_shards! {
     /// Where the tool's seam sits decides nothing (plans/
     /// seam-parametrisation-faults): two crossing cylinders fused, or
     /// intersected, with the tool turned about its own axis to a generic
-    /// turn, with its seam through a crossing vertex, and twice `R sin δ`
-    /// beside one — `sin δ` log-uniform from ten tolerances over `R` to
+    /// turn, with its seam through a crossing vertex, and twice beside
+    /// one — once with the seam's touch of the other wall `R sin δ / sin ψ`
+    /// from the vertex, `ψ` the angle between the axes, log-uniform from a
+    /// tenth of a tolerance to 1.9, where the touch's ball and the
+    /// vertex's meet and the touch joins it (`boolean/
+    /// seam-a-tolerance-from-crossing-fuse`, plans/c3-tolerance-apart step
+    /// 2b), a tenth short of two so that no pose's rounding decides it;
+    /// and once with `sin δ` log-uniform from ten tolerances over `R` to
     /// 0.03, which spans the bands where the seam's chord in the other
     /// wall is under the tolerance (the pave's touch, ADR-0016) and where
     /// the sliver it cuts off lies within it (the transversal rule) — are
     /// the same body at every turn: the same mass properties within what
-    /// the fitted ellipses allow, and the same counts but at the turn
-    /// through a crossing vertex. That one has fewer — two vertices and
-    /// two edges in a `fuse`, and a face besides in a `common` — the
-    /// seam's crossings with the ellipses being the crossing vertices
-    /// themselves: the seam is topology, and where it runs is the one
-    /// thing a turn may change. Each result is measured moved back to the
+    /// the fitted ellipses allow, and the counts of the generic turn but
+    /// where the seam's touch joins the crossing vertex. There — at the
+    /// turn through it and at the first turn beside it — they are the
+    /// through turn's, fewer: two vertices and two edges in a `fuse`, and
+    /// a face besides in a `common`, the seam's crossings with the
+    /// ellipses being the crossing vertices themselves: the seam is
+    /// topology, and where it runs is the one thing a turn may change.
+    /// Between the two windows the touch stands for two crossings of its
+    /// own a few tolerances from the vertex, and at some turns a `common`
+    /// keeps the sliver between them, a face the polygons do not resolve:
+    /// `regression/seam-two-tolerances-from-crossing-common`'s band, and
+    /// not among them. Each result is measured moved back to the
     /// pair's own frame, the crossing of the axes at the origin: the
     /// boundary integral over fitted pcurves carries an error that grows
     /// with the distance from the origin and differs with where the seam
     /// cuts the ellipses — 4.6e-6 in a centroid 108 away where the same
     /// bodies at the origin agree to 1.4e-10 — which is the measurement's,
-    /// not the turn's (`docs/BACKLOG.md`). The generic turn stays a tenth of a
-    /// radian from both crossing vertices. The lower bound keeps every
-    /// turn out of the band a seam one to two tolerances from a crossing
-    /// vertex makes, by construction:
-    /// `regression/seam-a-tolerance-from-crossing-fuse`'s.
+    /// not the turn's (`docs/BACKLOG.md`). The generic turn stays a tenth
+    /// of a radian from both crossing vertices.
     a_turn_of_the_tool_about_its_own_axis_changes_nothing
         [shard_0 shard_1 shard_2 shard_3 shard_4 shard_5 shard_6 shard_7]
         ((pair, is_fuse, (generic, through), beside)) = (
@@ -753,19 +762,30 @@ prop_shards! {
                 ("common", common as Boolean)
             };
             let tol = Model::default().precision().default_tolerance;
-            let (lo, hi) = ((10.0 * tol / pair.a.radius).log10(), 0.03_f64.log10());
+            let r = pair.a.radius;
+            // Log-uniform bounds on `sin δ`: the touch joined to the
+            // crossing vertex, then clear of it.
+            let joined = pair.psi.sin() * tol / r;
+            let windows = [
+                ((0.1 * joined).log10(), (1.9 * joined).log10()),
+                ((10.0 * tol / r).log10(), 0.03_f64.log10()),
+            ];
             let pi = core::f64::consts::PI;
             // A quadrant: the side of the crossing vertex, and which one.
             let at = |quadrant: u8, delta: f64| {
                 let delta = if quadrant & 1 == 1 { -delta } else { delta };
                 if quadrant & 2 == 2 { pi + delta } else { delta }
             };
-            let mut turns = vec![(at(through, generic), false), (at(through, 0.0), true)];
-            for &(x, quadrant) in &beside {
-                turns.push((at(quadrant, 10f64.powf(lo + x * (hi - lo)).asin()), false));
+            // Each turn with the turn whose counts it has: `None` for the
+            // generic one, `Some(true)` for the through one's.
+            let mut turns = vec![(at(through, generic), None), (at(through, 0.0), None)];
+            for (w, (&(x, quadrant), (lo, hi))) in beside.iter().zip(windows).enumerate() {
+                let sin = 10f64.powf(lo + x * (hi - lo));
+                turns.push((at(quadrant, sin.asin()), Some(w == 0)));
             }
             let mut first: Option<(String, MassProperties, f64)> = None;
-            for &(theta, through) in &turns {
+            let mut through_counts: Option<String> = None;
+            for (i, &(theta, like_through)) in turns.iter().enumerate() {
                 let turned = turned(&pair, theta)?;
                 let (mut m, a, b, _, _) = operands_by(|m| turned.build(m))?;
                 let what = format!("{name} at a turn of {theta} rad");
@@ -774,11 +794,23 @@ prop_shards! {
                 // Measured in the pair's own frame: see the doc above.
                 let (home, _) = transform(&mut m, body, &pair.a.pose.inverse()).map_err(fail)?;
                 let props = mass_properties(&m, home).map_err(fail)?;
+                if i == 1 {
+                    through_counts = Some(counts.clone());
+                }
                 match &first {
                     None => first = Some((counts, props, fitted_rel(&m, &props))),
                     Some((c, p, rel)) => {
-                        if !through {
-                            prop_assert_eq!(&counts, c, "{}: counts against the generic turn", what);
+                        match like_through {
+                            Some(false) => prop_assert_eq!(
+                                &counts, c, "{}: counts against the generic turn", what
+                            ),
+                            Some(true) => prop_assert_eq!(
+                                Some(&counts),
+                                through_counts.as_ref(),
+                                "{}: counts against the turn through the crossing vertex",
+                                what
+                            ),
+                            None => {}
                         }
                         let rel = rel.max(fitted_rel(&m, &props));
                         assert_same_properties_to(&props, p, &what, rel)?;

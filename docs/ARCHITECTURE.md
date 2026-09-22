@@ -290,8 +290,10 @@ name one operand vertex, and a section vertex is a connected component
 of that relation, so three points 1.7e-7 and 2.4e-7 apart at 1e-7 are
 one vertex in whatever order they were found; a component is numbered
 by its first member in the order the candidates are made and carries
-that member's source, its point is its first operand vertex's else its
-first member's, and its tolerance is the largest of the entities
+that member's source, its point is its first operand vertex's, else its
+first member's on an operand edge — a hit's or a crossing's, the edge
+being cut there exactly — else its first member's, and its tolerance is
+the largest of the entities
 merged plus the spread of the points about it (data-model
 §Tolerances); a component holding two vertices of one operand would
 collapse what lies between them and is `OpError::Tolerance`; the
@@ -332,7 +334,10 @@ only touches it, so no block has the point inside it; a section that
 passes beside the point, nearer than the face's (u, v) polygons resolve,
 is refused by name (`Reason::BesideSingularity`, ADR-0021);
 the paves each vertex puts on the edge that hit or touched it and on
-every section curve it projects onto within its tolerance — an open
+every section curve it projects onto within its tolerance — at the
+parameter of its own section crossing on a curve that crossing names,
+so two section curves end on the point where they cross whatever the
+vertex's point is; an open
 section curve at each of its ends a vertex lies on, both ends of a
 traced branch that leaves a singular point and comes back to it; and the
 section edges — the blocks between consecutive paves whose midpoint is
@@ -341,8 +346,17 @@ its domain when it is interior to both, and a periodic one's last block
 wrapping round to its first pave, one period on — a traced loop's
 period being its own length, not a turn — each with a pcurve on each
 face by `pcurve_on`, translated by whole periods into the copy of the
-domain the face's loops are written in, its tolerance the larger of the
-faces' raised to the pcurves' residual; a traced loop's stays at its
+domain the face's loops are written in and ending on its vertex's own
+(u, v) on the face — where an edge of the face is paved at the vertex
+or ends on an operand vertex it holds, that edge's pcurve there, else
+the vertex point's — wherever it lies further from it than half the
+band L2 holds a junction to, the end control points of a clamped
+spline moved: a vertex whose members lie further apart than a face's
+tolerance has its edges' pcurves ending that far apart, which no exact
+curve can close, so the section edge's pcurve moves and never the
+operand's; its tolerance the larger of the faces' raised to the
+pcurves' residual, the move included, with rounding at the positions'
+scale above it so a motion of the body keeps it; a traced loop's stays at its
 faces' — the fit's quarter of the tolerance leaves the pcurves room
 under their half (data-model §Tolerances); and a pave on a degenerate
 edge for every section edge that ends on its vertex, at the `u` the

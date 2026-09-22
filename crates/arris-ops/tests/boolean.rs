@@ -643,26 +643,43 @@ use arris_ops::{Reason, common, cut, fuse};
 /// CASCADE builds a sliver of its own — `fuse` and `common` are the
 /// Steinmetz union and solid, clean at `Full`, with a generic turn's
 /// counts, and the volume within 1e-9 of the closed form: the fitted
-/// ellipses' error, 2.4e-10 at every turn alike. The one-to-two-tolerance band, 5.8e-6° to 1.1e-5°, is
-/// `regression/seam-a-tolerance-from-crossing-fuse`'s and not among them.
+/// ellipses' error, 2.4e-10 at every turn alike. Within two tolerances
+/// of the crossing vertex, 5.8e-6° to 1.1e-5° past ±90° and nearer, the
+/// seam's touch joins that vertex and its crossings with it: the body is
+/// the one at ±90°, the seam through the vertex, with its counts
+/// (`boolean/seam-a-tolerance-from-crossing-fuse`).
 #[test]
 fn a_sliver_within_the_tolerance_of_the_other_wall_is_decided_at_its_section_edges() {
-    let generic = |op: Boolean| {
-        let (mut m, a, b) = turned_crossing(30.0);
+    let counts_at = |op: Boolean, turn: f64| {
+        let (mut m, a, b) = turned_crossing(turn);
         let (body, _) = op(&mut m, a, b).unwrap();
         arris_debug::dump::euler_line(&m, body).unwrap()
     };
     let exact_common = 16.0 / 3.0;
     let exact_fuse = TAU * 6.0 - exact_common;
+    let beside = [
+        -90.03_f64, -90.04, -90.045, -90.046, -90.02, -90.001, -90.0001, -89.9999, -89.99, -89.97,
+        89.97, 90.03,
+    ];
+    let within_two = [
+        -90.000003_f64,
+        -90.000006,
+        -90.000007,
+        -90.00001,
+        -89.999993,
+        89.999994,
+        90.000011,
+    ];
     for (name, op, exact) in [
         ("fuse", fuse as Boolean, exact_fuse),
         ("common", common as Boolean, exact_common),
     ] {
-        let counts = generic(op);
-        for turn in [
-            -90.03_f64, -90.04, -90.045, -90.046, -90.02, -90.001, -90.0001, -89.9999, -89.99,
-            -89.97, 89.97, 90.03,
-        ] {
+        let (generic, through) = (counts_at(op, 30.0), counts_at(op, -90.0));
+        let turns = beside
+            .iter()
+            .map(|&t| (t, &generic))
+            .chain(within_two.iter().map(|&t| (t, &through)));
+        for (turn, counts) in turns {
             let (mut m, a, b) = turned_crossing(turn);
             let (body, _) = op(&mut m, a, b).unwrap_or_else(|e| panic!("{name} at {turn}: {e}"));
             let report = check(&m, body, Level::Full);
@@ -671,7 +688,7 @@ fn a_sliver_within_the_tolerance_of_the_other_wall_is_decided_at_its_section_edg
                 "{name} at {turn}: {report}"
             );
             assert_eq!(
-                arris_debug::dump::euler_line(&m, body).unwrap(),
+                &arris_debug::dump::euler_line(&m, body).unwrap(),
                 counts,
                 "{name} at {turn}"
             );

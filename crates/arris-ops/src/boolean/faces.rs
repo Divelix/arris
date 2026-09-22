@@ -41,6 +41,9 @@ pub(crate) struct FaceInfo<'m> {
     /// The degenerate edges of the loops, in loop order: the edges
     /// [`EdgeInfo`] leaves out.
     pub singular: Vec<Singular<'m>>,
+    /// Every other coedge of the loops, in loop order: its edge and its
+    /// pcurve on the face — a seam's twice, once per use.
+    pub uses: Vec<(EdgeId, &'m Curve2)>,
 }
 
 impl<'m> FaceInfo<'m> {
@@ -69,9 +72,11 @@ impl<'m> FaceInfo<'m> {
             .bounds()
             .unwrap_or_else(|| Aabb::of_point(surface.point(uv_lo.x, uv_lo.y)).inflated(tolerance));
         let mut singular = Vec::new();
+        let mut uses = Vec::new();
         for c in face.loops().iter().flat_map(|l| l.coedges()) {
             let edge = m.edge(c.edge())?;
             if !edge.is_degenerate() {
+                uses.push((c.edge(), m.curve2(c.pcurve())?));
                 continue;
             }
             let vertex = m.vertex(edge.start())?;
@@ -93,6 +98,7 @@ impl<'m> FaceInfo<'m> {
             uv_hi,
             bounds,
             singular,
+            uses,
         })
     }
 

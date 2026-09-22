@@ -307,11 +307,24 @@ fn boolean_seam_beside_crossing_fuse() {
 /// The same fuse with the seam between one and two tolerances from the
 /// crossing vertex: its two crossings and that vertex are three points
 /// one vertex by closure, whose balls meet though no two lie within one
-/// tolerance. The desired body is the one at −90°, the three one vertex.
+/// tolerance, and its point is the seam's. The section edges' pcurves
+/// end on that vertex's own (u, v) on each face — the seam's pave on the
+/// turned wall — and the body is the one at −90°.
 #[test]
-#[ignore = "L2, the pcurves jump 1.22e-7 in (u, v) at the one vertex the three points now are: the seam ends at its touch and the section edges at the crossing vertex, and no pcurve is moved to the vertex's own (u, v) on the seam's face (plans/c3-tolerance-apart step 2b)"]
-fn regression_seam_a_tolerance_from_crossing_fuse() {
-    run("regression/seam-a-tolerance-from-crossing-fuse");
+fn boolean_seam_a_tolerance_from_crossing_fuse() {
+    run("boolean/seam-a-tolerance-from-crossing-fuse");
+}
+
+/// The common of the same cylinders with the seam just past two
+/// tolerances from the crossing vertex: its two crossings are vertices
+/// of their own, 3.1e-7 from that vertex, and the piece of the turned
+/// wall between them and the two ellipses is a sliver face a few
+/// tolerances across. The desired body is the Steinmetz solid at a
+/// generic turn.
+#[test]
+#[ignore = "L4, a loop of zero signed area: the sliver face between the seam's two crossings and the crossing vertex, three vertices a few tolerances apart, is kept and its (u, v) polygon does not resolve it (docs/BACKLOG.md, material a tolerance or two thick)"]
+fn regression_seam_two_tolerances_from_crossing_common() {
+    run("regression/seam-two-tolerances-from-crossing-common");
 }
 
 /// A drill touching the main wall from inside, at a singular point of the

@@ -1386,7 +1386,10 @@ may carry different tolerances.
   section vertices of a boolean being the connected components of its
   candidate points, two the same when their balls meet, so a vertex's
   spread is the component's and not an accident of the order its points
-  were found in (`docs/ARCHITECTURE.md` §Operations). The record of
+  were found in (`docs/ARCHITECTURE.md` §Operations) — and a section
+  edge whose pcurve is moved to end on such a vertex's own (u, v) on a
+  face, where its members lie further apart than the face's tolerance
+  and no exact curve meets them all, by the move. The record of
   why lives in the operation's tests, not in the entity. A fitted section
   curve is *not* such a reason (ADR-0018): it lies within
   `SECTION_FIT_FRACTION` of the faces' tolerance of both surfaces, and

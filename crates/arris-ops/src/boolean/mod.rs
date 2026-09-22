@@ -153,8 +153,9 @@ pub enum VertexSource {
 #[derive(Debug, Clone, PartialEq)]
 pub struct SectionVertex {
     /// The point: the first operand vertex it coincides with, else its
-    /// first candidate's — a hit's, a crossing's or a section
-    /// crossing's, in that order of making.
+    /// first candidate on an operand edge — a hit's, a touch's or a
+    /// crossing's, the edge being cut there exactly — else its first
+    /// candidate's, in the order of making.
     pub point: Point3,
     /// The largest tolerance of the entities whose hits it merges, plus
     /// the spread of the merged points about `point`
@@ -257,7 +258,10 @@ pub struct SectionEdge {
     pub tolerance: f64,
     /// The pcurves on the pair's faces, `a` then `b`, same-parameter
     /// with `range`, each in the translate of the domain that face's
-    /// loops are written in.
+    /// loops are written in, and each ending within half of L2's band of
+    /// its vertices' own (u, v) on that face — moved there where the
+    /// vertex merged points further apart (`docs/ARCHITECTURE.md`
+    /// §Operations).
     pub pcurves: [Curve2; 2],
 }
 

@@ -261,7 +261,7 @@ bound has to be established here.
   members lie further apart than a face's tolerance needs its pcurves
   to end on its own (u, v). Step 2b (⚠ OPEN 6); the fixture's move and
   the property band moved with it.
-- [ ] Step 2b **[3]** — The pcurves of a merged vertex meet on its own
+- [x] Step 2b **[3]** — The pcurves of a merged vertex meet on its own
   (u, v) (⚠ OPEN 6). A section vertex has one (u, v) per face per side
   of a seam — an operand edge's pave where one paves an edge of the
   face, else its point's projection — and a section edge's pcurve ending
@@ -276,6 +276,45 @@ bound has to be established here.
   `a_sliver_within_the_tolerance_of_the_other_wall_is_decided_at_its_section_edges`
   runs that band too. No generic pose's dump changes: every vertex the
   suite makes has its members within a face tolerance.
+
+  **Done 2026-09-22.** Open question 6 decided, option A. A section
+  vertex's (u, v) on a face is an operand edge's pcurve where one of the
+  face's edges is paved there or ends on an operand vertex it holds, else
+  its point's projection; none at a singular vertex of the face, a whole
+  line of (u, v). A section edge's placed pcurve whose end lies further
+  from it than half of L2's band — so any two ends there meet within the
+  band — has that end moved there (`ending_on`: the end control points
+  of a clamped spline; a line as the degree-1 spline, anything else
+  fitted first as `pcurve_on` fits), and its residual measured again,
+  plus `RELATIVE_ROUNDING` at the positions' scale: a tolerance that is
+  exactly the move failed E4 by 7e-17 after the property moved the body
+  home from 50 away. The vertex's point prefers a member on an operand
+  edge, as the step asked — without it Arris's volume is exact but Open
+  CASCADE, reading the STEP, gets 5e-7 too much. **Found:** with the
+  point on the seam, the two ellipses were paved at its projection, off
+  their own crossing, and below one tolerance the volume drifted
+  linearly with the turn, 1.1e-7 at half a tolerance; a section curve is
+  now paved at its section crossing's own parameter where the vertex
+  holds one, and every volume is exact again. Tripwire measured over the
+  suite at 1000 cases: 3802 ends moved, the largest 1.92e-7 and at most 0.66 of its vertex's tolerance — all but six in the band tests, those six one vertex of one `quadric_operands_obey_every_identity` pose, 6.3e-8 each. No blessed dump changed but the
+  fixture's own, 8/14, its four section edges at v9 at 1.22e-7.
+
+  The property does not lose its bound outright. The touch joins the
+  crossing vertex while it lies within two tolerances of it, which is
+  `R sin δ / sin ψ` at a crossing angle `ψ`, not `R sin δ`; past it the
+  touch stands for two crossings of their own a few tolerances off, and
+  a common keeps the triangle between them at some turns — L4, zero
+  signed area; at a right angle from two tolerances to 2.6, not at every
+  turn, the fuse never. That is step 1's sliver class, none of this
+  plan's mechanisms: `regression/seam-two-tolerances-from-crossing-common`
+  (Open CASCADE builds 5/8/5 there, the sliver left out, its volume
+  4.7e-7 short — `counts_differ`, and the fixture's tolerances at 2e-7) and a clause on the
+  sliver backlog line. The property now draws one turn beside the vertex
+  with the touch a tenth of a tolerance to 1.9 from it — held to the
+  through turn's counts — and one from ten tolerances over `R` as before;
+  the band between is the new fixture's. The sliver test runs seven
+  turns from half a tolerance to 1.9, each the body at ±90° with its
+  counts, the volume within 1e-9.
 - [ ] Step 3 **[1]** — A conic hit at a whole turn is the hit at `0`.
   The snap in `arris-geom` where the hits are wrapped and sorted, within
   the root's own rounding and no tolerance; the periodic tests of
@@ -405,7 +444,10 @@ with nothing unchecked, `docs/DATA-MODEL.md` with no `⚠ OPEN`.
   the curve–curve touch must first be resolved into its far crossing, as
   ADR-0016 resolves an edge–face touch; step 4 records which and why in
   ADR-0022's grounds.
-- ⚠ OPEN 6 (agent, step 2b): how a merged vertex's pcurves meet. Step 2
+- 6, **decided 2026-09-22** (step 2b): option A, the section edge's
+  pcurve moved to the vertex's own (u, v), its tolerance by the move;
+  the tripwire did not fire. What was asked:
+  how a merged vertex's pcurves meet. Step 2
   found the tolerance model holds a vertex's (u, v) on a face to
   `parametric_tolerance` (L2) and its evaluation to the face's
   tolerance (the mesh), so a vertex whose members lie further apart

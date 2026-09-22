@@ -12,12 +12,12 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use arris_check::arris_topo::arris_geom::region2::{MAX_SEGMENTS_PER_PIECE, Side};
 use arris_check::arris_topo::arris_geom::{
-    Curve, Curve2, CurveIntersection, CurveSurfaceIntersection, GeomError, MeetKind,
-    PCURVE_SINGULAR_BAND, Surface, SurfaceIntersection, curves_coincide, intersect_curve_surface,
-    intersect_curves, intersect_surfaces, pcurve_on,
+    Curve, Curve2, CurveIntersection, CurveSurfaceIntersection, GeomError, MeetKind, NurbsCurve2,
+    PCURVE_FIT_DEGREE, PCURVE_SINGULAR_BAND, Surface, SurfaceIntersection, curves_coincide,
+    fit_curve2, intersect_curve_surface, intersect_curves, intersect_surfaces, pcurve_on,
 };
 use arris_check::arris_topo::arris_math::{
-    Aabb, Interval, Point2, Point3, Precision, Tolerance, Vec2, period_end,
+    Aabb, Interval, Point2, Point3, Precision, RELATIVE_ROUNDING, Tolerance, Vec2, period_end,
 };
 use arris_check::arris_topo::{
     Body, EdgeId, FaceId, Model, Shape, Vertex as VertexHandle, VertexId,
@@ -36,6 +36,9 @@ use crate::error::{Fault, OpError, Reason};
 struct VertexBuild {
     /// The merged points, the first hit's first.
     points: Vec<Point3>,
+    /// The first merged point that lies on an operand edge — a hit's,
+    /// a touch's or a crossing's — when one does.
+    on_edge: Option<Point3>,
     /// The largest tolerance of the entities merged.
     base: f64,
     /// What the section edges ending here need: a vertex is never below
@@ -50,12 +53,15 @@ struct VertexBuild {
 
 impl VertexBuild {
     /// The representative point: the first operand vertex's, else the
-    /// first merged point.
+    /// first merged point on an operand edge, else the first merged
+    /// point. An edge the vertex paves is cut there exactly, so a
+    /// section edge ending on it is what moves to meet it, never the
+    /// operand's edge.
     fn point(&self, m: &Model) -> Point3 {
         self.existing
             .first()
             .and_then(|&v| m.vertex(v).ok())
-            .map_or(self.points[0], |v| v.point())
+            .map_or(self.on_edge.unwrap_or(self.points[0]), |v| v.point())
     }
 
     /// The base tolerance plus the spread of the merged points about the
@@ -100,6 +106,11 @@ impl Member {
             Member::SectionCrossing(_) => VertexSource::SectionCrossing,
             Member::Singular => VertexSource::Singular,
         }
+    }
+
+    /// Whether its point lies on an operand edge.
+    fn on_edge(self) -> bool {
+        matches!(self, Member::Hit(_) | Member::Crossing(_))
     }
 }
 
@@ -402,6 +413,63 @@ fn samples(range: Interval, n: usize) -> Vec<f64> {
     (0..n)
         .map(|i| range.lerp(i as f64 / (n - 1) as f64))
         .collect()
+}
+
+/// `pc` over `range`, same-parameter, with its start moved to `ends[0]`
+/// and its end to `ends[1]` where given: a clamped B-spline over `range`
+/// whose end control points are moved, so the curve changes only over
+/// its first and last spans and by no more than the move. A pcurve that
+/// is one already is used as it is, a line becomes the degree-1 spline
+/// through its ends, and any other — a circle or an ellipse on a plane,
+/// a spline over a wider or periodic domain — is fitted over `range`
+/// first, at `tolerance` on `surface` as [`pcurve_on`] fits.
+fn ending_on(
+    pc: &Curve2,
+    range: Interval,
+    ends: [Option<Point2>; 2],
+    surface: &Surface,
+    tolerance: f64,
+) -> Result<Curve2, GeomError> {
+    let clamped = |n: &NurbsCurve2| {
+        let (k, p) = (n.knots(), n.degree());
+        n.period().is_none()
+            && n.domain() == range
+            && k[..=p].iter().all(|&x| x == k[0])
+            && k[k.len() - p - 1..].iter().all(|&x| x == k[k.len() - 1])
+    };
+    let spline = match pc {
+        Curve2::Nurbs(n) if clamped(n) => n.clone(),
+        Curve2::Line { .. } => NurbsCurve2::new(
+            1,
+            vec![range.lo(), range.lo(), range.hi(), range.hi()],
+            vec![pc.point(range.lo()), pc.point(range.hi())],
+            vec![1.0; 2],
+        )?,
+        Curve2::Circle { .. } | Curve2::Ellipse { .. } | Curve2::Nurbs(_) => {
+            let on = |q: Point2| surface.point(q.x, q.y);
+            fit_curve2(
+                |t| pc.point(t),
+                range,
+                PCURVE_FIT_DEGREE,
+                |t, q| (on(q) - on(pc.point(t))).norm(),
+                tolerance,
+            )?
+        }
+    };
+    let mut points = spline.control_points().to_vec();
+    if let (Some(p), Some(first)) = (ends[0], points.first_mut()) {
+        *first = p;
+    }
+    if let (Some(p), Some(last)) = (ends[1], points.last_mut()) {
+        *last = p;
+    }
+    NurbsCurve2::new(
+        spline.degree(),
+        spline.knots().to_vec(),
+        points,
+        spline.weights().to_vec(),
+    )
+    .map(Curve2::Nurbs)
 }
 
 impl<'m> Build<'m> {
@@ -1002,6 +1070,9 @@ impl<'m> Build<'m> {
                 Some(&k) => {
                     let v = &mut self.vertices[k];
                     v.points.push(candidate.point);
+                    if v.on_edge.is_none() && member.on_edge() {
+                        v.on_edge = Some(candidate.point);
+                    }
                     v.base = v.base.max(base);
                     for x in candidate.existing {
                         if !v.existing.contains(&x) {
@@ -1014,6 +1085,7 @@ impl<'m> Build<'m> {
                 None => {
                     self.vertices.push(VertexBuild {
                         points: vec![candidate.point],
+                        on_edge: member.on_edge().then_some(candidate.point),
                         base,
                         floor: 0.0,
                         hits: Vec::new(),
@@ -1551,8 +1623,20 @@ impl<'m> Build<'m> {
                 continue;
             }
             if projection.distance <= v.tolerance(m) {
+                // Where a section crossing of this curve and another is
+                // one of the vertex's members, the curve is paved at that
+                // crossing's own parameter, as an edge is at its hit's:
+                // the curves then end on the same point whatever the
+                // vertex's representative one is.
+                let t = v
+                    .section_crossings
+                    .iter()
+                    .map(|&x| &self.section_crossings[x])
+                    .filter(|x| x.pair == pi && x.curves[0] != x.curves[1])
+                    .find_map(|x| x.curves.iter().position(|&c| c == ci).map(|i| x.t[i]))
+                    .unwrap_or(projection.t);
                 paves.push(Pave {
-                    t: wrap_on(curve, projection.t),
+                    t: wrap_on(curve, t),
                     vertex: k,
                 });
             }
@@ -1568,6 +1652,7 @@ impl<'m> Build<'m> {
             if Self::inside_both(fa, fb, curve.point(domain.midpoint())).is_some() {
                 self.vertices.push(VertexBuild {
                     points: vec![curve.point(domain.lo())],
+                    on_edge: None,
                     base: fa.tolerance.max(fb.tolerance),
                     floor: 0.0,
                     hits: Vec::new(),
@@ -1677,7 +1762,8 @@ impl<'m> Build<'m> {
     }
 
     /// A kept block as a section edge: the pcurve on each face, placed
-    /// in the face's translate of the domain, and the tolerance raised to
+    /// in the face's translate of the domain and ending on its vertices'
+    /// own (u, v) there ([`Self::ended`]), and the tolerance raised to
     /// the pcurves' residual.
     #[allow(clippy::too_many_arguments)]
     fn section_edge(
@@ -1699,6 +1785,8 @@ impl<'m> Build<'m> {
         });
         let (pa, ra) = self.pcurve_of(fa, fb, curve, range, uv_mid[0], base, &ends)?;
         let (pb, rb) = self.pcurve_of(fb, fa, curve, range, uv_mid[1], base, &ends)?;
+        let (pa, ra) = self.ended(0, fa, fb, curve, range, base, [start, end], (pa, ra))?;
+        let (pb, rb) = self.ended(1, fb, fa, curve, range, base, [start, end], (pb, rb))?;
         let tolerance = base.max(ra).max(rb);
         if tolerance > self.precision.max_tolerance {
             return Err(OpError::Tolerance {
@@ -1736,14 +1824,115 @@ impl<'m> Build<'m> {
         let pc = pcurve_on(curve, range, f.surface, tol)
             .map_err(|e| geometry(e, other.shape(), f.shape()))?;
         let pc = self.place(f, other, pc, range, uv_mid, base, ends)?;
-        let residual = samples(range, self.precision.check_samples)
+        let residual = self.residual(f, curve, range, &pc);
+        Ok((pc, residual))
+    }
+
+    /// The largest deviation of `pc`'s image on `f` from `curve` at the
+    /// model's check parameters over `range`.
+    fn residual(&self, f: &FaceInfo<'m>, curve: &Curve, range: Interval, pc: &Curve2) -> f64 {
+        samples(range, self.precision.check_samples)
             .into_iter()
             .map(|t| {
                 let q = pc.point(t);
                 (f.surface.point(q.x, q.y) - curve.point(t)).norm()
             })
+            .fold(0.0, f64::max)
+    }
+
+    /// A section edge's placed pcurve on face `f` of operand `side`, with
+    /// its residual, ended on the (u, v) of the section vertices it ends
+    /// on ([`Self::vertex_uv`]) wherever it lies further from it than
+    /// half the band L2 holds a junction to — so that any two ends there
+    /// meet within the band — and its residual measured again with the
+    /// move. A section vertex merged from points further apart than a
+    /// face's tolerance ([`components`]) has the curve's ends and the
+    /// edge it paves apart by that much, and exact curves cannot meet on
+    /// it: the section edge's pcurve moves, and its tolerance with it
+    /// (`docs/DATA-MODEL.md` §Tolerances), never the operand's.
+    #[allow(clippy::too_many_arguments)]
+    fn ended(
+        &self,
+        side: usize,
+        f: &FaceInfo<'m>,
+        other: &FaceInfo<'m>,
+        curve: &Curve,
+        range: Interval,
+        base: f64,
+        vertices: [usize; 2],
+        (pc, residual): (Curve2, f64),
+    ) -> Result<(Curve2, f64), OpError> {
+        let [start, end] = [(range.lo(), vertices[0]), (range.hi(), vertices[1])].map(|(t, k)| {
+            let at = pc.point(t);
+            let target = self.vertex_uv(side, f, k, at)?;
+            let bound = bands(f.surface, target, self.precision.parametric_tolerance);
+            let d = target - at;
+            (d.x.abs() > 0.5 * bound[0] || d.y.abs() > 0.5 * bound[1]).then_some(target)
+        });
+        if start.is_none() && end.is_none() {
+            return Ok((pc, residual));
+        }
+        let pc = ending_on(&pc, range, [start, end], f.surface, base)
+            .map_err(|e| geometry(e, other.shape(), f.shape()))?;
+        // The move is the residual's largest term, at an end, and the
+        // tolerance it sets is exactly that: rounding at the positions'
+        // own scale above it keeps the edge within its tube when the body
+        // is moved, which rounds every point it compares.
+        let scale = [range.lo(), range.hi()]
+            .map(|t| curve.point(t).coords.norm())
+            .into_iter()
             .fold(0.0, f64::max);
+        let residual = self.residual(f, curve, range, &pc) + RELATIVE_ROUNDING * scale;
         Ok((pc, residual))
+    }
+
+    /// Where section vertex `k` is on face `f` of operand `side`, in the
+    /// translate nearest `near`: an operand edge of the face paved there
+    /// at its pave, or ending on an operand vertex it holds at that end —
+    /// the point every piece of that edge will meet the vertex at — and
+    /// otherwise the (u, v) of the vertex's point. Where the face holds
+    /// several, the nearest; ties to the first in loop order. `None` at a
+    /// singular vertex of the face, a whole line of (u, v) whose pcurves
+    /// meet along the degenerate edge (ADR-0021), and where the point
+    /// does not project.
+    fn vertex_uv(&self, side: usize, f: &FaceInfo<'m>, k: usize, near: Point2) -> Option<Point2> {
+        let v = &self.vertices[k];
+        if f.singular.iter().any(|s| v.existing.contains(&s.vertex)) {
+            return None;
+        }
+        let mut candidates: Vec<Point2> = Vec::new();
+        for &(eid, pcurve) in &f.uses {
+            if let Some(paves) = self.paves.get(&eid) {
+                candidates.extend(
+                    paves
+                        .iter()
+                        .filter(|p| p.vertex == k)
+                        .map(|p| pcurve.point(p.t)),
+                );
+            }
+            if let Some(e) = self.edge_info(side, eid) {
+                for (end, t) in [(e.ends[0].0, e.range.lo()), (e.ends[1].0, e.range.hi())] {
+                    if v.existing.contains(&end) {
+                        candidates.push(pcurve.point(t));
+                    }
+                }
+            }
+        }
+        if candidates.is_empty() {
+            candidates.push(f.surface.project(v.point(self.m)).ok()?.uv);
+        }
+        let periods = f.surface.period();
+        candidates
+            .into_iter()
+            .map(|mut c| {
+                for (d, period) in periods.iter().enumerate() {
+                    if let Some(p) = period {
+                        c[d] += ((near[d] - c[d]) / p).round() * p;
+                    }
+                }
+                c
+            })
+            .min_by(|x, y| (x - near).norm().total_cmp(&(y - near).norm()))
     }
 
     /// The pcurve translated by whole periods so its point at the block's
@@ -2217,8 +2406,10 @@ fn g_face_of<'b, 'm>(build: &'b Build<'m>, gid: EdgeId) -> &'b FaceInfo<'m> {
 
 #[cfg(test)]
 mod tests {
-    use super::{BTreeMap, Candidate, VertexId, components};
-    use arris_check::arris_topo::arris_math::Point3;
+    use super::{BTreeMap, Candidate, Curve2, Surface, VertexId, components, ending_on};
+    use arris_check::arris_topo::arris_math::{
+        Frame, Frame2, Interval, Point2, Point3, UnitVec2, Vec2,
+    };
 
     fn at(x: f64, y: f64, tolerance: f64, existing: &[u32]) -> Candidate {
         Candidate {
@@ -2287,5 +2478,42 @@ mod tests {
             at(5.0 + 1.9e-7, 0.0, 1e-7, &[]),
         ];
         assert_eq!(components(&nodes), vec![0, 1, 1, 0]);
+    }
+
+    /// A pcurve ended on a (u, v) a tolerance away moves its end there
+    /// exactly and elsewhere by no more than the move, same-parameter
+    /// throughout: a line becomes the spline through its new ends, and a
+    /// circle, fitted over the range first, changes only over its end
+    /// spans, its middle where it was to the fit's rounding.
+    #[test]
+    fn a_pcurve_is_ended_on_a_vertex_by_its_end_control_points() {
+        let plane = Surface::Plane {
+            frame: Frame::world(),
+        };
+        let range = Interval::new(0.0, 2.0).unwrap();
+        let line = Curve2::Line {
+            origin: Point2::new(1.0, 1.0),
+            direction: UnitVec2::new_normalize(Vec2::new(1.0, 0.0)),
+        };
+        let to = Point2::new(3.0, 1.0 + 1.2e-7);
+        let moved = ending_on(&line, range, [None, Some(to)], &plane, 1e-7).unwrap();
+        assert_eq!(moved.point(0.0), line.point(0.0));
+        assert_eq!(moved.point(2.0), to);
+        assert!((moved.point(1.0) - Point2::new(2.0, 1.0 + 0.6e-7)).norm() < 1e-15);
+
+        let circle = Curve2::Circle {
+            frame: Frame2::identity(),
+            radius: 1.0,
+        };
+        let from = circle.point(0.0) + Vec2::new(0.0, -1.2e-7);
+        let moved = ending_on(&circle, range, [Some(from), None], &plane, 1e-7).unwrap();
+        assert_eq!(moved.point(0.0), from);
+        assert!((moved.point(2.0) - circle.point(2.0)).norm() < 1e-15);
+        for i in 0..=100 {
+            let t = range.lerp(f64::from(i) / 100.0);
+            let off = (moved.point(t) - circle.point(t)).norm();
+            assert!(off <= 1.2e-7 + 1e-7, "{off} at {t}");
+        }
+        assert!((moved.point(1.0) - circle.point(1.0)).norm() <= 1e-7);
     }
 }
