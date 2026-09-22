@@ -72,7 +72,9 @@ pub enum CurveSurfaceIntersection {
 /// `tol.linear` of the surface everywhere, which its extrema of distance
 /// decide; a hit is `tangent` where the distance along the curve has an
 /// extremum within `tol.linear` of zero, and the crossings that extremum
-/// would split into are reported as that one touch.
+/// would split into are reported as that one touch; a conic's hit within
+/// its own rounding of a whole turn is reported at `0`, not at `2π`'s
+/// neighbourhood, no tolerance.
 ///
 /// The table: line–plane is one hit, none (parallel), or `Coincident`;
 /// line–cylinder is two hits, one tangent hit, none, or `Coincident` for
@@ -1340,6 +1342,59 @@ mod tests {
             assert!(!h.tangent);
         }
         assert!(hits.windows(2).all(|w| w[0].t < w[1].t));
+    }
+
+    #[test]
+    fn a_tangent_a_rounding_short_of_a_whole_turn_still_reports_zero() {
+        // A cylinder posed and turned at the model's default scale,
+        // tangent to a circle offset by `big − small` along its own `X`:
+        // the touch is at the circle's own `t = 0`, where the pose's
+        // rounding would otherwise wrap the found root to a few `f64`
+        // units short of `2π` instead. Found by search off
+        // `intersect_curve_surface` directly.
+        use arris_math::nalgebra::UnitQuaternion;
+
+        let rot = UnitQuaternion::from_euler_angles(
+            0.1473530425457661,
+            -2.5207683519930253,
+            2.7501568180617575,
+        );
+        let base = Frame::from_z(
+            Point3::new(38.50274331577241, 23.32493683456147, -11.174177282923182),
+            Vec3::z(),
+        )
+        .unwrap();
+        let frame = Frame::new(
+            base.origin(),
+            rot * base.z().into_inner(),
+            rot * base.x().into_inner(),
+        )
+        .unwrap();
+        let (big, small) = (0.11106208302349421, 0.03334964848347397);
+        let wall = Surface::Cylinder { frame, radius: big };
+        let delta = big - small;
+        let phase: f64 = 3.7394069057115535;
+        let spin_a = phase.cos() * frame.x().into_inner() + phase.sin() * frame.y().into_inner();
+        let circle_frame = Frame::new(
+            frame.origin() + delta * spin_a,
+            frame.z().into_inner(),
+            spin_a,
+        )
+        .unwrap();
+        let circle = Curve::Circle {
+            frame: circle_frame,
+            radius: small,
+        };
+        let CurveSurfaceIntersection::Points(hits) =
+            intersect_curve_surface(&circle, &wall, tol()).unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!(hits.len(), 1, "{hits:?}");
+        // Plainly, not by a turn-periodic metric: the guarantee is exact,
+        // not within a tolerance of `0` or of `2π`.
+        assert_eq!(hits[0].t, 0.0, "{hits:?}");
+        assert!(hits[0].tangent);
     }
 
     #[test]

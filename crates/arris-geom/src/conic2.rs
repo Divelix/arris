@@ -25,13 +25,27 @@ use crate::project::ellipse_distance;
 /// taken only while it reduces the residual.
 const NEWTON_POLISH_STEPS: usize = 3;
 
+/// Rounding slack for deciding that a wrapped root is a whole turn from
+/// `0`, not a second root beside it: `|2π − t| ≤ WHOLE_TURN_ROUNDING · t`.
+/// The root is the quartic's, in coefficients this function expanded from
+/// dot products that can themselves have cancelled — the same shape of
+/// error [`roots::POLYNOMIAL_ROUNDING`] already budgets for the roots
+/// its coefficients carry, so the wrapped root inherits it rather than a
+/// second, invented number.
+const WHOLE_TURN_ROUNDING: f64 = roots::POLYNOMIAL_ROUNDING;
+
 /// The zeros in `[0, 2π)` of `a₁ cos t + b₁ sin t + a₂ cos 2t + b₂ sin
 /// 2t + c₀`, ascending and each once: the real roots of the quartic in
 /// `s = tan(t/2)` that `(1 + s²)²` times it is — `(c₀ + a₂ − a₁) s⁴ +
 /// (2b₁ − 4b₂) s³ + (2c₀ − 6a₂) s² + (2b₁ + 4b₂) s + (c₀ + a₂ + a₁)` —
 /// plus `t = π` (`s = ∞`) when the leading coefficient vanishes to
 /// rounding, each candidate polished by Newton on the trigonometric
-/// form. `None` when the polynomial vanishes identically.
+/// form, then wrapped into the half-open turn. A root within its own
+/// rounding of a whole turn is reported at `0`, never at `2π`'s
+/// neighbourhood, no tolerance: a wrapped root that close is the same
+/// point on the conic, not a second one beside it, and `dedup` after the
+/// sort collapses the two if the quartic found both. `None` when the
+/// polynomial vanishes identically.
 ///
 /// Errors: a non-finite coefficient.
 pub(crate) fn trig2_roots(
@@ -86,7 +100,14 @@ pub(crate) fn trig2_roots(
                     break;
                 }
             }
-            wrap_turn(t)
+            let wrapped = wrap_turn(t);
+            // Within the root's own rounding of a whole turn: the same
+            // point as `0`, not a second root beside it.
+            if TAU - wrapped <= WHOLE_TURN_ROUNDING * wrapped {
+                0.0
+            } else {
+                wrapped
+            }
         })
         .collect();
     out.sort_by(f64::total_cmp);

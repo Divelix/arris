@@ -315,12 +315,50 @@ bound has to be established here.
   the band between is the new fixture's. The sliver test runs seven
   turns from half a tolerance to 1.9, each the body at ±90° with its
   counts, the volume within 1e-9.
-- [ ] Step 3 **[1]** — A conic hit at a whole turn is the hit at `0`.
+- [x] Step 3 **[1]** — A conic hit at a whole turn is the hit at `0`.
   The snap in `arris-geom` where the hits are wrapped and sorted, within
   the root's own rounding and no tolerance; the periodic tests of
   `intersect_curve.rs` compare parameters plainly instead of in the turn
   metric; a boolean test whose closed edge is hit at its start vertex
   paves no block shorter than the edge's tolerance.
+
+  **Done 2026-09-22.** `conic2::trig2_roots` wraps every candidate as
+  before and, within `WHOLE_TURN_ROUNDING` of `2π` — `roots::
+  POLYNOMIAL_ROUNDING`, the budget the quartic's own coefficients
+  already carry from the dot products they were expanded from, not an
+  invented number — reports it at `0` instead; `dedup` after the sort
+  then collapses it with a root the quartic also found there. No other
+  wrap site changed: `conic_plane`'s and `conic_cylinder`'s own touches
+  are direct formulas, not `trig2_roots` roots, and the design delta
+  named `trig2_roots` alone. Found by search, not by the band survey: a
+  circle offset by `big − small` inside a cylinder, posed at the
+  model's default scale and away from the origin, lands its touch a few
+  `f64` units short of `2π` without the snap — reproduced as
+  `a_tangent_a_rounding_short_of_a_whole_turn_still_reports_zero` in
+  `intersect_curve.rs`, asserting `hits[0].t == 0.0` plainly, and
+  failing without the fix. `ARRIS_PROPTEST_CASES=1000 cargo nextest run
+  --workspace` is green at 1160 tests, `intersect_curve_surface.rs` at
+  3000; `intersect_surfaces.rs`'s two failures at that count
+  (`coaxial_pairs_meet_where_their_meridians_meet`,
+  `random_plane_and_cylinder_agree_on_every_common_property`) reproduce
+  unchanged on `main` before this step and are none of its mechanisms.
+
+  **Found:** `land`'s `at_vertex` reads the hit's point, never its `t`,
+  so `pave_edges` already excludes a hit on a closed edge's own vertex
+  whichever side of the wrap it lands on — the pave model's block
+  decision was never exposed to this. The periodic tests of
+  `intersect_curve_surface.rs` (`expect_hits`'s `param_diff`) keep their
+  turn metric: it exists for expected parameters written outside
+  `[0, 2π)` by convention (`circle_plane_follows_the_case_table`'s
+  `phase − half`, `a_conic_against_a_quadric_follows_the_case_table`'s
+  `[t, −t]`), unrelated to this snap, and changing it risks those. The
+  "periodic tests... compare plainly" clause is instead a new test,
+  `a_pin_tangent_at_its_cap_circles_own_start_paves_no_short_block` in
+  `arris-ops/tests/boolean.rs`, built on the same found pose: it reads
+  `Interferences::paves` directly and asserts every block on every
+  circle edge is no shorter than the edge's tolerance — true with or
+  without the snap here, since `at_vertex` already guards it, but it is
+  the guarantee's boolean-level witness the step asked for.
 - [ ] Step 4 **[3]** — A block that is an operand edge's.
   `pole-slice-beside-seam-cut`: the seam and the section leave the pole
   2e-4 of a radian apart and cross again 1.8e-4 on — a touch in depth

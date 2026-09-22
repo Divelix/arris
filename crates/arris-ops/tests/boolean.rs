@@ -622,6 +622,89 @@ fn random_overlapping_pairs_pave_consistently() {
     });
 }
 
+/// A cap circle of `body`'s cylinder, whose edge is a periodic curve
+/// (`arris_math::Interval::TURN`, [`Curve::Circle`]) — the shape a whole
+/// turn's rounding can land a hit at its own start.
+fn circle_edges(m: &Model, body: Body) -> Vec<EdgeId> {
+    m.edges(body)
+        .unwrap()
+        .into_iter()
+        .filter(|e| {
+            let edge = m.edge(e.id).unwrap();
+            edge.curve()
+                .is_some_and(|(c, _)| matches!(m.curve(c).unwrap(), Curve::Circle { .. }))
+        })
+        .map(|e| e.id)
+        .collect()
+}
+
+/// A pin offset from a bore's axis by `big − small`, tangent to the
+/// bore's wall from inside along the ruling its cap circles cross at
+/// their own `t = 0` (both built on `Axis::z_at`, whose `X` is the same
+/// canonical perpendicular for either radius) — then the whole pair
+/// turned and carried a hundred units from the origin, so the touch
+/// lands where `conic2::trig2_roots` finds it a rounding short of a
+/// whole turn without the snap (plans/c3-tolerance-apart step 3; found
+/// by search over `intersect_curve_surface` directly). `land`'s
+/// `vertex_at` already reads the point, not `t`, so the pave model
+/// never blocked on the wrapped root either way; the property held here
+/// is `intersect_curve_surface`'s own — every edge's paves cut it into
+/// blocks no shorter than its tolerance — through a case built to hit
+/// this exact boundary.
+#[test]
+fn a_pin_tangent_at_its_cap_circles_own_start_paves_no_short_block() {
+    let (big, small) = (0.11106208302349421, 0.03334964848347397);
+    let delta = big - small;
+    let bore_height = 4.0 * big;
+    let pin_height = 1.5 * big;
+    let pin_z = 0.5 * (bore_height - pin_height);
+
+    let mut m = Model::default();
+    let (bore, _) =
+        primitive_cylinder(&mut m, Axis::z_at(Point3::origin()), big, bore_height).unwrap();
+    let (pin, _) = primitive_cylinder(
+        &mut m,
+        Axis::z_at(Point3::new(delta, 0.0, pin_z)),
+        small,
+        pin_height,
+    )
+    .unwrap();
+
+    let motion = Isometry::new(
+        UnitQuaternion::from_euler_angles(
+            0.1473530425457661,
+            -2.5207683519930253,
+            2.7501568180617575,
+        ),
+        Vec3::new(38.50274331577241, 23.32493683456147, -11.174177282923182),
+    );
+    let (bore, _) = transform(&mut m, bore, &motion).unwrap();
+    let (pin, _) = transform(&mut m, pin, &motion).unwrap();
+
+    let i = interferences(&m, bore, pin).unwrap();
+    for &edge in circle_edges(&m, bore).iter().chain(&circle_edges(&m, pin)) {
+        let e = m.edge(edge).unwrap();
+        let (curve_id, range) = e.curve().unwrap();
+        let Curve::Circle { radius, .. } = m.curve(curve_id).unwrap() else {
+            unreachable!()
+        };
+        let mut params = vec![range.lo()];
+        if let Some(paves) = i.paves.get(&edge) {
+            params.extend(paves.iter().map(|p| p.t));
+        }
+        params.push(range.hi());
+        params.sort_by(f64::total_cmp);
+        for w in params.windows(2) {
+            let length = (w[1] - w[0]) * radius;
+            assert!(
+                length >= e.tolerance(),
+                "edge {edge:?} paves a block {length} long, shorter than its tolerance {}: {params:?}",
+                e.tolerance()
+            );
+        }
+    }
+}
+
 // ---- `ops::cut` (plan step 7): split, classify, assemble ----
 
 use arris_ops::arris_check::arris_topo::arris_math::Point2;
