@@ -89,7 +89,9 @@ and the cycle can close.
 - **`arris_geom` conic hits** (step 3): a root of `conic2::trig2_roots`
   within its own rounding of a whole turn is reported at `0`, stated in
   `intersect_curve_surface`'s guarantee. No signature change.
-- **`arris_geom::SECTION_FIT_FRACTION` and `section::fitted`** (step 5):
+- **`arris_geom::SectionBranch` of a torus** (step 5): no signature
+  change; its documented continuity now holds through a turning point.
+- **`arris_geom::SECTION_FIT_FRACTION` and `section::fitted`** (step 5b):
   the constant's guarantee changes — measured from the two surfaces *and
   from the exact branch* — a change to what a public item promises, named
   in the commit body; `intersect_surfaces`' rustdoc and
@@ -448,7 +450,29 @@ bound has to be established here.
   builds), a clause on the sliver backlog line, and the strategy keeps
   that tilt's turn off the seam's band. Open CASCADE's own cut there
   returns the whole ball in two shells.
-- [ ] Step 5 **[2]** — The fit held to the exact branch.
+- [ ] Step 5 **[3]** — A torus branch continuous through its turning
+  points. `SectionBranch` promises `point` continuous over its domain;
+  a branch of `trace_torus` is not, where two arcs meet at a turning
+  point. Each arc finds `v` from `u` by a root along the tube circle,
+  and at a turn the section is tangent to the line of constant `u`, so
+  a rounding `ε` in the turn's `u` is `√ε` along the curve: the two arcs
+  end 2e-8 to 4.3e-7 apart on metre-scale rings (`R/r` 2 to 100) against
+  a plane, a drill and a sphere — above the tolerance on the thin ring.
+  The ruled tracer has the same fold and does not jump, because a
+  turning arc is evaluated from its turning point (`Arc1::angle`'s
+  anchor, the discriminant as a difference from the turn, zero there by
+  construction); the torus walk is handed the same anchor by `located`
+  and ignores it. To establish: an arc's point beside a turn that both
+  arcs agree on at the turn to rounding and that stays smooth in the
+  branch's parameter — the anchored difference in the torus's implicit,
+  or the walk in `v` (`root_u`) inside the turn's cell, whichever the
+  numbers hold. `a_loop_closes_through_its_turning_point_to_rounding`
+  in `trace_torus.rs` (landed ignored, with this finding) un-ignored;
+  the torus properties in `trace_torus.rs` and `intersect_surfaces.rs`
+  green at 1000; no blessed dump changed but a torus section's, staged
+  as `fixtures:` with the reason. Found by step 5b's first attempt,
+  below.
+- [ ] Step 5b **[2]** — The fit held to the exact branch.
   `section::fitted`'s deviation is the larger of today's surface term and
   the fit's distance from `branch.point` — to decide: at the same
   parameter, or to the branch as a curve (⚠ OPEN 3). Property in
@@ -460,6 +484,30 @@ bound has to be established here.
   1°, recorded there. `grazing-ball-bar-cut` passes S5 at `Full` and
   moves to `boolean/` with oracle values; the blessed dumps of fitted
   edges that change are staged as `fixtures:` with the reason.
+
+  **Tried 2026-09-23, tripwire fired, stopped.** Either distance bounds
+  today's surface term (a projection's distance is 1-Lipschitz, and the
+  branch lies on both surfaces to rounding away from a singular point's
+  reach), so the deviation is that distance alone. Measured at degree 5
+  and the default tolerance, control points per loop, today → same
+  parameter → curve distance (a Newton foot along the branch, the
+  tangent a central difference): metre cylinder pairs (radii 1 to 2,
+  crossing, skew, tilted) 61–77 → 55–79 → 57–81; a cylinder against a
+  sphere and against a crossing cylinder at a smallest meeting angle of
+  20°, 5°, 1°: 47/101, 97/201, 177/341 → 47/101, 109/221, 201/397 → the
+  same within 4. Torus sections (`R/r` 1.1 to 100, against a plane, a
+  drill, a sphere, a cone): 39–382 → up to 522, and a drill on the
+  `R/r = 10` ring refused (`the periodic normal equations are
+  singular`) — with both options, and the curve distance seconds a fit.
+  Not the metric: the torus branch jumps at its turning points (step
+  5 above), which the surface term never saw because the jump runs
+  along the curve, and the old fits sit up to 1.9e-7 from the branch
+  there. With the check parameters within 1e-3 of the domain of every
+  join left out, the torus counts are back: 39–390 with the curve
+  distance, 41–486 at the same parameter (the cone's loops +27–30%, the
+  rest within 10%), the latter as fast as today. Neither doubles once
+  the branch is continuous; OPEN 3 is decided on those numbers after
+  step 5.
 - [ ] Step 6 **[2]** — A section edge known by its surfaces. In
   `section_curve`'s `along` verdict, and wherever else `pave` asks whether
   an operand edge lies along a section (`coincident`, `common_block`,
@@ -467,7 +515,7 @@ bound has to be established here.
   operand lies on a surface `Coincident` with `fb`'s is on `fa ∩ fb` to
   its own tolerance (E4), so it is along the branch its midpoint projects
   onto within that tolerance, and `curves_coincide` is not asked. Sound at
-  a grazing pair because of step 5. `frustum-stub-cut-then-fuse` moves to
+  a grazing pair because of step 5b. `frustum-stub-cut-then-fuse` moves to
   `boolean/` with oracle values; the frustum–cylinder sparing in
   `quadric_identities` is deleted and the property is green at 1000.
 - [ ] Step 7 **[2]** — The pinch is refused by name (open question 1).
@@ -480,7 +528,7 @@ bound has to be established here.
   `#[ignore]` reason restated; a backlog line for a shell that touches
   itself at a vertex, with the `General` body.
 - [ ] Step 8 **[1]** — ADR-0022, indexed in `docs/adr/README.md`, with
-  the measurements of steps 2, 4 and 5 as its grounds and the amendment
+  the measurements of steps 2, 4 and 5b as its grounds and the amendment
   of ADR-0018/0019's fit target stated as such.
 - [ ] Step 9 **[3]** — The band held. `tolerance_band.rs` un-ignored and
   asserting: every outcome is the flush body, the generic body or one of
@@ -513,7 +561,7 @@ with nothing unchecked, `docs/DATA-MODEL.md` with no `⚠ OPEN`.
   what it refuses by name; the status line; "Open:" gone. The cycle is
   then `/close-cycle`'s.
 - `docs/DATA-MODEL.md` §Tolerances, §Curves — drift-check against steps 2
-  and 5, which change them in their own commits.
+  and 5b, which change them in their own commits.
 - `docs/ARCHITECTURE.md` — the pave model's merge (components, the
   numbering rule), the section-edge verdicts of steps 4 and 6, the pinch
   beside `TangentContact`.
@@ -546,10 +594,15 @@ with nothing unchecked, `docs/DATA-MODEL.md` with no `⚠ OPEN`.
   balls meet", with the entities' own tolerances; the bound, measured
   over the 72710 booleans of the suite at 1000 cases, is that nothing
   outside the band changes — the tripwire did not fire.
-- ⚠ OPEN 3 (agent, step 5): same-parameter or curve distance to the
+- ⚠ OPEN 3 (agent, step 5b): same-parameter or curve distance to the
   branch. Tripwire: control points more than doubled on the metre probes
   means stop and report; the fallback is parking `grazing-ball-bar-cut`
-  with the measuring harness, never an S5 excuse.
+  with the measuring harness, never an S5 excuse. **Fired 2026-09-23** on
+  the torus probes under both options, from the torus branch's jumps at
+  its turning points, not the metric (step 5b's note): step 5 fixes the
+  branch, and the question is decided on the counts measured after it —
+  the same parameter as fast as today at up to +30%, the curve distance
+  at today's counts and several times the time.
 - 4, **decided 2026-09-23** (step 4): both — the curve–curve touch is
   resolved into its far crossing (`conic_crossings`, along the line of
   the two planes) and the block between the crossings is the edge's

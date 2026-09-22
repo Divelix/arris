@@ -316,6 +316,57 @@ fn a_branch_runs_at_a_steady_speed_through_its_turning_points() {
     }
 }
 
+/// A loop of these poses starts at a turning point, where two arcs that
+/// both turn meet: `point` is continuous there as everywhere
+/// (`SectionBranch`'s guarantee), so the loop closes to rounding — the
+/// point just short of the period is the point at `0` less the step's
+/// own travel. Each arc finds the turn's `v` from its `u`, where the
+/// section is tangent to the line of constant `u` and a rounding `ε` in
+/// the turn's `u` is `√ε` along the curve: the two arcs end 2e-8 to
+/// 4.3e-7 apart, above the tolerance on the thin ring, and a fit held to
+/// the branch cannot follow the jump (plans/c3-tolerance-apart step 5).
+#[test]
+#[ignore = "the torus walk finds a turning point's v from its u, and two arcs meeting there end up to 4.3e-7 apart (plans/c3-tolerance-apart step 5)"]
+fn a_loop_closes_through_its_turning_point_to_rounding() {
+    for (big, small) in [(2.0, 0.5), (10.0, 1.0), (100.0, 1.0)] {
+        let torus = Surface::Torus {
+            frame: frame([0.0; 3], [0.2, 0.3, 1.0]),
+            major_radius: big,
+            minor_radius: small,
+        };
+        let axes = torus.frame().unwrap();
+        let x = axes.vec_to_world(Vec3::new(1.0, 0.0, 0.0));
+        let z = axes.vec_to_world(Vec3::new(0.0, 0.0, 1.0));
+        let at = Point3::origin() + big * x;
+        let others = [
+            Surface::Plane {
+                frame: Frame::from_z(at + 0.3 * small * x, x + 0.3 * z).unwrap(),
+            },
+            Surface::Cylinder {
+                frame: Frame::from_z(at + 0.2 * small * x, z + 0.1 * x).unwrap(),
+                radius: 0.4 * small,
+            },
+            Surface::Sphere {
+                frame: Frame::from_z(at + 0.5 * small * z, z).unwrap(),
+                radius: 0.8 * small,
+            },
+        ];
+        for other in others {
+            let trace = trace_torus(&torus, &other, tol()).unwrap();
+            for b in trace.branches().iter().filter(|b| b.is_closed()) {
+                let length = b.domain().length();
+                let short = length * (1.0 - 1e-12);
+                let step = (b.point(short) - b.point(short - length * 1e-12)).norm();
+                let gap = (b.point(short) - b.point(0.0)).norm();
+                assert!(
+                    gap <= 2.0 * step + 1e-12 * big,
+                    "{big}/{small} against {other:?}: the loop is open by {gap}"
+                );
+            }
+        }
+    }
+}
+
 #[test]
 fn the_poses_the_tracer_does_not_resolve_are_refused_by_name() {
     let ring = ring();
