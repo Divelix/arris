@@ -152,8 +152,9 @@ pub enum VertexSource {
 /// lies on, so the pieces of the two operands meet exactly (ADR-0004).
 #[derive(Debug, Clone, PartialEq)]
 pub struct SectionVertex {
-    /// The point: the first operand vertex it coincides with, else the
-    /// first hit's.
+    /// The point: the first operand vertex it coincides with, else its
+    /// first candidate's — a hit's, a crossing's or a section
+    /// crossing's, in that order of making.
     pub point: Point3,
     /// The largest tolerance of the entities whose hits it merges, plus
     /// the spread of the merged points about `point`

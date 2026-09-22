@@ -83,6 +83,65 @@ impl VertexBuild {
     }
 }
 
+/// What a candidate point of a section vertex is.
+#[derive(Debug, Clone, Copy)]
+enum Member {
+    Hit(usize),
+    Crossing(usize),
+    SectionCrossing(usize),
+    Singular,
+}
+
+impl Member {
+    /// The source of a vertex this member is the first of.
+    fn source(self) -> VertexSource {
+        match self {
+            Member::Hit(_) | Member::Crossing(_) => VertexSource::Hits,
+            Member::SectionCrossing(_) => VertexSource::SectionCrossing,
+            Member::Singular => VertexSource::Singular,
+        }
+    }
+}
+
+/// A point that may be a section vertex, or an operand vertex one names:
+/// its ball — the tolerance of the entities that made it — and the
+/// operand vertices it coincides with, in the order it names them.
+#[derive(Clone)]
+struct Candidate {
+    point: Point3,
+    tolerance: f64,
+    existing: Vec<VertexId>,
+}
+
+/// The connected components of `nodes` under "the same within a
+/// tolerance": two whose balls meet, `|p − q| ≤ tp + tq` — a point of
+/// both is within tolerance of each, so nothing the model holds tells
+/// them apart — or that name one operand vertex. Per node, the least
+/// index in its component: the partition does not depend on the nodes'
+/// order, only the labels do.
+fn components(nodes: &[Candidate]) -> Vec<usize> {
+    fn root(parent: &mut [usize], mut i: usize) -> usize {
+        while parent[i] != i {
+            parent[i] = parent[parent[i]];
+            i = parent[i];
+        }
+        i
+    }
+    let mut parent: Vec<usize> = (0..nodes.len()).collect();
+    for (i, p) in nodes.iter().enumerate() {
+        for (j, q) in nodes.iter().enumerate().skip(i + 1) {
+            let same = (p.point - q.point).norm() <= p.tolerance + q.tolerance
+                || p.existing.iter().any(|x| q.existing.contains(x));
+            if !same {
+                continue;
+            }
+            let (ri, rj) = (root(&mut parent, i), root(&mut parent, j));
+            parent[ri.max(rj)] = ri.min(rj);
+        }
+    }
+    (0..nodes.len()).map(|i| root(&mut parent, i)).collect()
+}
+
 /// An end of an edge piece: the edge's own vertex, or the section vertex
 /// of a pave.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -798,156 +857,199 @@ impl<'m> Build<'m> {
         Ok(out)
     }
 
-    /// The first vertex (in creation order) that shares an operand vertex
-    /// with `existing` or whose point is within the larger of its
-    /// tolerance and `tolerance` of `point`.
-    fn vertex_near(&self, point: Point3, tolerance: f64, existing: &[VertexId]) -> Option<usize> {
-        let m = self.m;
-        self.vertices.iter().position(|v| {
-            v.existing.iter().any(|x| existing.contains(x))
-                || (v.point(m) - point).norm() <= v.tolerance(m).max(tolerance)
-        })
-    }
-
-    /// `point` merged into [`Self::vertex_near`] it; otherwise a new
-    /// vertex of `source`. The index.
-    fn merge_point(
-        &mut self,
-        point: Point3,
-        tolerance: f64,
-        existing: Vec<VertexId>,
-        source: VertexSource,
-    ) -> Result<usize, OpError> {
-        let m = self.m;
-        let mut base = tolerance;
-        for &v in &existing {
-            base = base.max(m.vertex(v)?.tolerance());
-        }
-        let found = self.vertex_near(point, tolerance, &existing);
-        Ok(match found {
-            Some(k) => {
-                let v = &mut self.vertices[k];
-                v.points.push(point);
-                v.base = v.base.max(base);
-                for x in existing {
-                    if !v.existing.contains(&x) {
-                        v.existing.push(x);
-                    }
-                }
-                v.existing.sort();
-                k
-            }
-            None => {
-                self.vertices.push(VertexBuild {
-                    points: vec![point],
-                    base,
-                    floor: 0.0,
-                    hits: Vec::new(),
-                    crossings: Vec::new(),
-                    section_crossings: Vec::new(),
-                    existing,
-                    source,
-                });
-                self.vertices.len() - 1
-            }
-        })
-    }
-
-    /// Hits, then crossings, then section crossings, merged into section
-    /// vertices; then every touch that lands on one of those joins it,
-    /// and any other touch joins nothing itself, while the crossings it
-    /// stands for ([`Self::resolve_touch`]) are hits merged last.
+    /// Hits, then crossings, then section crossings, then the singular
+    /// vertices a crossing curve runs through, as candidate points; the
+    /// section vertices are their components under "the same within a
+    /// tolerance" ([`components`]), not the first vertex each point
+    /// happened to reach. A touch whose component holds one of those
+    /// joins it; any other touch joins nothing itself, while the crossings
+    /// it stands for ([`Self::resolve_touch`]) are hits, candidates like
+    /// the rest, and the components are taken again with them. A vertex
+    /// is numbered by its first member in that order and carries that
+    /// member's source.
     fn merge(&mut self) -> Result<(), OpError> {
-        for i in 0..self.hits.len() {
-            if self.hits[i].tangent {
+        let mut members: Vec<(Member, Candidate)> = Vec::new();
+        for (i, h) in self.hits.iter().enumerate() {
+            if h.tangent {
                 continue;
             }
-            let hit_tol = self.hit_tolerance[i];
-            let point = self.hits[i].point;
             let mut existing: Vec<VertexId> = Vec::new();
-            if let Some(v) = self.hits[i].at_vertex {
+            if let Some(v) = h.at_vertex {
                 existing.push(v);
             }
-            if let Landing::Boundary(shape) = self.hits[i].landing {
+            if let Landing::Boundary(shape) = h.landing {
                 if let Ok(v) = VertexHandle::try_from(shape) {
                     if !existing.contains(&v.id) {
                         existing.push(v.id);
                     }
                 }
             }
-            let k = self.merge_point(point, hit_tol, existing, VertexSource::Hits)?;
-            self.vertices[k].hits.push(i);
-            self.hits[i].vertex = Some(k);
+            members.push((
+                Member::Hit(i),
+                Candidate {
+                    point: h.point,
+                    tolerance: self.hit_tolerance[i],
+                    existing,
+                },
+            ));
         }
-        for i in 0..self.crossings.len() {
-            if self.crossings[i].tangent {
+        for (i, x) in self.crossings.iter().enumerate() {
+            if x.tangent {
                 continue;
             }
-            let tol = self.crossing_tolerance[i];
-            let point = self.crossings[i].point;
             let mut existing: Vec<VertexId> = Vec::new();
-            for (side, id) in [(0, self.crossings[i].a), (1, self.crossings[i].b)] {
-                if let Some(v) = self.edge_info(side, id).and_then(|e| e.vertex_at(point)) {
+            for (side, id) in [(0, x.a), (1, x.b)] {
+                if let Some(v) = self.edge_info(side, id).and_then(|e| e.vertex_at(x.point)) {
                     if !existing.contains(&v) {
                         existing.push(v);
                     }
                 }
             }
-            let k = self.merge_point(point, tol, existing, VertexSource::Hits)?;
-            self.vertices[k].crossings.push(i);
-            self.crossings[i].vertex = Some(k);
+            members.push((
+                Member::Crossing(i),
+                Candidate {
+                    point: x.point,
+                    tolerance: self.crossing_tolerance[i],
+                    existing,
+                },
+            ));
         }
-        for i in 0..self.section_crossings.len() {
-            if self.section_crossings[i].tangent {
+        for (i, x) in self.section_crossings.iter().enumerate() {
+            if x.tangent {
                 continue;
             }
-            let tol = self.section_crossing_tolerance[i];
-            let point = self.section_crossings[i].point;
-            let k = self.merge_point(point, tol, Vec::new(), VertexSource::SectionCrossing)?;
-            self.vertices[k].section_crossings.push(i);
-            self.section_crossings[i].vertex = Some(k);
+            members.push((
+                Member::SectionCrossing(i),
+                Candidate {
+                    point: x.point,
+                    tolerance: self.section_crossing_tolerance[i],
+                    existing: Vec::new(),
+                },
+            ));
         }
-        self.singular_vertices()?;
+        for (point, tolerance, vertex) in self.singular_vertices()? {
+            members.push((
+                Member::Singular,
+                Candidate {
+                    point,
+                    tolerance,
+                    existing: vec![vertex],
+                },
+            ));
+        }
         // A touch makes no vertex of its own, but one landing on a vertex
         // made above passes through it: a ruling or a rim circle through
         // the crossing of two ellipses, where the walls are tangent to
         // each other. It joins that vertex, which then paves its edge.
+        let made = members.len();
+        let touches: Vec<(Member, Candidate)> = self
+            .hits
+            .iter()
+            .enumerate()
+            .filter(|(_, h)| h.tangent)
+            .map(|(i, h)| {
+                (
+                    Member::Hit(i),
+                    Candidate {
+                        point: h.point,
+                        tolerance: self.hit_tolerance[i],
+                        existing: h.at_vertex.into_iter().collect(),
+                    },
+                )
+            })
+            .collect();
         let mut off_every_vertex: Vec<usize> = Vec::new();
-        for i in 0..self.hits.len() {
-            if !self.hits[i].tangent {
-                continue;
+        {
+            let all: Vec<&Candidate> = members.iter().chain(&touches).map(|(_, c)| c).collect();
+            let label = self.labels(&all)?;
+            let reached: BTreeSet<usize> = label[..made].iter().copied().collect();
+            for (k, (member, candidate)) in touches.into_iter().enumerate() {
+                if reached.contains(&label[made + k]) {
+                    members.push((member, candidate));
+                } else if let Member::Hit(i) = member {
+                    off_every_vertex.push(i);
+                }
             }
-            let hit_tol = self.hit_tolerance[i];
-            let point = self.hits[i].point;
-            let existing: Vec<VertexId> = self.hits[i].at_vertex.into_iter().collect();
-            if self.vertex_near(point, hit_tol, &existing).is_none() {
-                off_every_vertex.push(i);
-                continue;
-            }
-            let k = self.merge_point(point, hit_tol, existing, VertexSource::Hits)?;
-            let v = &mut self.vertices[k];
-            v.hits.push(i);
-            v.hits.sort_unstable();
-            self.hits[i].vertex = Some(k);
         }
         // A touch off every vertex may still stand for crossings: those
-        // are hits like any other, merged after every vertex above.
+        // are hits like any other.
         let mut resolved = false;
         for i in off_every_vertex {
             let hit_tol = self.hit_tolerance[i];
-            for mut hit in self.resolve_touch(i)? {
-                let existing: Vec<VertexId> = hit.at_vertex.into_iter().collect();
-                let k = self.merge_point(hit.point, hit_tol, existing, VertexSource::Hits)?;
-                hit.vertex = Some(k);
-                self.vertices[k].hits.push(self.hits.len());
+            for hit in self.resolve_touch(i)? {
+                members.push((
+                    Member::Hit(self.hits.len()),
+                    Candidate {
+                        point: hit.point,
+                        tolerance: hit_tol,
+                        existing: hit.at_vertex.into_iter().collect(),
+                    },
+                ));
                 self.hits.push(hit);
                 self.hit_tolerance.push(hit_tol);
                 resolved = true;
             }
         }
+        let all: Vec<&Candidate> = members.iter().map(|(_, c)| c).collect();
+        let label = self.labels(&all)?;
+        let mut vertex_of: BTreeMap<usize, usize> = BTreeMap::new();
+        for ((member, candidate), l) in members.into_iter().zip(label) {
+            let mut base = candidate.tolerance;
+            for &v in &candidate.existing {
+                base = base.max(self.m.vertex(v)?.tolerance());
+            }
+            let k = match vertex_of.get(&l) {
+                Some(&k) => {
+                    let v = &mut self.vertices[k];
+                    v.points.push(candidate.point);
+                    v.base = v.base.max(base);
+                    for x in candidate.existing {
+                        if !v.existing.contains(&x) {
+                            v.existing.push(x);
+                        }
+                    }
+                    v.existing.sort();
+                    k
+                }
+                None => {
+                    self.vertices.push(VertexBuild {
+                        points: vec![candidate.point],
+                        base,
+                        floor: 0.0,
+                        hits: Vec::new(),
+                        crossings: Vec::new(),
+                        section_crossings: Vec::new(),
+                        existing: candidate.existing,
+                        source: member.source(),
+                    });
+                    vertex_of.insert(l, self.vertices.len() - 1);
+                    self.vertices.len() - 1
+                }
+            };
+            let v = &mut self.vertices[k];
+            match member {
+                Member::Hit(i) => {
+                    v.hits.push(i);
+                    self.hits[i].vertex = Some(k);
+                }
+                Member::Crossing(i) => {
+                    v.crossings.push(i);
+                    self.crossings[i].vertex = Some(k);
+                }
+                Member::SectionCrossing(i) => {
+                    v.section_crossings.push(i);
+                    self.section_crossings[i].vertex = Some(k);
+                }
+                Member::Singular => {}
+            }
+        }
+        for v in &mut self.vertices {
+            v.hits.sort_unstable();
+        }
         if resolved {
             self.sort_hits();
         }
+        self.one_per_operand()?;
         let m = self.m;
         for v in &self.vertices {
             let wanted = v.tolerance(m);
@@ -976,6 +1078,61 @@ impl<'m> Build<'m> {
         Ok(())
     }
 
+    /// [`components`] over `candidates` and, beside them, every operand
+    /// vertex one of them names, as a ball of its own point and
+    /// tolerance: a point within reach of that vertex is the same point
+    /// as the hit at it. The labels of the candidates alone.
+    fn labels(&self, candidates: &[&Candidate]) -> Result<Vec<usize>, OpError> {
+        let named: BTreeSet<VertexId> = candidates
+            .iter()
+            .flat_map(|c| c.existing.iter().copied())
+            .collect();
+        let mut nodes: Vec<Candidate> = candidates
+            .iter()
+            .map(|c| Candidate {
+                point: c.point,
+                tolerance: c.tolerance,
+                existing: c.existing.clone(),
+            })
+            .collect();
+        for v in named {
+            let vertex = self.m.vertex(v)?;
+            nodes.push(Candidate {
+                point: vertex.point(),
+                tolerance: vertex.tolerance(),
+                existing: vec![v],
+            });
+        }
+        let mut label = components(&nodes);
+        label.truncate(candidates.len());
+        Ok(label)
+    }
+
+    /// No section vertex holds two vertices of one operand: the edge or
+    /// the stretch of face between them would collapse to a point, which
+    /// no tolerance of this boolean may do. The two named, as
+    /// `OpError::Tolerance` with the tolerance the vertex would need.
+    fn one_per_operand(&self) -> Result<(), OpError> {
+        let m = self.m;
+        let own = [self.a, self.b].map(|body| {
+            m.vertices(body)
+                .map(|vs| vs.into_iter().map(|v| v.id).collect::<BTreeSet<_>>())
+        });
+        let own = [own[0].clone()?, own[1].clone()?];
+        for v in &self.vertices {
+            for side in &own {
+                let mut of_side = v.existing.iter().filter(|x| side.contains(x));
+                if let (Some(_), Some(&second)) = (of_side.next(), of_side.next()) {
+                    return Err(OpError::Tolerance {
+                        entity: Shape::new(second, self.a.orientation),
+                        wanted: v.tolerance(m),
+                    });
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Every singular vertex of an operand face — a cone's apex, a
     /// sphere's pole, held by a degenerate edge that pierces nothing and
     /// makes no hit — that a crossing curve of one of the face's pairs
@@ -990,7 +1147,7 @@ impl<'m> Build<'m> {
     /// pcurve of the block it ends never disagree; a curve outside the
     /// band and inside [`SINGULAR_CLEARANCE`] is
     /// [`Reason::BesideSingularity`].
-    fn singular_vertices(&mut self) -> Result<(), OpError> {
+    fn singular_vertices(&self) -> Result<Vec<(Point3, f64, VertexId)>, OpError> {
         let mut wanted: Vec<(Point3, f64, VertexId)> = Vec::new();
         for (pi, pair) in self.pairs.iter().enumerate() {
             let (ia, ib) = self.pair_faces[pi];
@@ -1048,10 +1205,7 @@ impl<'m> Build<'m> {
                 }
             }
         }
-        for (point, tolerance, vertex) in wanted {
-            self.merge_point(point, tolerance, vec![vertex], VertexSource::Singular)?;
-        }
-        Ok(())
+        Ok(wanted)
     }
 
     /// The paves on the degenerate edges: a section edge ending on a
@@ -1538,8 +1692,13 @@ impl<'m> Build<'m> {
         end: usize,
     ) -> Result<SectionEdge, OpError> {
         let base = fa.tolerance.max(fb.tolerance);
-        let (pa, ra) = self.pcurve_of(fa, fb, curve, range, uv_mid[0], base)?;
-        let (pb, rb) = self.pcurve_of(fb, fa, curve, range, uv_mid[1], base)?;
+        let m = self.m;
+        let ends = [start, end].map(|k| {
+            let v = &self.vertices[k];
+            (v.point(m), v.tolerance(m))
+        });
+        let (pa, ra) = self.pcurve_of(fa, fb, curve, range, uv_mid[0], base, &ends)?;
+        let (pb, rb) = self.pcurve_of(fb, fa, curve, range, uv_mid[1], base, &ends)?;
         let tolerance = base.max(ra).max(rb);
         if tolerance > self.precision.max_tolerance {
             return Err(OpError::Tolerance {
@@ -1559,7 +1718,10 @@ impl<'m> Build<'m> {
 
     /// The pcurve of a curve block on one face, placed, with the largest
     /// deviation of its image from the curve at the model's check
-    /// parameters. `base` is the tolerance the fit is asked for.
+    /// parameters. `base` is the tolerance the fit is asked for; `ends`
+    /// the balls of the vertices the block ends on, as [`Self::place`]
+    /// reads them.
+    #[allow(clippy::too_many_arguments)]
     fn pcurve_of(
         &self,
         f: &FaceInfo<'m>,
@@ -1568,11 +1730,12 @@ impl<'m> Build<'m> {
         range: Interval,
         uv_mid: Point2,
         base: f64,
+        ends: &[(Point3, f64)],
     ) -> Result<(Curve2, f64), OpError> {
         let tol = Tolerance::new(base, self.precision.angular_tolerance);
         let pc = pcurve_on(curve, range, f.surface, tol)
             .map_err(|e| geometry(e, other.shape(), f.shape()))?;
-        let pc = self.place(f, other, pc, range, uv_mid, base)?;
+        let pc = self.place(f, other, pc, range, uv_mid, base, ends)?;
         let residual = samples(range, self.precision.check_samples)
             .into_iter()
             .map(|t| {
@@ -1592,7 +1755,13 @@ impl<'m> Build<'m> {
     /// once at the midpoint, because on a sphere or a cone a tolerance is
     /// no one step in `u`: a loop round a pole ends on the seam at a
     /// latitude where the fit's rounding in `u` is many times what the
-    /// same length allows at the loop's far side.
+    /// same length allows at the loop's far side. Inside the ball of a
+    /// vertex it ends on (`ends`, point and tolerance) the block is that
+    /// vertex, and held to its tolerance: a section vertex merged from
+    /// points a tolerance apart ([`components`]) has the seam crossing inside
+    /// its ball, and the stretch of the block up to it is no crossing the
+    /// block makes.
+    #[allow(clippy::too_many_arguments)]
     fn place(
         &self,
         f: &FaceInfo<'m>,
@@ -1601,6 +1770,7 @@ impl<'m> Build<'m> {
         range: Interval,
         uv_mid: Point2,
         tolerance: f64,
+        ends: &[(Point3, f64)],
     ) -> Result<Curve2, OpError> {
         let periods = f.surface.period();
         let at = pc.point(range.midpoint());
@@ -1617,8 +1787,18 @@ impl<'m> Build<'m> {
             }
             for t in samples(range, self.precision.check_samples) {
                 let at = pc.point(t);
-                let near = bands(f.surface, at, tolerance)[d];
-                if at[d] < f.uv_lo[d] - near || at[d] > f.uv_hi[d] + near {
+                let outside = |reach: f64| {
+                    let near = bands(f.surface, at, reach)[d];
+                    at[d] < f.uv_lo[d] - near || at[d] > f.uv_hi[d] + near
+                };
+                if !outside(tolerance) {
+                    continue;
+                }
+                let point = f.surface.point(at.x, at.y);
+                let within_an_end = ends
+                    .iter()
+                    .any(|&(p, reach)| (point - p).norm() <= reach && !outside(reach));
+                if !within_an_end {
                     return Err(OpError::Internal(Fault::Seam {
                         face: f.id,
                         other: other.id,
@@ -1783,7 +1963,8 @@ impl<'m> Build<'m> {
             return Ok(None);
         }
         let fit = e.tolerance + f.tolerance.max(other.tolerance);
-        let (pcurve, residual) = self.pcurve_of(other, f, e.curve, block.range, uv_mid, fit)?;
+        let (pcurve, residual) =
+            self.pcurve_of(other, f, e.curve, block.range, uv_mid, fit, &[])?;
         let tolerance = e.tolerance.max(residual);
         if tolerance > self.precision.max_tolerance {
             return Err(OpError::Tolerance {
@@ -1971,8 +2152,15 @@ impl<'m> Build<'m> {
                 let own = m.curve2(c.pcurve())?;
                 let uv_mid = own.point(t_e);
                 let fit = g.tolerance.max(e.tolerance) + fb.tolerance;
-                let (pc, residual) =
-                    self.pcurve_of(fb, g_face_of(self, gid), g.curve, gb.range, uv_mid, fit)?;
+                let (pc, residual) = self.pcurve_of(
+                    fb,
+                    g_face_of(self, gid),
+                    g.curve,
+                    gb.range,
+                    uv_mid,
+                    fit,
+                    &[],
+                )?;
                 tolerance = tolerance.max(residual);
                 pcurves.push((c.pcurve(), pc));
             }
@@ -2025,4 +2213,79 @@ fn g_face_of<'b, 'm>(build: &'b Build<'m>, gid: EdgeId) -> &'b FaceInfo<'m> {
         .iter()
         .find(|f| f.edges().contains(&gid))
         .unwrap_or(&build.faces[0][0])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{BTreeMap, Candidate, VertexId, components};
+    use arris_check::arris_topo::arris_math::Point3;
+
+    fn at(x: f64, y: f64, tolerance: f64, existing: &[u32]) -> Candidate {
+        Candidate {
+            point: Point3::new(x, y, 0.0),
+            tolerance,
+            existing: existing.iter().map(|&i| VertexId::new(i, 0)).collect(),
+        }
+    }
+
+    /// The partition as sets of the nodes' own names, whatever their
+    /// order.
+    fn partition(nodes: &[(usize, Candidate)]) -> Vec<Vec<usize>> {
+        let cands: Vec<Candidate> = nodes.iter().map(|(_, c)| c.clone()).collect();
+        let mut groups: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+        for (k, l) in components(&cands).into_iter().enumerate() {
+            groups.entry(l).or_default().push(nodes[k].0);
+        }
+        let mut out: Vec<Vec<usize>> = groups
+            .into_values()
+            .map(|mut g| {
+                g.sort_unstable();
+                g
+            })
+            .collect();
+        out.sort();
+        out
+    }
+
+    /// The seam fixture's three points — the crossing vertex and the
+    /// seam's two crossings, 1.7e-7 and 2.4e-7 apart at 1e-7 — are one
+    /// component in every order; a first-come merge made three of them
+    /// in one order and two in another. A fourth point three tolerances
+    /// off stays apart, and a fifth naming an operand vertex another
+    /// names joins it at any distance.
+    #[test]
+    fn components_do_not_depend_on_creation_order() {
+        let e = 1.22e-7;
+        let nodes = [
+            (0, at(0.0, 0.0, 1e-7, &[])),
+            (1, at(e, e, 1e-7, &[])),
+            (2, at(-e, e, 1e-7, &[])),
+            (3, at(3e-7 + e, e, 1e-7, &[])),
+            (4, at(1.0, 0.0, 1e-7, &[7])),
+            (5, at(1.0, 5e-6, 1e-7, &[7])),
+        ];
+        let want = vec![vec![0, 1, 2], vec![3], vec![4, 5]];
+        let n = nodes.len();
+        // Every rotation and its reverse: each node first, each last.
+        for r in 0..n {
+            let mut order: Vec<(usize, Candidate)> =
+                (0..n).map(|i| nodes[(i + r) % n].clone()).collect();
+            assert_eq!(partition(&order), want, "rotation {r}");
+            order.reverse();
+            assert_eq!(partition(&order), want, "rotation {r}, reversed");
+        }
+    }
+
+    /// The label is the least index of the component, so the first
+    /// member in the nodes' order numbers it.
+    #[test]
+    fn a_component_is_labelled_by_its_first_member() {
+        let nodes = [
+            at(5.0, 0.0, 1e-7, &[]),
+            at(0.0, 0.0, 1e-7, &[]),
+            at(1.5e-7, 0.0, 1e-7, &[]),
+            at(5.0 + 1.9e-7, 0.0, 1e-7, &[]),
+        ];
+        assert_eq!(components(&nodes), vec![0, 1, 1, 0]);
+    }
 }

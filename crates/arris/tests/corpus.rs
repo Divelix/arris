@@ -306,11 +306,10 @@ fn boolean_seam_beside_crossing_fuse() {
 
 /// The same fuse with the seam between one and two tolerances from the
 /// crossing vertex: its two crossings and that vertex are three points
-/// too far apart to merge and too close for the blocks between them to
-/// clear the seam's band. The desired body is the one at −90°, the three
-/// one vertex.
+/// one vertex by closure, whose balls meet though no two lie within one
+/// tolerance. The desired body is the one at −90°, the three one vertex.
 #[test]
-#[ignore = "Fault::Split, a section edge of f1 ends at a node nothing else reaches: the blocks between the seam's crossings and the crossing vertex are dropped as boundary (docs/BACKLOG.md, features a tolerance apart)"]
+#[ignore = "L2, the pcurves jump 1.22e-7 in (u, v) at the one vertex the three points now are: the seam ends at its touch and the section edges at the crossing vertex, and no pcurve is moved to the vertex's own (u, v) on the seam's face (plans/c3-tolerance-apart step 2b)"]
 fn regression_seam_a_tolerance_from_crossing_fuse() {
     run("regression/seam-a-tolerance-from-crossing-fuse");
 }

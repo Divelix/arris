@@ -81,6 +81,11 @@ and the cycle can close.
   `OpError::Tolerance` naming them — an existing variant; if its fields
   cannot name two vertices, the change is named in the commit body. No
   public signature change expected.
+- **Section edges' pcurve ends** (step 2b, ⚠ OPEN 6): a section
+  edge's pcurve on a face ends on its vertex's own (u, v) there; the
+  edge's tolerance raised by the move. ADR-0022 records it with step
+  2's relation. No public signature change expected; `SectionVertex`'s
+  doc if it gains its (u, v) per face.
 - **`arris_geom` conic hits** (step 3): a root of `conic2::trig2_roots`
   within its own rounding of a whole turn is reported at `0`, stated in
   `intersect_curve_surface`'s guarantee. No signature change.
@@ -202,7 +207,7 @@ bound has to be established here.
   surfaces none — so the old step 6 is now step 4, the fit step 5 and
   the surfaces step 6, the fit still before the surfaces. References to
   them in this plan are renumbered.
-- [ ] Step 2 **[3]** — Section vertices by closure. `merge` takes the
+- [x] Step 2 **[3]** — Section vertices by closure. `merge` takes the
   components of the candidate points; to establish: the relation
   (pairwise within the larger of the two tolerances, or to a fixpoint
   where a grown ball reaches a further point), that the result does not
@@ -211,11 +216,66 @@ bound has to be established here.
   measured as the largest vertex tolerance over the whole corpus and the
   boolean properties at 1000 cases, which must not move — and the refusal
   for two vertices of one operand in one component. Blocks between paves
-  of one component are no blocks. `seam-a-tolerance-from-crossing-fuse`
-  passes every corpus stage and moves to `boolean/` with its blessed dump
-  (`fixtures:`, the body of `cross-cylinders-fuse` at −90°, 8/14);
-  `crossing_cylinders_obey_every_identity` runs the band from 5.8e-6° to
-  1.1e-5° past ±90° it skipped, if it skipped it.
+  of one component are no blocks.
+
+  **Done 2026-09-22.** The relation (open question 2, decided): two
+  candidates are one point when their balls meet, `|p − q| ≤ tp + tq`,
+  or they name one operand vertex — each ball the tolerance of the
+  entities that made the point, never a grown one, so the relation is
+  fixed before any merge and its components are the closure; the named
+  operand vertices are balls of their own beside the points. Neither
+  option the step offered merges the fixture: its three points are
+  1.7e-7 and 2.4e-7 apart at 1e-7, no two within one tolerance, and a
+  grown ball never starts growing. It is also the vertex–vertex
+  interference Open CASCADE's builder uses. A touch joins a vertex when
+  its component holds one; the crossings an off touch stands for are
+  candidates, and the components are taken again with them. Numbering by
+  first member in today's order, source and representative point as
+  before. `components` is a pure function with two unit tests: the
+  fixture's three points one component under every rotation of their
+  order and its reverse, and the label the first member. The bound,
+  measured: every boolean the suite runs at `ARRIS_PROPTEST_CASES=1000`,
+  72710 of them, logged with every section vertex's point, tolerance
+  and members before and after — **identical, all 72710**, so no vertex
+  tolerance moved and no chain formed anywhere outside the band; the
+  tripwire did not fire, and no diameter bound is needed. Two vertices
+  of one operand in one component is `OpError::Tolerance` naming the
+  second (`one_per_operand`); the suite never reaches it, and its fields
+  name one vertex, so the variant is unchanged. Blocks between paves of
+  one component: `pave_edges` already paves an edge once per vertex, and
+  a section curve's paves at one vertex twice are a traced branch's two
+  ends, a loop — nothing to add. `place` holds a section block inside
+  the ball of a vertex it ends on to that vertex's tolerance, not the
+  faces': the stretch of a block up to a seam crossing inside the ball is
+  the vertex. Band survey at 256 pairs after the closure: failed 4248 →
+  4174, designed refusals 462 → 553 (`TangentContact` 294 → 384), flush
+  3430 → 3432, generic 2612 → 2593; by mechanism step 2 157 → 173,
+  step 4 459 → 474, none 2284 → 2185.
+
+  **Found:** the fixture does not pass. With its three points one
+  vertex, the seam's face has the seam ending at its touch and the
+  section edges at the crossing vertex, 1.22e-7 apart in (u, v): L2
+  holds every junction to `parametric_tolerance`, and with L2 relaxed
+  the mesh finds the vertex's (u, v) evaluating 1.22e-7 from its point,
+  above the face's 1e-7. Exact curves cannot meet there: a vertex whose
+  members lie further apart than a face's tolerance needs its pcurves
+  to end on its own (u, v). Step 2b (⚠ OPEN 6); the fixture's move and
+  the property band moved with it.
+- [ ] Step 2b **[3]** — The pcurves of a merged vertex meet on its own
+  (u, v) (⚠ OPEN 6). A section vertex has one (u, v) per face per side
+  of a seam — an operand edge's pave where one paves an edge of the
+  face, else its point's projection — and a section edge's pcurve ending
+  there ends on it, its edge's tolerance raised to what the move costs;
+  the vertex's point preferring a member on an operand edge.
+  `seam-a-tolerance-from-crossing-fuse` passes every corpus stage and
+  moves to `boolean/` with its blessed dump (`fixtures:`, the body of
+  `cross-cylinders-fuse` at −90°, 8/14);
+  `a_turn_of_the_tool_about_its_own_axis_changes_nothing` loses the
+  lower bound that keeps its turns out of the band 5.8e-6° to 1.1e-5°
+  past ±90°, and
+  `a_sliver_within_the_tolerance_of_the_other_wall_is_decided_at_its_section_edges`
+  runs that band too. No generic pose's dump changes: every vertex the
+  suite makes has its members within a face tolerance.
 - [ ] Step 3 **[1]** — A conic hit at a whole turn is the hit at `0`.
   The snap in `arris-geom` where the hits are wrapped and sorted, within
   the root's own rounding and no tolerance; the periodic tests of
@@ -333,10 +393,10 @@ with nothing unchecked, `docs/DATA-MODEL.md` with no `⚠ OPEN`.
   come back as a consumer's regression: the fixture keeps the desired
   body in `regression/` and the backlog line says where it would go, the
   `General` body. ADR-0022 records this.
-- ⚠ OPEN 2 (agent, step 2): the closure's relation and bound. Tripwire:
-  if any corpus fixture or property case at a generic pose grows a vertex
-  tolerance it did not have, stop — closure then needs a diameter bound,
-  and the step reports the measurement before choosing one.
+- 2, **decided 2026-09-22** (step 2): the closure's relation is "the
+  balls meet", with the entities' own tolerances; the bound, measured
+  over the 72710 booleans of the suite at 1000 cases, is that nothing
+  outside the band changes — the tripwire did not fire.
 - ⚠ OPEN 3 (agent, step 5): same-parameter or curve distance to the
   branch. Tripwire: control points more than doubled on the metre probes
   means stop and report; the fallback is parking `grazing-ball-bar-cut`
@@ -345,6 +405,20 @@ with nothing unchecked, `docs/DATA-MODEL.md` with no `⚠ OPEN`.
   the curve–curve touch must first be resolved into its far crossing, as
   ADR-0016 resolves an edge–face touch; step 4 records which and why in
   ADR-0022's grounds.
+- ⚠ OPEN 6 (agent, step 2b): how a merged vertex's pcurves meet. Step 2
+  found the tolerance model holds a vertex's (u, v) on a face to
+  `parametric_tolerance` (L2) and its evaluation to the face's
+  tolerance (the mesh), so a vertex whose members lie further apart
+  than a face's tolerance cannot be met by exact pcurves. Options: (A)
+  move the pcurve ends — a section edge's pcurve ends on the vertex's
+  own (u, v), a fitted one by its end control point and an exact one
+  refitted where it must move, its edge's tolerance raised by the move
+  (the growth rule's own reason, `docs/DATA-MODEL.md` §Tolerances); (B)
+  L2 and the mesh read the vertex's tolerance, converted to (u, v) —
+  a checker tolerance widened, loops no longer closed in (u, v), which
+  every polygon and winding number downstream assumes. Recommended: A.
+  Tripwire: a generic pose whose dump changes, or a pcurve moved further
+  than its vertex's tolerance, means stop and report.
 - 5, **decided 2026-09-22** (the human delegated it): the agent reads
   step 1's histogram by a rule and does not wait. Step 2 stays first
   whatever it shows — the accept line names its fixture. Steps 4 to 6

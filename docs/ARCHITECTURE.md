@@ -281,11 +281,21 @@ parameter is in the edge's range and the (u, v) is on the face
 (`region2::point_side` on the face's loops, a `Boundary` verdict
 resolved to the edge or vertex of the face within its own tolerance,
 the edge's own end vertex when the hit is within its ball); those hits
-merged into section vertices — a hit joins the first vertex whose point
-is within the larger of the two tolerances or that shares an operand
-vertex with it, and the vertex's tolerance is the largest of the
-entities merged plus the spread of the points (data-model
-§Tolerances); the *section crossings* — two section curves of one
+merged into section vertices by *closure*, not by arrival — every
+candidate point (the hits, the edge–edge crossings, the section
+crossings and singular vertices below, the operand vertices they name)
+is a ball of the tolerance of the entities that made it, two candidates
+are the same point when their balls meet, `|p − q| ≤ tp + tq`, or they
+name one operand vertex, and a section vertex is a connected component
+of that relation, so three points 1.7e-7 and 2.4e-7 apart at 1e-7 are
+one vertex in whatever order they were found; a component is numbered
+by its first member in the order the candidates are made and carries
+that member's source, its point is its first operand vertex's else its
+first member's, and its tolerance is the largest of the entities
+merged plus the spread of the points about it (data-model
+§Tolerances); a component holding two vertices of one operand would
+collapse what lies between them and is `OpError::Tolerance`; the
+*section crossings* — two section curves of one
 crossing pair intersected with each other (`intersect_curves`), a
 crossing on both faces being a section vertex by the same merge, since
 two curves of one pair meet where the surfaces are tangent to each
@@ -295,8 +305,8 @@ there to make a hit — for a traced pair, whose fitted branches meet
 only at its singular points and end there exactly, the crossings are
 those points on both faces, with the branches that end at each, and no
 two fitted curves are intersected; a *touch* — a hit where the edge meets the surface
-without crossing it — makes no vertex of its own, but one that lands on
-a vertex made by the hits and crossings joins it, since the edge passes
+without crossing it — makes no vertex of its own, but one whose
+component holds a vertex made by the hits and crossings joins it, since the edge passes
 through that vertex (a seam ruling or a rim circle through the crossing
 of two ellipses, tangent to the other wall there because the walls are),
 and one that lands on none is *resolved through the section curves*

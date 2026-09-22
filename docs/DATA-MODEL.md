@@ -1382,7 +1382,11 @@ may carry different tolerances.
 - **Growth.** An operation never emits an entity with a tolerance smaller
   than that of the input entity it was `Modified` from, and it raises a
   tolerance only for a reason it can name: an intersection whose curves
-  agree only to `t`, a vertex merged from two points `t` apart. The record of
+  agree only to `t`, a vertex merged from two points `t` apart — the
+  section vertices of a boolean being the connected components of its
+  candidate points, two the same when their balls meet, so a vertex's
+  spread is the component's and not an accident of the order its points
+  were found in (`docs/ARCHITECTURE.md` §Operations). The record of
   why lives in the operation's tests, not in the entity. A fitted section
   curve is *not* such a reason (ADR-0018): it lies within
   `SECTION_FIT_FRACTION` of the faces' tolerance of both surfaces, and
