@@ -7,7 +7,7 @@
 //! has a closed form of its own, and the coplanar cases, where the plane
 //! says nothing, have theirs.
 
-use arris_math::{Frame, Point2, Point3, Tolerance, Vec2, Vec3, wrap_angle};
+use arris_math::{Frame, Point2, Point3, Tolerance, Vec2, Vec3, roots, wrap_angle};
 
 use crate::conic2::{Conic2, ConicMeet, conic_pair};
 use crate::{
@@ -264,6 +264,98 @@ pub fn curves_coincide(a: &Curve, b: &Curve, tol: Tolerance) -> Result<bool, Geo
             nurbs_nurbs_coincide(na, nb, tol)?.ok_or_else(unsupported)
         }
     }
+}
+
+/// The points two conics in planes that are not parallel have in common,
+/// found where the line the two planes meet in crosses the first conic —
+/// a quadratic along that line — and kept where they lie on the second
+/// within `tol.linear`; `None` when either curve is not a circle or an
+/// ellipse, or the planes are parallel within `tol.angular`, where the
+/// line does not exist.
+///
+/// Guarantees: every common point is a root of the one quadratic, so each
+/// is placed to rounding whatever the angle the conic makes with the
+/// other's plane, and a hit is `tangent` only where its root is double
+/// to the polynomial's own rounding
+/// ([`arris_math::roots::POLYNOMIAL_ROUNDING`]) — never by a tolerance.
+/// That is the difference from [`intersect_curves`], which meets the
+/// first conic with the second's plane and calls two crossings less than
+/// `tol.linear` deep one touch: a small circle through a sphere's pole
+/// 2e-4 of a radian from the seam's meridian crosses it again 1.8e-4 on,
+/// within 8e-10 of the circle's plane over the whole stretch, and is one
+/// touch there and two crossings here. Hits are sorted by `ta` in
+/// `[0, 2π)`, `tb` is the second conic's projection of the point, and
+/// the result is deterministic bit for bit.
+///
+/// ```
+/// use arris_geom::{Curve, conic_crossings};
+/// use arris_math::{Frame, Point3, Precision, Vec3};
+///
+/// // Two great circles of the unit sphere, 1e-3 of a radian apart: they
+/// // cross at both ends of the line their planes share.
+/// let a = Curve::Circle { frame: Frame::world(), radius: 1.0 };
+/// let tilted = Frame::from_z(Point3::origin(), Vec3::new(0.0, (1e-3f64).sin(), (1e-3f64).cos()))?;
+/// let b = Curve::Circle { frame: tilted, radius: 1.0 };
+/// let hits = conic_crossings(&a, &b, Precision::DEFAULT.tolerance())?.unwrap();
+/// assert_eq!(hits.len(), 2);
+/// assert!(hits.iter().all(|h| !h.tangent && h.point.y.abs() < 1e-15));
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+///
+/// Errors: [`GeomError::InvalidTolerance`]; a projection onto the second
+/// conic that fails.
+pub fn conic_crossings(
+    a: &Curve,
+    b: &Curve,
+    tol: Tolerance,
+) -> Result<Option<Vec<CurveCurveHit>>, GeomError> {
+    if !tol.is_consistent() {
+        return Err(GeomError::InvalidTolerance(tol));
+    }
+    let (Some((fa, [ra, rb])), Some((fb, _))) = (conic_frame(a), conic_frame(b)) else {
+        return Ok(None);
+    };
+    let (na, nb) = (fa.z().into_inner(), fb.z().into_inner());
+    let along = na.cross(&nb);
+    if along.norm().atan2(na.dot(&nb).abs()) <= tol.angular {
+        return Ok(None);
+    }
+    // The line in `a`'s plane, in its frame: square to `b`'s normal
+    // there, through the point of `b`'s plane nearest `a`'s centre.
+    let normal = fa.vec_to_local(nb);
+    let across = Vec2::new(normal.x, normal.y);
+    let reach = across.norm();
+    let direction = Vec2::new(-across.y, across.x) / reach;
+    let height = nb.dot(&(fb.origin() - fa.origin()));
+    let foot = across * (height / (reach * reach));
+    // The conic `(x / ra)² + (y / rb)² = 1` along `foot + s direction`.
+    let scaled = |v: Vec2| Vec2::new(v.x / ra, v.y / rb);
+    let (q, d) = (scaled(foot), scaled(direction));
+    let Ok(roots) = roots::quadratic(d.norm_squared(), 2.0 * q.dot(&d), q.norm_squared() - 1.0)
+    else {
+        return Ok(None);
+    };
+    let mut out = Vec::with_capacity(roots.len());
+    for root in roots.iter() {
+        let at = Point2::from(foot) + root.value * direction;
+        let point = fa.origin() + at.x * fa.x().into_inner() + at.y * fa.y().into_inner();
+        let projection = match b.project(point) {
+            Ok(p) => p,
+            Err(GeomError::Ambiguous { .. }) => continue,
+            Err(e) => return Err(e),
+        };
+        if projection.distance > tol.linear {
+            continue;
+        }
+        out.push(CurveCurveHit {
+            ta: wrap_angle((at.y / rb).atan2(at.x / ra)),
+            tb: projection.t,
+            point,
+            tangent: root.multiplicity > 1,
+        });
+    }
+    out.sort_by(|x, y| x.ta.total_cmp(&y.ta));
+    Ok(Some(out))
 }
 
 /// `hits` sorted by `ta`; a total order, since every parameter is finite.

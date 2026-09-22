@@ -13,8 +13,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use arris_check::arris_topo::arris_geom::region2::{MAX_SEGMENTS_PER_PIECE, Side};
 use arris_check::arris_topo::arris_geom::{
     Curve, Curve2, CurveIntersection, CurveSurfaceIntersection, GeomError, MeetKind, NurbsCurve2,
-    PCURVE_FIT_DEGREE, PCURVE_SINGULAR_BAND, Surface, SurfaceIntersection, curves_coincide,
-    fit_curve2, intersect_curve_surface, intersect_curves, intersect_surfaces, pcurve_on,
+    PCURVE_FIT_DEGREE, PCURVE_SINGULAR_BAND, Surface, SurfaceIntersection, conic_crossings,
+    curves_coincide, fit_curve2, intersect_curve_surface, intersect_curves, intersect_surfaces,
+    pcurve_on,
 };
 use arris_check::arris_topo::arris_math::{
     Aabb, Interval, Point2, Point3, Precision, RELATIVE_ROUNDING, Tolerance, Vec2, period_end,
@@ -170,6 +171,16 @@ struct Block {
     end: End,
 }
 
+/// A piece of an operand edge that a block of a section curve of pair
+/// `pair` lies along: the edge's block, placed on the pair's face of the
+/// other operand as an image instead of a section edge on both.
+struct Along {
+    pair: usize,
+    side: usize,
+    edge: EdgeId,
+    block: Block,
+}
+
 /// The whole build, over the two operands read once.
 struct Build<'m> {
     m: &'m Model,
@@ -201,6 +212,9 @@ struct Build<'m> {
     sections: Vec<SectionEdge>,
     contacts: Vec<Contact>,
     coincident: Vec<(EdgeId, FaceId)>,
+    /// The pieces of operand edges a block of a section curve lies along
+    /// ([`Self::along_block`]), each with the pair whose section it is.
+    along: Vec<Along>,
     images: Vec<EdgeImage>,
     blocks: Vec<CommonBlock>,
 }
@@ -232,6 +246,7 @@ pub(super) fn build(m: &Model, a: Body, b: Body) -> Result<Interferences, OpErro
         sections: Vec::new(),
         contacts: Vec::new(),
         coincident: Vec::new(),
+        along: Vec::new(),
         images: Vec::new(),
         blocks: Vec::new(),
     };
@@ -667,6 +682,19 @@ impl<'m> Build<'m> {
                     // it is that edge, and nothing crosses.
                     CurveIntersection::Coincident => continue,
                     CurveIntersection::Points(hits) => hits,
+                };
+                // A touch of two curves is the intersector's verdict on
+                // depth again, one level down: two conics of one surface
+                // crossing at a shallow angle twice are one touch as long
+                // as they stay within the tolerance between, however far
+                // apart the crossings. Where both are conics their common
+                // points are exact along the line their planes share.
+                let hits = if hits.iter().any(|h| h.tangent) {
+                    conic_crossings(e.curve, curve, tol)
+                        .map_err(|err| geometry(err, e.shape(), f.shape()))?
+                        .unwrap_or(hits)
+                } else {
+                    hits
                 };
                 for h in hits {
                     if h.tangent {
@@ -1357,13 +1385,26 @@ impl<'m> Build<'m> {
     }
 
     /// The paves on the operand edges: each hit's vertex at its `t`,
-    /// unless the hit is at the edge's own end; each crossing's vertex
+    /// unless the hit is at the edge's own end or merged into the vertex
+    /// that holds it; each crossing's vertex
     /// on both edges likewise; one pave per vertex per edge, ascending
     /// by `t`.
     fn pave_edges(&mut self) {
         let mut wanted: Vec<(EdgeId, f64, usize)> = Vec::new();
         for h in &self.hits {
-            if let (Some(vertex), None) = (h.vertex, h.at_vertex) {
+            let (Some(vertex), None) = (h.vertex, h.at_vertex) else {
+                continue;
+            };
+            // Merged into the section vertex that holds the edge's own end,
+            // as a crossing's is below: a hit a hair past that end's
+            // tolerance would pave the end's vertex beside it.
+            let side = usize::from(self.edge_info(0, h.edge).is_none());
+            let at_end = self.edge_info(side, h.edge).is_some_and(|e| {
+                e.ends
+                    .iter()
+                    .any(|end| self.vertices[vertex].existing.contains(&end.0))
+            });
+            if !at_end {
                 wanted.push((h.edge, h.t, vertex));
             }
         }
@@ -1737,10 +1778,22 @@ impl<'m> Build<'m> {
             if range.length() <= 0.0 {
                 continue;
             }
+            // Along an edge of one face, the block is on that face's
+            // boundary and its polygons cannot say it is inside: the
+            // verdict comes first, and the other face decides the image.
+            let (fa, fb) = (&self.faces[0][ia], &self.faces[1][ib]);
+            if let Some((side, edge, block)) = self.along_block(fa, fb, curve, range, start, end) {
+                self.along.push(Along {
+                    pair: pi,
+                    side,
+                    edge,
+                    block,
+                });
+                continue;
+            }
             let Some(uv) = Self::inside_both(fa, fb, curve.point(range.midpoint())) else {
                 continue;
             };
-            let (fa, fb) = (&self.faces[0][ia], &self.faces[1][ib]);
             let section = self.section_edge(fa, fb, curve, range, uv, curve_index, start, end)?;
             // Every vertex ≥ its edges: the ends carry at least the
             // section edge's tolerance.
@@ -1759,6 +1812,73 @@ impl<'m> Build<'m> {
             edges,
         });
         Ok(())
+    }
+
+    /// The piece of an operand edge of `fa` or `fb` that the block
+    /// `range` of `curve`, from section vertex `start` to `end`, lies
+    /// along: a piece between the same two vertices, in either order,
+    /// that every point the model checks the block at lies within the
+    /// tolerance of, inside the piece's own range. Two curves of one
+    /// surface crossing at a shallow angle twice stay within the
+    /// tolerance of each other over the whole stretch between — a small
+    /// circle through a sphere's pole 2e-4 of a radian off the seam, back
+    /// across it 1.8e-4 on — and the block between the two crossings is
+    /// then no curve of its own but the edge's piece: built as a section
+    /// edge it would bound a sliver of zero area on the edge's face. The
+    /// verdict is the block's alone, beside the whole-curve one
+    /// (`curves_coincide`) the curve's blocks are first held to; `None`
+    /// when no piece is along it.
+    fn along_block(
+        &self,
+        fa: &FaceInfo<'m>,
+        fb: &FaceInfo<'m>,
+        curve: &Curve,
+        range: Interval,
+        start: usize,
+        end: usize,
+    ) -> Option<(usize, EdgeId, Block)> {
+        let (start, end) = (End::Section(start), End::Section(end));
+        let points: Vec<Point3> = samples(range, self.precision.check_samples)
+            .into_iter()
+            .map(|t| curve.point(t))
+            .collect();
+        for (side, f) in [(0, fa), (1, fb)] {
+            for &eid in f.edges() {
+                let Some(e) = self.edge_info(side, eid) else {
+                    continue;
+                };
+                let within = e.tolerance.max(fa.tolerance.max(fb.tolerance));
+                for block in self.blocks_of(e) {
+                    let ends = (self.canonical(block.start), self.canonical(block.end));
+                    if ends != (start, end) && ends != (end, start) {
+                        continue;
+                    }
+                    let lies_along = points.iter().all(|&p| {
+                        e.curve.project(p).is_ok_and(|on| {
+                            on.distance <= within
+                                && e.in_range(on.t)
+                                    .is_some_and(|t| Self::within_block(e, block.range, t))
+                        })
+                    });
+                    if lies_along {
+                        return Some((side, eid, block));
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// `t`, placed in `e`'s range, inside `range` or beyond either end by
+    /// no more than the edge's tolerance converted to the parameter there.
+    fn within_block(e: &EdgeInfo<'m>, range: Interval, t: f64) -> bool {
+        let speed = e.curve.eval(t).d1.norm();
+        let slack = if speed > 0.0 {
+            e.tolerance / speed
+        } else {
+            0.0
+        };
+        t >= range.lo() - slack && t <= range.hi() + slack
     }
 
     /// A kept block as a section edge: the pcurve on each face, placed
@@ -1864,7 +1984,9 @@ impl<'m> Build<'m> {
     ) -> Result<(Curve2, f64), OpError> {
         let [start, end] = [(range.lo(), vertices[0]), (range.hi(), vertices[1])].map(|(t, k)| {
             let at = pc.point(t);
-            let target = self.vertex_uv(side, f, k, at)?;
+            let target = self
+                .vertex_uv(side, f, k, at)
+                .or_else(|| self.singular_arrival(f, k, at))?;
             let bound = bands(f.surface, target, self.precision.parametric_tolerance);
             let d = target - at;
             (d.x.abs() > 0.5 * bound[0] || d.y.abs() > 0.5 * bound[1]).then_some(target)
@@ -1884,6 +2006,30 @@ impl<'m> Build<'m> {
             .fold(0.0, f64::max);
         let residual = self.residual(f, curve, range, &pc) + RELATIVE_ROUNDING * scale;
         Ok((pc, residual))
+    }
+
+    /// Where a pcurve arriving at `at` on section vertex `k`, a singular
+    /// vertex of `f`, ends: `at` with each periodic parameter held to the
+    /// face's (u, v) box. The vertex is a whole line of (u, v), any `u` on
+    /// it one point, and the `u` a curve arrives with is its tangent there;
+    /// one that arrives past the box's edge crossed the seam inside the
+    /// vertex's ball — a small circle through a pole a hair off the seam's
+    /// meridian, crossing it again nearer the pole than the vertex's
+    /// tolerance — and ends on the seam's own corner of the box, where the
+    /// degenerate edge meets it. `None` for any other vertex, and for an
+    /// arrival inside the box.
+    fn singular_arrival(&self, f: &FaceInfo<'m>, k: usize, at: Point2) -> Option<Point2> {
+        let v = &self.vertices[k];
+        if !f.singular.iter().any(|s| v.existing.contains(&s.vertex)) {
+            return None;
+        }
+        let mut held = at;
+        for (d, period) in f.surface.period().iter().enumerate() {
+            if period.is_some() {
+                held[d] = at[d].clamp(f.uv_lo[d], f.uv_hi[d]);
+            }
+        }
+        (held != at).then_some(held)
     }
 
     /// Where section vertex `k` is on face `f` of operand `side`, in the
@@ -1984,9 +2130,14 @@ impl<'m> Build<'m> {
                     continue;
                 }
                 let point = f.surface.point(at.x, at.y);
-                let within_an_end = ends
-                    .iter()
-                    .any(|&(p, reach)| (point - p).norm() <= reach && !outside(reach));
+                // Within the ball of a singular point of the face, a step
+                // of `u` is no length at all ([`Self::singular_arrival`]).
+                let singular = |p: Point3, reach: f64| {
+                    f.singular.iter().any(|s| (s.point - p).norm() <= reach)
+                };
+                let within_an_end = ends.iter().any(|&(p, reach)| {
+                    (point - p).norm() <= reach && (singular(p, reach) || !outside(reach))
+                });
                 if !within_an_end {
                     return Err(OpError::Internal(Fault::Seam {
                         face: f.id,
@@ -2288,6 +2439,39 @@ impl<'m> Build<'m> {
                     images.push(image);
                 }
             }
+        }
+        // A piece of an edge that a block of a section curve lies along
+        // ([`Self::along_block`]) is that block on the pair's other face:
+        // its image there, where the section edge would have been.
+        for along in &self.along {
+            let (ia, ib) = self.pair_faces[along.pair];
+            let (f, other) = if along.side == 0 {
+                (&self.faces[0][ia], &self.faces[1][ib])
+            } else {
+                (&self.faces[1][ib], &self.faces[0][ia])
+            };
+            let Some(e) = self.edge_info(along.side, along.edge) else {
+                continue;
+            };
+            // The piece is placed once on a face, whichever pair placed it
+            // first: an edge lying in the face is imaged there already.
+            let on = |x: &EdgeImage| {
+                let pair = &self.pairs[x.pair];
+                if x.side == 0 { pair.b } else { pair.a }
+            };
+            let held = images.iter().any(|x: &EdgeImage| {
+                (x.edge, x.index, on(x)) == (along.edge, along.block.index, other.id)
+            });
+            if held {
+                continue;
+            }
+            // Outside the other face, the block bounds nothing there.
+            let Some(image) = self.image(along.pair, along.side, e, f, other, &along.block)? else {
+                continue;
+            };
+            floors.push((along.block.start, image.tolerance));
+            floors.push((along.block.end, image.tolerance));
+            images.push(image);
         }
         for (end, tolerance) in floors {
             if let End::Section(k) = self.canonical(end) {

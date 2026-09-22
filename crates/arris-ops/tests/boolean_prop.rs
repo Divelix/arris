@@ -15,7 +15,7 @@
 
 use arris_debug::prop::body::{
     Boxed, CrossingPair, Cylindrical, OverlappingPair, QuadricPair, QuadricSolid, QuadricTool,
-    QuarticPair, SingularSlice, TangentPair,
+    QuarticPair, SingularSlice, SingularSolid, TangentPair,
 };
 use arris_debug::testing::{REL, close_to, fail, fitted_rel};
 use arris_debug::{dump_text, prop, prop_shards};
@@ -956,6 +956,132 @@ prop_shards! {
     a_plane_through_an_apex_or_a_pole_cuts_additively
         [shard_0 shard_1 shard_2 shard_3 shard_4 shard_5 shard_6 shard_7]
         (slice) = prop::body::singular_slice() => { singular_identities(&slice) }
+}
+
+/// Two shrunk failures of the property above once its turn was drawn
+/// beside the seam (seed and count in the commit body): a ball of radius
+/// 0.5 turned over, sliced through its lower pole with the section
+/// leaving it a few 1e-7 of a radian from the seam's meridian, so the
+/// circle crosses the seam again 3.5e-7 and 7.7e-8 from the pole — the
+/// seam's touch joining the pole's vertex in both. The body is built with
+/// the section's arrival at the pole ended on the seam's corner of the
+/// sphere's (u, v) box, where it came in past it inside the vertex's ball
+/// (`Fault::Seam`, and L2's jump of 1.16e-7 at the corner, before).
+#[test]
+fn a_circle_through_a_pole_a_hair_off_the_seam_arrives_at_its_corner() {
+    let q = |i, j, k, w| UnitQuaternion::new_unchecked(Quaternion::new(w, i, j, k));
+    let turned_over = Isometry::new(q(0.0, 1.0, 0.0, 0.0), Vec3::zeros());
+    for (block, tilt) in [
+        (
+            q(
+                4.5060693312784737e-7,
+                0.9836235643885107,
+                -0.18023507865959792,
+                -8.256733467680473e-8,
+            ),
+            0.36245087704211887,
+        ),
+        (
+            q(
+                0.9611716615602801,
+                5.565711370811689e-8,
+                -1.5979085870124377e-8,
+                -0.2759511496867646,
+            ),
+            0.5591582703804245,
+        ),
+    ] {
+        let slice = SingularSlice {
+            solid: SingularSolid::Ball { radius: 0.5 },
+            block: Boxed {
+                min: Point3::new(-4.0, -4.0, 0.0),
+                max: Point3::new(4.0, 4.0, 4.0),
+                pose: Isometry::new(block, Vec3::new(0.0, 0.0, -0.5)),
+            },
+            tilt,
+            pose: turned_over,
+        };
+        singular_identities(&slice).unwrap();
+    }
+}
+
+/// Two shrunk failures of the property above with the turn drawn beside
+/// the seam at a ball's tilt of 90° exactly (seed and count in the
+/// commit body): the face's plane holds the axis 1.3e-7 of a radian off
+/// the seam's meridian plane, so the seam lies within the tolerance of
+/// the face over most of its length and the section, a great circle
+/// through both poles, bounds a lune a few tolerances wide beside it.
+/// Posed 93 from the origin, the seam's crossings of the face — at the
+/// poles, placed by rounding over the angle to within 1e-6 of them — lie
+/// 1.3e-7 from a pole and read as a section passing beside it
+/// (`BesideSingularity`); at the origin they pave vertices 3e-7 from the
+/// poles and the section leaves one along the seam, 1.3e-7 of `u`
+/// beside it (`TangentContact`). The desired outcome is the half ball.
+/// The strategy keeps the turn at 90° drawn round the whole turn; the
+/// sliver faces are a backlog line (plans/c3-tolerance-apart step 4).
+#[test]
+#[ignore = "BesideSingularity and TangentContact for a meridian plane a hair off the seam's: the lune beside the seam, a sliver face (docs/BACKLOG.md)"]
+fn a_meridian_plane_a_hair_off_the_seams_halves_the_ball() {
+    let q = |i, j, k, w| UnitQuaternion::new_unchecked(Quaternion::new(w, i, j, k));
+    let slice = |radius: f64, reach: f64, block: Isometry, pose: Isometry| SingularSlice {
+        solid: SingularSolid::Ball { radius },
+        block: Boxed {
+            min: Point3::new(-reach, -reach, 0.0),
+            max: Point3::new(reach, reach, reach),
+            pose: block,
+        },
+        tilt: core::f64::consts::FRAC_PI_2,
+        pose,
+    };
+    let radius = 5.827313694055293;
+    for s in [
+        slice(
+            radius,
+            23.309254776221174,
+            Isometry::new(
+                q(
+                    0.31084389850611865,
+                    0.12408923660051907,
+                    0.670065071443858,
+                    -0.6625637570470906,
+                ),
+                Vec3::new(5.622888875430533, -1.2288177833473812, 92.08918236910976),
+            ),
+            Isometry::new(
+                q(
+                    0.6444801692372493,
+                    -0.4035454753701673,
+                    0.6113486138805179,
+                    -0.21920135281188774,
+                ),
+                Vec3::new(0.0, 0.0, 93.0006166447507),
+            ),
+        ),
+        slice(
+            radius,
+            72.65819946186286,
+            Isometry::new(
+                q(
+                    0.8911085450837674,
+                    -0.35282950433601523,
+                    0.2848169086567667,
+                    -0.01778286512058247,
+                ),
+                Vec3::new(-3.054515193050281, -4.878197349998894, -0.9114342756409481),
+            ),
+            Isometry::new(
+                q(
+                    0.6444801692372494,
+                    -0.40354547537016733,
+                    0.0,
+                    0.6494585135081319,
+                ),
+                Vec3::zeros(),
+            ),
+        ),
+    ] {
+        singular_identities(&s).unwrap();
+    }
 }
 
 /// The first shrunk failure of the property above (seed, count and shard

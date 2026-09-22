@@ -623,6 +623,80 @@ fn a_parallel_and_a_tube_circle_of_a_torus_are_lines_in_uv() {
     );
 }
 
+/// A line or a conic tilted from a plane by more than the angular
+/// tolerance, and within the linear one of it over the range, has the
+/// fitted projection for its pcurve there: its image lies within the
+/// tolerance of the curve's own projection, so off the curve by no more
+/// than the curve's distance from the plane and the tolerance again. The
+/// seam's last stretch before a ball's pole on a face turned 25° from its
+/// plane (`boolean/pole-slice-beside-seam-cut`), where the exact arm's
+/// circle was 0.19 off; a half circle turned 4.9e-8 about its diameter
+/// from the plane of a meridian, 9.8e-8 from it at its middle, which a
+/// fit held to the curve itself could not reach; and a line turned 5e-8.
+#[test]
+fn a_curve_tilted_from_a_plane_has_its_projection_for_a_pcurve() {
+    let meridian = Frame::new(Point3::origin(), -Vec3::y(), -Vec3::z()).unwrap();
+    let seam = Curve::Circle {
+        frame: meridian,
+        radius: 2.0,
+    };
+    let turned = |axis: Vec3, at: Point3, angle: f64| {
+        let q = arris_math::nalgebra::UnitQuaternion::from_axis_angle(
+            &arris_math::nalgebra::Unit::new_normalize(axis),
+            angle,
+        );
+        let normal = q * Vec3::y();
+        Surface::Plane {
+            frame: Frame::from_z(at, normal).unwrap(),
+        }
+    };
+    let cases = [
+        (
+            seam.clone(),
+            turned(
+                Vec3::new(1.0, 2e-4, 0.0),
+                Point3::new(0.0, 0.0, 2.0),
+                25f64.to_radians(),
+            ),
+            Interval::new(3.141503975729147, PI).unwrap(),
+        ),
+        (
+            seam,
+            turned(Vec3::z(), Point3::origin(), 4.9e-8),
+            Interval::new(0.0, PI).unwrap(),
+        ),
+        (
+            Curve::Line {
+                origin: Point3::origin(),
+                direction: arris_math::UnitVec3::new_normalize(Vec3::new(1.0, 5e-8, 0.0)),
+            },
+            turned(Vec3::z(), Point3::origin(), 0.0),
+            Interval::new(-1.0, 1.0).unwrap(),
+        ),
+    ];
+    for (curve, surface, range) in cases {
+        let Surface::Plane { frame } = &surface else {
+            unreachable!()
+        };
+        let pc = pcurve_on(&curve, range, &surface, tol()).unwrap();
+        assert!(matches!(pc, Curve2::Nurbs(_)), "{pc:?}");
+        let off_plane = (0..=DENSE)
+            .map(|i| {
+                frame
+                    .to_local(curve.point(range.lerp(i as f64 / DENSE as f64)))
+                    .z
+                    .abs()
+            })
+            .fold(0.0, f64::max);
+        let worst = worst_image(&pc, &curve, &surface, range);
+        assert!(off_plane <= tol().linear, "{off_plane}");
+        assert!(
+            worst <= off_plane + tol().linear,
+            "{worst} against {off_plane}"
+        );
+    }
+}
+
 /// Parameters a fitted pcurve's image is held to the curve at.
 const DENSE: usize = 2000;
 

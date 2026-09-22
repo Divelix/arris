@@ -99,6 +99,14 @@ and the cycle can close.
   (steps 6 and 4): the `along` verdict asks the surfaces before it asks
   `curves_coincide`; a block-level verdict beside the whole-curve one. No
   public type changes expected; `CommonBlock`'s doc if step 4 makes one.
+  Step 4 made none: the block is an `EdgeImage`.
+- **`arris_geom::conic_crossings`** (step 4, new public function): the
+  common points of two conics in planes that are not parallel, along the
+  line of the two planes, tangent only at a double root to rounding.
+  **`pcurve_on`'s plane arm** (step 4): exact only for a curve lying in
+  the plane; a line or conic tilted from it by more than `tol.angular`
+  has its projection fitted — a change to what a public function
+  promises, `docs/DATA-MODEL.md` §Pcurves restated.
 - **`Reason::NonManifold`** (step 7): its doc gains "a shell touching
   itself at a vertex"; the entity is the vertex. No new variant.
 - **`arris_debug::prop::body::SEAM_CLEARANCE`** (step 4): removed from
@@ -359,7 +367,7 @@ bound has to be established here.
   circle edge is no shorter than the edge's tolerance — true with or
   without the snap here, since `at_vertex` already guards it, but it is
   the guarantee's boolean-level witness the step asked for.
-- [ ] Step 4 **[3]** — A block that is an operand edge's.
+- [x] Step 4 **[3]** — A block that is an operand edge's.
   `pole-slice-beside-seam-cut`: the seam and the section leave the pole
   2e-4 of a radian apart and cross again 1.8e-4 on — a touch in depth
   that stands for two crossings far apart in length, ADR-0016's case one
@@ -376,6 +384,70 @@ bound has to be established here.
   fixture moves to `boolean/`; `singular_slice`'s spin loses
   `SEAM_CLEARANCE` and `a_plane_through_an_apex_or_a_pole_cuts_additively`
   is green at 8000.
+
+  **Done 2026-09-23.** Open question 4 decided: both. The seam and the
+  circle are one touch by depth against the circle's plane (8e-10), and
+  so against the circle itself, since `intersect_curves` goes through
+  that plane — no second face runs through the seam to resolve it by, so
+  the touch is resolved into its far crossing first. Two conics in planes
+  not parallel meet where the line of the two planes crosses the first,
+  a quadratic along it: `arris_geom::conic_crossings`, new and public,
+  its `tangent` a double root to `POLYNOMIAL_ROUNDING` and never a
+  tolerance, asked by `resolve_touch` wherever `intersect_curves` gave a
+  touch. It finds the fixture's far crossing 1.8e-4 from the pole, and
+  the pole itself to 5e-12; re-asking `intersect_curves` at the model's
+  `min_tolerance`, tried first, found it too but not one 3.5e-7 out,
+  whose depth is 3e-14. Then the block verdict (`along_block`): a block
+  every check point of which lies within the tolerance of a piece of an
+  operand edge of either face between the same two vertices is that
+  piece, asked before `inside_both` (along an edge of one face it is on
+  that face's boundary, and a rim's block 5e-8 inside the wall's never
+  passed it), and the piece is placed on the other face as an image.
+  Three more mechanisms the band needed, all this step's: `pcurve_on`'s
+  plane arm maps a line or a conic into the plane exactly only when it
+  lies in it — the seam's last stretch on a face 25° off had a circle
+  0.19 off as its pcurve — and fits a tilted one's projection, held to it
+  in the plane (a fit held to the curve cannot close the curve's own
+  distance from the plane: a seam turned 4.9e-8 off a meridian plane
+  failed so); a hit merged into the section vertex that holds its edge's
+  own end paves nothing, as a crossing already did; and a section's
+  arrival at a pole past the face's (u, v) box — the far crossing inside
+  the pole's ball, where the seam's touch joins the pole and is not
+  resolved — ends on the box's edge, the seam's corner, `place` reading
+  no length in a step of `u` inside a singular end's ball. The fixture
+  moves with `counts_differ` (Open CASCADE cuts the seam at the pole
+  alone, 2/2/2 to Arris's 3/3/2) and `measure_differs`: its own cut is
+  1.21e-4 short in volume where it matches the closed forms to 1e-8 at
+  k = 0 and 0.7, and its measure of Arris's STEP matches them to 6e-10 —
+  the inertia derived, the ball's less the cap's, and checked against
+  its k = 0.7 tensor to 1e-8. The rim test is
+  `a_section_block_along_an_operand_edge_is_that_edges_piece`: a quarter,
+  half and three quarters of a tolerance, cut and fuse clean at `Full`
+  with the rim cut twice and the wedge's closed-form volume; the common
+  is the wedge alone, under a tolerance thick — step 1's sliver class,
+  not asked. `singular_slice` draws its turn round the whole turn and a
+  quarter of the time 1e-7 to 1e-1 of a radian beside the seam; the
+  property is green at 8000, and its two shrunk failures on the way are
+  `a_circle_through_a_pole_a_hair_off_the_seam_arrives_at_its_corner`.
+  An along block's piece is imaged once per face, whichever pair placed
+  it first — a frustum's notch refilled had its hyperbola edges imaged
+  twice on the slab's faces, `TangentContact`, until it was.
+  `ARRIS_PROPTEST_CASES=1000 cargo nextest run --workspace` is green at
+  1165 tests. No blessed dump changed but the fixture's own.
+
+  **Found:** at a ball's tilt of 90° exactly the face holds the axis, and
+  a turn 1.3e-7 off the seam's puts a meridian plane that near the
+  seam's: the seam lies within the tolerance of the face over most of its
+  length and the section bounds a lune a few tolerances wide beside it —
+  `TangentContact` where the section leaves a vertex along the seam, and,
+  posed 93 out, the seam's crossings at the poles (placed only to
+  rounding over that angle) reading as a section beside a pole. Step 1's
+  sliver class, none of this plan's mechanisms: the two poses are
+  `a_meridian_plane_a_hair_off_the_seams_halves_the_ball`, ignored (a
+  recipe cannot carry their bits: turned by axis and angle the pose
+  builds), a clause on the sliver backlog line, and the strategy keeps
+  that tilt's turn off the seam's band. Open CASCADE's own cut there
+  returns the whole ball in two shells.
 - [ ] Step 5 **[2]** — The fit held to the exact branch.
   `section::fitted`'s deviation is the larger of today's surface term and
   the fit's distance from `branch.point` — to decide: at the same
@@ -478,10 +550,10 @@ with nothing unchecked, `docs/DATA-MODEL.md` with no `⚠ OPEN`.
   branch. Tripwire: control points more than doubled on the metre probes
   means stop and report; the fallback is parking `grazing-ball-bar-cut`
   with the measuring harness, never an S5 excuse.
-- ⚠ OPEN 4 (agent, step 4): whether the block verdict alone suffices or
-  the curve–curve touch must first be resolved into its far crossing, as
-  ADR-0016 resolves an edge–face touch; step 4 records which and why in
-  ADR-0022's grounds.
+- 4, **decided 2026-09-23** (step 4): both — the curve–curve touch is
+  resolved into its far crossing (`conic_crossings`, along the line of
+  the two planes) and the block between the crossings is the edge's
+  piece; ADR-0022's grounds record why (step 4's note).
 - 6, **decided 2026-09-22** (step 2b): option A, the section edge's
   pcurve moved to the vertex's own (u, v), its tolerance by the move;
   the tripwire did not fire. What was asked:

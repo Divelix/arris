@@ -89,7 +89,11 @@ fn assert_sections_consistent(m: &Model, i: &Interferences) -> Result<(), TestCa
     }
     for (edge, paves) in &i.paves {
         let e = m.edge(*edge).unwrap();
-        let (c, range) = e.curve().unwrap();
+        // A degenerate edge has no curve: its paves are the arrivals at a
+        // singular vertex, read in its own (u, v).
+        let Some((c, range)) = e.curve() else {
+            continue;
+        };
         let curve = m.curve(c).unwrap();
         for p in paves {
             prop_assert!(
@@ -779,6 +783,122 @@ fn a_sliver_within_the_tolerance_of_the_other_wall_is_decided_at_its_section_edg
             assert!(
                 (volume - exact).abs() < 1e-9 * exact,
                 "{name} at {turn}: {volume} against {exact}"
+            );
+        }
+    }
+}
+
+/// A cylinder of radius 1 standing on `z = 0`, and a half-space below a
+/// face turned by `tilt` about a line `inside` the rim at `x = −1`: the
+/// face's ellipse on the wall crosses the rim twice, `2√(2·inside)`
+/// apart, and between the two lies at most `tilt · inside` from it.
+fn rim_beside_ellipse(inside: f64, tilt: f64) -> (Model, Body, Body) {
+    let mut m = Model::default();
+    let (a, _) = primitive_cylinder(
+        &mut m,
+        Axis::new(Point3::origin(), Vec3::z()).unwrap(),
+        1.0,
+        2.0,
+    )
+    .unwrap();
+    let (b, _) = primitive_box(&mut m, [-5.0, -5.0, -5.0], [5.0, 5.0, 0.0]).unwrap();
+    let q = UnitQuaternion::from_axis_angle(&Vec3::y_axis(), tilt);
+    let about = Point3::new(-1.0 + inside, 0.0, 0.0);
+    let motion = Isometry::new(q, about.coords - (q * about).coords);
+    let (b, _) = transform(&mut m, b, &motion).unwrap();
+    (m, a, b)
+}
+
+/// A block of a section curve within the tolerance of an operand edge
+/// between the same two vertices is that edge's piece, not a section edge
+/// of its own: the piece's image on the other face stands where the
+/// section edge would have been, and no face has a sliver between the
+/// two. At a ball's pole, the small circle 2e-4 of a radian off the seam
+/// crosses it again 1.8e-4 on — two curves the intersector calls tangent,
+/// asked again at the model's smallest distance — and its block from
+/// there to the pole is the seam's last piece, on the cut face
+/// (`boolean/pole-slice-beside-seam-cut`). On a cylinder, the ellipse a
+/// face turned by 1e-3 cuts from the wall runs a quarter, a half and
+/// three quarters of a tolerance beside the bottom rim over 0.02 of it:
+/// that block of the ellipse is the rim's piece, the tool's face is
+/// bounded by it and by its line across the cap, and the cut and the fuse
+/// are clean at `Full` with the rim cut twice, their volumes the
+/// cylinder's less and plus a wedge of `(8√2 / 15) tilt · inside^(5/2)`.
+/// The common is that wedge alone, under a tolerance thick, a sliver
+/// solid of the band's (`docs/BACKLOG.md`), not asked here.
+#[test]
+fn a_section_block_along_an_operand_edge_is_that_edges_piece() {
+    let (m, a, _, i) = interferences_of("boolean/pole-slice-beside-seam-cut");
+    let seam = circle_edges(&m, a);
+    assert_eq!(seam.len(), 1, "{i}");
+    assert_eq!(
+        i.paves[&seam[0]].len(),
+        1,
+        "the seam paved at the far crossing\n{i}"
+    );
+    assert_eq!(i.sections.len(), 1, "{i}");
+    let [image] = &i.images[..] else {
+        panic!("{i}");
+    };
+    assert_eq!(
+        (image.edge, image.side, image.index),
+        (seam[0], 0, 1),
+        "{i}"
+    );
+    assert!(
+        (image.range.hi() - core::f64::consts::PI).abs() < 1e-15,
+        "{i}"
+    );
+    assert_sections_consistent(&m, &i).unwrap();
+
+    let inside = 5e-5;
+    for fraction in [0.25, 0.5, 0.75] {
+        let tilt = fraction * 1e-7 / inside;
+        let (m, a, b) = rim_beside_ellipse(inside, tilt);
+        let i = interferences(&m, a, b).unwrap_or_else(|e| panic!("{fraction}: {e}"));
+        let ellipse = i
+            .curves
+            .iter()
+            .find(|c| matches!(c.curve, Curve::Ellipse { .. }))
+            .expect("the wall's section");
+        assert_eq!(ellipse.paves.len(), 2, "{fraction}\n{i}");
+        assert!(ellipse.edges.is_empty(), "{fraction}\n{i}");
+        let [image] = &i.images[..] else {
+            panic!("{fraction}\n{i}");
+        };
+        let rim = i.paves.get(&image.edge).expect("the rim is paved");
+        assert_eq!(rim.len(), 2, "{fraction}\n{i}");
+        assert_eq!(image.index, 1, "{fraction}\n{i}");
+        assert_eq!(i.sections.len(), 1, "the line across the cap\n{i}");
+        assert_sections_consistent(&m, &i).unwrap();
+
+        let wedge = 8.0 * 2f64.sqrt() / 15.0 * tilt * inside.powf(2.5);
+        for (name, op, exact, counts) in [
+            ("cut", cut as Boolean, TAU - wedge, "euler 4/6/4/4/1 g0 = 0"),
+            (
+                "fuse",
+                fuse as Boolean,
+                500.0 + TAU - wedge,
+                "euler 12/18/9/10/1 g0 = 0",
+            ),
+        ] {
+            let (mut m, a, b) = rim_beside_ellipse(inside, tilt);
+            let (body, _) =
+                op(&mut m, a, b).unwrap_or_else(|e| panic!("{name} at {fraction}: {e}"));
+            let report = check(&m, body, Level::Full);
+            assert!(
+                report.is_ok() && report.unchecked().is_empty(),
+                "{name} at {fraction}: {report}"
+            );
+            assert_eq!(
+                arris_debug::dump::euler_line(&m, body).unwrap(),
+                counts,
+                "{name} at {fraction}"
+            );
+            let volume = mass_properties(&m, body).unwrap().volume;
+            assert!(
+                (volume - exact).abs() < 1e-9 * exact,
+                "{name} at {fraction}: {volume} against {exact}"
             );
         }
     }

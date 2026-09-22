@@ -357,16 +357,6 @@ fn regression_frustum_stub_cut_then_fuse() {
     run("regression/frustum-stub-cut-then-fuse");
 }
 
-/// A ball sliced through its pole by a face turned 2e-4 of a radian off
-/// the seam's meridian: the circle crosses the seam again beside the
-/// pole, where the two are one curve within the tolerance, and nothing
-/// paves it there.
-#[test]
-#[ignore = "Fault::Seam, a section edge of the sphere and the face crosses the seam without a pave: the seam against the face's plane is one touch that resolves into no crossing (docs/BACKLOG.md, features a tolerance apart)"]
-fn regression_pole_slice_beside_seam_cut() {
-    run("regression/pole-slice-beside-seam-cut");
-}
-
 /// A ball sliced by a face 3.7e-7 from its pole: not through the singular
 /// point and nearer than the sphere's (u, v) polygons resolve, refused by
 /// name rather than built.
@@ -769,6 +759,15 @@ fn boolean_cone_apex_slice_cut() {
 #[test]
 fn boolean_ball_pole_slice_cut() {
     run("boolean/ball-pole-slice-cut");
+}
+
+/// The same slice turned 2e-4 of a radian off the seam's meridian: the
+/// circle crosses the seam again 1.8e-4 from the pole, found at the
+/// model's smallest distance, and its block between the two crossings is
+/// the seam's piece, not a section edge.
+#[test]
+fn boolean_pole_slice_beside_seam_cut() {
+    run("boolean/pole-slice-beside-seam-cut");
 }
 
 /// A drill whose wall runs through both of a ball's poles: two traced

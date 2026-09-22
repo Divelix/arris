@@ -1,0 +1,176 @@
+{
+  "description": "`boolean/ball-pole-slice-cut`'s `along_seam` with the face turned about (1, k, 0), k = 2e-4, instead of x: the small circle through the pole leaves it 2e-4 of a radian from the seam's meridian and crosses the seam again 1.8e-4 on, over which stretch the two lie within 9e-9 of each other and the seam within 8e-10 of the face's plane. The intersector's verdict on the seam against the plane, and on the seam against the circle through that plane, is one touch; the pave asks the two curves again at the model's smallest distance, where they cross twice, 1.8e-4 apart, exact to 5e-12, and paves both at the far crossing. The circle's block from there to the pole lies within the tolerance of the seam's piece between the same two vertices, so it is that piece and not a section edge (plans/c3-tolerance-apart step 4): the seam's last stretch bounds the plane's disc as well as the sphere, and no face has a sliver between them. Before, nothing paved the circle there, its one block from the pole to the pole left the sphere's (u, v) box by 2e-4 of `u`, and the boolean refused it as `Fault::Seam`. Found by `a_plane_through_an_apex_or_a_pole_cuts_additively` at one pose in eight thousand (plans/c3-conic-hits step 6). Open CASCADE's own cut loses a sliver there, measure_differs (ADR-0015), and keeps the seam whole, counts_differ",
+  "params": {
+    "k": 0.0002,
+    "phi": 25
+  },
+  "steps": [
+    {
+      "name": "half_disc",
+      "op": "profile",
+      "plane": {
+        "origin": [
+          0,
+          0,
+          0
+        ],
+        "x": [
+          1,
+          0,
+          0
+        ],
+        "y": [
+          0,
+          0,
+          1
+        ]
+      },
+      "outer": {
+        "start": [
+          0,
+          -2
+        ],
+        "segments": [
+          {
+            "arc_to": [
+              0,
+              2
+            ],
+            "via": [
+              2,
+              0
+            ]
+          },
+          {
+            "line_to": [
+              0,
+              -2
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "ball",
+      "op": "revolve",
+      "profile": "half_disc",
+      "axis": {
+        "origin": [
+          0,
+          0,
+          0
+        ],
+        "direction": [
+          0,
+          0,
+          1
+        ]
+      },
+      "angle_deg": 360
+    },
+    {
+      "name": "half0",
+      "op": "box",
+      "min": [
+        -5,
+        0,
+        -8
+      ],
+      "max": [
+        5,
+        5,
+        8
+      ]
+    },
+    {
+      "name": "half",
+      "op": "transform",
+      "of": "half0",
+      "rotate": {
+        "axis": [
+          1,
+          "k",
+          0
+        ],
+        "origin": [
+          0,
+          0,
+          2
+        ],
+        "angle_deg": "phi"
+      }
+    },
+    {
+      "name": "result",
+      "op": "cut",
+      "target": "ball",
+      "tool": "half"
+    }
+  ],
+  "result": "result",
+  "probes": [
+    {
+      "label": "inside",
+      "point": [
+        0,
+        -1,
+        0
+      ],
+      "expect": "in"
+    },
+    {
+      "label": "cut_away",
+      "point": [
+        0,
+        1.5,
+        0
+      ],
+      "expect": "out"
+    },
+    {
+      "label": "outside",
+      "point": [
+        0,
+        0,
+        3
+      ],
+      "expect": "out"
+    }
+  ],
+  "analytic": {
+    "volume": "(32 * pi / 3 - (pi * (4 * (2 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))) - (8 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^3) / 3)))",
+    "area": "16 * pi - 4 * pi * (2 * (1 - (sin(radians(phi)) / sqrt(1 + k^2)))) + pi * (4 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^2)",
+    "centroid": [
+      "-(pi * (2 * (4 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^2) - (16 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^4) / 4)) * (k / (1 + k^2) * (1 - cos(radians(phi)))) / (32 * pi / 3 - (pi * (4 * (2 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))) - (8 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^3) / 3)))",
+      "-(pi * (2 * (4 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^2) - (16 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^4) / 4)) * (cos(radians(phi)) + k^2 / (1 + k^2) * (1 - cos(radians(phi)))) / (32 * pi / 3 - (pi * (4 * (2 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))) - (8 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^3) / 3)))",
+      "-(pi * (2 * (4 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^2) - (16 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^4) / 4)) * (sin(radians(phi)) / sqrt(1 + k^2)) / (32 * pi / 3 - (pi * (4 * (2 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))) - (8 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^3) / 3)))"
+    ],
+    "inertia": [
+      [
+        "(256 * pi / 15 - (pi / 4 * (16 * (2 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))) - 8 * (8 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^3) / 3 + (32 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^5) / 5)) - (pi * (4 * (8 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^3) / 3 - (32 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^5) / 5)) - (pi * (2 * (4 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^2) - (16 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^4) / 4))^2 / (32 * pi / 3 - (pi * (4 * (2 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))) - (8 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^3) / 3)))) - ((pi / 4 * (16 * (2 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))) - 8 * (8 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^3) / 3 + (32 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^5) / 5)) - (pi * (4 * (8 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^3) / 3 - (32 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^5) / 5)) - (pi * (2 * (4 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^2) - (16 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^4) / 4))^2 / (32 * pi / 3 - (pi * (4 * (2 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))) - (8 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^3) / 3)))) * (k / (1 + k^2) * (1 - cos(radians(phi)))) * (k / (1 + k^2) * (1 - cos(radians(phi))))",
+        "-((pi / 4 * (16 * (2 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))) - 8 * (8 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^3) / 3 + (32 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^5) / 5)) - (pi * (4 * (8 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^3) / 3 - (32 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^5) / 5)) - (pi * (2 * (4 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^2) - (16 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^4) / 4))^2 / (32 * pi / 3 - (pi * (4 * (2 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))) - (8 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^3) / 3)))) * (k / (1 + k^2) * (1 - cos(radians(phi)))) * (cos(radians(phi)) + k^2 / (1 + k^2) * (1 - cos(radians(phi))))",
+        "-((pi / 4 * (16 * (2 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))) - 8 * (8 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^3) / 3 + (32 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^5) / 5)) - (pi * (4 * (8 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^3) / 3 - (32 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^5) / 5)) - (pi * (2 * (4 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^2) - (16 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^4) / 4))^2 / (32 * pi / 3 - (pi * (4 * (2 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))) - (8 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^3) / 3)))) * (k / (1 + k^2) * (1 - cos(radians(phi)))) * (sin(radians(phi)) / sqrt(1 + k^2))"
+      ],
+      [
+        "-((pi / 4 * (16 * (2 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))) - 8 * (8 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^3) / 3 + (32 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^5) / 5)) - (pi * (4 * (8 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^3) / 3 - (32 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^5) / 5)) - (pi * (2 * (4 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^2) - (16 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^4) / 4))^2 / (32 * pi / 3 - (pi * (4 * (2 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))) - (8 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^3) / 3)))) * (cos(radians(phi)) + k^2 / (1 + k^2) * (1 - cos(radians(phi)))) * (k / (1 + k^2) * (1 - cos(radians(phi))))",
+        "(256 * pi / 15 - (pi / 4 * (16 * (2 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))) - 8 * (8 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^3) / 3 + (32 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^5) / 5)) - (pi * (4 * (8 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^3) / 3 - (32 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^5) / 5)) - (pi * (2 * (4 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^2) - (16 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^4) / 4))^2 / (32 * pi / 3 - (pi * (4 * (2 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))) - (8 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^3) / 3)))) - ((pi / 4 * (16 * (2 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))) - 8 * (8 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^3) / 3 + (32 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^5) / 5)) - (pi * (4 * (8 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^3) / 3 - (32 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^5) / 5)) - (pi * (2 * (4 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^2) - (16 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^4) / 4))^2 / (32 * pi / 3 - (pi * (4 * (2 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))) - (8 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^3) / 3)))) * (cos(radians(phi)) + k^2 / (1 + k^2) * (1 - cos(radians(phi)))) * (cos(radians(phi)) + k^2 / (1 + k^2) * (1 - cos(radians(phi))))",
+        "-((pi / 4 * (16 * (2 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))) - 8 * (8 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^3) / 3 + (32 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^5) / 5)) - (pi * (4 * (8 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^3) / 3 - (32 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^5) / 5)) - (pi * (2 * (4 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^2) - (16 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^4) / 4))^2 / (32 * pi / 3 - (pi * (4 * (2 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))) - (8 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^3) / 3)))) * (cos(radians(phi)) + k^2 / (1 + k^2) * (1 - cos(radians(phi)))) * (sin(radians(phi)) / sqrt(1 + k^2))"
+      ],
+      [
+        "-((pi / 4 * (16 * (2 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))) - 8 * (8 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^3) / 3 + (32 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^5) / 5)) - (pi * (4 * (8 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^3) / 3 - (32 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^5) / 5)) - (pi * (2 * (4 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^2) - (16 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^4) / 4))^2 / (32 * pi / 3 - (pi * (4 * (2 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))) - (8 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^3) / 3)))) * (sin(radians(phi)) / sqrt(1 + k^2)) * (k / (1 + k^2) * (1 - cos(radians(phi))))",
+        "-((pi / 4 * (16 * (2 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))) - 8 * (8 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^3) / 3 + (32 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^5) / 5)) - (pi * (4 * (8 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^3) / 3 - (32 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^5) / 5)) - (pi * (2 * (4 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^2) - (16 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^4) / 4))^2 / (32 * pi / 3 - (pi * (4 * (2 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))) - (8 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^3) / 3)))) * (sin(radians(phi)) / sqrt(1 + k^2)) * (cos(radians(phi)) + k^2 / (1 + k^2) * (1 - cos(radians(phi))))",
+        "(256 * pi / 15 - (pi / 4 * (16 * (2 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))) - 8 * (8 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^3) / 3 + (32 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^5) / 5)) - (pi * (4 * (8 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^3) / 3 - (32 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^5) / 5)) - (pi * (2 * (4 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^2) - (16 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^4) / 4))^2 / (32 * pi / 3 - (pi * (4 * (2 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))) - (8 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^3) / 3)))) - ((pi / 4 * (16 * (2 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))) - 8 * (8 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^3) / 3 + (32 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^5) / 5)) - (pi * (4 * (8 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^3) / 3 - (32 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^5) / 5)) - (pi * (2 * (4 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^2) - (16 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^4) / 4))^2 / (32 * pi / 3 - (pi * (4 * (2 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))) - (8 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^3) / 3)))) * (sin(radians(phi)) / sqrt(1 + k^2)) * (sin(radians(phi)) / sqrt(1 + k^2))"
+      ]
+    ],
+    "measure_differs": "what is cut away is the cap of height 2(1 − n_z) under the face's normal n, so every measure is a closed form in k and phi, and those forms move by 1.7e-7 of volume between k = 0 and k = 2e-4; Open CASCADE matches them to 1e-8 at k = 0 (boolean/ball-pole-slice-cut's along_seam) and at k = 0.7 (its default), and at k = 2e-4 its own cut is 1.21e-4 short in volume (4.5e-6 relative), 6.4e-4 short in area and 2.6e-6 off in the centroid's z — a sliver lost at the seam, not a motion of the cap. Its measure of Arris's STEP matches the closed forms to 6e-10. The volume, area and centroid are ball-pole-slice-cut's; the inertia is the ball's 128π/15 on the diagonal less the cap's — A = π/4 ∫(4 − w²)² dw across the axis and C = π ∫ w²(4 − w²) dw along n, over w from d = 2n_z to 2 — moved to the centroid, which reproduces Open CASCADE's tensor at k = 0.7 to 1e-8",
+    "counts": {
+      "vertices": 3,
+      "edges": 3,
+      "faces": 2,
+      "loops": 2,
+      "shells": 1
+    },
+    "counts_differ": "Open CASCADE cuts the seam at the pole alone, the small circle's second crossing 1.8e-4 on lying within its tolerance of the seam; Arris finds that crossing exactly, splits the seam there, and the seam's piece between the two crossings bounds the plane's disc as well as the sphere — the circle's own block over that stretch is the seam's, one vertex and one edge more",
+    "genus": 0
+  }
+}

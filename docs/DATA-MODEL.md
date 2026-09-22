@@ -703,11 +703,18 @@ and bracketed Newton for a NURBS.
 
 `pcurve_on(curve, range, surface, tol)` builds the pcurve, exhaustively
 over (curve, surface), and its image under the surface is the curve *at
-the same parameter*. On a plane every 3D curve has an exact pcurve: a
-line is a `Line`, a circle a `Circle` and an ellipse an `Ellipse` whose
-`Frame2` is right-handed when the curve's `Z` is along the plane's normal
-and left-handed when it opposes it, a NURBS a `Nurbs` with its control
-points projected (an affine map, so knots and weights carry over). On a
+the same parameter*. On a plane every 3D curve lying in it has an exact
+pcurve: a line is a `Line`, a circle a `Circle` and an ellipse an
+`Ellipse` whose `Frame2` is right-handed when the curve's `Z` is along
+the plane's normal and left-handed when it opposes it, a NURBS a `Nurbs`
+with its control points projected (an affine map, so knots and weights
+carry over). A line or a conic tilted from the plane by more than
+`tol.angular` lies within `tol.linear` of it over the range asked alone
+— a piece of an operand edge along a section block on the other face —
+and its projection there is not its own shape at its own parameter (a
+tilted circle projects to an ellipse), so the projection is fitted, held
+to it within `tol.linear` in the plane: off the curve by the curve's own
+distance from the plane and no more than that again. On a
 cylinder, a circle around the axis is a `Line` at constant v whose `u`
 starts at the offset of the circle's `X` from the cylinder's and runs in
 the sense of the circle's `Z` against the cylinder's, a line along the

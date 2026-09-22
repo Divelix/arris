@@ -323,7 +323,13 @@ apart, both ellipses cut it, and neither would find a pave there; the
 edge against the section curve is two curves of one surface crossing at
 an angle, exact where the edge against the surface is a square root of
 rounding, so the intersector's verdict is left as it is and a designed
-tangency in any pose stays one touch;
+tangency in any pose stays one touch. Where the edge and the section
+curve are themselves one touch by depth — two conics of one surface
+crossing twice at a shallow angle, a small circle through a sphere's
+pole 2e-4 of a radian off the seam and back across it 1.8e-4 on, within
+9e-9 of it between — their common points are taken along the line
+their two planes meet in (`conic_crossings`), a quadratic whose double
+root is decided by its own rounding and never by a tolerance;
 an operand face's *singular vertex* — a cone's apex, a sphere's pole,
 held by a degenerate edge that has no curve and is hit by nothing — that a
 section curve of one of the face's pairs runs through, within
@@ -333,7 +339,8 @@ other face, or one of its own (`VertexSource::Singular`) where the seam
 only touches it, so no block has the point inside it; a section that
 passes beside the point, nearer than the face's (u, v) polygons resolve,
 is refused by name (`Reason::BesideSingularity`, ADR-0021);
-the paves each vertex puts on the edge that hit or touched it and on
+the paves each vertex puts on the edge that hit or touched it — none
+where the vertex holds one of that edge's own ends — and on
 every section curve it projects onto within its tolerance — at the
 parameter of its own section crossing on a curve that crossing names,
 so two section curves end on the point where they cross whatever the
@@ -361,7 +368,11 @@ faces' — the fit's quarter of the tolerance leaves the pcurves room
 under their half (data-model §Tolerances); and a pave on a degenerate
 edge for every section edge that ends on its vertex, at the `u` the
 section arrives with, since the vertex is a whole line of (u, v) and the
-face's arrangement needs a node where the section meets it (ADR-0021). A `Coincident` pair — two faces on one
+face's arrangement needs a node where the section meets it (ADR-0021);
+an arrival past the face's (u, v) box — the section crossing the seam
+inside the vertex's ball, nearer the pole than its tolerance — is no
+length there, and the pcurve ends on the box's edge instead, the seam's
+own corner, where the degenerate edge already meets it. A `Coincident` pair — two faces on one
 surface, the flush case — is decided by the same arrangement (ADR-0004):
 the two faces' edges are intersected with one another and every
 crossing is a section vertex — at an end vertex of either edge when that
@@ -388,7 +399,18 @@ piece of an operand edge of either face is that edge and not a section
 edge; whether an edge runs along the curve is `curves_coincide`, the
 verdict without the points, so a rim circle in the plane of the ellipse
 its own cap plane cuts from the other wall — two short cylinders crossing
-steeply — needs no closed form for where the two conics would meet. An
+steeply — needs no closed form for where the two conics would meet.
+Beside that whole-curve verdict is a block's own: a block every point of
+which the model checks lies within the tolerance of a piece of an
+operand edge of either face between the same two vertices is that
+piece, asked before the block's midpoint is asked to lie inside both
+faces — along an edge of one it lies on that face's boundary — and the
+piece is placed on the pair's other face as an image where the section
+edge would have been. It is the seam's last stretch beside a pole where
+the small circle crosses it twice, or a rim circle a fraction of a
+tolerance from the ellipse a turned face cuts from the wall; built as a
+section edge, the block would bound a sliver of zero area on the edge's
+face. An
 edge that lies in a face of the other operand
 (`Interferences::coincident`) is paved and placed the same way whether
 or not a face of its own is coincident with that face: a seam on the

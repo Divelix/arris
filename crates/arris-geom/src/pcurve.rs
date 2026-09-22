@@ -75,10 +75,15 @@ fn degenerate(kind: GeomKind, reason: impl Into<String>) -> GeomError {
 /// of `docs/DATA-MODEL.md` before the checker exists.
 ///
 /// The table is exhaustive over (curve, surface). On a plane every
-/// variant is exact: a line is a `Line`, a circle a `Circle` and an
-/// ellipse an `Ellipse` placed by a `Frame2` whose handedness is the sign
-/// of the curve's `Z` against the plane's normal, a NURBS a `Nurbs` with
-/// its control points projected. On a cylinder a ruling is a `Line` at
+/// variant that lies in it is exact: a line is a `Line`, a circle a
+/// `Circle` and an ellipse an `Ellipse` placed by a `Frame2` whose
+/// handedness is the sign of the curve's `Z` against the plane's normal,
+/// a NURBS a `Nurbs` with its control points projected. A line or a
+/// conic tilted from the plane by more than `tol.angular` lies within
+/// `tol.linear` of it over the range alone — a block of a section beside
+/// an operand edge — and its projection onto the plane is a `Nurbs`
+/// fitted within `tol.linear` of it there: off the curve by the curve's
+/// own distance from the plane and no more than that again. On a cylinder a ruling is a `Line` at
 /// constant `u`, a circle around the axis a `Line` at constant `v` whose
 /// `u` starts at the offset of the circle's `X` from the cylinder's, and
 /// everything else — an oblique section, a NURBS — is a `Nurbs` fitted by
@@ -180,6 +185,24 @@ pub fn pcurve_on(
     match surface {
         Surface::Plane { frame } => {
             check_on(curve, range, surface, tol, |p| frame.to_local(p).z.abs())?;
+            // A line or a conic is exact in the plane only when it lies
+            // in it: one tilted from it by more than the angular
+            // tolerance lies within `tol.linear` of it over the range
+            // alone, and its projection there is not the curve's own
+            // shape at its own parameter — a tilted circle projects to an
+            // ellipse, a tilted line at a slower speed.
+            let tilt = match curve {
+                Curve::Line { direction, .. } => {
+                    FRAC_PI_2 - line_angle(&direction.into_inner(), &frame.z())
+                }
+                Curve::Circle { frame: own, .. } | Curve::Ellipse { frame: own, .. } => {
+                    line_angle(&own.z(), &frame.z())
+                }
+                Curve::Nurbs(_) => 0.0,
+            };
+            if tilt > tol.angular {
+                return projected_in_plane(curve, range, frame, tol);
+            }
             in_plane_curve(curve, frame)
         }
         &Surface::Cylinder { ref frame, radius } => {
@@ -302,6 +325,28 @@ fn in_plane_curve(curve: &Curve, plane: &Frame) -> Result<Curve2, GeomError> {
         }),
         Curve::Nurbs(c) => Ok(Curve2::Nurbs(nurbs_in_plane(c, plane)?)),
     }
+}
+
+/// The projection of `curve` over `range` onto `plane`, at its own
+/// parameter, as a `Nurbs` fitted to it within `tol.linear` in the plane:
+/// a curve off the plane is as near as any pcurve can be to it there, the
+/// projection, and holding the fit to the curve itself would ask it to
+/// close the curve's own distance from the plane, which it cannot.
+fn projected_in_plane(
+    curve: &Curve,
+    range: Interval,
+    plane: &Frame,
+    tol: Tolerance,
+) -> Result<Curve2, GeomError> {
+    let f = |t: f64| in_plane(plane, curve.point(t));
+    let fit = fit_curve2(
+        f,
+        range,
+        PCURVE_FIT_DEGREE,
+        |t, q| (q - f(t)).norm(),
+        tol.linear,
+    )?;
+    Ok(Curve2::Nurbs(fit))
 }
 
 /// The `Frame2` of a conic whose frame lies in `plane`: origin and `X` in

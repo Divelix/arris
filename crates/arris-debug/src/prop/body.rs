@@ -653,11 +653,10 @@ impl SingularSlice {
     }
 }
 
-/// How far, in radians about the axis, a [`singular_slice`]'s section
-/// leaves the singular point from the seam, and how far from the axis a
-/// ball's face that does not hold it is tilted: three degrees, fifty
-/// times the `√(2 tol / R)` of the smallest ball at the default
-/// tolerance. A strategy's margin, not a tolerance.
+/// How far from the axis a [`singular_slice`]'s ball face that does not
+/// hold it is tilted: three degrees, fifty times the `√(2 tol / R)` of
+/// the smallest ball at the default tolerance. A strategy's margin, not a
+/// tolerance.
 pub const SEAM_CLEARANCE: f64 = 0.05;
 
 /// [`SingularSlice`]s, a cone or a ball a half each. The face's normal is
@@ -671,16 +670,23 @@ pub const SEAM_CLEARANCE: f64 = 0.05;
 /// anywhere special; the block is four times the solid across.
 ///
 /// The turn about the axis is the `u` a ball's section leaves its pole
-/// at, and it stays [`SEAM_CLEARANCE`] from the seam's: nearer than
-/// `√(2 tol / R)` the seam and the section are one curve within the
-/// tolerance over a stretch beside the pole, a feature a tolerance apart
-/// that `regression/pole-slice-beside-seam-cut` holds for the plan that
-/// takes those. Along the seam exactly, and in its plane, are the
-/// variants of `boolean/ball-pole-slice-cut`. A ball's tilt keeps the
-/// same clearance from `90°` unless it is `90°` exactly: a circle through
-/// one pole at `90° + δ` passes the other `2R sin δ` away, and beside a
-/// pole is `Reason::BesideSingularity` by design (ADR-0021), met at
-/// `δ = 8e-5` in eight thousand poses.
+/// at, anywhere round the turn, and in a quarter of the cases it is
+/// `1e-7` to `1e-1` of a radian beside the seam's, evenly in its
+/// logarithm, either side: nearer than `√(2 tol / R)` the seam and the
+/// section are one curve within the tolerance over a stretch beside the
+/// pole, and the section's block there is the seam's piece
+/// (`boolean/pole-slice-beside-seam-cut`). Not for the great circle
+/// through both poles: a meridian plane a hair off the seam's lies
+/// within the tolerance of the seam over most of its length, and bounds
+/// a lune a few tolerances wide beside it — the sliver faces of
+/// `docs/BACKLOG.md`, two shrunk poses of which are ignored in
+/// `boolean_prop.rs`; it keeps the turn drawn round the whole turn. Along
+/// the seam exactly, and in its plane, are the variants of
+/// `boolean/ball-pole-slice-cut`. A
+/// ball's tilt keeps [`SEAM_CLEARANCE`] from `90°` unless it is `90°`
+/// exactly: a circle through one pole at `90° + δ` passes the other
+/// `2R sin δ` away, and beside a pole is `Reason::BesideSingularity` by
+/// design (ADR-0021), met at `δ = 8e-5` in eight thousand poses.
 pub fn singular_slice() -> impl Strategy<Value = SingularSlice> {
     (
         any::<bool>(),
@@ -689,13 +695,22 @@ pub fn singular_slice() -> impl Strategy<Value = SingularSlice> {
         (0u8..4, finite_f64(-1.0..=1.0)),
         (
             any::<bool>(),
-            finite_f64(SEAM_CLEARANCE..=core::f64::consts::PI - SEAM_CLEARANCE),
+            finite_f64(0.0..=core::f64::consts::PI),
+            (0u8..4, finite_f64(-7.0..=-1.0), any::<bool>()),
         ),
         finite_f64(0.0..=core::f64::consts::TAU),
         pose_in(DEFAULT_SCALE),
     )
         .prop_map(
-            |(cone, radius, height, (kind, s), (far, spin), turn, pose)| {
+            |(cone, radius, height, (kind, s), (far, spin, beside), turn, pose)| {
+                let meridian = !cone && kind == 0;
+                let spin = match beside {
+                    (0, exponent, below) if !meridian => {
+                        let off = 10f64.powf(exponent);
+                        if below { -off } else { off }
+                    }
+                    _ => spin,
+                };
                 let spin = if far {
                     spin + core::f64::consts::PI
                 } else {
