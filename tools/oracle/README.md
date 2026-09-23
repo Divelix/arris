@@ -30,6 +30,20 @@ commit that says so (`.agents/rules/git.md`).
 | `mesh.py <file.stl>` | Reads an STL file (Arris's output, ASCII or binary) through Open CASCADE's `RWStl` and prints its triangle count, area and signed volume as JSON — an independent reader of the bytes, not a fixture comparison; exit 2 on a read error. `arris_debug::oracle::compare_stl` is the Rust seam to it |
 | `selftest.py [fixture-dir...]` | `tests/fixtures/expr-cases.json`'s expression grammar cases (the same ones `arris_debug::fixtures::expr`'s own test evaluates); inline smoke recipes covering every op and the geometry kind against closed forms; then for each fixture: a fresh `expected` must equal the committed one, and for a solid OCCT's own STEP of the result must compare clean — on its counts, genus and probes only where the recipe says `analytic.measure_differs` (ADR-0015) |
 
+## The cache
+
+The Rust seam (`arris_debug::oracle`) keeps every answer the oracle
+settles — a `compare.py` table that said `MATCH`, a scratch fixture's
+`expected.json`, a `mesh.py` reading — in `target/oracle-cache/`, one file
+per key (ADR-0024). The key is sha256 over the script's name, the bytes
+of every file it reads (the STEP or STL text, `fixture.json`,
+`expected.json`), the variant, and a digest of the oracle itself: every
+`*.py` in this directory outside `.venv/` and `__pycache__/`, with
+`pyproject.toml` and `uv.lock`. Editing any script here therefore misses
+every entry, and nothing needs clearing by hand. A mismatch or an
+environment error is never kept. `ARRIS_ORACLE_CACHE=off` bypasses the
+cache; `ci.yml` sets it, so CI always runs the oracle.
+
 ## Package
 
 - `oracle/recipe.py` — the recipe interpreter: `box`, `cylinder`, `profile`

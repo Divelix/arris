@@ -54,6 +54,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       ARRIS_PROPTEST_CASES: "1000"
+      # CI never trusts an oracle cache (ADR-0024 §1).
+      ARRIS_ORACLE_CACHE: "off"
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -74,6 +76,8 @@ jobs:
   # on an oversubscribed runner, about an hour per step.
   parallel:
     runs-on: ubuntu-latest
+    env:
+      ARRIS_ORACLE_CACHE: "off"
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable

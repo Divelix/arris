@@ -120,7 +120,7 @@ bound has to be established here.
 - [x] Step 1 **[1]** — **ADR-0024**, the measuring harness, covering the
   decisions in *Design deltas*. It includes the hook-count decision, which
   removes its line from `docs/BACKLOG.md` in the same commit.
-- [ ] Step 2 **[2]** — **The oracle cache.**
+- [x] Step 2 **[2]** — **The oracle cache.**
   - What it adds: `oracle::cache` with the key from ADR-0024, the oracle
     digest computed once per process, the `spawns()` counter, and
     `ARRIS_ORACLE_CACHE=off`, which `ci.yml`'s `test` and `parallel` jobs

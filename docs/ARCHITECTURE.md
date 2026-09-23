@@ -1299,7 +1299,12 @@ B-Rep).
   `target/inspect/<name>/` with its `expected.json` from `expected.py`,
   for a body the corpus does not hold — the revolves closing at a cone's
   apex or a sphere's pole, and the STEP tests' own bodies — held to the
-  oracle's reading of its STEP all the same), and
+  oracle's reading of its STEP all the same; every settled answer —
+  a `MATCH`, a scratch `expected.json`, an STL reading — kept in
+  `oracle::cache` under `target/oracle-cache/` by a key over every input
+  the script reads and the oracle's own sources, so an unchanged call
+  starts no Python, and `ARRIS_ORACLE_CACHE=off`, which CI sets, bypasses
+  it — ADR-0024), and
   the seeded property-test runner and strategies (`prop`,
   with every analytic surface and curve in a random pose and random
   clamped NURBS curves and surfaces under `prop::geom`; sketches under

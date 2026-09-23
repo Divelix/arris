@@ -3,10 +3,14 @@
 //! for a STEP file, `mesh.py` for an STL one, and between a test's own
 //! recipe and `expected.py` for a body the corpus has no fixture for. A
 //! missing environment is a loud error naming the command that creates
-//! it, never a skip.
+//! it, never a skip. Every answer the oracle settles is kept in
+//! [`cache`] by what produced it, so an unchanged call starts no Python.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Output};
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+pub mod cache;
 
 use crate::fixtures::Recipe;
 
@@ -43,6 +47,51 @@ pub enum OracleError {
     },
 }
 
+static SPAWNS: AtomicUsize = AtomicUsize::new(0);
+
+/// How many `uv` processes this process has started for the oracle: the
+/// number a test asserts on to show a call was answered from [`cache`].
+pub fn spawns() -> usize {
+    SPAWNS.load(Ordering::Relaxed)
+}
+
+/// `uv run --project tools/oracle tools/oracle/<script>` from the
+/// workspace root, with its arguments still to add.
+fn uv(script: &str) -> Command {
+    let mut command = Command::new("uv");
+    command
+        .current_dir(workspace_root())
+        .args(["run", "--project", "tools/oracle"])
+        .arg(format!("tools/oracle/{script}"));
+    command
+}
+
+/// Runs `command`, counted by [`spawns`].
+fn spawn(command: &mut Command) -> Result<Output, OracleError> {
+    SPAWNS.fetch_add(1, Ordering::Relaxed);
+    command.output().map_err(|e| OracleError::Environment {
+        message: format!("could not run `uv`: {e}"),
+    })
+}
+
+/// Stores a settled answer. A cache that cannot be written is no reason
+/// to fail a call the oracle answered, so the error is dropped.
+fn keep(slot: Option<(PathBuf, cache::Key)>, bytes: &[u8]) {
+    if let Some((dir, key)) = slot {
+        let _ = cache::store(&dir, &key, bytes);
+    }
+}
+
+fn environment(output: &Output) -> OracleError {
+    OracleError::Environment {
+        message: format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        ),
+    }
+}
+
 /// The workspace root: two levels above this crate's manifest.
 pub fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -74,32 +123,26 @@ pub fn scratch_fixture(name: &str, recipe: &Recipe) -> Result<PathBuf, OracleErr
         message: e.to_string(),
     })?;
     std::fs::create_dir_all(&dir)
-        .and_then(|()| std::fs::write(&file, text))
+        .and_then(|()| std::fs::write(&file, &text))
         .map_err(|e| OracleError::Write {
             path: file.clone(),
             message: e.to_string(),
         })?;
-    let output = Command::new("uv")
-        .current_dir(workspace_root())
-        .args([
-            "run",
-            "--project",
-            "tools/oracle",
-            "tools/oracle/expected.py",
-        ])
-        .arg(&dir)
-        .output()
-        .map_err(|e| OracleError::Environment {
-            message: format!("could not run `uv`: {e}"),
+    let expected = dir.join("expected.json");
+    let slot = cache::slot("expected.py", &[Some(text.as_bytes())], None);
+    if let Some(bytes) = slot.as_ref().and_then(|(d, k)| cache::load(d, k)) {
+        std::fs::write(&expected, bytes).map_err(|e| OracleError::Write {
+            path: expected.clone(),
+            message: e.to_string(),
         })?;
+        return Ok(dir);
+    }
+    let output = spawn(uv("expected.py").arg(&dir))?;
     if !output.status.success() {
-        return Err(OracleError::Environment {
-            message: format!(
-                "{}{}",
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr)
-            ),
-        });
+        return Err(environment(&output));
+    }
+    if let Ok(bytes) = std::fs::read(&expected) {
+        keep(slot, &bytes);
     }
     Ok(dir)
 }
@@ -125,6 +168,11 @@ pub fn compare(
 
 /// [`compare`] against a fixture directory anywhere — a scratch copy in
 /// a test, a fixture outside the corpus.
+///
+/// A `MATCH` is kept in [`cache`] under the STEP text, the directory's
+/// `fixture.json` and `expected.json` and the variant; a later call with
+/// all of them unchanged returns the same table without running the
+/// oracle. A mismatch is never kept.
 pub fn compare_dir(
     dir: &Path,
     step_text: &str,
@@ -140,28 +188,33 @@ pub fn compare_dir(
             path: file.clone(),
             message: e.to_string(),
         })?;
-    let root = workspace_root();
-    let mut command = Command::new("uv");
-    command
-        .current_dir(&root)
-        .args([
-            "run",
-            "--project",
-            "tools/oracle",
-            "tools/oracle/compare.py",
-        ])
-        .arg(dir)
-        .arg(&file);
+    let read = |name: &str| std::fs::read(dir.join(name)).ok();
+    let (spec, expected) = (read("fixture.json"), read("expected.json"));
+    let slot = cache::slot(
+        "compare.py",
+        &[
+            Some(step_text.as_bytes()),
+            spec.as_deref(),
+            expected.as_deref(),
+        ],
+        Some(variant.unwrap_or("default")),
+    );
+    if let Some(bytes) = slot.as_ref().and_then(|(d, k)| cache::load(d, k)) {
+        return Ok(String::from_utf8_lossy(&bytes).into_owned());
+    }
+    let mut command = uv("compare.py");
+    command.arg(dir).arg(&file);
     if let Some(v) = variant {
         command.args(["--variant", v]);
     }
-    let output = command.output().map_err(|e| OracleError::Environment {
-        message: format!("could not run `uv`: {e}"),
-    })?;
+    let output = spawn(&mut command)?;
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
     match output.status.code() {
-        Some(0) if stdout.contains("MATCH") => Ok(stdout),
+        Some(0) if stdout.contains("MATCH") => {
+            keep(slot, stdout.as_bytes());
+            Ok(stdout)
+        }
         Some(1) => Err(OracleError::Mismatch {
             fixture,
             file,
@@ -205,24 +258,19 @@ pub fn compare_stl(stl: &[u8], tag: &str) -> Result<StlReading, OracleError> {
             path: file.clone(),
             message: e.to_string(),
         })?;
-    let output = Command::new("uv")
-        .current_dir(workspace_root())
-        .args(["run", "--project", "tools/oracle", "tools/oracle/mesh.py"])
-        .arg(&file)
-        .output()
-        .map_err(|e| OracleError::Environment {
-            message: format!("could not run `uv`: {e}"),
-        })?;
-    if !output.status.success() {
-        return Err(OracleError::Environment {
-            message: format!(
-                "{}{}",
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr)
-            ),
-        });
+    let slot = cache::slot("mesh.py", &[Some(stl)], None);
+    if let Some(bytes) = slot.as_ref().and_then(|(d, k)| cache::load(d, k)) {
+        if let Ok(reading) = serde_json::from_slice(&bytes) {
+            return Ok(reading);
+        }
     }
-    serde_json::from_slice(&output.stdout).map_err(|e| OracleError::Environment {
+    let output = spawn(uv("mesh.py").arg(&file))?;
+    if !output.status.success() {
+        return Err(environment(&output));
+    }
+    let reading = serde_json::from_slice(&output.stdout).map_err(|e| OracleError::Environment {
         message: format!("mesh.py's output did not parse as JSON: {e}"),
-    })
+    })?;
+    keep(slot, &output.stdout);
+    Ok(reading)
 }
