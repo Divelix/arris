@@ -501,7 +501,7 @@ bound has to be established here.
   green. The dumps of `ring-pin-cut`, `ring-slab-common`,
   `ring-corner-common` and `filleted-boss-drill-cut` are re-blessed: same
   structure and counts, every number within 4.4e-8 — the jump removed.
-- [ ] Step 5b **[2]** — The fit held to the exact branch.
+- [x] Step 5b **[2]** — The fit held to the exact branch.
   `section::fitted`'s deviation is the larger of today's surface term and
   the fit's distance from `branch.point` — to decide: at the same
   parameter, or to the branch as a curve (⚠ OPEN 3). Property in
@@ -537,6 +537,34 @@ bound has to be established here.
   rest within 10%), the latter as fast as today. Neither doubles once
   the branch is continuous; OPEN 3 is decided on those numbers after
   step 5.
+
+  **Done 2026-09-23.** Measured again with step 5's continuous branch,
+  control points per loop, surfaces → same parameter → curve distance:
+  metre cylinder pairs 60–129 → 60–137 → 60–133; a cylinder against a
+  sphere and a crossing cylinder at 20°, 5°, 1°: 105/77, 129/133,
+  133/235 → 117/79, 133/143, 153/263 → 119/79, 133/140, 141/257; torus
+  sections (`R/r` 1.1 to 100 against all six kinds) 27–107 → 27–109,
+  +32% at most → the same within 10%, at five to eight times the time.
+  Neither doubles; OPEN 3 decided for the same parameter. The deviation
+  is `|fit(t) − branch(t)|` alone, which bounds the surface term. Degree
+  re-measured at 3/4/5/6 and recorded in `SECTION_FIT_DEGREE`'s doc: 6
+  saves a third on smooth loops and costs an eighth on two cylinders at
+  a small angle, so 5 stays. The property is `held_to_branches` and
+  `two_regions_agree` in `intersect_surfaces.rs`, run from
+  `common_properties_in` and the quartic test — 2000 parameters per fit,
+  and the fits of a second region shifted by a third of the box within
+  half a tolerance where both boxes reach; `arris-geom` and `arris-ops`
+  green at 1000.
+  `grazing-ball-bar-cut` passes S5 at `Full` and moved to `boolean/`;
+  it states `area_rel` 1e-7 because the oracle's solid is the far side
+  (a section edge at 2.84e-6, its area 3.1e-8 from the 33.1158453338
+  Arris converges to at model tolerances 1e-7 to 1e-10), as
+  `ring-corner-common` does. Twelve blessed dumps re-blessed
+  (`ball-offset-drill-cut`, `ball-polar-drill-cut`,
+  `filleted-boss-drill-cut`, `frustum-cross-drill-cut`,
+  `ring-corner-common`, `ring-pin-cut`, `ring-slab-common`, the five
+  `tee-unequal-*`): same topology and tolerances, vertices and ranges
+  within 1e-8, fits −4% to +35% control points.
 - [ ] Step 6 **[2]** — A section edge known by its surfaces. In
   `section_curve`'s `along` verdict, and wherever else `pave` asks whether
   an operand edge lies along a section (`coincident`, `common_block`,
@@ -623,15 +651,14 @@ with nothing unchecked, `docs/DATA-MODEL.md` with no `⚠ OPEN`.
   balls meet", with the entities' own tolerances; the bound, measured
   over the 72710 booleans of the suite at 1000 cases, is that nothing
   outside the band changes — the tripwire did not fire.
-- ⚠ OPEN 3 (agent, step 5b): same-parameter or curve distance to the
-  branch. Tripwire: control points more than doubled on the metre probes
-  means stop and report; the fallback is parking `grazing-ball-bar-cut`
-  with the measuring harness, never an S5 excuse. **Fired 2026-09-23** on
-  the torus probes under both options, from the torus branch's jumps at
-  its turning points, not the metric (step 5b's note): step 5 fixes the
-  branch, and the question is decided on the counts measured after it —
-  the same parameter as fast as today at up to +30%, the curve distance
-  at today's counts and several times the time.
+- 3, **decided 2026-09-23** (step 5b): the same parameter. Asked:
+  same-parameter or curve distance to the branch; tripwire: control
+  points more than doubled on the metre probes. It fired once on the
+  torus probes from the torus branch's jumps at its turning points, not
+  the metric; after step 5 the same parameter is at most +32% at
+  today's speed and the curve distance today's counts at five to eight
+  times the time. The same parameter is also the stricter bound and the
+  one a property checks directly.
 - 4, **decided 2026-09-23** (step 4): both — the curve–curve touch is
   resolved into its far crossing (`conic_crossings`, along the line of
   the two planes) and the block between the crossings is the edge's

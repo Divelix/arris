@@ -29,7 +29,8 @@ use crate::{Curve, GeomError, GeomKind, Surface};
 /// crossing cylinders' ellipses bit for bit. A traced section — two
 /// quadrics that meet in no conic, or a pair with a torus in it — is a
 /// `Curve::Nurbs` fitted within [`crate::SECTION_FIT_FRACTION`] of the
-/// tolerance of both surfaces, at the tracer's parametrisation and
+/// tolerance of the exact branch it traces, at the same parameter — and
+/// so of both surfaces — at the tracer's parametrisation and
 /// orientation, which depend on the two surfaces and never on their
 /// order: swapping the operands gives it bit for bit (ADR-0018,
 /// ADR-0019). A tube circle of a torus section is the exception the
@@ -157,7 +158,9 @@ impl SurfaceIntersection {
 /// Guarantees: the result is symmetric under swapping `a` and `b` up to
 /// a line's orientation, deterministic bit for bit, and each returned
 /// curve lies on both surfaces to rounding — a fitted one within
-/// [`crate::SECTION_FIT_FRACTION`] of `tol.linear`, and a torus's tube
+/// [`crate::SECTION_FIT_FRACTION`] of `tol.linear` of the exact section
+/// at its own parameter, so two fits of one section, in two regions,
+/// are within twice that of each other where both reach — and a torus's tube
 /// circle on the other surface within `tol.linear` of it, exactly as a
 /// point of a `Meets` is. `tol.angular` decides parallel and
 /// perpendicular; `tol.linear` decides coincident, tangent and empty.

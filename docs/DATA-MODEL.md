@@ -650,14 +650,22 @@ the exact form is never stored. Each branch of the trace is fitted at
 its own parameter by `fit_curve`, or `fit_curve_periodic` when it is a
 loop — so a closed section is one periodic B-spline with no joint, which
 the pave model cuts at its paves only — of degree `SECTION_FIT_DEGREE`
-(5, measured: the fewest control points on the metre-scale cylinder
-pairs, and no more than a span from the fewest on the torus sections),
-until neither surface is farther from the fitted point than
-`SECTION_FIT_FRACTION` (a quarter) of `tol.linear` beyond the exact
-branch's own distance from it, which is rounding away from a singular
-point's reach. The fraction is a quarter because each face's pcurve is
-fitted to the 3D curve afterwards, can come no nearer it than it is to
-the face, and is accepted at half of `tol.linear` (§Tolerances). The
+(5, measured: the fewest control points where two cylinders meet at a
+small angle, the longest fits there are, and the pcurves' degree),
+until the fitted point is nowhere farther than `SECTION_FIT_FRACTION` (a
+quarter) of `tol.linear` from the exact branch at the same parameter.
+That bounds each surface's distance too — a projection's distance is
+1-Lipschitz, so the fit is no farther from either surface than the
+branch is, which is rounding away from a singular point's reach, plus
+that quarter — and it holds what the two surfaces alone do not: where
+they meet at an angle `θ`, a point `ε` off both can be `ε / sin(θ/2)`
+across from the section. So the edge's tube holds the true section at
+every meeting angle, and two fits of one section — traced in two
+regions, or by two operations — are within half of `tol.linear` of
+each other (ADR-0022, amending ADR-0018 and ADR-0019). The fraction is a
+quarter because each face's pcurve is fitted to the 3D curve
+afterwards, can come no nearer it than it is to the face, and is
+accepted at half of `tol.linear` (§Tolerances). The
 branches keep the tracer's order, orientation and parameter, which
 depend on the two surfaces alone, so swapping the operands gives the
 result bit for bit; each is a `Crossing`, and each singular point is a
@@ -793,7 +801,8 @@ band is a quarter because a pcurve that ends on the point is off the
 curve there by the curve's own miss, which no refinement removes, and the
 fit accepts half the tolerance: a quarter leaves the fit the other
 quarter, so both sides of a split always fit — and it is how near its
-surfaces a fitted section is held (`SECTION_FIT_FRACTION`). Within one
+branch, and so its surfaces, a fitted section is held
+(`SECTION_FIT_FRACTION`). Within one
 tolerance of such an end the curve is carried onto the point, fading out
 by four, so that `u` is read as the curve's own end sees it and not as
 the point does, to which the miss, however small, is a right angle. A
@@ -1403,10 +1412,13 @@ may carry different tolerances.
   face, where its members lie further apart than the face's tolerance
   and no exact curve meets them all, by the move. The record of
   why lives in the operation's tests, not in the entity. A fitted section
-  curve is *not* such a reason (ADR-0018): it lies within
-  `SECTION_FIT_FRACTION` of the faces' tolerance of both surfaces, and
-  each pcurve fitted to it within that tolerance, so its edge carries its
-  faces' tolerance as an edge on a closed-form curve does.
+  curve is *not* such a reason (ADR-0018, ADR-0022): it lies within
+  `SECTION_FIT_FRACTION` of the faces' tolerance of the exact section at
+  its own parameter — and so of both surfaces, and of any other fit of
+  the same section within twice that — and each pcurve fitted to it
+  within that tolerance, so its edge's tube holds the true section and
+  the edge carries its faces' tolerance as an edge on a closed-form curve
+  does.
 - **`Precision`** is the model-wide configuration set at `Model::new`:
   `default_tolerance` (what primitives get), `min_tolerance` (the floor no
   entity goes below), `max_tolerance` (an operation that would exceed it

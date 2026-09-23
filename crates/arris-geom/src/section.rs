@@ -4,7 +4,7 @@
 //! singular point a point of the result (ADR-0018, ADR-0019,
 //! `docs/DATA-MODEL.md` §Curves).
 
-use arris_math::{Aabb, Tolerance};
+use arris_math::{Aabb, Point3, Tolerance};
 
 use crate::{
     Curve, GeomError, MeetCurve, MeetKind, MeetPoint, SectionBranch, Surface, SurfaceIntersection,
@@ -12,7 +12,10 @@ use crate::{
 };
 
 /// The fraction of the pair's `tol.linear` a fitted section curve is
-/// held to, measured from each of the two surfaces. Each face's pcurve
+/// held to, measured from the exact branch it fits at the branch's own
+/// parameter — which bounds how much farther from either surface the
+/// fit is than the branch, and keeps two fits of one section within
+/// twice the fraction of each other (ADR-0022). Each face's pcurve
 /// is fitted afterwards to the 3D curve (`pcurve_on`), and can come no
 /// nearer the 3D curve than the 3D curve is to that face; that fit is
 /// accepted at half its tolerance (the fit's own margin), so the 3D
@@ -23,18 +26,22 @@ use crate::{
 /// not a tolerance.
 pub const SECTION_FIT_FRACTION: f64 = 0.25;
 
-/// The degree of a fitted section curve. Measured on metre-scale
-/// cylinder pairs (radii 1 to 2, crossing, skew and tilted axes) at the
-/// default tolerance: a loop takes 200 to 390 control points at degree
-/// 3, 70 to 160 at degree 4 and 60 to 120 at degree 5 — the quintic is
-/// the smallest, and the degree the pcurves fitted to it take
-/// ([`crate::PCURVE_FIT_DEGREE`]). Measured again on metre-scale torus
-/// sections (`R/r` from 1.1 to 100, against each of the six analytic
-/// kinds): a loop takes 21 to 319 control points at degree 5, against
-/// 117 to 803 at degree 3; degree 6 takes fewer on the smooth loops (38
-/// against 53) and more where the curvature varies most (362 against
-/// 319), so the quintic stays (ADR-0019). A structural choice, not a
-/// tolerance.
+/// The degree of a fitted section curve. Measured with the fit held to
+/// the exact branch ([`SECTION_FIT_FRACTION`]) at the default tolerance,
+/// in control points per loop at degrees 3, 4, 5 and 6: on metre-scale
+/// cylinder pairs (radii 1 to 2, crossing, skew and tilted axes) 234 to
+/// 475, 84 to 204, 60 to 137 and 44 to 134; on a unit cylinder against a
+/// sphere and against a crossing cylinder of radius 2, at a smallest
+/// meeting angle of 20°, 5° and 1°, the quintic takes 117, 133 and 153
+/// and 79, 143 and 263, degree 6 fewer against the sphere at every
+/// angle but more against the cylinder at 5° and 1° (168 and 296); on
+/// metre-scale torus sections (`R/r` from 1.1 to 100, against each of
+/// the six analytic kinds) 67 to 401, 36 to 178, 27 to 109 and 22 to 98.
+/// Degree 6 saves up to a third on the smooth loops and costs an eighth
+/// more on the longest fits, two cylinders at a small angle; the quintic
+/// stays, the degree the pcurves fitted to it take
+/// ([`crate::PCURVE_FIT_DEGREE`]) (ADR-0019, ADR-0022). A
+/// structural choice, not a tolerance.
 pub const SECTION_FIT_DEGREE: usize = 5;
 
 /// The section of two surfaces with no closed form, as the intersector
@@ -48,8 +55,9 @@ pub const SECTION_FIT_DEGREE: usize = 5;
 /// cross along it, `Crossing` where they do. Then each traced branch, a
 /// crossing curve in the tracer's order and orientation, fitted at the
 /// branch's own parameter — periodic when the branch is closed — until
-/// neither surface is farther than [`SECTION_FIT_FRACTION`] of
-/// `tol.linear` from it beyond the exact branch's own distance (which is
+/// it is nowhere farther than [`SECTION_FIT_FRACTION`] of `tol.linear`
+/// from the exact branch at the same parameter, and so no farther than
+/// that from either surface beyond the branch's own distance (which is
 /// rounding, except within a singular point's reach, where the tracer
 /// lets the branch be within `tol.linear` of the other surface). Each
 /// singular point is a point of the result, `Touch` where it is isolated
@@ -79,7 +87,7 @@ pub(crate) fn traced(
     });
     let curves = circles
         .chain(trace.branches().iter().map(|branch| {
-            fitted(branch, a, b, tol).map(|curve| MeetCurve {
+            fitted(branch, tol).map(|curve| MeetCurve {
                 curve,
                 kind: MeetKind::Crossing,
             })
@@ -104,21 +112,20 @@ pub(crate) fn traced(
     })
 }
 
-/// One branch as a `Curve::Nurbs`.
-fn fitted(
-    branch: &SectionBranch,
-    a: &Surface,
-    b: &Surface,
-    tol: Tolerance,
-) -> Result<Curve, GeomError> {
-    let off = |s: &Surface, p| s.project(p).map_or(f64::INFINITY, |on| on.distance);
-    let deviation = |t: f64, q| {
-        let p = branch.point(t);
-        [a, b]
-            .iter()
-            .map(|s| (off(s, q) - off(s, p)).max(0.0))
-            .fold(0.0, f64::max)
-    };
+/// One branch as a `Curve::Nurbs`, held to the branch at the branch's
+/// own parameter. That distance bounds each surface's too — a
+/// projection's distance is 1-Lipschitz, so a point `d` from the branch
+/// is no more than `d` further from either surface than the branch is —
+/// and it also keeps the fit on the section where the two surfaces meet
+/// at a small angle `θ`: a point `ε` off both can be `ε / sin(θ/2)`
+/// across from the section, a hundred times `ε` at a degree, which the
+/// surfaces alone never see. Against the two surfaces' distances, on
+/// the probes of [`SECTION_FIT_DEGREE`]'s doc: at most a third more
+/// control points, at the same speed; a curve distance (the nearest
+/// point of the branch, found by Newton along it) kept their counts at
+/// five to eight times the time.
+fn fitted(branch: &SectionBranch, tol: Tolerance) -> Result<Curve, GeomError> {
+    let deviation = |t: f64, q: Point3| (q - branch.point(t)).norm();
     let f = |t: f64| branch.point(t);
     let target = SECTION_FIT_FRACTION * tol.linear;
     let fit = if branch.is_closed() {

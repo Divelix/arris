@@ -9,7 +9,9 @@
 //! missed, constructed touches are touching curves and constructed
 //! apexes and poles are points alone. Two cylinders in a quartic pose
 //! meet in fitted curves on both surfaces, bit for bit under a swap
-//! (ADR-0018). Every other surface pair — a plane oblique to a cone's
+//! (ADR-0018), and every fitted section is held to the exact branch it
+//! was traced from, two fits of it in two regions within half a
+//! tolerance of each other (ADR-0022). Every other surface pair — a plane oblique to a cone's
 //! axis, two tori on different axes — is `Unsupported`.
 
 use core::f64::consts::{FRAC_PI_2, TAU};
@@ -21,8 +23,9 @@ use arris_debug::prop::geom::{
 use arris_debug::prop::{DEFAULT_SCALE, check, finite_f64, frame, point_in_box, unit_vec3};
 use arris_debug::prop_shards;
 use arris_geom::{
-    Curve, GeomError, GeomKind, HYPERBOLA_HALF_SPAN, MeetKind, SECTION_FIT_FRACTION, Surface,
-    SurfaceIntersection, SurfaceKind, intersect_surfaces,
+    Curve, GeomError, GeomKind, HYPERBOLA_HALF_SPAN, MeetKind, NurbsCurve, SECTION_FIT_FRACTION,
+    SectionBranch, Surface, SurfaceIntersection, SurfaceKind, intersect_surfaces, trace_quadrics,
+    trace_torus,
 };
 use arris_math::{Aabb, Frame, Point3, Precision, Tolerance, UnitVec3, Vec3};
 use proptest::prelude::*;
@@ -212,6 +215,145 @@ fn seen(r: &SurfaceIntersection) -> Seen {
     }
 }
 
+/// Parameters a fitted section is held to its exact branch at.
+const HELD: usize = 2000;
+
+/// Points of one fit looked for on the fits of the same section traced
+/// in another region.
+const REGION_SAMPLES: usize = 200;
+
+/// The fits of `r` beside the exact branches they were fitted from, when
+/// `r` is a traced section: the tracer the intersector's `section` arm
+/// runs, run again, gives as many branches as `r` has curves after its
+/// tube circles, each a `Curve::Nurbs` over its branch's own domain.
+/// Empty for a result of any other arm, which has no branch to hold.
+fn fits_of(
+    a: &Surface,
+    b: &Surface,
+    within: &Aabb,
+    r: &SurfaceIntersection,
+) -> Vec<(NurbsCurve, SectionBranch)> {
+    if !r
+        .curves()
+        .iter()
+        .any(|m| matches!(m.curve, Curve::Nurbs(_)))
+    {
+        return Vec::new();
+    }
+    let trace = if [a, b].iter().any(|s| s.kind() == SurfaceKind::Torus) {
+        trace_torus(a, b, tol())
+    } else {
+        trace_quadrics(a, b, within, tol())
+    };
+    let Ok(trace) = trace else {
+        return Vec::new();
+    };
+    let fits = r.curves().get(trace.circles().len()..).unwrap_or_default();
+    let paired: Vec<_> = fits
+        .iter()
+        .zip(trace.branches())
+        .filter_map(|(m, branch)| match &m.curve {
+            Curve::Nurbs(c) if c.domain() == branch.domain() => Some((c.clone(), branch.clone())),
+            _ => None,
+        })
+        .collect();
+    if paired.len() == fits.len() && fits.len() == trace.branches().len() {
+        paired
+    } else {
+        Vec::new()
+    }
+}
+
+/// A traced section's fits held to the exact branch (ADR-0018, ADR-0019
+/// as amended by ADR-0022): at [`HELD`] parameters of each, within
+/// [`SECTION_FIT_FRACTION`] of `tol.linear` of the branch at the same
+/// parameter. Returns whether `r` was a traced section.
+fn held_to_branches(
+    a: &Surface,
+    b: &Surface,
+    within: &Aabb,
+    r: &SurfaceIntersection,
+) -> Result<bool, TestCaseError> {
+    let fits = fits_of(a, b, within, r);
+    for (fit, branch) in &fits {
+        let domain = fit.domain();
+        for i in 0..HELD {
+            let t = domain.lerp(i as f64 / (HELD - 1) as f64);
+            let (p, q) = (fit.eval(t).point, branch.point(t));
+            let off = (p - q).norm();
+            prop_assert!(
+                off <= SECTION_FIT_FRACTION * tol().linear + 1e-11 * (1.0 + q.coords.norm()),
+                "{a:?} vs {b:?}: the fit is {off} from its branch at t = {t}"
+            );
+        }
+    }
+    Ok(!fits.is_empty())
+}
+
+/// Two fits of one section, traced in `within` and in a second region
+/// overlapping it by two thirds, within twice [`SECTION_FIT_FRACTION`]
+/// of `tol.linear` of each other wherever both regions reach: each held
+/// to the one exact section, the two can be no farther apart than that.
+/// A torus section is traced with no region at all and is skipped.
+fn two_regions_agree(
+    a: &Surface,
+    b: &Surface,
+    within: &Aabb,
+    r: &SurfaceIntersection,
+) -> Result<(), TestCaseError> {
+    if [a, b].iter().any(|s| s.kind() == SurfaceKind::Torus) || fits_of(a, b, within, r).is_empty()
+    {
+        return Ok(());
+    }
+    let extent = within.extent();
+    let shift: [f64; 3] = core::array::from_fn(|k| extent[k] / 3.0);
+    let other = Aabb {
+        min: core::array::from_fn(|k| within.min[k] + shift[k]),
+        max: core::array::from_fn(|k| within.max[k] + shift[k]),
+    };
+    let r2 = intersect_surfaces(a, b, &other, tol())
+        .map_err(|e| TestCaseError::fail(format!("{a:?} vs {b:?} in {other:?}: {e}")))?;
+    let theirs: Vec<Curve> = (r2.curves().iter())
+        .filter(|m| matches!(m.curve, Curve::Nurbs(_)))
+        .map(|m| m.curve.clone())
+        .collect();
+    // A branch is clipped along the walked rulings, not at the box: a
+    // tenth of the box in from both.
+    let inside = |p: Point3| {
+        (0..3).all(|k| {
+            let margin = extent[k] / 10.0;
+            p[k] >= other.min[k] + margin
+                && p[k] <= within.max[k] - margin
+                && p[k] >= within.min[k] + margin
+                && p[k] <= other.max[k] - margin
+        })
+    };
+    for m in r.curves() {
+        let Curve::Nurbs(c) = &m.curve else {
+            continue;
+        };
+        let domain = c.domain();
+        for i in 0..REGION_SAMPLES {
+            let p = c
+                .eval(domain.lerp(i as f64 / (REGION_SAMPLES - 1) as f64))
+                .point;
+            if !inside(p) {
+                continue;
+            }
+            let apart = (theirs.iter())
+                .filter_map(|other| other.project(p).ok())
+                .map(|on| on.distance)
+                .fold(f64::INFINITY, f64::min);
+            prop_assert!(
+                apart
+                    <= 2.0 * SECTION_FIT_FRACTION * tol().linear + 1e-11 * (1.0 + p.coords.norm()),
+                "{a:?} vs {b:?}: {p} of one region's fit is {apart} from the other's"
+            );
+        }
+    }
+    Ok(())
+}
+
 /// The checks every result passes whatever its case: curves and points
 /// on both surfaces, symmetry under swapping (the same curves and points,
 /// in any order: two parallel cylinders order their rulings from the
@@ -241,6 +383,8 @@ fn common_properties_in(
     for c in curves_of(&r) {
         on_both(c, a, b, slack)?;
     }
+    held_to_branches(a, b, within, &r)?;
+    two_regions_agree(a, b, within, &r)?;
     for p in points_of(&r) {
         let (da, db) = (implicit_distance(a, p), implicit_distance(b, p));
         prop_assert!(
@@ -1058,6 +1202,11 @@ fn cylinders_in_a_quartic_pose_meet_in_fitted_curves_on_both_surfaces() {
         let r = intersect_surfaces(&a, &b, &within(), tol())
             .map_err(|e| TestCaseError::fail(format!("{a:?} vs {b:?}: {e}")))?;
         prop_assert!(!r.curves().is_empty() || !r.points().is_empty(), "{r:?}");
+        prop_assert!(
+            held_to_branches(&a, &b, &within(), &r)?,
+            "{a:?} vs {b:?}: not a traced section"
+        );
+        two_regions_agree(&a, &b, &within(), &r)?;
         let singular = if r.points().is_empty() {
             0.0
         } else {

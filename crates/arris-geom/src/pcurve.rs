@@ -41,7 +41,7 @@ pub const PCURVE_FIT_DEGREE: usize = 5;
 /// leaves the fit the other quarter, so splitting where
 /// [`GeomError::ThroughSingularity`] says always gives two ranges that
 /// fit. It is [`crate::SECTION_FIT_FRACTION`] as well, which is how near
-/// its surfaces a fitted section is held. A ratio between two fits, not a
+/// its exact branch, and so its surfaces, a fitted section is held. A ratio between two fits, not a
 /// tolerance.
 pub const PCURVE_SINGULAR_BAND: f64 = 0.25;
 

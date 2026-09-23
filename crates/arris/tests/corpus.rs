@@ -337,16 +337,6 @@ fn regression_singular_bore_cut() {
     run("regression/singular-bore-cut");
 }
 
-/// A ball cut from a bar whose wall it meets at about 5° where the
-/// section leaves the cap: the body is right, and S5 refuses it, because
-/// the checker's own fit of that grazing section and the edge's lie
-/// further apart along the surfaces than the edge's tolerance.
-#[test]
-#[ignore = "S5, the bar's wall and the ball's face intersect away from their shared edges: two fits of one grazing section are 1.06e-7 apart at a tolerance of 1e-7 (docs/BACKLOG.md, features a tolerance apart)"]
-fn regression_grazing_ball_bar_cut() {
-    run("regression/grazing-ball-bar-cut");
-}
-
 /// A stub leaving a frustum through its cone wall, cut and then fused
 /// back: the restoring fuse traces the cone and the stub's wall over
 /// another region than the cut did, and the one section comes back a
@@ -768,6 +758,16 @@ fn boolean_ball_pole_slice_cut() {
 #[test]
 fn boolean_pole_slice_beside_seam_cut() {
     run("boolean/pole-slice-beside-seam-cut");
+}
+
+/// A ball cut from a bar whose wall it meets at about 5° where the
+/// section leaves the cap: the checker's own fit of that grazing section,
+/// traced over the faces' boxes, and the edge's are each held to the one
+/// exact branch, so they lie within half a tolerance of each other and
+/// S5 finds every sample of its curve on the shared edge.
+#[test]
+fn boolean_grazing_ball_bar_cut() {
+    run("boolean/grazing-ball-bar-cut");
 }
 
 /// A drill whose wall runs through both of a ball's poles: two traced
