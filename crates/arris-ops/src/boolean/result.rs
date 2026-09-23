@@ -947,8 +947,7 @@ impl<'m> Build<'m> {
         // faces round the vertex close into more than one fan — a wall
         // left two pieces that meet only at a singular point of the
         // section, pinched between a drill's two exits — which no
-        // manifold `Solid` holds (plans/c3-tolerance-apart, open
-        // question 1).
+        // manifold `Solid` holds (ADR-0022, the pinch).
         if let Some(v) = self.pinched() {
             return Err(OpError::Degenerate {
                 entities: self

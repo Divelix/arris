@@ -789,11 +789,10 @@ tolerance, 767 at `1e-5`, 479 at `1e-3`, 293 at `1e-2`, a quarter of
 `MAX_FIT_SPANS` at the worst and 10 to 110 ms. The projection is the only
 source of a torus's pcurve, too: the tracer's exact (u, v)
 (`SectionBranch::uv`) is the branch's, and the curve an edge carries is
-the 3D fit of it, which is held to its two surfaces and so sits off the
-branch along a grazing section by up to sixteen tolerances (over 1000
-random poses); the projected pcurve follows the fitted curve and adds at
-most 0.82 of a tolerance to that, where the branch's own (u, v) would be
-off the edge's curve by all of it.
+the 3D fit of it, within `SECTION_FIT_FRACTION` of a tolerance of the
+branch at the same parameter; the projected pcurve follows the fitted
+curve, where the branch's own (u, v) would be off the edge's curve by
+the fit's whole deviation.
 
 **A fitted pcurve never runs through a singular point** of the surface —
 a cone's apex, a sphere's pole — where every `u` names one point. The

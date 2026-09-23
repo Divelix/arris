@@ -648,7 +648,7 @@ fn circle_edges(m: &Model, body: Body) -> Vec<EdgeId> {
 /// canonical perpendicular for either radius) — then the whole pair
 /// turned and carried a hundred units from the origin, so the touch
 /// lands where `conic2::trig2_roots` finds it a rounding short of a
-/// whole turn without the snap (plans/c3-tolerance-apart step 3; found
+/// whole turn without the snap (ADR-0022; found
 /// by search over `intersect_curve_surface` directly). `land`'s
 /// `vertex_at` already reads the point, not `t`, so the pave model
 /// never blocked on the wrapped root either way; the property held here

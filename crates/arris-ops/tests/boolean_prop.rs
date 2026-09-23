@@ -719,11 +719,11 @@ prop_shards! {
     /// from the vertex, `ψ` the angle between the axes, log-uniform from a
     /// tenth of a tolerance to 1.9, where the touch's ball and the
     /// vertex's meet and the touch joins it (`boolean/
-    /// seam-a-tolerance-from-crossing-fuse`, plans/c3-tolerance-apart step
-    /// 2b), a tenth short of two so that no pose's rounding decides it;
-    /// and once with `sin δ` log-uniform from ten tolerances over `R` to
-    /// 0.03, which spans the bands where the seam's chord in the other
-    /// wall is under the tolerance (the pave's touch, ADR-0016) and where
+    /// seam-a-tolerance-from-crossing-fuse`, ADR-0022), a tenth short of
+    /// two so that no pose's rounding decides it; and once with `sin δ`
+    /// log-uniform from ten tolerances over `R` to 0.03, which spans the
+    /// bands where the seam's chord in the other wall is under the
+    /// tolerance (the pave's touch, ADR-0016) and where
     /// the sliver it cuts off lies within it (the transversal rule) — are
     /// the same body at every turn: the same mass properties within what
     /// the fitted ellipses allow, and the counts of the generic turn but
@@ -1018,7 +1018,7 @@ fn a_circle_through_a_pole_a_hair_off_the_seam_arrives_at_its_corner() {
 /// poles and the section leaves one along the seam, 1.3e-7 of `u`
 /// beside it (`TangentContact`). The desired outcome is the half ball.
 /// The strategy keeps the turn at 90° drawn round the whole turn; the
-/// sliver faces are a backlog line (plans/c3-tolerance-apart step 4).
+/// sliver faces are a backlog line (ADR-0022).
 #[test]
 #[ignore = "BesideSingularity and TangentContact for a meridian plane a hair off the seam's: the lune beside the seam, a sliver face (docs/BACKLOG.md)"]
 fn a_meridian_plane_a_hair_off_the_seams_halves_the_ball() {

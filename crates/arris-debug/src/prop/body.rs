@@ -1085,8 +1085,8 @@ pub fn quadric_pair() -> impl Strategy<Value = QuadricPair> {
 }
 
 /// A designed contact the corpus holds, which a [`BandPair`] moves off
-/// by a fraction of the tolerance to a few tolerances (plans/
-/// c3-tolerance-apart step 1). Each names the fixtures it stands for.
+/// by a fraction of the tolerance to a few tolerances (ADR-0022).
+/// Each names the fixtures it stands for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum BandContact {
     /// Two boxes sharing a whole face, their side faces coplanar:
@@ -1274,7 +1274,7 @@ impl BandSolid {
 }
 
 /// A designed contact of the corpus, in its own frame, and a way off it:
-/// the operands of the tolerance band (plans/c3-tolerance-apart). The
+/// the operands of the tolerance band (ADR-0022). The
 /// `fixed` solid stays where it is; the `moving` one is moved off the
 /// contact by [`BandPair::build`]'s offset — a multiple of the tolerance
 /// — along `normal`, turned about `hinge`, or grown, as `motion` says.
@@ -1355,7 +1355,7 @@ impl BandPair {
 
 /// The multiples of the tolerance a band property moves each
 /// [`BandPair`] off its contact by, both signs of each: a fraction of it
-/// to several (plans/c3-tolerance-apart step 1).
+/// to several (ADR-0022).
 pub const BAND_STEPS: [f64; 7] = [0.25, 0.5, 1.0, 1.5, 2.0, 4.0, 16.0];
 
 /// [`BandPair`]s: a contact from [`BandContact`] a tenth each, its sizes

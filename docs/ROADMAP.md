@@ -350,7 +350,8 @@ their own and not left to luck.*
 `ops::revolve` return tori, spheres and cones, and a body Arris built has
 to be a body Arris takes (ADR-0020).*
 
-**Status: in progress.** Every pair of analytic surfaces meets in the
+**Status: every line done (2026-09-24); the cycle is `/close-cycle`'s.**
+Every pair of analytic surfaces meets in the
 intersector in every pose — conics exact, the quartics of a ruled pair
 traced by its rulings and fitted to NURBS inside a region (ADR-0018,
 done 2026-09-19), a torus's section traced in the torus's own parameter
@@ -362,8 +363,11 @@ takes a cone, sphere, torus or elliptic-cylinder face as an operand, a
 section through an apex or a pole included and one beside it refused by
 name (ADR-0021, done 2026-09-22): every conic meets every analytic
 surface, every curve on one has a pcurve, and the M4 identities hold
-over quadric operands at random poses. Open: features a tolerance
-apart.
+over quadric operands at random poses. "The same within a tolerance"
+is an equivalence decided once per level (ADR-0022, done 2026-09-24):
+section vertices by closure, fits held to the exact branch, a section
+edge known by its surfaces, a block along an operand edge that edge's
+piece, and the pinch refused by name.
 
 - The general quadric pairs in `intersect_surfaces`. **Done**: a plane
   oblique to a cone's axis or parallel to it and off it; two
@@ -381,10 +385,10 @@ apart.
   analytic surface and against a line, a circle or an ellipse (ADR-0018).
 - A fitted pcurve fallback on cones, spheres and tori for the oblique
   sections a boolean leaves there. **Done**, over the surface's own
-  projection on every analytic surface, the torus's too — the fitted
-  section is held to its two surfaces, not to the exact branch, so the
-  branch's (u, v) is no pcurve of the curve an edge carries — and split
-  at an apex or a pole (ADR-0021).
+  projection on every analytic surface, the torus's too — the branch's
+  (u, v) is no pcurve of the fitted curve an edge carries, which lies a
+  fraction of a tolerance off it — and split at an apex or a pole
+  (ADR-0021).
 - The pave model's quadric guard lifted: booleans with cone, sphere, torus
   and elliptic-cylinder operand faces, each a corpus fixture against the
   oracle. **Done**: the frustum, ball, ring, elliptic, filleted and
@@ -399,6 +403,22 @@ apart.
 - Features a tolerance apart: section vertices clustered by closure rather
   than first-come merging (`regression/seam-a-tolerance-from-crossing-fuse`),
   and a corpus of faces touching and coincident within a tolerance.
+  **Done** (ADR-0022): a section vertex is a component of candidate
+  points whose balls meet, its edges' pcurves ending on its own (u, v); a
+  fitted section held to the exact branch at a quarter tolerance, so two
+  fits of one section agree within half; an operand edge on a pair's
+  section known by its surfaces, a section block along an operand edge
+  that edge's piece; a shell pinched at a vertex `Reason::NonManifold`.
+  `seam-a-tolerance-from-crossing-fuse`, `grazing-ball-bar-cut`,
+  `frustum-stub-cut-then-fuse` and `pole-slice-beside-seam-cut` pass from
+  `boolean/`, with twenty band-end fixtures beside them;
+  `tolerance_band.rs` holds the band where it holds — a coaxial bore in
+  every pose, an edge on an edge under offset — and ratchets the rest
+  against its record. It leaves a third of the band survey failing, none
+  of it this line's mechanisms by design: no verdict a hair off parallel
+  or tangent, slivers the polygons do not resolve, the builder and the
+  checker refusing near-tangent results — each a `regression/` fixture
+  and a `docs/BACKLOG.md` line.
 
 **Out:** NURBS operands and NURBS–NURBS intersection (the NURBS cycle's);
 blends on quadric face pairs (the blend-network cycle's); a spindle

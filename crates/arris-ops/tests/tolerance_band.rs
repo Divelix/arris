@@ -1,4 +1,4 @@
-//! The tolerance band (plans/c3-tolerance-apart, ADR-0022): every
+//! The tolerance band (ADR-0022): every
 //! designed contact the corpus holds — flush planes, coincident and
 //! coaxial cylinders, tangent walls, a tube circle, an edge on an edge —
 //! in a random pose, one operand moved off it by a fraction of the
@@ -203,7 +203,7 @@ fn checker_rows(text: &str) -> Option<String> {
 }
 
 /// The plan step whose mechanism a failure's class is attributed to
-/// (plans/c3-tolerance-apart, open question 5), by what the fault says
+/// (ADR-0022's mechanisms), by what the fault says
 /// the pave model got wrong:
 ///
 /// - **2**, two points a tolerance apart that should be one vertex: a
@@ -392,7 +392,7 @@ fn survey(pair: &BandPair) -> Vec<Record> {
 /// per contact, motion and boolean, then every distinct failure with the
 /// first pair that shows it.
 #[test]
-#[ignore = "the survey records the whole band, the part not yet held as well, and asserts nothing: run by hand (plans/c3-tolerance-apart)"]
+#[ignore = "the survey records the whole band, the part not yet held as well, and asserts nothing: run by hand (ADR-0022)"]
 fn the_band_survey() {
     std::panic::set_hook(Box::new(|_| {}));
     let shards = std::thread::available_parallelism().map_or(8, |n| n.get() as u32);
@@ -861,7 +861,7 @@ fn record_path() -> std::path::PathBuf {
 /// into a held outcome; the test then says so, and `ARRIS_BLESS=1`
 /// writes the record again. The record's failures are the band's
 /// residue, each a `regression/` fixture and a line of `docs/BACKLOG.md`
-/// (plans/c3-tolerance-apart step 9).
+/// (ADR-0022).
 #[test]
 fn the_band_at_the_fixtures_numbers() {
     std::panic::set_hook(Box::new(|_| {}));
