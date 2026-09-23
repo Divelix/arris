@@ -466,8 +466,8 @@ a `proptest` strategy over `Step` beside the oracle's existing evaluator
 and needs no new interpreter on either side; `cargo-fuzz` targets over
 the intersectors and, once it exists, the STEP reader, seeded from the
 corpus. Its numbers — benchmark baselines, cases per night — live in
-this section once they exist. Its one open question is the case count
-the pre-commit hook runs against CI's, which is the human's call.
+this section once they exist. ADR-0024 fixes its shape, including the
+hook's case count: 256, with depth from a nightly tier on a rotating seed.
 
 **The first-party binding.** Code-first and agent-driven modelling is one
 of the consumers `SEED.md` §1 names, and a binding in this repository is
