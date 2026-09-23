@@ -134,6 +134,7 @@
     }
   ],
   "analytic": {
-    "genus": 0
+    "genus": 0,
+    "step_differs": "Open CASCADE's own STEP of its result reads back with 3 edges and 3 loops where it built 4 and 2; Arris's STEP of the result is read back by the corpus's compare stage once Arris builds it"
   }
 }

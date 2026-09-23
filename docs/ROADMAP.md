@@ -70,7 +70,10 @@ its own counts, for the one place Arris's convention is deliberately not
 Open CASCADE's (a tangent ruling left unimprinted); every other fixture
 mirrors the oracle's counts exactly. Likewise `analytic.measure_differs:
 "why"` with closed forms for the volume, area, centroid and inertia, for
-a result Open CASCADE measurably builds wrong (ADR-0015).
+a result Open CASCADE measurably builds wrong (ADR-0015), and
+`analytic.step_differs: "why"` for a result whose own STEP Open CASCADE
+does not read back as itself, which only the oracle's self-test skips
+(ADR-0023).
 Tolerances are the fixture's: relative 1e-9 on volume and area for
 analytic results, exact on counts and classifications. The oracle is run,
 never linked (`SEED.md` §7).

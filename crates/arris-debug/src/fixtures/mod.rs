@@ -566,6 +566,13 @@ pub struct Analytic {
     /// stay in `expected.json` as the record, and the lint requires at
     /// least one of them to differ from its closed form in every variant.
     pub measure_differs: Option<String>,
+    /// Why Open CASCADE's own STEP of this result does not read back as
+    /// the result (ADR-0023: its reader hands back other counts or
+    /// another solid for its own file). Only the oracle's self-test reads
+    /// it, and skips that round trip; the runner and `compare.py` still
+    /// read Arris's STEP of the result back through Open CASCADE and hold
+    /// it to `expected.json`, so nothing Arris is held to changes.
+    pub step_differs: Option<String>,
     /// Genus.
     pub genus: Option<i64>,
 }
@@ -932,6 +939,9 @@ pub fn lint(dir: &Path) -> Vec<String> {
             if a.degenerate || a.expect_error.is_some() {
                 problem("analytic.measure_differs needs a result Arris builds".into());
             }
+        }
+        if a.step_differs.is_some() && (a.degenerate || a.expect_error.is_some()) {
+            problem("analytic.step_differs needs a result Arris builds".into());
         }
         if a.degenerate != m.degenerate {
             problem(format!(

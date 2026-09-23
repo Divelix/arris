@@ -212,7 +212,16 @@ of the step that made the fixture pass, and a later change to it is a
   the description, a closed form derived rather than read off a run,
   why the oracle is wrong rather than following a convention — an
   invariance it breaks, such as a motion that is the identity on the
-  solid changing its volume — and the size of its error. `genus` is what the
+  solid changing its volume — and the size of its error.
+  `step_differs: "why"` says Open CASCADE's *own* STEP of the result does
+  not read back as the result — other counts, or another solid — while
+  Arris's does (ADR-0023); the text gives both sides in numbers. Only the
+  oracle's self-test reads it, and skips that fixture's round trip; the
+  runner and `compare.py` compare exactly as without it, and the lint
+  refuses it on a result Arris does not build. Every other round trip in
+  the self-test is held to the result's own tolerance where that is wider
+  than the fixture's: a reader may move the boundary by its largest vertex
+  tolerance. `genus` is what the
   Euler line is checked with:
   `V − E + F − (L − F) − 2(S − G) = 0` with the oracle's counts.
 - **Tolerances** are the fixture's; absent ones take the defaults shown.

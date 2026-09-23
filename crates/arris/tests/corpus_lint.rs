@@ -185,6 +185,26 @@ fn measure_differs_needs_every_closed_form_and_a_difference() {
     assert!(problems.is_empty(), "{problems:?}");
 }
 
+/// `step_differs` (ADR-0023) excuses only a result Arris builds, whose
+/// STEP the corpus reads back: on a recipe that expects a refusal, there
+/// is no such STEP, so the claim is a lint problem.
+#[test]
+fn step_differs_needs_a_result_arris_builds() {
+    let scratch = tempdir("step-differs-refused");
+    copy_fixture("boolean/ball-in-bore-cut", &scratch);
+    let path = scratch.join("fixture.json");
+    let mut fixture: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    fixture["analytic"]["step_differs"] = "a claim".into();
+    std::fs::write(&path, serde_json::to_string_pretty(&fixture).unwrap()).unwrap();
+    let problems = lint(&scratch);
+    assert_eq!(problems.len(), 1, "{problems:?}");
+    assert!(
+        problems[0].contains("analytic.step_differs needs a result Arris builds"),
+        "{problems:?}"
+    );
+}
+
 /// A comparable solid fixture in one of the corpus's areas without its
 /// committed dump fails the lint, one problem per variant missing one;
 /// a result the oracle built no solid for, a recipe expecting a refusal,

@@ -9,7 +9,11 @@ A result with no solid (`degenerate`) and one Arris refuses by design
 (`analytic.expect_error`) are recorded but not round-tripped: neither is
 ever read back through STEP by the corpus. One whose recipe says the
 oracle measures it wrong (`analytic.measure_differs`) is round-tripped
-on its counts, genus and probes only.
+on its counts, genus and probes only. One whose recipe says Open
+CASCADE's own STEP of it does not read back as itself
+(`analytic.step_differs`, ADR-0023) is recorded but not round-tripped.
+Every other result is held to the tolerances it declares itself, the
+fixture's where they are wider (`measure.within_own_tolerance`).
 Exits 1 on the first disagreement. Run as
 `uv run --project tools/oracle tools/oracle/selftest.py`.
 """
@@ -26,7 +30,7 @@ require_ocp()
 
 from oracle import step  # noqa: E402
 from oracle.fixture import compute_expected, corpus_root, fixture_dirs, load_expected, load_fixture  # noqa: E402
-from oracle.measure import DEFAULT_TOLERANCES, compare, format_table, measure  # noqa: E402
+from oracle.measure import DEFAULT_TOLERANCES, compare, format_table, measure, within_own_tolerance  # noqa: E402
 from oracle.recipe import build, fixture_kind, number, probes, variant_names  # noqa: E402
 
 PI = 3.141592653589793
@@ -436,6 +440,11 @@ def round_trip(name: str, fixture: dict, expected: dict, tmp: Path) -> bool:
     # the oracle built wrong need not even measure the same after its own
     # STEP round trip (`boolean/seam-beside-crossing-fuse` does not).
     measured_wrong = fixture.get("analytic", {}).get("measure_differs")
+    # A result the recipe says Open CASCADE's own STEP loses (ADR-0023):
+    # its reader hands back other topology or another solid for its own
+    # file, while Arris's STEP of the same result reads back true — which
+    # is what the corpus runner's compare.py stage checks, and still does.
+    lossy = fixture.get("analytic", {}).get("step_differs")
     ok_all = True
     for variant in variant_names(fixture):
         shape, _ = build(fixture, variant)
@@ -445,11 +454,16 @@ def round_trip(name: str, fixture: dict, expected: dict, tmp: Path) -> bool:
         if refused:
             print(f"  {name}[{variant}]: {refused}, refused by Arris, no STEP round trip")
             continue
+        if lossy:
+            print(f"  {name}[{variant}]: Open CASCADE's own STEP differs (analytic.step_differs), no round trip")
+            continue
         path = tmp / f"{name.replace('/', '_')}-{variant}.step"
         step.write(shape, path)
         back = step.read(path)
         actual = measure(back, probes(fixture, variant), tol["probe"])
-        rows = compare(expected["results"][variant], actual, tol)
+        # The reader may move the boundary within the tolerances the file
+        # carries (ADR-0023); the fixture's own tolerance where it is wider.
+        rows = compare(expected["results"][variant], actual, within_own_tolerance(tol, shape, expected["results"][variant]))
         if measured_wrong:
             rows = [r for r in rows if not r[0].startswith(MEASUREMENTS)]
         ok = all(r[3] for r in rows)

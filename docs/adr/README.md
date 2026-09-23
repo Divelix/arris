@@ -33,3 +33,4 @@ here; the first ADR is the first decision taken *after* the seed.
 | [0020](0020-the-direction-after-c3-closure-then-measurement.md) | The direction after C3: closure before breadth, measured then chosen, cycles named not numbered | accepted |
 | [0021](0021-a-pcurve-never-runs-through-a-singular-point.md) | A pcurve never runs through a surface's singular point: fitted by projection, split at the apex and the pole, refused beside them | accepted |
 | [0022](0022-the-same-within-a-tolerance-is-an-equivalence.md) | The same within a tolerance is an equivalence, decided once per level: points by closure, fits held to the branch, curves by their surfaces, the pinch refused | accepted |
+| [0023](0023-the-oracle-round-trip-is-held-to-the-shape-own-tolerance.md) | The oracle's own STEP round trip is held to the shape's own tolerance, and a fixture may declare it lossy (`step_differs`) | accepted |

@@ -20,8 +20,9 @@ The version scheme, the `-dev` convention and who does what are
    fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
    `cargo nextest run --workspace`, `cargo test --workspace --doc`,
    `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps`,
-   `tools/check-layers.sh`. A release is not the place to discover a red
-   suite. An active plan in `docs/plans/` does not block a patch release —
+   `tools/check-layers.sh`, and the last CI run on `main` green in every
+   job — the hook runs none of CI's `oracle`, `wasm` or `parallel` jobs.
+   A release is not the place to discover a red suite. An active plan in `docs/plans/` does not block a patch release —
    say in the reply which plans are open, so the human knows what is
    half-landed.
 2. **Pick the version from the log, and show your evidence.** `git log

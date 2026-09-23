@@ -15,5 +15,8 @@
     {"label": "on_the_ball", "point": [-2, 0, 0], "expect": "on"},
     {"label": "at_the_north_pole", "point": [0, 0, 2], "expect": "on"}
   ],
-  "analytic": {"genus": 0}
+  "analytic": {
+    "genus": 0,
+    "step_differs": "Open CASCADE's own STEP of its result reads back with 9 edges and 5 loops where it built 10 and 4, its measurements within the shape's own tolerance; Arris's STEP of the same result reads back with the oracle's counts (the corpus's compare stage)"
+  }
 }

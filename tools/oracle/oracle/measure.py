@@ -21,6 +21,8 @@
 import math
 
 from OCP.BRep import BRep_Tool
+from OCP.Bnd import Bnd_Box
+from OCP.BRepBndLib import BRepBndLib
 from OCP.BRepAdaptor import BRepAdaptor_Curve, BRepAdaptor_Curve2d, BRepAdaptor_Surface
 from OCP.BRepTools import BRepTools_WireExplorer
 from OCP.GCPnts import GCPnts_AbscissaPoint
@@ -439,3 +441,35 @@ def tolerance_of(shape: TopoDS_Shape) -> float:
         t = max(t, BRep_Tool.Tolerance_s(TopoDS.Vertex(ex.Current())))
         ex.Next()
     return t
+
+
+def within_own_tolerance(tolerances: dict, shape: TopoDS_Shape, measured: dict) -> dict:
+    """`tolerances` widened to what `shape` itself declares: a reader may
+    move any point of the boundary by up to its largest vertex tolerance
+    `t` and still hand back the same shape, so a STEP round trip of it is
+    held to the first-order change such a move makes and no closer. Over a
+    boundary of area `A` and volume `V`, edges of total length `L`, and
+    the corners of its bounding box within `R` of the centroid, that is
+    `A·t` of volume, `L·t` of area (the edges moved across their faces),
+    `A·t·R / V` of centroid and `A·t·R²` of each inertia component. Counts,
+    genus and probe classes are not widened: a move within the tolerance
+    changes none of them."""
+    t = tolerance_of(shape)
+    if measured["degenerate"] or t == 0.0:
+        return dict(tolerances)
+    props = GProp_GProps()
+    BRepGProp.LinearProperties_s(shape, props)
+    length = props.Mass()
+    volume, area, c = abs(measured["volume"]), measured["area"], measured["centroid"]
+    box = Bnd_Box()
+    BRepBndLib.Add_s(shape, box)
+    lo, hi = box.CornerMin(), box.CornerMax()
+    reach = max(math.dist(c, (x, y, z)) for x in (lo.X(), hi.X()) for y in (lo.Y(), hi.Y()) for z in (lo.Z(), hi.Z()))
+    scale = max((abs(x) for row in measured.get("inertia") or [[0.0]] for x in row), default=0.0) or 1.0
+    own = {
+        "volume_rel": area * t / volume,
+        "area_rel": length * t / area,
+        "centroid_abs": area * t * reach / volume,
+        "inertia_rel": area * t * reach**2 / scale,
+    }
+    return {k: max(v, own.get(k, 0.0)) for k, v in tolerances.items()}
