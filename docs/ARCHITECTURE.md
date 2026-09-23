@@ -24,7 +24,7 @@ re-exports the public API. Lower crates never name types from upper ones.
 | `arris-ops` | Primitives, extrude and revolve of a `Profile`, transform, booleans, the blends, each returning `Provenance`; the queries `measure` (mass properties) and `query` (projection onto a plane, a face's outward frame) | `arris-check`, `thiserror`, `rayon` (feature) | 2 — algorithms |
 | `arris-mesh` | `TriMesh`, `Polyline`, the constrained Delaunay triangulation in (u, v) (`cdt`, ADR-0003), tessellation of faces and edges with shared edge discretisation; re-exports `arris-math`'s `Aabb` and `Interval` | `arris-check`, `arris-topo`, `thiserror`, `rayon` (feature) | 2 — algorithms |
 | `arris-io` | STEP AP214 Part 21 writer (later reader), the native format (`native`), STL and OBJ mesh writers (`stl`, `obj`, ADR-0013); re-exports `arris-check` and `arris-mesh` | `arris-check`, `arris-mesh`, `thiserror`, `serde`, `serde_json`, `postcard` (the last three behind the `serde` feature) | 2 — algorithms |
-| `arris-debug` | Text dump, the hand-built sample bodies (`sample`), PNG render (own software rasteriser over `image`), Rerun stream (feature), the fixture loader and corpus lint, the corpus runner (`corpus`) and the oracle seam (`oracle`), the seeded property-test runner and strategies | `arris-ops`, `arris-mesh`, `arris-io`, `arris-topo`, `arris-geom`, `arris-math`, `image`, `serde`, `serde_json`, `sha2`, `thiserror`, `proptest` (not on `wasm32`), `rerun` (feature) | 3 — dev-facing |
+| `arris-debug` | Text dump, the hand-built sample bodies (`sample`), PNG render (own software rasteriser over `image`), Rerun stream (feature), the fixture loader and corpus lint, the corpus runner (`corpus`) and the oracle seam (`oracle`), the seeded property-test runner and strategies, the differential over both kernels (`differential`) | `arris-ops`, `arris-mesh`, `arris-io`, `arris-topo`, `arris-geom`, `arris-math`, `image`, `serde`, `serde_json`, `sha2`, `thiserror`, `proptest` (not on `wasm32`), `rerun` (feature) | 3 — dev-facing |
 | `arris` | Facade: re-exports | `math` through `io`; `debug` as a dev-dependency only | 4 |
 
 `math`, `geom` and `topo` are the representation: they change rarely and a
@@ -1266,7 +1266,9 @@ B-Rep).
   committed dump per variant fails the lint, so an ignored fixture there does; a
   failure waiting for its fix sits under `regression/`, and fails the lint
   once it has a dump), the corpus runner (`corpus::run`, the fixture test of
-  roadmap §Fixtures — a `profile` step built into a `geom::Profile` kept
+  roadmap §Fixtures, one function per `corpus::Stage`, the six that read
+  no file — checker, counts, measure, mesh, probes, provenance — run
+  together by `corpus::stages` before the STEP round trip and the dump — a `profile` step built into a `geom::Profile` kept
   beside the bodies for the sweep steps that name it, no body and no
   accounting of its own; a `fillet` or `chamfer` step's edges named by a point each,
   the edge `classify_point` answers `On(Edge)` for when no second edge of
@@ -1296,7 +1298,10 @@ B-Rep).
   scratch copy of a fixture, so two runs of a recipe never write one file;
   then `compare.py` through `uv`, a missing environment a loud error;
   `oracle::scratch_fixture`: a test's own recipe written under
-  `target/inspect/<name>/` with its `expected.json` from `expected.py`,
+  `target/inspect/<name>/` with its `expected.json` from `expected.py`
+  — through `oracle::expected_batch`, which answers many such
+  directories in one `expected.py` process, a recipe the oracle refuses
+  an answer of its own and the rest still built —
   for a body the corpus does not hold — the revolves closing at a cone's
   apex or a sphere's pole, and the STEP tests' own bodies — held to the
   oracle's reading of its STEP all the same; every settled answer —
@@ -1325,7 +1330,21 @@ B-Rep).
   the others under a shared pose and chained by one to three booleans,
   probed at every operand's centre and just in and out of its faces —
   which `corpus::build` builds without a directory or an oracle answer,
-  ADR-0024's differential over both kernels). `prop` runs a
+  and which the differential runs through both kernels — `differential::run`,
+  ADR-0024 §2: `ARRIS_DIFF_CASES` recipes drawn from the property seed
+  under `target/inspect/differential/`, answered by one
+  `expected_batch`, judged on every core against `corpus::stages` with
+  no dump and no STEP round trip, and sorted into `Agree`, `BothRefuse`,
+  `ArrisRefuses` counted per refusal name (`differential::refusal`: a
+  `Degenerate`'s reason, an `Unsupported`'s kinds, an `Internal`'s
+  fault), `OracleRefuses`, and the three that fail the run —
+  `Disagree(stage)`, `CheckerViolation` (the checker at `Full`, an
+  input it rejects, or the debug build's guard caught as a panic on the
+  test side) and `Panic` — each failing case shrunk through its
+  `ValueTree` for at most `ARRIS_DIFF_SHRINK` candidates, the oracle run
+  per candidate through its cache, and printed as a `fixture.json`;
+  `crates/arris/tests/differential.rs` runs it and prints the
+  histogram). `prop` runs a
   property whole through `check`, or split across `k` shards through
   `prop_shards!`, which writes one `#[test]` per shard over a body given
   once so libtest's pool runs them at once instead of one property holding

@@ -155,7 +155,7 @@ bound has to be established here.
   always where a `Panic` or `CheckerViolation` fails the run. The first
   two are shrunk to `regression/tilted-cylinder-slot-cut` and
   `pin-at-disc-rim-common-fuse`.
-- [ ] Step 4 **[3]** — **The differential runner.**
+- [x] Step 4 **[3]** — **The differential runner.**
   - Flow: N seeded recipes are written as scratch fixtures, and one
     `expected_batch` call answers all of them. Each recipe then runs
     through the corpus stages.
@@ -172,6 +172,12 @@ bound has to be established here.
     default 32. The number that settles "unproven" is written in the
     commit body: the share of the draw that reaches a comparison, not a
     refusal, and the time per recipe.
+
+  *Found at step 4:* the fixed seed's first 32 draws hold seven
+  `Disagree(measure)`, so `differential.rs` lands `#[ignore]`d and step 5
+  takes the ignore off. An `OpError::Internal` is typed and never a
+  panic, so it counts under `ArrisRefuses` as `Internal(<fault>)`, where
+  the histogram shows it. Step 5 decides whether it fails the run.
 - [ ] Step 5 **[3]** — **The differential's first findings.**
   - Run at CI's count (1000) on the fixed seed.
   - Every `Disagree`, `CheckerViolation` or `Panic` class is shrunk into
@@ -184,8 +190,8 @@ bound has to be established here.
     corpus lint fails an exclusion whose fixture is gone or has moved out
     of `regression/`, so the exclusion is lifted by the commit that fixes
     it.
-  - `differential.rs` is green at the fixed seed and CI's count, and the
-    histogram is in the commit body.
+  - `differential.rs` is green at the fixed seed and CI's count, its
+    `#[ignore]` off, and the histogram is in the commit body.
 - [ ] Step 6 **[2]** — **The known high-count property failures.** These
   are the backlog's two properties that fail at 3000 cases:
   - `random_plane_and_cylinder_agree_on_every_common_property`: the bound
@@ -323,6 +329,24 @@ Found while executing:
   trim (the backlog's surface-of-extrusion line): a steady source of
   `OracleRefuses`, and why step 3's hash sample takes the first draw the
   oracle builds.
+- Step 4: the first 32 draws of the fixed seed give seven
+  `Disagree(measure)`. Each is a volume, centroid or inertia term 1e-9 to
+  7e-8 apart, relative, on a posed cylinder (with a box, a fillet or a
+  polygon extrusion) or on an elliptic extrusion — above the fixtures'
+  default 1e-9. Which side is off is step 5's question, answered against
+  a closed form where one exists. It is not answered by widening the
+  default tolerance.
+  At 256 draws (shrink off): 121 `Agree`, 21 `BothRefuse`, 37
+  `OracleRefuses`, 6 `ArrisRefuses` (4 `Degenerate(Empty)`, one
+  `Internal(Geometry)` and one `Internal(Split)`), and 71 `Disagree` (67
+  measure, 3 counts, 1 mesh). There was no panic on this seed.
+- Step 4: `OpError::Internal` is a caught kernel bug, but it is typed.
+  It counts as `ArrisRefuses/Internal(<fault>)` for now. Step 5 decides
+  whether that class fails the run, which would be an ADR-0024 amendment.
+- Step 4: the differential skips the STEP round trip and the dump. The
+  first reads a committed directory and would start one `compare.py` per
+  recipe, and the second has no committed dump to diff. The corpus holds
+  both for every fixture that a finding becomes.
 
 One number is left open by design: the nightly case count is set from
 step 6's measured wall clock, not guessed now.

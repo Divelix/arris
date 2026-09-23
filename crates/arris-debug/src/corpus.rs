@@ -1,20 +1,22 @@
 //! The corpus runner: the fixture test of `docs/ROADMAP.md` §Fixtures,
-//! one call per fixture and variant. [`run`] builds the recipe in Arris,
-//! runs the checker at `Full`, compares counts and genus against the
-//! oracle's `expected.json` (the counts against the recipe's own where it
-//! states a convention Arris does not follow, `analytic.counts_differ`),
-//! writes STEP and has the oracle read it back
-//! (`compare.py`), measures the result over the B-Rep and holds its
-//! volume, area, centroid and inertia to the oracle's within the
-//! fixture's tolerances (to the recipe's closed forms where it states the
-//! oracle's are wrong, `analytic.measure_differs`, ADR-0015), tessellates
-//! the result and holds the mesh
-//! closed with its signed volume within the fixture's `mesh_volume_rel`
-//! of that volume at `mesh_chord` — asking for the corner block and
-//! holding every face-local vertex to ADR-0012's two invariants, so the
-//! whole corpus covers them — asserts the provenance accounting of
-//! every step, and diffs the text dump against the committed `dump.txt` —
-//! written only under `ARRIS_BLESS=1`. Every stage that fails is a typed
+//! one call per fixture and variant. [`run`] builds the recipe in Arris
+//! and runs its [`Stage`]s in order, one function each: the checker at
+//! `Full` ([`check_stage`]); counts and genus against the oracle's
+//! `expected.json`, or the recipe's own where it states a convention
+//! Arris does not follow, `analytic.counts_differ` ([`counts_stage`]);
+//! volume, area, centroid and inertia over the B-Rep within the
+//! fixture's tolerances of the oracle's, or of the recipe's closed forms
+//! where it states the oracle's are wrong, `analytic.measure_differs`,
+//! ADR-0015 ([`measure_stage`]); the mesh at `mesh_chord`, closed, its
+//! signed volume within `mesh_volume_rel` of that volume, with the corner
+//! block asked for and every face-local vertex held to ADR-0012's two
+//! invariants so the whole corpus covers them ([`mesh_stage`]); the
+//! probes against the oracle's classes ([`probe_stage`]); the provenance
+//! accounting of every step ([`provenance_stage`]); STEP written and read
+//! back by the oracle (`compare.py`); and the text dump diffed against
+//! the committed `dump.txt` — written only under `ARRIS_BLESS=1`. The six
+//! stages that read no file are [`stages`], what the differential holds
+//! a generated recipe to. Every stage that fails is a typed
 //! [`CorpusError`] saying which fixture, which stage and what differed.
 //! A `profile`
 //! step builds a `geom::Profile` kept beside the bodies for the sweep
@@ -397,6 +399,8 @@ pub struct Chain {
     pub profiles: BTreeMap<String, Profile>,
     /// The name of the result step in [`Chain::steps`].
     pub result: String,
+    /// The recipe's parameters under the variant it was built at.
+    pub params: BTreeMap<String, f64>,
 }
 
 impl Chain {
@@ -486,6 +490,7 @@ fn chain_of(fixture: &Fixture, variant: &str) -> Result<Chain, CorpusError> {
         steps,
         profiles,
         result: fixture.recipe.result.clone(),
+        params,
     })
 }
 
@@ -541,6 +546,75 @@ fn step_tag(name: &str, variant: &str, dir: &Path) -> String {
     format!("{tag}-{:02x}{:02x}{:02x}", digest[0], digest[1], digest[2])
 }
 
+/// A stage of [`run`], in the order it runs them: what a
+/// [`CorpusError`] says failed ([`CorpusError::stage`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Stage {
+    /// Loading the fixture and building its recipe, or the typed refusal
+    /// the result step was expected to fail with.
+    Build,
+    /// The checker at `Full` and the result's lumps ([`check_stage`]).
+    Check,
+    /// Counts and genus against the oracle's ([`counts_stage`]).
+    Counts,
+    /// Mass properties against the oracle's or the closed forms'
+    /// ([`measure_stage`]).
+    Measure,
+    /// The mesh, its corner block and its volume ([`mesh_stage`]).
+    Mesh,
+    /// The probes against the oracle's classifications
+    /// ([`probe_stage`]).
+    Probes,
+    /// The provenance accounting of every step ([`provenance_stage`]).
+    Provenance,
+    /// STEP written and read back by the oracle.
+    Step,
+    /// The text dump against the committed one.
+    Dump,
+}
+
+impl core::fmt::Display for Stage {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(match self {
+            Stage::Build => "build",
+            Stage::Check => "check",
+            Stage::Counts => "counts",
+            Stage::Measure => "measure",
+            Stage::Mesh => "mesh",
+            Stage::Probes => "probes",
+            Stage::Provenance => "provenance",
+            Stage::Step => "step",
+            Stage::Dump => "dump",
+        })
+    }
+}
+
+impl CorpusError {
+    /// The stage that failed.
+    pub fn stage(&self) -> Stage {
+        match self {
+            CorpusError::Fixture(_)
+            | CorpusError::Variant { .. }
+            | CorpusError::Reference { .. }
+            | CorpusError::Expression { .. }
+            | CorpusError::Profile { .. }
+            | CorpusError::EdgePoint { .. }
+            | CorpusError::Precision { .. }
+            | CorpusError::Axis { .. }
+            | CorpusError::Expectation { .. }
+            | CorpusError::Op { .. } => Stage::Build,
+            CorpusError::Check { .. } | CorpusError::Lumps { .. } => Stage::Check,
+            CorpusError::Counts { .. } | CorpusError::Genus { .. } => Stage::Counts,
+            CorpusError::Measure { .. } => Stage::Measure,
+            CorpusError::Mesh { .. } => Stage::Mesh,
+            CorpusError::Probe { .. } => Stage::Probes,
+            CorpusError::Provenance { .. } => Stage::Provenance,
+            CorpusError::Step { .. } | CorpusError::Oracle(_) => Stage::Step,
+            CorpusError::Dump { .. } | CorpusError::Io { .. } => Stage::Dump,
+        }
+    }
+}
+
 /// Runs every stage on `dir`'s recipe under `variant`. Errors: the first
 /// stage that fails, with what differed. Writes `target/inspect/<area>-
 /// <slug>-<variant>.step` for the oracle, and the dump file under
@@ -575,36 +649,143 @@ pub fn run(dir: &Path, variant: &str) -> Result<(), CorpusError> {
     } else {
         fixture.recipe.analytic.expect_error.map(Refusal::Error)
     };
-    let mut m = model_for(&fixture)?;
-    let mut made: BTreeMap<String, Made> = BTreeMap::new();
+    let mut model = model_for(&fixture)?;
+    let mut steps: BTreeMap<String, Made> = BTreeMap::new();
     let mut profiles: BTreeMap<String, Profile> = BTreeMap::new();
-    if !build_all(&mut m, &fixture, &params, refusal, &mut made, &mut profiles)? {
+    if !build_all(
+        &mut model,
+        &fixture,
+        &params,
+        refusal,
+        &mut steps,
+        &mut profiles,
+    )? {
         return Ok(());
     }
-    let Some(result) = made.get(&fixture.recipe.result) else {
-        return Err(CorpusError::Reference {
-            fixture: name,
-            step: "result".into(),
-            name: fixture.recipe.result.clone(),
-        });
+    let chain = Chain {
+        model,
+        steps,
+        profiles,
+        result: fixture.recipe.result.clone(),
+        params,
     };
-    let body = result.body;
+    let body = stages(&fixture, &chain, expected)?;
+    let m = &chain.model;
 
-    // The checker at Full, with nothing undecided.
-    let report = check(&m, body, Level::Full);
+    // STEP through the oracle.
+    let text = step::write(m, &[body]).map_err(|source| CorpusError::Step {
+        fixture: name.clone(),
+        source,
+    })?;
+    let tag = step_tag(&name, variant, dir);
+    oracle::compare_dir(dir, &text, Some(variant), &tag)?;
+
+    // The dump.
+    let dump = dump_text(m, body).map_err(|e| CorpusError::Dump {
+        fixture: name.clone(),
+        path: dump_path(dir, variant),
+        what: e.to_string(),
+    })?;
+    let path = dump_path(dir, variant);
+    if blessing() {
+        std::fs::write(&path, &dump).map_err(|source| CorpusError::Io {
+            path: path.clone(),
+            source,
+        })?;
+        return Ok(());
+    }
+    let committed = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Err(CorpusError::Dump {
+                fixture: name,
+                path,
+                what: format!("is not committed yet; run with {BLESS_VAR}=1 to write it"),
+            });
+        }
+        Err(source) => return Err(CorpusError::Io { path, source }),
+    };
+    if committed != dump {
+        return Err(CorpusError::Dump {
+            fixture: name,
+            path,
+            what: format!(
+                "differs from the dump of this build:\n{}",
+                diff(&committed, &dump)
+            ),
+        });
+    }
+    Ok(())
+}
+
+/// Every stage of [`run`] that reads no file and starts no process, in
+/// its order — [`check_stage`], [`counts_stage`], [`measure_stage`],
+/// [`mesh_stage`], [`probe_stage`] and [`provenance_stage`] — on a
+/// recipe already built, against the oracle's `expected` result of it.
+/// What the differential holds a generated recipe to (ADR-0024 §2).
+/// Returns the result body. Errors: the first stage that fails.
+///
+/// ```no_run
+/// use arris_debug::{corpus, fixtures};
+///
+/// let dir = fixtures::corpus_root().join("boolean/through-hole");
+/// let fixture = fixtures::load(&dir).unwrap();
+/// let chain = corpus::chain(&dir, "default").unwrap();
+/// corpus::stages(&fixture, &chain, &fixture.expected.results["default"]).unwrap();
+/// ```
+pub fn stages(fixture: &Fixture, chain: &Chain, expected: &Measured) -> Result<Body, CorpusError> {
+    let (body, report) = check_stage(fixture, chain)?;
+    counts_stage(fixture, chain, &report, expected)?;
+    let target = measure_stage(fixture, chain, expected)?;
+    mesh_stage(fixture, chain, &target)?;
+    probe_stage(fixture, chain, expected)?;
+    provenance_stage(fixture, chain)?;
+    Ok(body)
+}
+
+/// The result body of `chain`. Errors: [`CorpusError::Reference`] when
+/// the recipe's result names no body step.
+fn result_of(fixture: &Fixture, chain: &Chain) -> Result<Body, CorpusError> {
+    chain.result().ok_or_else(|| CorpusError::Reference {
+        fixture: fixture.name.clone(),
+        step: "result".into(),
+        name: chain.result.clone(),
+    })
+}
+
+/// The checker at `Full` on the result, with nothing left undecided.
+/// Returns the result body and the report. Errors:
+/// [`CorpusError::Check`].
+pub fn check_stage(fixture: &Fixture, chain: &Chain) -> Result<(Body, Report), CorpusError> {
+    let body = result_of(fixture, chain)?;
+    let report = check(&chain.model, body, Level::Full);
     if !report.is_ok() || !report.unchecked().is_empty() {
         return Err(CorpusError::Check {
-            fixture: name,
+            fixture: fixture.name.clone(),
             report: Box::new(report),
         });
     }
+    Ok((body, report))
+}
 
-    // Counts and genus; a solid per lump, as the oracle counts them.
+/// Counts and genus of the result, from [`check_stage`]'s `report`,
+/// against the oracle's — a solid per lump, as the oracle counts them —
+/// or the recipe's own under `analytic.counts_differ`. Errors:
+/// [`CorpusError::Counts`], [`CorpusError::Genus`], and
+/// [`CorpusError::Lumps`] for a result whose lumps cannot be read.
+pub fn counts_stage(
+    fixture: &Fixture,
+    chain: &Chain,
+    report: &Report,
+    expected: &Measured,
+) -> Result<(), CorpusError> {
+    let name = fixture.name.clone();
+    let body = result_of(fixture, chain)?;
     let line = report.euler().ok_or_else(|| CorpusError::Check {
         fixture: name.clone(),
         report: Box::new(report.clone()),
     })?;
-    let solids = lumps(&m, body)
+    let solids = lumps(&chain.model, body)
         .map_err(|source| CorpusError::Lumps {
             fixture: name.clone(),
             source,
@@ -646,38 +827,63 @@ pub fn run(dir: &Path, variant: &str) -> Result<(), CorpusError> {
             });
         }
     }
+    Ok(())
+}
 
-    // STEP through the oracle.
-    let text = step::write(&m, &[body]).map_err(|source| CorpusError::Step {
-        fixture: name.clone(),
-        source,
-    })?;
-    let tag = step_tag(&name, variant, dir);
-    oracle::compare_dir(dir, &text, Some(variant), &tag)?;
+/// What [`measure_stage`] held the result to: the oracle's measurements,
+/// or the recipe's closed forms under `analytic.measure_differs`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Target {
+    /// The numbers.
+    pub measured: Measured,
+    /// Whose they are, as the errors say it: "the oracle's" or "the
+    /// closed form's".
+    pub by: &'static str,
+}
 
-    let tolerances = fixture.recipe.tolerances;
-
-    // `measure` over the B-Rep against what the oracle measured of the
-    // same recipe — or, where the recipe says the oracle is wrong, its
-    // closed forms: volume, area, centroid and the inertia tensor.
-    let (target, by) = measure_target(&fixture, &params, expected)?;
-    measure_stage(&m, body, &target, by, &tolerances).map_err(|what| CorpusError::Measure {
-        fixture: name.clone(),
+/// `measure` over the B-Rep against what the oracle measured of the same
+/// recipe — or, where the recipe says the oracle is wrong, its closed
+/// forms (ADR-0015): volume, area, centroid and the inertia tensor, each
+/// within the fixture's tolerance for it. Returns the [`Target`] held to.
+/// Errors: [`CorpusError::Measure`] naming the quantity.
+pub fn measure_stage(
+    fixture: &Fixture,
+    chain: &Chain,
+    expected: &Measured,
+) -> Result<Target, CorpusError> {
+    let body = result_of(fixture, chain)?;
+    let (measured, by) = measure_target(fixture, &chain.params, expected)?;
+    compare_mass(
+        &chain.model,
+        body,
+        &measured,
+        by,
+        &fixture.recipe.tolerances,
+    )
+    .map_err(|what| CorpusError::Measure {
+        fixture: fixture.name.clone(),
         what,
     })?;
+    Ok(Target { measured, by })
+}
 
-    // The mesh: closed, positive, and the oracle's volume within the
-    // fixture's mesh tolerance at its chord.
+/// The mesh at the fixture's `mesh_chord`: closed, positive, with the
+/// corner block's ADR-0012 invariants on every face-local vertex (so the
+/// whole corpus covers them rather than one focused test), and its
+/// signed volume within `mesh_volume_rel` of `target`'s. Errors:
+/// [`CorpusError::Mesh`].
+pub fn mesh_stage(fixture: &Fixture, chain: &Chain, target: &Target) -> Result<(), CorpusError> {
+    let body = result_of(fixture, chain)?;
+    let m = &chain.model;
+    let tolerances = fixture.recipe.tolerances;
     let mesh_failure = |what: String| CorpusError::Mesh {
-        fixture: name.clone(),
+        fixture: fixture.name.clone(),
         chord: tolerances.mesh_chord,
         what,
     };
-    // The corner block on every fixture (ADR-0012), so the whole corpus
-    // covers its invariants rather than one focused test.
     let request = MeshRequest::new(tolerances.mesh_chord).with_corners();
-    let mesh = tessellate_with(&m, body, &request).map_err(|e| mesh_failure(e.to_string()))?;
-    corners_stage(&m, body, &mesh).map_err(&mesh_failure)?;
+    let mesh = tessellate_with(m, body, &request).map_err(|e| mesh_failure(e.to_string()))?;
+    corners_stage(m, body, &mesh).map_err(&mesh_failure)?;
     let Some(mesh_volume) = mesh.signed_volume() else {
         return Err(mesh_failure("the mesh is not closed".into()));
     };
@@ -686,24 +892,33 @@ pub fn run(dir: &Path, variant: &str) -> Result<(), CorpusError> {
             "the mesh's signed volume is {mesh_volume}, not positive"
         )));
     }
-    if let Some(volume) = target.volume {
+    if let Some(volume) = target.measured.volume {
         let relative = (mesh_volume - volume).abs() / volume.abs();
         if relative.is_nan() || relative > tolerances.mesh_volume_rel {
             return Err(mesh_failure(format!(
-                "mesh volume {mesh_volume} vs {by} {volume}: {relative:e} relative, above mesh_volume_rel {:e}",
-                tolerances.mesh_volume_rel
+                "mesh volume {mesh_volume} vs {} {volume}: {relative:e} relative, above mesh_volume_rel {:e}",
+                target.by, tolerances.mesh_volume_rel
             )));
         }
     }
+    Ok(())
+}
 
-    // The probes: Arris's classification of each point against the
-    // oracle's, exactly. Both sides have their own tolerance for "on" —
-    // the fixture's `probe` for the oracle, the entities' own for Arris
-    // — and a probe is placed so that the two agree; a disagreement is a
-    // finding, never something a band is widened to cover.
+/// Arris's classification of each of the oracle's probe points against
+/// the oracle's, exactly. Both sides have their own tolerance for "on" —
+/// the fixture's `probe` for the oracle, the entities' own for Arris —
+/// and a probe is placed so that the two agree; a disagreement is a
+/// finding, never something a band is widened to cover. Errors:
+/// [`CorpusError::Probe`].
+pub fn probe_stage(
+    fixture: &Fixture,
+    chain: &Chain,
+    expected: &Measured,
+) -> Result<(), CorpusError> {
+    let body = result_of(fixture, chain)?;
     for probe in &expected.probes {
         let point = Point3::new(probe.point[0], probe.point[1], probe.point[2]);
-        let found = match classify_point(&m, body, point) {
+        let found = match classify_point(&chain.model, body, point) {
             Ok(Classification::Inside) => Ok(Class::In),
             Ok(Classification::Outside) => Ok(Class::Out),
             Ok(Classification::On(_)) => Ok(Class::On),
@@ -715,7 +930,7 @@ pub fn run(dir: &Path, variant: &str) -> Result<(), CorpusError> {
         };
         if !matches {
             return Err(CorpusError::Probe {
-                fixture: name,
+                fixture: fixture.name.clone(),
                 label: probe.label.clone(),
                 point: probe.point,
                 expected: probe.class,
@@ -726,55 +941,23 @@ pub fn run(dir: &Path, variant: &str) -> Result<(), CorpusError> {
             });
         }
     }
+    Ok(())
+}
 
-    // Provenance accounting, every body step (a profile step makes none).
+/// The provenance accounting of every body step, in recipe order (a
+/// profile step makes none). Errors: [`CorpusError::Provenance`] naming
+/// the step.
+pub fn provenance_stage(fixture: &Fixture, chain: &Chain) -> Result<(), CorpusError> {
     for step in &fixture.recipe.steps {
-        let Some(out) = made.get(step.name()) else {
+        let Some(out) = chain.steps.get(step.name()) else {
             continue;
         };
-        arris_topo::provenance::audit(&m, &out.inputs, out.body, &out.provenance).map_err(|e| {
-            CorpusError::Provenance {
-                fixture: name.clone(),
+        arris_topo::provenance::audit(&chain.model, &out.inputs, out.body, &out.provenance)
+            .map_err(|e| CorpusError::Provenance {
+                fixture: fixture.name.clone(),
                 step: step.name().to_string(),
                 what: e.to_string(),
-            }
-        })?;
-    }
-
-    // The dump.
-    let dump = dump_text(&m, body).map_err(|e| CorpusError::Dump {
-        fixture: name.clone(),
-        path: dump_path(dir, variant),
-        what: e.to_string(),
-    })?;
-    let path = dump_path(dir, variant);
-    if blessing() {
-        std::fs::write(&path, &dump).map_err(|source| CorpusError::Io {
-            path: path.clone(),
-            source,
-        })?;
-        return Ok(());
-    }
-    let committed = match std::fs::read_to_string(&path) {
-        Ok(text) => text,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            return Err(CorpusError::Dump {
-                fixture: name,
-                path,
-                what: format!("is not committed yet; run with {BLESS_VAR}=1 to write it"),
-            });
-        }
-        Err(source) => return Err(CorpusError::Io { path, source }),
-    };
-    if committed != dump {
-        return Err(CorpusError::Dump {
-            fixture: name,
-            path,
-            what: format!(
-                "differs from the dump of this build:\n{}",
-                diff(&committed, &dump)
-            ),
-        });
+            })?;
     }
     Ok(())
 }
@@ -1173,13 +1356,6 @@ fn reference<'a>(
     })
 }
 
-/// Compares Arris's mass properties against the oracle's, quantity by
-/// quantity: volume and area relative, the centroid's distance
-/// absolute, each component of the inertia tensor relative to the
-/// tensor's largest one, so a product of inertia that cancels to zero is
-/// not compared against itself. A quantity the oracle did not record is
-/// skipped. Errors: the first quantity that differs, named with both
-/// values.
 /// ADR-0012's invariants on every face-local vertex of the mesh: the
 /// face's surface at the corner's own (u, v) is the shared position it
 /// stands on, within the face's tolerance, and its normal is the
@@ -1313,7 +1489,14 @@ fn measure_target(
     Ok((target, "the closed form's"))
 }
 
-fn measure_stage(
+/// Compares Arris's mass properties against the oracle's, quantity by
+/// quantity: volume and area relative, the centroid's distance
+/// absolute, each component of the inertia tensor relative to the
+/// tensor's largest one, so a product of inertia that cancels to zero is
+/// not compared against itself. A quantity the oracle did not record is
+/// skipped. Errors: the first quantity that differs, named with both
+/// values.
+fn compare_mass(
     m: &Model,
     body: Body,
     expected: &Measured,
@@ -1486,21 +1669,21 @@ mod tests {
         let mut m = Model::default();
         let (body, _) = primitive_box(&mut m, Point3::origin(), Point3::new(40.0, 30.0, 10.0))
             .expect("the box of the recipe");
-        measure_stage(&m, body, &expected, "the oracle's", &tolerances)
+        compare_mass(&m, body, &expected, "the oracle's", &tolerances)
             .expect("the oracle's numbers");
         // Every quantity is actually compared: move each one just past
         // its tolerance and the stage says which.
         let mut wrong = expected.clone();
         wrong.volume = Some(expected.volume.unwrap() * (1.0 + 1e-6));
         assert!(
-            measure_stage(&m, body, &wrong, "the oracle's", &tolerances)
+            compare_mass(&m, body, &wrong, "the oracle's", &tolerances)
                 .unwrap_err()
                 .starts_with("volume ")
         );
         let mut wrong = expected.clone();
         wrong.area = Some(expected.area.unwrap() * (1.0 + 1e-6));
         assert!(
-            measure_stage(&m, body, &wrong, "the oracle's", &tolerances)
+            compare_mass(&m, body, &wrong, "the oracle's", &tolerances)
                 .unwrap_err()
                 .starts_with("area ")
         );
@@ -1509,7 +1692,7 @@ mod tests {
         centroid[1] += 1e-3;
         wrong.centroid = Some(centroid);
         assert!(
-            measure_stage(&m, body, &wrong, "the oracle's", &tolerances)
+            compare_mass(&m, body, &wrong, "the oracle's", &tolerances)
                 .unwrap_err()
                 .starts_with("centroid ")
         );
@@ -1518,7 +1701,7 @@ mod tests {
         inertia[0][1] += inertia[2][2] * 1e-6;
         wrong.inertia = Some(inertia);
         assert!(
-            measure_stage(&m, body, &wrong, "the oracle's", &tolerances)
+            compare_mass(&m, body, &wrong, "the oracle's", &tolerances)
                 .unwrap_err()
                 .starts_with("inertia[0][1] ")
         );

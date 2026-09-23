@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """expected.py <fixture-dir>...  — build each recipe in Open CASCADE and
 write its expected.json (all variants), printing one summary line per
-result. Run as `uv run --project tools/oracle tools/oracle/expected.py`.
+result. A directory whose recipe the oracle cannot build prints
+`<dir>: ERROR <why>` on one line of stderr and leaves no expected.json;
+the rest are still built, and the exit status is 1. Run as
+`uv run --project tools/oracle tools/oracle/expected.py`.
 """
 
 import sys
 from pathlib import Path
 
-from oracle import OracleError, require_ocp
+from oracle import require_ocp
 
 require_ocp()
 
@@ -18,18 +21,24 @@ def main(argv: list[str]) -> int:
     if not argv:
         print(__doc__)
         return 2
+    failed = 0
     for arg in argv:
         directory = Path(arg)
         try:
             fixture = load_fixture(directory)
             expected = compute_expected(fixture)
-        except OracleError as e:
-            print(f"{directory}: ERROR {e}", file=sys.stderr)
-            return 1
+        except Exception as e:  # OracleError, or Open CASCADE's own on a recipe it cannot build
+            # One line per refused directory, and on to the next: a batch
+            # (the differential's, arris_debug::oracle::expected_batch)
+            # reads each directory's answer apart.
+            message = " ".join(str(e).split()) or type(e).__name__
+            print(f"{directory}: ERROR {message}", file=sys.stderr)
+            failed += 1
+            continue
         dump_expected(expected, directory / EXPECTED)
         for line in summary_lines(str(directory), expected):
             print(line)
-    return 0
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":

@@ -13,6 +13,8 @@
 
 pub mod body;
 pub mod corpus;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod differential;
 pub mod dump;
 pub mod fixtures;
 pub mod geom;

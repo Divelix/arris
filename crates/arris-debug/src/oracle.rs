@@ -1,7 +1,8 @@
 //! Running the Open CASCADE oracle on a file Arris wrote
 //! (`tools/oracle/README.md`): the seam between a test and `compare.py`
 //! for a STEP file, `mesh.py` for an STL one, and between a test's own
-//! recipe and `expected.py` for a body the corpus has no fixture for. A
+//! recipe and `expected.py` for a body the corpus has no fixture for —
+//! one at a time, or many in one process ([`expected_batch`]). A
 //! missing environment is a loud error naming the command that creates
 //! it, never a skip. Every answer the oracle settles is kept in
 //! [`cache`] by what produced it, so an unchanged call starts no Python.
@@ -117,34 +118,144 @@ pub fn scratch_dir() -> PathBuf {
 /// `expected.py` could not run or the oracle refused the recipe.
 pub fn scratch_fixture(name: &str, recipe: &Recipe) -> Result<PathBuf, OracleError> {
     let dir = scratch_dir().join(name);
+    write_recipe(&dir, recipe)?;
+    match expected_batch(std::slice::from_ref(&dir))?.pop() {
+        Some(Ok(())) => Ok(dir),
+        Some(Err(message)) => Err(OracleError::Environment { message }),
+        None => Err(OracleError::Environment {
+            message: "expected.py gave no answer".into(),
+        }),
+    }
+}
+
+/// Writes `recipe` as `dir/fixture.json`, creating `dir`: what
+/// [`expected_batch`] reads. Errors: [`OracleError::Write`].
+pub fn write_recipe(dir: &Path, recipe: &Recipe) -> Result<(), OracleError> {
     let file = dir.join("fixture.json");
     let text = serde_json::to_string_pretty(recipe).map_err(|e| OracleError::Write {
         path: file.clone(),
         message: e.to_string(),
     })?;
-    std::fs::create_dir_all(&dir)
+    std::fs::create_dir_all(dir)
         .and_then(|()| std::fs::write(&file, &text))
         .map_err(|e| OracleError::Write {
             path: file.clone(),
             message: e.to_string(),
-        })?;
-    let expected = dir.join("expected.json");
-    let slot = cache::slot("expected.py", &[Some(text.as_bytes())], None);
-    if let Some(bytes) = slot.as_ref().and_then(|(d, k)| cache::load(d, k)) {
-        std::fs::write(&expected, bytes).map_err(|e| OracleError::Write {
-            path: expected.clone(),
-            message: e.to_string(),
-        })?;
-        return Ok(dir);
+        })
+}
+
+/// Has `expected.py` write `expected.json` into every one of `dirs` — each
+/// a scratch fixture holding a `fixture.json` ([`write_recipe`]) — in one
+/// process for all of them, the cache answering every one it holds
+/// first. Returns one answer per directory in `dirs`' order: `Ok` with
+/// its `expected.json` written, or `Err` with why the oracle refused that
+/// recipe, its `expected.json` removed. A refusal is not cached (ADR-0024
+/// §1); an answer is, keyed by the `fixture.json` bytes. If Open CASCADE
+/// kills the process on one recipe, that recipe is refused and the rest
+/// run again.
+///
+/// Errors: [`OracleError::Write`] when an `expected.json` could not be
+/// written or removed; [`OracleError::Environment`] when `uv` could not
+/// run or the oracle answered for none of the recipes it was given —
+/// no environment, never a refusal of all of them.
+///
+/// ```no_run
+/// use arris_debug::fixtures::Recipe;
+/// use arris_debug::oracle;
+///
+/// let recipe: Recipe = serde_json::from_str(
+///     r#"{"steps": [{"op": "box", "name": "b", "min": [0, 0, 0], "max": [1, 2, 3]}], "result": "b"}"#,
+/// )
+/// .unwrap();
+/// let dir = oracle::scratch_dir().join("batch-box");
+/// oracle::write_recipe(&dir, &recipe).unwrap();
+/// assert_eq!(oracle::expected_batch(&[dir]).unwrap(), vec![Ok(())]);
+/// ```
+pub fn expected_batch(dirs: &[PathBuf]) -> Result<Vec<Result<(), String>>, OracleError> {
+    let mut answers: Vec<Option<Result<(), String>>> = vec![None; dirs.len()];
+    let mut slots = Vec::with_capacity(dirs.len());
+    let mut pending = Vec::new();
+    for (i, dir) in dirs.iter().enumerate() {
+        let expected = dir.join("expected.json");
+        let spec = std::fs::read(dir.join("fixture.json")).ok();
+        let slot = cache::slot("expected.py", &[spec.as_deref()], None);
+        if let Some(bytes) = slot.as_ref().and_then(|(d, k)| cache::load(d, k)) {
+            std::fs::write(&expected, bytes).map_err(|e| OracleError::Write {
+                path: expected.clone(),
+                message: e.to_string(),
+            })?;
+            answers[i] = Some(Ok(()));
+        } else {
+            // A stale answer would read as this run's.
+            match std::fs::remove_file(&expected) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => {
+                    return Err(OracleError::Write {
+                        path: expected,
+                        message: e.to_string(),
+                    });
+                }
+            }
+            pending.push(i);
+        }
+        slots.push(slot);
     }
-    let output = spawn(uv("expected.py").arg(&dir))?;
-    if !output.status.success() {
-        return Err(environment(&output));
+    while !pending.is_empty() {
+        let output = spawn(uv("expected.py").args(pending.iter().map(|&i| &dirs[i])))?;
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let mut progress = false;
+        for &i in &pending {
+            let dir = &dirs[i];
+            if let Ok(bytes) = std::fs::read(dir.join("expected.json")) {
+                keep(slots[i].take(), &bytes);
+                answers[i] = Some(Ok(()));
+                progress = true;
+            } else if let Some(why) = refusal(&stderr, dir) {
+                answers[i] = Some(Err(why));
+                progress = true;
+            }
+        }
+        let unanswered: Vec<usize> = pending
+            .iter()
+            .copied()
+            .filter(|&i| answers[i].is_none())
+            .collect();
+        if unanswered.is_empty() {
+            break;
+        }
+        // A process that ran and said nothing of any recipe had no
+        // environment to run in; one Open CASCADE killed (a signal, no
+        // exit code) died on the first recipe it had not answered.
+        match (progress, output.status.code()) {
+            (_, None) => {
+                answers[unanswered[0]] = Some(Err(format!(
+                    "the oracle died building it ({})",
+                    output.status
+                )));
+            }
+            (false, Some(_)) => return Err(environment(&output)),
+            (true, Some(_)) => {}
+        }
+        pending = unanswered
+            .into_iter()
+            .filter(|&i| answers[i].is_none())
+            .collect();
     }
-    if let Ok(bytes) = std::fs::read(&expected) {
-        keep(slot, &bytes);
-    }
-    Ok(dir)
+    Ok(answers
+        .into_iter()
+        .map(|a| a.unwrap_or_else(|| Err("no answer".into())))
+        .collect())
+}
+
+/// The reason `expected.py` printed for refusing `dir`'s recipe: the rest
+/// of its `<dir>: ERROR ` line.
+fn refusal(stderr: &str, dir: &Path) -> Option<String> {
+    let prefix = format!("{}: ERROR ", dir.display());
+    stderr
+        .lines()
+        .find_map(|l| l.strip_prefix(&prefix))
+        .map(str::to_owned)
 }
 
 /// Writes `step_text` as `target/inspect/<tag>.step` and runs
