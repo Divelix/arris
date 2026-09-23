@@ -97,6 +97,11 @@ and the cycle can close.
   in the commit body; `intersect_surfaces`' rustdoc and
   `docs/DATA-MODEL.md` §Tolerances and §Curves restated in the same
   commit.
+- **`arris_geom::SectionBranch::distance`** (step 5c, new public
+  method): the distance from a point to the branch at `t` as precisely
+  as `f64` knows it there; `SECTION_FIT_FRACTION`'s guarantee is
+  measured by it. `fit_curve`'s refinement splits both spans at a missed
+  break. ADR-0022 gains an addendum.
 - **`boolean::pave::section_curve`, `coincident`, `common_block`**
   (steps 6 and 4): the `along` verdict asks the surfaces before it asks
   `curves_coincide`; a block-level verdict beside the whole-curve one. No
@@ -565,6 +570,45 @@ bound has to be established here.
   `ring-corner-common`, `ring-pin-cut`, `ring-slab-common`, the five
   `tee-unequal-*`): same topology and tolerances, vertices and ranges
   within 1e-8, fits −4% to +35% control points.
+- [x] Step 5c **[3]** — The branch's own precision (open question 7).
+  Found by step 9's survey, added then: step 5b's fit, held to the
+  branch's point, is held to more than `f64` decides of it. A branch's
+  point is a root along a line — a ruling, a tube circle, a parallel
+  beside a turning point — and where that line runs a hair from tangent
+  to the other surface the root steps along the section from one float
+  of the walked angle to the next. `SectionBranch::distance` (new,
+  public) measures from the stretch of that line on which the other
+  surface's value vanishes in `f64`, and `section::fitted` holds the fit
+  to it; a miss on a break of the fit splits both spans it bounds.
+
+  **Done 2026-09-23.** The survey at 256 pairs, against step 5's (the
+  commit before 5b): fits out of spans 75 → 825 at step 8, generic bodies
+  2977 → 2474 — two rods a quarter of a tolerance off parallel stepping
+  1e-7 along their rulings between neighbouring floats of `s` (the ruling
+  1e-9 of a radian from tangent to the other rod; every point on both
+  surfaces to 4e-16), and pipe-elbow poses whose torus loops hug a tube
+  circle, walked in `u`, one float of which moves the root up to 3e-6
+  along the circle. The stretch: along a ruling, `POLYNOMIAL_ROUNDING` of
+  the quadric's magnitude at the root plus its change over the last digit
+  of `s`, over `|f′(w)|`, no more than `√(budget/|a|)` — every point of it
+  on the walked surface exactly and the other to rounding; along a
+  circle of the torus, an arc of it, the other surface's distance held
+  within the same budget at both ends, halved until it is. Survey after:
+  fits out of spans 72 and 3 singular (step 5's 75 and 3), generic 2983,
+  flush 3312 — the regression gone. The fit's refinement charged a miss
+  on a break to the span after it alone, and on the posed ring it
+  halved that span until the normal equations were singular; both spans
+  now. `rods_a_hair_off_parallel_are_known_along_their_rulings_to_rounding`
+  (`trace.rs`) and
+  `a_ring_sliced_a_hair_off_a_meridian_is_fitted_on_both_surfaces`
+  (`trace_torus.rs`); `held_to_branches` measures with `distance`. One
+  dump re-blessed, `grazing-ball-bar-cut`'s: one more knot in one
+  pcurve, from the break rule. No slower: the geometry, boolean and
+  corpus suites 162 s before and after. **Found:** on the ring the fold's
+  cubic, matched to the steps of the walk in `u`, runs the branch up to
+  7e-7 along the section from its fit beside a turning point, on both
+  surfaces — too narrow in `t` for the fit's checks to see; a clause on
+  the torus-march backlog line and in ADR-0022's addendum.
 - [x] Step 6 **[2]** — A section edge known by its surfaces. In
   `section_curve`'s `along` verdict, and wherever else `pave` asks whether
   an operand edge lies along a section (`coincident`, `common_block`,
@@ -724,6 +768,15 @@ with nothing unchecked, `docs/DATA-MODEL.md` with no `⚠ OPEN`.
   every polygon and winding number downstream assumes. Recommended: A.
   Tripwire: a generic pose whose dump changes, or a pcurve moved further
   than its vertex's tolerance, means stop and report.
+- 7, **decided 2026-09-23** (step 5c): the fit is held to the branch's
+  own precision, the stretch of the line its root was found along that
+  `f64` does not decide. Asked: the tracer walks along the ruling (or in
+  `v`) wherever the root is ill conditioned, as step 5 did beside a
+  turning point, or the fit measures from the stretch. The walk would
+  remove the steps at their source but is a new walk per kind with
+  handovers like step 5's; the stretch is exact about what the branch
+  knows, costs nothing measurable, and recovers the survey to step 5's.
+  The ring's fold cubic is left to the torus-march backlog line.
 - 5, **decided 2026-09-22** (the human delegated it): the agent reads
   step 1's histogram by a rule and does not wait. Step 2 stays first
   whatever it shows — the accept line names its fixture. Steps 4 to 6

@@ -81,13 +81,14 @@ use core::cell::Cell as Latest;
 use core::f64::consts::{FRAC_PI_2, FRAC_PI_4, PI, TAU};
 use std::sync::Arc;
 
-use arris_math::roots::newton_in_interval;
+use arris_math::roots::{POLYNOMIAL_ROUNDING, newton_in_interval};
 use arris_math::{Frame, Interval, Point2, Point3, Tolerance, wrap_angle};
 
 use crate::bernstein2::Zero2;
 use crate::implicit::Implicit;
 use crate::trace::{
     Arc1, BranchEnd, REACH, SectionBranch, SectionCircle, SectionFault, SectionPoint, SectionTrace,
+    Stretch,
 };
 use crate::trace_torus::{PatchedSection, Probe};
 use crate::{Curve, GeomError, GeomKind, Surface};
@@ -188,6 +189,12 @@ const FOLD_REACH: f64 = 1e-3;
 /// so the gradient is to ten digits, and no root depends on it — it
 /// steers Newton steps and sizes cells.
 const QUOTIENT_STEP: f64 = 1e-5;
+
+/// How many times a point's stretch is halved before it is taken to be
+/// the point alone ([`Walker::stretch`]): from its first half-angle, at
+/// most `π`, to `2⁻⁶⁰` of it, below any rounding of an angle. A count,
+/// not a tolerance.
+const STRETCH_HALVINGS: usize = 60;
 
 /// An angle difference in `[−π, π)`.
 fn wrap_pi(x: f64) -> f64 {
@@ -446,6 +453,80 @@ impl Walker {
         Some([u, v])
     }
 
+    /// The stretch through `P(u, v)` along the circle the root was found
+    /// on — the tube circle, `along_v`, or the parallel beside a turning
+    /// point: the arc, on the torus exactly, over which the other
+    /// surface's distance stays within `δ` of its value at the point,
+    /// `δ` being `POLYNOMIAL_ROUNDING` of the magnitude the distance is
+    /// summed from there — the point's own and the torus's — and what it
+    /// changes by over the last digit of the angle held fixed, which
+    /// moves the root along the circle by its slope ratio: `2.4·10⁸` on a
+    /// torus sliced a hair off a meridian plane, a digit of `u` a tenth
+    /// of a tolerance along the tube circle. Its half-angle
+    /// is `δ` over the distance's slope along the circle, halved until the
+    /// distance at both its ends is within `δ` of the point's, which
+    /// holds the curve of the distance along the circle and not only its
+    /// slope. The torus walk's counterpart of a ruling's stretch
+    /// ([`SectionBranch::distance`]).
+    fn stretch(&self, u: f64, v: f64, along_v: bool) -> Stretch {
+        let (
+            Some(implicit),
+            Surface::Torus {
+                major_radius,
+                minor_radius,
+                ..
+            },
+        ) = (Implicit::of(&self.other), &self.torus)
+        else {
+            return Stretch::Point;
+        };
+        let e = self.torus.eval(u, v);
+        let magnitude = e.point.coords.norm()
+            + implicit.frame.to_local(e.point).coords.norm()
+            + major_radius
+            + minor_radius;
+        let normal = implicit.frame.vec_to_world(implicit.gradient(e.point));
+        let (tangent, bend, across, fixed) = if along_v {
+            (e.dv, e.dvv, e.du, u)
+        } else {
+            (e.du, e.duu, e.dv, v)
+        };
+        let slope = normal.dot(&tangent).abs();
+        // The angle held fixed is itself a float: the root moves along the
+        // circle by as much as the distance changes over its last digit.
+        let budget = POLYNOMIAL_ROUNDING * magnitude
+            + normal.dot(&across).abs() * fixed.abs() * f64::EPSILON;
+        let Some(axis) = tangent.cross(&bend).try_normalize(0.0) else {
+            return Stretch::Point;
+        };
+        let at = |angle: f64| {
+            let point = if along_v {
+                self.torus.point(u, v + angle)
+            } else {
+                self.torus.point(u + angle, v)
+            };
+            implicit.distance(point)
+        };
+        let here = implicit.distance(e.point);
+        let mut half = (budget / slope).min(PI);
+        let mut halvings = 0;
+        while !(half.is_finite()
+            && (at(half) - here).abs() <= budget
+            && (at(-half) - here).abs() <= budget)
+        {
+            half *= 0.5;
+            halvings += 1;
+            if halvings > STRETCH_HALVINGS {
+                return Stretch::Point;
+            }
+        }
+        Stretch::Arc {
+            centre: e.point + bend,
+            normal: axis,
+            half,
+        }
+    }
+
     /// `v` on `arc` at `u`.
     fn v_on(&self, arc: &TorusArc, u: f64) -> f64 {
         let i = arc
@@ -567,6 +648,37 @@ impl TorusWalk {
             }
         }
         Some([u, self.walker.v_on(arc, u)])
+    }
+
+    /// The point of arc `i` at `u`, measured from `anchor`, with its
+    /// stretch along the circle its root was found on
+    /// ([`Walker::stretch`]).
+    pub(crate) fn located(
+        &self,
+        i: usize,
+        u: f64,
+        anchor: Option<(f64, f64)>,
+    ) -> (Point3, Stretch) {
+        let (uv, along_v) = match self.arcs.get(i) {
+            None => ([0.0; 2], true),
+            Some(arc) => {
+                let fold = anchor.and_then(|(turn, half)| {
+                    let off = 2.0 * half.abs();
+                    let fold =
+                        (arc.folds.iter().flatten()).find(|f| f.at[0] == turn && off <= f.reach)?;
+                    self.walker.beside(fold, off)
+                });
+                match fold {
+                    Some(uv) => (uv, false),
+                    None => ([u, self.walker.v_on(arc, u)], true),
+                }
+            }
+        };
+        let [u, v] = uv;
+        (
+            self.walker.torus.point(u, v),
+            self.walker.stretch(u, v, along_v),
+        )
     }
 
     /// The point of arc `i` at `u`, measured from `anchor`.

@@ -13,14 +13,15 @@ use crate::{
 
 /// The fraction of the pair's `tol.linear` a fitted section curve is
 /// held to, measured from the exact branch it fits at the branch's own
-/// parameter — which bounds how much farther from either surface the
-/// fit is than the branch, and keeps two fits of one section within
-/// twice the fraction of each other (ADR-0022). Each face's pcurve
-/// is fitted afterwards to the 3D curve (`pcurve_on`), and can come no
-/// nearer the 3D curve than the 3D curve is to that face; that fit is
-/// accepted at half its tolerance (the fit's own margin), so the 3D
-/// curve has to sit well inside that half for the pcurve to land within
-/// `tol.linear` too. A quarter leaves the pcurve the other quarter.
+/// parameter, as precisely as `f64` knows the branch there
+/// ([`crate::SectionBranch::distance`]) — which bounds how much farther
+/// from either surface the fit is than the branch, and keeps two fits of
+/// one section within twice the fraction of each other (ADR-0022). Each
+/// face's pcurve is fitted afterwards to the 3D curve (`pcurve_on`), and
+/// can come no nearer the 3D curve than the 3D curve is to that face;
+/// that fit is accepted at half its tolerance (the fit's own margin), so
+/// the 3D curve has to sit well inside that half for the pcurve to land
+/// within `tol.linear` too. A quarter leaves the pcurve the other quarter.
 /// That is what keeps a section edge's tolerance at its faces' and never
 /// above (`docs/DATA-MODEL.md` §Tolerances). A ratio between two fits,
 /// not a tolerance.
@@ -56,7 +57,9 @@ pub const SECTION_FIT_DEGREE: usize = 5;
 /// crossing curve in the tracer's order and orientation, fitted at the
 /// branch's own parameter — periodic when the branch is closed — until
 /// it is nowhere farther than [`SECTION_FIT_FRACTION`] of `tol.linear`
-/// from the exact branch at the same parameter, and so no farther than
+/// from the exact branch at the same parameter — from the stretch of the
+/// line its root was found along that `f64` does not decide
+/// ([`SectionBranch::distance`]) — and so no farther than
 /// that from either surface beyond the branch's own distance (which is
 /// rounding, except within a singular point's reach, where the tracer
 /// lets the branch be within `tol.linear` of the other surface). Each
@@ -123,9 +126,14 @@ pub(crate) fn traced(
 /// the probes of [`SECTION_FIT_DEGREE`]'s doc: at most a third more
 /// control points, at the same speed; a curve distance (the nearest
 /// point of the branch, found by Newton along it) kept their counts at
-/// five to eight times the time.
+/// five to eight times the time. Measured to the branch's stretch, not
+/// its point: where a ruling or a tube circle runs a hair from tangent to
+/// the other surface, the root on it steps along the section by up to
+/// `3·10⁻⁶` from one float of the walked angle to the next, on both
+/// surfaces all the while, and a fit held to the point ran out of spans
+/// on two rods a quarter of a tolerance off parallel.
 fn fitted(branch: &SectionBranch, tol: Tolerance) -> Result<Curve, GeomError> {
-    let deviation = |t: f64, q: Point3| (q - branch.point(t)).norm();
+    let deviation = |t: f64, q: Point3| branch.distance(t, q);
     let f = |t: f64| branch.point(t);
     let target = SECTION_FIT_FRACTION * tol.linear;
     let fit = if branch.is_closed() {

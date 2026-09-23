@@ -29,7 +29,8 @@ use crate::{Curve, GeomError, GeomKind, Surface};
 /// crossing cylinders' ellipses bit for bit. A traced section — two
 /// quadrics that meet in no conic, or a pair with a torus in it — is a
 /// `Curve::Nurbs` fitted within [`crate::SECTION_FIT_FRACTION`] of the
-/// tolerance of the exact branch it traces, at the same parameter — and
+/// tolerance of the exact branch it traces, at the same parameter and to
+/// the branch's own precision there ([`crate::SectionBranch::distance`]) — and
 /// so of both surfaces — at the tracer's parametrisation and
 /// orientation, which depend on the two surfaces and never on their
 /// order: swapping the operands gives it bit for bit (ADR-0018,

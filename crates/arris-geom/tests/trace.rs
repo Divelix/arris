@@ -694,3 +694,68 @@ fn a_sphere_tangent_outside_the_tolerance_is_not_singular() {
         });
     }
 }
+
+/// How far each of `n` points along `branch` moves at the next float but
+/// a few, and how far that is outside its stretch
+/// (`SectionBranch::distance`): the largest of each.
+fn noise_and_stretch(branch: &SectionBranch, n: usize, dt: f64) -> (f64, f64) {
+    let domain = branch.domain();
+    (1..n).fold((0.0f64, 0.0f64), |(raw, beyond), i| {
+        let t = domain.lerp(i as f64 / n as f64);
+        let (p, q) = (branch.point(t), branch.point(t + dt));
+        (
+            raw.max((q - p).norm()),
+            beyond.max(branch.distance(t + dt, p)),
+        )
+    })
+}
+
+/// Two rods tangent along a ruling, the second turned a quarter of the
+/// tolerance about the contact's middle: the section runs along the
+/// rulings, and the root on each ruling moves along it by `10⁻⁷` between
+/// neighbouring floats of `s`, though it stays on both surfaces — the
+/// ruling is `10⁻⁹` of a radian from tangent to the other rod. The fit is
+/// held to the stretch of the ruling `f64` does not decide
+/// (`SectionBranch::distance`, ADR-0022), within which neighbouring points
+/// agree to rounding, and not to the point: held to the point, it ran out
+/// of spans.
+#[test]
+fn rods_a_hair_off_parallel_are_known_along_their_rulings_to_rounding() {
+    let (ra, rb, length) = (1.338253251879201, 1.594912540100717, 16.10031287625863);
+    let turn = -2.0 * 2.5e-8 / length;
+    let pivot = Vec3::new(0.0, ra, 0.5 * length);
+    let (sin, cos) = turn.sin_cos();
+    let spin = |v: Vec3| Vec3::new(v.x, v.y * cos - v.z * sin, v.y * sin + v.z * cos);
+    let origin = pivot + spin(Vec3::new(0.0, ra + rb, -6.49554150205149) - pivot);
+    let a = cylinder([0.0; 3], [0.0, 0.0, 1.0], ra);
+    let b = cylinder(origin.into(), spin(Vec3::z()).into(), rb);
+    let within = Aabb {
+        min: [-3.0, -3.0, -1.0],
+        max: [5.0, 5.0, 17.0],
+    };
+    let trace = trace_quadrics(&a, &b, &within, tol()).unwrap();
+    assert_eq!(trace.branches().len(), 1);
+    let branch = &trace.branches()[0];
+    let (raw, beyond) = noise_and_stretch(branch, 200_000, 2e-15);
+    assert!(raw > 1e-8, "the root moves along the ruling by {raw}");
+    assert!(beyond < 1e-12, "a point {beyond} outside its stretch");
+    let Ok(arris_geom::SurfaceIntersection::Meets { curves, .. }) =
+        arris_geom::intersect_surfaces(&a, &b, &within, tol())
+    else {
+        panic!("the section is fitted");
+    };
+    let [fit] = curves.as_slice() else {
+        panic!("one curve");
+    };
+    let Curve::Nurbs(fit) = &fit.curve else {
+        panic!("a fitted curve");
+    };
+    for i in 0..=2000 {
+        let t = branch.domain().lerp(i as f64 / 2000.0);
+        let off = branch.distance(t, fit.eval(t).point);
+        assert!(
+            off <= arris_geom::SECTION_FIT_FRACTION * tol().linear,
+            "the fit is {off} from its branch at {t}"
+        );
+    }
+}

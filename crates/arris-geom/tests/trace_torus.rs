@@ -1161,3 +1161,66 @@ fn random_tube_circles_on_the_other_surface_trace() {
         Ok(())
     });
 }
+
+/// A fat ring sliced 1.6e-6 off a meridian plane, posed 90 from the
+/// origin: each loop hugs a tube circle, walked in `u` over a millionth
+/// of a radian, and a float of `u` moves the root along the tube circle
+/// by up to `3·10⁻⁶`. Each point is known along the circle only to the arc
+/// `f64` does not decide there, which holds its neighbours to rounding,
+/// and the fit is held to that arc (`SectionBranch::distance`,
+/// ADR-0022): held to the point it could not follow the steps, and its
+/// refinement split one span beside a turning point until the normal
+/// equations were singular. The fit lies on both surfaces within its
+/// fraction of the tolerance at every one of 20 000 parameters. Beside
+/// each turning point the branch is walked in `v` and its cubic was
+/// matched to the steps, so there it runs up to `7·10⁻⁷` along the circle
+/// from where the fit is at the same parameter: `docs/BACKLOG.md`, a loop
+/// hugging a tube circle walked in `v` throughout.
+#[test]
+fn a_ring_sliced_a_hair_off_a_meridian_is_fitted_on_both_surfaces() {
+    use arris_math::nalgebra::{Unit, UnitQuaternion};
+    let (big, r) = (2.779496371421704, 1.8294922704049128);
+    let axis = Unit::new_normalize(Vec3::new(
+        -0.5064295212388464,
+        0.27790940793095775,
+        0.8162692576602756,
+    ));
+    let pose = Isometry::new(
+        UnitQuaternion::from_axis_angle(&axis, 141.1513717001702f64.to_radians()),
+        Vec3::new(-19.850646542032752, -29.99935247984665, 61.98509788912067),
+    );
+    let torus = Surface::Torus {
+        frame: Frame::world(),
+        major_radius: big,
+        minor_radius: r,
+    }
+    .transformed(&pose);
+    let slice = Surface::Plane {
+        frame: frame([big, -1.6e-6, 0.0], [0.0, 1.0, 0.0]),
+    }
+    .transformed(&pose);
+    let trace = trace_torus(&torus, &slice, tol()).unwrap();
+    assert_eq!(closed(&trace), 2);
+    let within = arris_math::Aabb {
+        min: [-200.0; 3],
+        max: [200.0; 3],
+    };
+    let Ok(arris_geom::SurfaceIntersection::Meets { curves, .. }) =
+        arris_geom::intersect_surfaces(&torus, &slice, &within, tol())
+    else {
+        panic!("the section is fitted");
+    };
+    assert_eq!(curves.len(), 2);
+    let bound = arris_geom::SECTION_FIT_FRACTION * tol().linear;
+    for m in &curves {
+        let Curve::Nurbs(fit) = &m.curve else {
+            panic!("a fitted curve");
+        };
+        let domain = fit.domain();
+        for i in 0..=20_000 {
+            let p = fit.eval(domain.lerp(i as f64 / 20_000.0)).point;
+            let off = distance(&torus, p).max(distance(&slice, p));
+            assert!(off <= bound, "the fit is {off} off a surface at {p:?}");
+        }
+    }
+}

@@ -653,7 +653,13 @@ the pave model cuts at its paves only — of degree `SECTION_FIT_DEGREE`
 (5, measured: the fewest control points where two cylinders meet at a
 small angle, the longest fits there are, and the pcurves' degree),
 until the fitted point is nowhere farther than `SECTION_FIT_FRACTION` (a
-quarter) of `tol.linear` from the exact branch at the same parameter.
+quarter) of `tol.linear` from the exact branch at the same parameter —
+from the stretch of the line the branch's root was found along, a
+ruling or a tube circle, on which the other surface's value vanishes in
+`f64` (`SectionBranch::distance`): the branch's own precision, rounding
+wherever that line crosses the other surface at an angle, and up to
+`3·10⁻⁶` along the section where it runs a hair from tangent, which the
+walked angle's last digit then moves the root by.
 That bounds each surface's distance too — a projection's distance is
 1-Lipschitz, so the fit is no farther from either surface than the
 branch is, which is rounding away from a singular point's reach, plus

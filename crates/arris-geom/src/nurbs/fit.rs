@@ -251,7 +251,12 @@ fn fit<const D: usize>(
             }
         };
         // Check at the samples and between them; split every span whose
-        // worst check exceeds the margin.
+        // worst check exceeds the margin, both spans at a break. A miss on
+        // a break charged to the span after it alone, where the one
+        // before is what bends the fit there, halves the span after until
+        // its knots coincide and the normal equations are singular: a
+        // torus sliced a hair off a meridian plane did, at a turning
+        // point.
         let mut worst = 0.0f64;
         let mut split: Vec<bool> = vec![false; breaks.len() - 1];
         let mut span = 0;
@@ -267,6 +272,15 @@ fn fit<const D: usize>(
                 }
                 if d > FIT_MARGIN * tol {
                     split[span] = true;
+                    // A check on a break is as much the span before's —
+                    // on a loop, the first break is the last span's end.
+                    if t == breaks[span] {
+                        match (span, ends) {
+                            (0, Ends::Periodic) => split[breaks.len() - 2] = true,
+                            (0, Ends::Clamped) => {}
+                            _ => split[span - 1] = true,
+                        }
+                    }
                 }
             }
         }
@@ -278,6 +292,9 @@ fn fit<const D: usize>(
         worst = worst.max(d_end);
         if d_end > FIT_MARGIN * tol {
             split[breaks.len() - 2] = true;
+            if matches!(ends, Ends::Periodic) {
+                split[0] = true;
+            }
         }
         if !split.iter().any(|&s| s) {
             return Ok(curve);

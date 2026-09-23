@@ -267,7 +267,9 @@ fn fits_of(
 /// A traced section's fits held to the exact branch (ADR-0018, ADR-0019
 /// as amended by ADR-0022): at [`HELD`] parameters of each, within
 /// [`SECTION_FIT_FRACTION`] of `tol.linear` of the branch at the same
-/// parameter. Returns whether `r` was a traced section.
+/// parameter, as precisely as `f64` knows it there
+/// ([`SectionBranch::distance`]). Returns whether `r` was a traced
+/// section.
 fn held_to_branches(
     a: &Surface,
     b: &Surface,
@@ -280,7 +282,7 @@ fn held_to_branches(
         for i in 0..HELD {
             let t = domain.lerp(i as f64 / (HELD - 1) as f64);
             let (p, q) = (fit.eval(t).point, branch.point(t));
-            let off = (p - q).norm();
+            let off = branch.distance(t, p);
             prop_assert!(
                 off <= SECTION_FIT_FRACTION * tol().linear + 1e-11 * (1.0 + q.coords.norm()),
                 "{a:?} vs {b:?}: the fit is {off} from its branch at t = {t}"

@@ -319,6 +319,12 @@ impl TrigVec {
         self.k + self.c * cos + self.s * sin
     }
 
+    /// The derivative in `s`.
+    fn slope(&self, s: f64) -> Vec3 {
+        let (sin, cos) = s.sin_cos();
+        self.s * cos - self.c * sin
+    }
+
     fn component(&self, i: usize) -> Trig1 {
         [self.k[i], self.c[i], self.s[i]]
     }
@@ -481,6 +487,91 @@ impl Pencil {
     fn point(&self, s: f64, anchor: Option<(f64, f64)>, label: Label) -> Point3 {
         let (w, p, d) = self.root(s, anchor, label);
         self.frame.to_world(Point3::from(p + d * w))
+    }
+
+    /// The point at `s` with its stretch: the segment of the ruling,
+    /// centred on the root `label` names, on which the other quadric's
+    /// value vanishes in `f64` — `POLYNOMIAL_ROUNDING` of the magnitude it
+    /// is summed from at the root, and what it changes by over the last
+    /// digit of `s`, together `M`. Every point of it lies on the
+    /// walked surface exactly and on the other to its rounding, so `f64`
+    /// holds no reason to prefer the root over any of them: where the
+    /// ruling runs a hair from tangent to the other surface, the root
+    /// moves along it by as much from one `s` to the next, though the
+    /// point stays on both surfaces. Its half-length is
+    /// `POLYNOMIAL_ROUNDING · M / |f′(w)|` for the ruling's quadratic `f`,
+    /// and no more than `√(POLYNOMIAL_ROUNDING · M / |a|)`, where `f′`
+    /// vanishes: over it `|f′λ + aλ²|` stays within twice the budget.
+    fn located(&self, s: f64, anchor: Option<(f64, f64)>, label: Label) -> (Point3, Stretch) {
+        let (w, p, d) = self.root(s, anchor, label);
+        let x = p + d * w;
+        let point = self.frame.to_world(Point3::from(x));
+        let a = self.quadric.m.dot(&d.component_mul(&d));
+        let gradient = self.quadric.gradient(x);
+        let slope = gradient.dot(&d).abs();
+        // `s` is itself a float: the root moves along the ruling by as
+        // much as the value changes over its last digit.
+        let turn = self.p.slope(s) + self.d.slope(s) * w;
+        let budget = POLYNOMIAL_ROUNDING * self.quadric.abs().value(x.abs())
+            + gradient.dot(&turn).abs() * s.abs() * f64::EPSILON;
+        let half = (budget / slope).min((budget / a.abs()).sqrt());
+        let stretch = if half.is_finite() && half > 0.0 {
+            Stretch::Segment(self.frame.vec_to_world(d * half))
+        } else {
+            Stretch::Point
+        };
+        (point, stretch)
+    }
+}
+
+/// How far along the section `f64` leaves a branch's point undecided:
+/// the stretch of the line or circle its root was found along on which
+/// the other surface does not tell one point from another
+/// ([`SectionBranch::distance`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum Stretch {
+    /// The point alone.
+    Point,
+    /// The point plus or minus this vector, along a ruling.
+    Segment(Vec3),
+    /// The arc of the circle about `centre`, in the plane normal to the
+    /// unit `normal`, through the point and `half` a radian either side
+    /// of it.
+    Arc {
+        centre: Point3,
+        normal: Vec3,
+        half: f64,
+    },
+}
+
+impl Stretch {
+    /// The distance from `q` to the stretch through `p`.
+    pub(crate) fn distance(&self, p: Point3, q: Point3) -> f64 {
+        match *self {
+            Stretch::Point => (q - p).norm(),
+            Stretch::Segment(half) => {
+                let r = q - p;
+                let along = (r.dot(&half) / half.norm_squared()).clamp(-1.0, 1.0);
+                (r - half * along).norm()
+            }
+            Stretch::Arc {
+                centre,
+                normal,
+                half,
+            } => {
+                let radial = p - centre;
+                let radius = radial.norm();
+                if radius == 0.0 {
+                    return (q - p).norm();
+                }
+                let e1 = radial / radius;
+                let e2 = normal.cross(&e1);
+                let r = q - centre;
+                let angle = r.dot(&e2).atan2(r.dot(&e1)).clamp(-half, half);
+                let (sin, cos) = angle.sin_cos();
+                (q - (centre + (e1 * cos + e2 * sin) * radius)).norm()
+            }
+        }
     }
 }
 
@@ -675,6 +766,56 @@ impl SectionBranch {
             },
             Walk::Torus(walk) => walk.point(i, s, anchor),
         }
+    }
+
+    /// How far `q` is from the branch at `t`, as precisely as `f64` knows
+    /// the branch there: the distance from `q` to the stretch of the
+    /// walked ruling through `point(t)` on which the other surface's
+    /// implicit value vanishes in `f64` — a segment on the walked surface
+    /// and on the other to rounding, of the root's own rounding along
+    /// the ruling. It is `|q − point(t)|` less a length at rounding's
+    /// scale, except where the ruling runs within a hair of tangent to
+    /// the other surface: there the root is known along the ruling only
+    /// to that stretch, and the section with it — two rods a quarter of a
+    /// tolerance off parallel, whose section runs along the rulings, have
+    /// branches whose points step back and forth along it by `10⁻⁷`
+    /// between neighbouring parameters. A torus branch's point is a root
+    /// along a tube circle, or along a parallel beside a turning point,
+    /// and its stretch is the arc of that circle on which the other
+    /// surface's distance stays within its rounding of the point's.
+    ///
+    /// ```
+    /// use arris_geom::{Surface, trace_quadrics};
+    /// use arris_math::{Aabb, Frame, Point3, Precision, Vec3};
+    ///
+    /// // Two pipes crossing square: the branch is known to rounding.
+    /// let main = Surface::Cylinder { frame: Frame::world(), radius: 2.0 };
+    /// let across = Frame::from_z(Point3::origin(), Vec3::x()).unwrap();
+    /// let pipe = Surface::Cylinder { frame: across, radius: 1.0 };
+    /// let within = Aabb { min: [-5.0; 3], max: [5.0; 3] };
+    /// let tol = Precision::DEFAULT.tolerance();
+    /// let trace = trace_quadrics(&main, &pipe, &within, tol).unwrap();
+    /// let branch = &trace.branches()[0];
+    /// let (t, q) = (1.0, Point3::new(0.0, 0.0, 3.0));
+    /// assert_eq!(branch.distance(t, branch.point(t)), 0.0);
+    /// assert!((branch.distance(t, q) - (q - branch.point(t)).norm()).abs() < 1e-12);
+    /// ```
+    pub fn distance(&self, t: f64, q: Point3) -> f64 {
+        let t = self.inside(t);
+        match self.pins {
+            [Some(start), _] if t <= 0.0 => return (q - start).norm(),
+            [_, Some(end)] if t >= self.length => return (q - end).norm(),
+            _ => {}
+        }
+        let (i, s, anchor) = self.located(t);
+        let (p, stretch) = match &self.walk {
+            Walk::Ruled { pencil, labels } => match labels.get(i) {
+                Some(&label) => pencil.located(s, anchor, label),
+                None => (pencil.frame.origin(), Stretch::Point),
+            },
+            Walk::Torus(walk) => walk.located(i, s, anchor),
+        };
+        stretch.distance(p, q)
     }
 
     /// The walked torus's own `(u, v)` of `point(t)`, exact as the point

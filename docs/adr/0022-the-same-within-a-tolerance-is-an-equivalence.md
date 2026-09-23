@@ -172,3 +172,28 @@ body's, taken when a consumer's regression asks.
   slivers the polygons do not resolve, the builder refusing near-tangent
   leftovers — is none of this and is `docs/BACKLOG.md`'s, with its
   fixtures under `regression/`.
+
+## Addendum: the branch's own precision (plan step 5c, 2026-09-23)
+
+Decision 5's "the same parameter" is read to the branch's own precision.
+A branch's point is a root along a line — a ruling of the walked quadric,
+or a tube circle or parallel of the walked torus — and where that line
+runs a hair from tangent to the other surface, the root is decided along
+it only to the stretch on which the other surface's value vanishes in
+`f64` (`POLYNOMIAL_ROUNDING` of its magnitude there, plus what it changes
+by over the walked angle's last digit). Every point of the stretch lies
+on the walked surface exactly and on the other to rounding, so the fit is
+held to the stretch, `SectionBranch::distance`, and not to the point.
+*Grounds (step 9's survey):* held to the point, 825 of the band's 10 752
+booleans ran out of spans (75 at step 5), two rods a quarter of a
+tolerance off parallel stepping `10⁻⁷` along the section between
+neighbouring floats of the ruling angle and a ring sliced a hair off a
+meridian `3·10⁻⁶` per float of `u`; held to the stretch, 72, the rest
+none of this plan's. A refinement that charged a miss on a break to the
+span after it alone split that span until the normal equations were
+singular; a miss on a break splits both. One blessed dump moved, a knot
+of `grazing-ball-bar-cut`'s pcurve. The walk itself is left as it is: a
+loop hugging a tube circle is walked in `u`, and its turning points'
+cubics, matched to those steps, run the branch up to `7·10⁻⁷` along the
+section from its fit at the same parameter there, on both surfaces — a
+backlog line, a loop walked in `v` throughout.
