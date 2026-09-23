@@ -396,10 +396,19 @@ dropped when it lies outside — the coincidence is the curves' verdict,
 never the polygon band's, which two fitted pcurves of one curve can
 straddle. For the same reason a block of a section curve that is a
 piece of an operand edge of either face is that edge and not a section
-edge; whether an edge runs along the curve is `curves_coincide`, the
-verdict without the points, so a rim circle in the plane of the ellipse
-its own cap plane cuts from the other wall — two short cylinders crossing
-steeply — needs no closed form for where the two conics would meet.
+edge. Whether an edge runs along the curve is asked of the surfaces
+first: an edge of one face whose other face in its own operand lies on
+a surface `Coincident` with the pair's other face is on the pair's
+section to its own tolerance, and along the branch its midpoint lies on
+— a restoring fuse's section and the cut's section edge are two fits of
+one traced section over different regions, which no closed form
+compares, and each is held to the exact branch. The same holds of the
+edge running along a section curve a touch is resolved through, and of
+two edges of a coincident pair whose other faces lie on one surface. Only
+without such a face is it `curves_coincide`, the verdict without the
+points, so a rim circle in the plane of the ellipse its own cap plane
+cuts from the other wall — two short cylinders crossing steeply — needs
+no closed form for where the two conics would meet.
 Beside that whole-curve verdict is a block's own: a block every point of
 which the model checks lies within the tolerance of a piece of an
 operand edge of either face between the same two vertices is that

@@ -675,6 +675,11 @@ impl<'m> Build<'m> {
                 continue;
             }
             for (_, curve) in meet_curves(&pair.intersection, MeetKind::Crossing) {
+                // An edge known by its surfaces to run along the section
+                // curve crosses nothing there, as a coincident one below.
+                if self.known_by_surfaces(side, e, g, f, curve, tol) == Some(true) {
+                    continue;
+                }
                 let hits = match intersect_curves(e.curve, curve, tol)
                     .map_err(|err| geometry(err, e.shape(), f.shape()))?
                 {
@@ -747,6 +752,13 @@ impl<'m> Build<'m> {
                         continue;
                     }
                     let tol = tolerance_of(&self.precision, ea.tolerance, eb.tolerance);
+                    // Two edges whose other faces lie on one surface too
+                    // run along one section of the two, and are the same
+                    // curve where one lies on the other at all.
+                    if self.same_section(ea, fa, eb, fb, tol) {
+                        same_curve.insert((ea.id, eb.id));
+                        continue;
+                    }
                     let hits = match intersect_curves(ea.curve, eb.curve, tol)
                         .map_err(|e| geometry(e, ea.shape(), eb.shape()))?
                     {
@@ -1737,13 +1749,22 @@ impl<'m> Build<'m> {
         // split of the other face, where one is needed, is the edge's
         // image through the coincident neighbour (ADR-0004).
         let mut along: Vec<&EdgeInfo<'m>> = Vec::new();
-        for (side, f) in [(0, fa), (1, fb)] {
+        for (side, f, other) in [(0, fa, fb), (1, fb, fa)] {
             for &eid in f.edges() {
                 let Some(e) = self.edge_info(side, eid) else {
                     continue;
                 };
                 let tol =
                     tolerance_of(&self.precision, e.tolerance, fa.tolerance.max(fb.tolerance));
+                // The surfaces first: an edge whose other face lies on
+                // the other face's surface is on this pair's section, and
+                // along this branch when it lies on it at all.
+                if let Some(on) = self.known_by_surfaces(side, e, f, other, curve, tol) {
+                    if on {
+                        along.push(e);
+                    }
+                    continue;
+                }
                 // Only the verdict: an edge in the plane of a planar
                 // section conic — a rim circle beside the ellipse its cap
                 // plane cuts from the other wall — has no closed form for
@@ -1812,6 +1833,76 @@ impl<'m> Build<'m> {
             edges,
         });
         Ok(())
+    }
+
+    /// Whether a face of operand `side` other than `f` that uses `e` lies
+    /// on a surface `Coincident` with `other`'s, a face of the other
+    /// operand, by the face pair's own verdict.
+    fn beside_on(&self, side: usize, e: EdgeId, f: FaceId, other: FaceId) -> bool {
+        self.faces[side]
+            .iter()
+            .filter(|g| g.id != f && g.edges().contains(&e))
+            .any(|g| {
+                let (a, b) = if side == 0 {
+                    (g.id, other)
+                } else {
+                    (other, g.id)
+                };
+                self.pairs.iter().any(|p| {
+                    p.a == a && p.b == b && p.intersection == SurfaceIntersection::Coincident
+                })
+            })
+    }
+
+    /// Whether `e`, an edge of face `f` of operand `side`, runs along
+    /// `curve`, a section of `f`'s surface and `other`'s, known by the
+    /// surfaces rather than by comparing the curves: where a face beside
+    /// `f` in `e`'s own operand lies on a surface `Coincident` with
+    /// `other`'s, the edge lies on both of the pair's surfaces to its own
+    /// tolerance (E4) and so on their section, and along `curve` exactly
+    /// when its midpoint lies on it within `tol`. Two fits of one traced
+    /// section over different regions are two splines no closed form
+    /// compares, and each is held to the exact branch (ADR-0022), so the
+    /// midpoint decides. `None` when no such face is beside `f`, and the
+    /// curves have to be asked.
+    fn known_by_surfaces(
+        &self,
+        side: usize,
+        e: &EdgeInfo<'m>,
+        f: &FaceInfo<'m>,
+        other: &FaceInfo<'m>,
+        curve: &Curve,
+        tol: Tolerance,
+    ) -> Option<bool> {
+        if !self.beside_on(side, e.id, f.id, other.id) {
+            return None;
+        }
+        let mid = e.curve.point(e.range.midpoint());
+        Some(curve.project(mid).is_ok_and(|on| on.distance <= tol.linear))
+    }
+
+    /// Whether `ea` of `fa` and `eb` of `fb`, two faces on one surface,
+    /// are one section by their surfaces: a face beside `fa` using `ea`
+    /// and one beside `fb` using `eb` lie on one surface too, so both
+    /// edges lie on the section of the two surfaces, and they are the
+    /// same curve when `ea`'s midpoint lies on `eb` within `tol`.
+    fn same_section(
+        &self,
+        ea: &EdgeInfo<'m>,
+        fa: &FaceInfo<'m>,
+        eb: &EdgeInfo<'m>,
+        fb: &FaceInfo<'m>,
+        tol: Tolerance,
+    ) -> bool {
+        let beside = self.faces[1]
+            .iter()
+            .filter(|g| g.id != fb.id && g.edges().contains(&eb.id))
+            .any(|g| self.beside_on(0, ea.id, fa.id, g.id));
+        beside
+            && eb
+                .curve
+                .project(ea.curve.point(ea.range.midpoint()))
+                .is_ok_and(|on| on.distance <= tol.linear)
     }
 
     /// The piece of an operand edge of `fa` or `fb` that the block

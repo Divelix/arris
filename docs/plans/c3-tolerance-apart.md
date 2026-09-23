@@ -565,7 +565,7 @@ bound has to be established here.
   `ring-corner-common`, `ring-pin-cut`, `ring-slab-common`, the five
   `tee-unequal-*`): same topology and tolerances, vertices and ranges
   within 1e-8, fits −4% to +35% control points.
-- [ ] Step 6 **[2]** — A section edge known by its surfaces. In
+- [x] Step 6 **[2]** — A section edge known by its surfaces. In
   `section_curve`'s `along` verdict, and wherever else `pave` asks whether
   an operand edge lies along a section (`coincident`, `common_block`,
   `resolve_touch`): an edge of face `fa` whose other face in its own
@@ -575,6 +575,27 @@ bound has to be established here.
   a grazing pair because of step 5b. `frustum-stub-cut-then-fuse` moves to
   `boolean/` with oracle values; the frustum–cylinder sparing in
   `quadric_identities` is deleted and the property is green at 1000.
+
+  **Done 2026-09-23.** `known_by_surfaces` in `pave`: an edge of a
+  pair's face whose other face in its own operand is `Coincident` with
+  the pair's other face, by that face pair's own verdict, is on the
+  section, and along a branch exactly when its midpoint projects onto it
+  within the tolerance — `curves_coincide` is asked only without such a
+  face. Asked in `section_curve`'s whole-curve verdict and in
+  `resolve_touch` (an edge along the section curve crosses nothing
+  there); in `crossings`, two edges of a coincident pair whose other
+  faces lie on one surface are `same_curve` the same way, which feeds
+  `matching_block` and `common_block`. `frustum-stub-cut-then-fuse`
+  moved to `boolean/`: its counts are the oracle's, and it states volume
+  1e-8, area 1e-7 and inertia 1e-8 because Open CASCADE's own solid is
+  the far side — its section edges at 4.48e-7 in this fuse and in its
+  direct `a ∪ b` alike, its volume 7.1e-9 relative from the
+  0.6762668514840 Arris converges to, to 1e-12, at model tolerances 1e-7
+  to 1e-10 — and `mesh_volume_rel` 7e-3, its own inscribed-chord bound
+  at the stub's radius 0.106. The frustum–cylinder sparing is gone;
+  `quadric_operands_obey_every_identity` green at 1000, and the
+  workspace at 1000 cases green at 1168 tests. No blessed dump changed
+  but the fixture's own.
 - [ ] Step 7 **[2]** — The pinch is refused by name (open question 1).
   `singular-bore-cut`: a result vertex whose face uses close into more
   than one fan is found in `result.rs` before `assemble` and returned as

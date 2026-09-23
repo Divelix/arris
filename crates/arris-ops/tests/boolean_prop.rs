@@ -14,8 +14,8 @@
 //! failures).
 
 use arris_debug::prop::body::{
-    Boxed, CrossingPair, Cylindrical, OverlappingPair, QuadricPair, QuadricSolid, QuadricTool,
-    QuarticPair, SingularSlice, SingularSolid, TangentPair,
+    Boxed, CrossingPair, Cylindrical, OverlappingPair, QuadricPair, QuarticPair, SingularSlice,
+    SingularSolid, TangentPair,
 };
 use arris_debug::testing::{REL, close_to, fail, fitted_rel};
 use arris_debug::{dump_text, prop, prop_shards};
@@ -1332,15 +1332,6 @@ fn quadric_identities(pair: &QuadricPair) -> Result<(), TestCaseError> {
             db
         );
     }
-    // A cylinder meets a frustum's cone in a traced section whose fit
-    // depends on the boolean's region, which the restoring fuse does not
-    // share with the cut: `regression/frustum-stub-cut-then-fuse`.
-    if matches!(
-        (pair.solid, pair.tool),
-        (QuadricSolid::Frustum { .. }, QuadricTool::Cylinder(_))
-    ) {
-        return Ok(());
-    }
     let Some(restored) = run_unless_beside(&mut m, "fuse(a − b, b)", fuse, diff, b)? else {
         return Ok(());
     };
@@ -1364,12 +1355,11 @@ prop_shards! {
     /// `common` commuting to the dump, and `(a − b) ∪ b` the union with its
     /// counts — every body measured in the pair's own frame
     /// ([`measured_at`]). A tool wall passing a ball's pole is the designed
-    /// `BesideSingularity`, and the pair holds nothing further. The one
-    /// identity a frustum and a cylinder are spared is the last: the cone
-    /// and the wall meet in a traced section fitted over the boolean's
-    /// region, the restoring fuse's region is not the cut's, and two fits
-    /// of one section over different knots are a pair `curves_coincide`
-    /// refuses — `regression/frustum-stub-cut-then-fuse`, one pose in 256.
+    /// `BesideSingularity`, and the pair holds nothing further. No pair
+    /// is spared an identity: where the restoring fuse traces a section
+    /// over another region than the cut, the cut's section edge is along
+    /// the fuse's own by the surfaces, never by two splines compared
+    /// (`boolean/frustum-stub-cut-then-fuse`).
     ///
     /// Every identity is held to [`fitted_rel`], not `REL`: a section on a
     /// sphere, a torus, a cone or an elliptic cylinder has a fitted pcurve

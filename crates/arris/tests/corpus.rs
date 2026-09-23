@@ -337,16 +337,6 @@ fn regression_singular_bore_cut() {
     run("regression/singular-bore-cut");
 }
 
-/// A stub leaving a frustum through its cone wall, cut and then fused
-/// back: the restoring fuse traces the cone and the stub's wall over
-/// another region than the cut did, and the one section comes back a
-/// second spline over other knots.
-#[test]
-#[ignore = "OpError::Unsupported, NURBS curve against NURBS curve: the cut's section edge and the fuse's own section are two fits of one section over different knots, which curves_coincide cannot decide (docs/BACKLOG.md)"]
-fn regression_frustum_stub_cut_then_fuse() {
-    run("regression/frustum-stub-cut-then-fuse");
-}
-
 /// A ball sliced by a face 3.7e-7 from its pole: not through the singular
 /// point and nearer than the sphere's (u, v) polygons resolve, refused by
 /// name rather than built.
@@ -758,6 +748,16 @@ fn boolean_ball_pole_slice_cut() {
 #[test]
 fn boolean_pole_slice_beside_seam_cut() {
     run("boolean/pole-slice-beside-seam-cut");
+}
+
+/// A stub leaving a frustum through its cone wall, cut and then fused
+/// back: the restoring fuse traces the cone and the stub's wall over
+/// another region than the cut did, and the cut's section edge, on the
+/// cone and the bore, is along the fuse's own section by the surfaces,
+/// never by comparing two splines.
+#[test]
+fn boolean_frustum_stub_cut_then_fuse() {
+    run("boolean/frustum-stub-cut-then-fuse");
 }
 
 /// A ball cut from a bar whose wall it meets at about 5° where the

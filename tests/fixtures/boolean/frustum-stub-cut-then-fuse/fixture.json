@@ -1,0 +1,24 @@
+{
+  "description": "a frustum of radius 0.5 at z = 0 and 0.27 at z = 1.25 about z, less a stub of radius 0.106 from (−0.025, 0.035, 0.456) inside it, 3 long along (0.183, −0.26, 0.948), which leaves through the cone wall — then the stub fused back onto what the cut left: `fuse(a − b, b)`, which is `a ∪ b`. The cone and the stub's wall meet in a traced section (ADR-0018) fitted over the boolean's region, and the region of `a − b` against `b` is not that of `a` against `b`: the cut's section edge and the fuse's own section are two splines over other knots, which no closed form compares. The cut's edge lies on the cone and on the bore, whose surface is the stub's wall, so it is on the fuse's section by the surfaces, and along its branch where its midpoint lies on it — each fit held to the exact branch (ADR-0022, plans/c3-tolerance-apart step 6); it was `Unsupported`, the NURBS curve against the NURBS curve. Found by the quadric identities at a random pose in 256 (plans/c3-conic-hits step 8). The volume, area and inertia tolerances are stated at 1e-8, 1e-7 and 1e-8 because the oracle's own solid is the far side here: Open CASCADE leaves its section edges at a tolerance of 4.48e-7, in this fuse and in its direct `a ∪ b` alike, and its volume 0.6762668467 is 7.1e-9 relative from the 0.6762668514840 Arris converges to, to 1e-12, as the model tolerance goes from 1e-7 to 1e-10; on the STEP Arris writes, Open CASCADE measures Arris's own volume. The centroid holds at the default. mesh_volume_rel is this body's own inscribed-chord bound, curved area × chord over volume: about 4.5 · 1e-3 / 0.676 ≈ 6.7e-3, the stub's radius of 0.106 below the one the default is sized on",
+  "tolerances": {"volume_rel": 1e-8, "area_rel": 1e-7, "inertia_rel": 1e-8, "mesh_volume_rel": 7e-3},
+  "steps": [
+    {
+      "name": "trapezoid",
+      "op": "profile",
+      "plane": {"origin": [0, 0, 0], "x": [1, 0, 0], "y": [0, 0, 1]},
+      "outer": {"start": [0, 0], "segments": [{"line_to": [0.5, 0]}, {"line_to": [0.27, 1.25]}, {"line_to": [0, 1.25]}, {"line_to": [0, 0]}]}
+    },
+    {"name": "frustum", "op": "revolve", "profile": "trapezoid", "axis": {"origin": [0, 0, 0], "direction": [0, 0, 1]}, "angle_deg": 360},
+    {"name": "stub", "op": "cylinder", "base": [-0.025, 0.035, 0.456], "axis": [0.183, -0.26, 0.948], "radius": 0.106, "height": 3},
+    {"name": "bored", "op": "cut", "target": "frustum", "tool": "stub"},
+    {"name": "result", "op": "fuse", "a": "bored", "b": "stub"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "in_the_frustum", "point": [0.3, 0.2, 0.2], "expect": "in"},
+    {"label": "in_the_bore", "point": [0.066, -0.095, 0.93], "expect": "in"},
+    {"label": "in_the_stub_outside", "point": [0.43, -0.61, 2.83], "expect": "in"},
+    {"label": "outside", "point": [2, 0, 0], "expect": "out"}
+  ],
+  "analytic": {"genus": 0}
+}
