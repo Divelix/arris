@@ -1,0 +1,12 @@
+{
+  "description": "edge-touching-fuse's second box pushed four tolerances (4e-7) into the first across their shared edge, the first cut by the second: the first box less a square notch 4e-7·√2 deep along the edge, its two faces 5.7e-7 wide (plans/c3-tolerance-apart step 9, the band's ends).",
+  "params": {"d": 4e-07, "t": 0, "g": 0},
+  "steps": [
+    {"name": "a", "op": "box", "min": [0, 0, 0], "max": [10, 10, 10]},
+    {"name": "b0", "op": "box", "min": [10, 10, 0], "max": [20, 20, 10]},
+    {"name": "b", "op": "transform", "of": "b0", "rotate": {"axis": [0.7071067811865476, -0.7071067811865476, 0], "origin": [10, 10, 5], "angle_deg": "degrees(2 * t / 10)"}, "translate": ["-0.7071067811865476 * d", "-0.7071067811865476 * d", "0 * d"]},
+    {"name": "result", "op": "cut", "target": "a", "tool": "b"}
+  ],
+  "result": "result",
+  "analytic": {"counts": {"vertices": 12, "edges": 18, "faces": 8, "loops": 8, "shells": 1}, "genus": 0, "counts_differ": "Open CASCADE leaves the 4e-7 notch out and returns the first box whole (8/12/6/6); Arris cuts it"}
+}

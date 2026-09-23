@@ -837,7 +837,9 @@ pub const ANALYTIC_REL: f64 = 1e-6;
 /// The corpus lint for one directory, by its [`Kind`]. A solid: both
 /// files present and parseable, the recipe hash matches `expected.json`,
 /// every variant has a result, the Euler line is zero (`χ = 2(S − G)`
-/// with the oracle's counts and the fixture's `analytic.genus`), and
+/// with the oracle's counts and the fixture's `analytic.genus`, or under
+/// `counts_differ` the oracle's own genus, `analytic.genus` then closing
+/// Arris's counts), and
 /// every `analytic` value matches the oracle within [`ANALYTIC_REL`]
 /// (counts, degeneracy and probe expectations exactly) — except the
 /// counts under `counts_differ`, which must differ, and the volume, area,
@@ -983,8 +985,11 @@ pub fn lint(dir: &Path) -> Vec<String> {
             }
         };
         if let (Some(g), Some(genus)) = (a.genus, genus) {
-            // The Euler line: V − E + F − (L − F) − 2(S − G) = 0.
-            let line = counted.at_genus(g);
+            // The Euler line: V − E + F − (L − F) − 2(S − G) = 0. Under
+            // `counts_differ` the analytic genus is Arris's, and the
+            // oracle's counts close at the oracle's own.
+            let at = if a.counts_differ.is_some() { genus } else { g };
+            let line = counted.at_genus(at);
             if line != 0 {
                 problem(format!(
                     "[{variant}] Euler line is {line}, not 0: counts {c:?} with analytic genus {g} (oracle genus {genus})"

@@ -599,7 +599,12 @@ pub fn run(dir: &Path, variant: &str) -> Result<(), CorpusError> {
             found,
         });
     }
-    if let Some(genus) = expected.genus {
+    // The oracle's genus, unless the recipe's own counts change it.
+    let genus = match (&analytic.counts_differ, analytic.genus) {
+        (Some(_), Some(own)) => Some(own),
+        _ => expected.genus,
+    };
+    if let Some(genus) = genus {
         if line.genus != genus {
             return Err(CorpusError::Genus {
                 fixture: name,

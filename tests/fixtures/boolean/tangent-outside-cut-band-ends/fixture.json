@@ -1,0 +1,16 @@
+{
+  "description": "tangent-outside-cut's tool, touching the plate's side face from outside, moved four tolerances (4e-7) across the contact, into the plate (d > 0) and away from it (d < 0), and turned about the contact's middle so its ends move half a tolerance in and out (t): the plate less a sliver, the plate whole, and the turn the survey's regression fixture held that steps 2 to 5c fixed. A quarter of a tolerance is tangent-outside-a-quarter-off (plans/c3-tolerance-apart step 9, the band's ends).",
+  "params": {"d": 4e-07, "t": 0, "g": 0},
+  "variants": {
+    "minus-4": {"d": -4e-07, "t": 0, "g": 0},
+    "tilt-half": {"d": 0, "t": 5e-08, "g": 0}
+  },
+  "steps": [
+    {"name": "a", "op": "box", "min": [0, 0, 0], "max": [40, 30, 10]},
+    {"name": "b0", "op": "cylinder", "base": [44, 15, -1], "axis": [0, 0, 1], "radius": 4, "height": 12},
+    {"name": "b", "op": "transform", "of": "b0", "rotate": {"axis": [0, 1, 0], "origin": [40, 15, 5], "angle_deg": "degrees(2 * t / 10)"}, "translate": ["-1 * d", "0 * d", "0 * d"]},
+    {"name": "result", "op": "cut", "target": "a", "tool": "b"}
+  ],
+  "result": "result",
+  "analytic": {}
+}

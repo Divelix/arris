@@ -315,6 +315,126 @@ fn boolean_seam_a_tolerance_from_crossing_fuse() {
     run("boolean/seam-a-tolerance-from-crossing-fuse");
 }
 
+/// flush-union's boxes a quarter of a tolerance into and away from each other, and four apart, fused: the flush union within the tolerance, two lumps beyond (plans/c3-tolerance-apart step 9).
+#[test]
+fn boolean_flush_union_band_ends() {
+    run("boolean/flush-union-band-ends");
+}
+
+/// boss-flush's boss a quarter of a tolerance into and off its plate, and four off, fused (plans/c3-tolerance-apart step 9).
+#[test]
+fn boolean_boss_flush_band_ends() {
+    run("boolean/boss-flush-band-ends");
+}
+
+/// pin-in-bore-fuse's pin a quarter of a tolerance out through and in off the bore's wall, and four in, fused (plans/c3-tolerance-apart step 9).
+#[test]
+fn boolean_pin_in_bore_fuse_band_ends() {
+    run("boolean/pin-in-bore-fuse-band-ends");
+}
+
+/// coaxial-fuse's rod a quarter of a tolerance off the tube's axis either way, fused: the flush union (plans/c3-tolerance-apart step 9).
+#[test]
+fn boolean_coaxial_fuse_band_ends() {
+    run("boolean/coaxial-fuse-band-ends");
+}
+
+/// coaxial-cut's tool a quarter of a tolerance and four off the shared axis (plans/c3-tolerance-apart step 9).
+#[test]
+fn boolean_coaxial_cut_band_ends() {
+    run("boolean/coaxial-cut-band-ends");
+}
+
+/// tangent-cylinders-cut's tool four tolerances into and away from the target (plans/c3-tolerance-apart step 9).
+#[test]
+fn boolean_tangent_cylinders_cut_band_ends() {
+    run("boolean/tangent-cylinders-cut-band-ends");
+}
+
+/// tangent-hole's hole four tolerances out through and in off the side face: a clean cut either way (plans/c3-tolerance-apart step 9).
+#[test]
+fn boolean_tangent_hole_band_ends() {
+    run("boolean/tangent-hole-band-ends");
+}
+
+/// tangent-hole's hole a quarter of a tolerance out through and in off the side face: the contact's own refusal, Reason::TangentContact (plans/c3-tolerance-apart step 9).
+#[test]
+fn boolean_tangent_hole_a_quarter_off() {
+    run("boolean/tangent-hole-a-quarter-off");
+}
+
+/// tangent-outside-cut's tool four tolerances into and away from the plate, and turned half a tolerance about the contact's middle (plans/c3-tolerance-apart step 9).
+#[test]
+fn boolean_tangent_outside_cut_band_ends() {
+    run("boolean/tangent-outside-cut-band-ends");
+}
+
+/// pipe-elbow-fuse's pipe a quarter of a tolerance into and away from the bend, a whole one in, and grown by half of one, fused (plans/c3-tolerance-apart step 9).
+#[test]
+fn boolean_pipe_elbow_fuse_band_ends() {
+    run("boolean/pipe-elbow-fuse-band-ends");
+}
+
+/// edge-touching-fuse's boxes a quarter of a tolerance into each other and apart across their shared edge, and four apart, the first cut by the second (plans/c3-tolerance-apart step 9).
+#[test]
+fn boolean_edge_touching_band_ends() {
+    run("boolean/edge-touching-band-ends");
+}
+
+/// flush-union's boxes four tolerances into each other, fused: one box with the 4e-7 strip where their side faces overlap kept as a face (plans/c3-tolerance-apart step 9).
+#[test]
+fn boolean_flush_union_four_into() {
+    run("boolean/flush-union-four-into");
+}
+
+/// boss-flush's boss four tolerances into its plate, fused, held to its closed forms where Open CASCADE's own fuse is the far side (plans/c3-tolerance-apart step 9).
+#[test]
+fn boolean_boss_flush_four_into() {
+    run("boolean/boss-flush-four-into");
+}
+
+/// pin-in-bore-fuse's pin four tolerances out through the bore's wall, fused: a lens 4e-7 proud of the wall (plans/c3-tolerance-apart step 9).
+#[test]
+fn boolean_pin_in_bore_four_out() {
+    run("boolean/pin-in-bore-four-out");
+}
+
+/// coaxial-fuse's rod four tolerances off the tube's axis along +x, fused: a crescent hole 4e-7 wide, genus 1 (plans/c3-tolerance-apart step 9).
+#[test]
+fn boolean_coaxial_fuse_four_off() {
+    run("boolean/coaxial-fuse-four-off");
+}
+
+/// coaxial-fuse's rod four tolerances off the tube's axis along −x, fused: the same crescent hole the other way (plans/c3-tolerance-apart step 9).
+#[test]
+fn boolean_coaxial_fuse_four_off_back() {
+    run("boolean/coaxial-fuse-four-off-back");
+}
+
+/// tangent-cylinders-cut's tool a quarter of a tolerance into and away from the target: the target whole, as at the contact (plans/c3-tolerance-apart step 9).
+#[test]
+fn boolean_tangent_cylinders_a_quarter_off() {
+    run("boolean/tangent-cylinders-a-quarter-off");
+}
+
+/// tangent-outside-cut's tool a quarter of a tolerance into and away from the plate: the plate whole, as at the contact (plans/c3-tolerance-apart step 9).
+#[test]
+fn boolean_tangent_outside_a_quarter_off() {
+    run("boolean/tangent-outside-a-quarter-off");
+}
+
+/// edge-touching-fuse's boxes four tolerances into each other across their shared edge, the first cut by the second: a notch 4e-7 deep (plans/c3-tolerance-apart step 9).
+#[test]
+fn boolean_edge_touching_four_into() {
+    run("boolean/edge-touching-four-into");
+}
+
+/// edge-touching-fuse's boxes, the second turned a tolerance about the shared edge's middle, cut: the tool's edge crosses the box's there, the section block along both edges at once is each face's boundary (plans/c3-tolerance-apart step 9).
+#[test]
+fn boolean_edge_touching_tilted_cut() {
+    run("boolean/edge-touching-tilted-cut");
+}
+
 /// The common of the same cylinders with the seam just past two
 /// tolerances from the crossing vertex: its two crossings are vertices
 /// of their own, 3.1e-7 from that vertex, and the piece of the turned
@@ -460,7 +580,7 @@ fn regression_tangent_outside_tilted_posed_common() {
 
 /// A cylinder touching a box face from outside, turned a quarter of a tolerance, posed, fused.
 #[test]
-#[ignore = "Fault::Geometry, the ellipse section is off the surfaces by 1.2e-7, where the desired is TangentContact (plans/c3-tolerance-apart step 1)"]
+#[ignore = "Fault::Geometry, the section fit still deviates by 1.7e-7 (at step 1 the ellipse section off its surfaces by 1.2e-7), where the desired is TangentContact (plans/c3-tolerance-apart steps 1 and 9)"]
 fn regression_tangent_outside_tilted_posed_fuse() {
     run("regression/tangent-outside-tilted-posed-fuse");
 }
@@ -479,16 +599,9 @@ fn regression_pipe_elbow_posed_fuse() {
     run("regression/pipe-elbow-posed-fuse");
 }
 
-/// Two boxes touching along an edge, the second turned a tolerance about the edge's middle, cut: two points a tolerance and a half apart are one vertex.
-#[test]
-#[ignore = "the cut fails the checker, a panic in a debug build: E2, two edges whose ends are 1.41e-7 apart hold one vertex (plans/c3-tolerance-apart step 1)"]
-fn regression_edge_touching_tilted_cut() {
-    run("regression/edge-touching-tilted-cut");
-}
-
 /// Two boxes touching along an edge, the second turned half a tolerance, posed, cut.
 #[test]
-#[ignore = "Fault::Builder NotClosed (plans/c3-tolerance-apart step 1)"]
+#[ignore = "one vertex too many (10/14): the edges cross at a grazing angle and the crossing's hits, scattered along the edge by the rounding over it, are two vertices (docs/BACKLOG.md, a hair off parallel; plans/c3-tolerance-apart step 9)"]
 fn regression_edge_touching_tilted_posed_cut() {
     run("regression/edge-touching-tilted-posed-cut");
 }

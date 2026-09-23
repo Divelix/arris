@@ -1,0 +1,23 @@
+{
+  "description": "coaxial-fuse's rod moved four tolerances (4e-7) off the tube's axis along +x, fused: the rod's wall 4e-7 into the tube's on that side, and on the other a crescent between them up to 4e-7 wide, four tolerances, open through the whole height — a hole, genus 1, as it is with the rod moved the other way (coaxial-fuse-four-off-back). For a unit bore and rod of height 2 at offset d the crescent's area is 2·asin(d/2) + (d/2)√(4 − d²) = 2d − d³/12 + O(d⁵), its two walls together 2π·2 long, so the volume is 8π − 4d + d³/6 and the area 20π − 4d + d³/6; the centroid is at x = d/8, and to first order in d the inertia about it is 32π/3 − 8d/3, 32π/3 − 4d and 16π − 4d (products zero by symmetry), within 1e-13 of exact. Arris's STEP, read by Open CASCADE, gives every one of them to 1e-11, and the same as the mirror image does (coaxial-fuse-four-off-back, whose oracle agrees). Open CASCADE's own fuse on this side closes the crescent and measures the coaxial union, 8π and 16π — a mirror image measured differently, so the oracle is the one that is wrong (ADR-0015) (plans/c3-tolerance-apart step 9, the band's ends).",
+  "params": {"d": 4e-07, "t": 0, "g": 0},
+  "steps": [
+    {"name": "a_wall", "op": "cylinder", "base": [0, 0, 0], "axis": [0, 0, 1], "radius": 2, "height": 2},
+    {"name": "a_bore", "op": "cylinder", "base": [0, 0, -1], "axis": [0, 0, 1], "radius": 1, "height": 4},
+    {"name": "a", "op": "cut", "target": "a_wall", "tool": "a_bore"},
+    {"name": "b0", "op": "cylinder", "base": [0, 0, 0], "axis": [0, 0, 1], "radius": 1, "height": 2},
+    {"name": "b", "op": "transform", "of": "b0", "rotate": {"axis": [0, 1, 0], "origin": [0, 0, 1], "angle_deg": "degrees(2 * t / 2)"}, "translate": ["1 * d", "0 * d", "0 * d"]},
+    {"name": "result", "op": "fuse", "a": "a", "b": "b"}
+  ],
+  "result": "result",
+  "analytic": {
+    "counts": {"vertices": 10, "edges": 17, "faces": 9, "loops": 11, "shells": 1},
+    "genus": 1,
+    "counts_differ": "Open CASCADE closes the crescent on this side, merging the bore's wall and the rod's where they lie within 4e-7 of each other (10/13/7/9, genus 0), though it keeps it open with the rod moved the other way; Arris keeps it open both ways, four tolerances wide",
+    "measure_differs": "Open CASCADE's fuse closes the 4e-7 crescent on this side and measures the coaxial union (volume 8π, area 16π), where it measures the mirror image with the crescent open; the closed forms of the description hold, and Arris's STEP meets them",
+    "volume": "8 * pi - 4 * d + d ^ 3 / 6",
+    "area": "20 * pi - 4 * d + d ^ 3 / 6",
+    "centroid": ["d / 8", 0, 1],
+    "inertia": [["32 * pi / 3 - 8 * d / 3", 0, 0], [0, "32 * pi / 3 - 4 * d", 0], [0, 0, "16 * pi - 4 * d"]]
+  }
+}

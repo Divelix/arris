@@ -415,7 +415,12 @@ operand edge of either face between the same two vertices is that
 piece, asked before the block's midpoint is asked to lie inside both
 faces — along an edge of one it lies on that face's boundary — and the
 piece is placed on the pair's other face as an image where the section
-edge would have been. It is the seam's last stretch beside a pole where
+edge would have been. When it lies within the tolerance of an edge of
+the other face as well, wherever that edge is paved, it is on both
+boundaries and is neither a section edge nor an image: each edge keeps
+its own piece. That happens where two boxes touch along an edge and one
+is turned a tolerance about the edge's middle, and the two edges' crossing
+is hit at points scattered along them by more than a tolerance. It is the seam's last stretch beside a pole where
 the small circle crosses it twice, or a rim circle a fraction of a
 tolerance from the ellipse a turned face cuts from the wall; built as a
 section edge, the block would bound a sliver of zero area on the edge's

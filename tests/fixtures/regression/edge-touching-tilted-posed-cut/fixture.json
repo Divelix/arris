@@ -1,5 +1,5 @@
 {
-  "description": "two boxes touching along an edge (edge-touching-fuse's contact at the band survey's numbers and pose), the second turned about the line through the middle of the shared edge along the first's diagonal so the edge's ends move half a tolerance (5e-8) in and out, and cut from the first. Arris fails: the builder cannot close the shell (Fault::Builder, NotClosed). The desired result is the first box, clean (plans/c3-tolerance-apart step 1, the band survey)",
+  "description": "two boxes touching along an edge (edge-touching-fuse's contact at the band survey's numbers and pose), the second turned about the line through the middle of the shared edge along the first's diagonal so the edge's ends move half a tolerance (5e-8) in and out, and cut from the first. Arris returns a clean body with one vertex too many (10/14): the two edges cross at 6.4e-9 of a radian, and posed 100 out the crossing's hits on the four faces scatter along the edge by up to 1.3e-6, the rounding over that angle, and become two vertices on its edge where one is desired. The desired result is the first box with the crossing as one vertex on its edge, as boolean/edge-touching-tilted-cut is unposed (plans/c3-tolerance-apart steps 1 and 9)",
   "params": {"d": 0, "t": -0.00000005, "g": 0},
   "steps": [
     {"name": "a", "op": "box", "min": [0, 0, 0], "max": [4.698363133748883, 9.891199901462349, 15.650162494008441]},
@@ -10,5 +10,5 @@
     {"name": "result", "op": "cut", "target": "a_posed", "tool": "b_posed"}
   ],
   "result": "result",
-  "analytic": {}
+  "analytic": {"counts": {"vertices": 9, "edges": 13, "faces": 6, "loops": 6, "shells": 1}, "genus": 0, "counts_differ": "Open CASCADE returns the box with its edge whole (8/12/6/6); Arris keeps the vertex where the tool's edge crosses it"}
 }

@@ -1,0 +1,16 @@
+{
+  "description": "boss-flush's boss moved along its cap's normal by a quarter of a tolerance (1e-7), into the plate (d > 0) and off it (d < 0), and lifted four off it, fused: the flush union within the tolerance, two lumps a gap apart four off. Four in is boss-flush-four-into (plans/c3-tolerance-apart step 9, the band's ends).",
+  "params": {"d": 2.5e-08, "t": 0, "g": 0},
+  "variants": {
+    "minus-quarter": {"d": -2.5e-08, "t": 0, "g": 0},
+    "minus-4": {"d": -4e-07, "t": 0, "g": 0}
+  },
+  "steps": [
+    {"name": "a", "op": "box", "min": [0, 0, 0], "max": [40, 30, 10]},
+    {"name": "b0", "op": "cylinder", "base": [20, 15, 10], "axis": [0, 0, 1], "radius": 4, "height": 10},
+    {"name": "b", "op": "transform", "of": "b0", "rotate": {"axis": [1, 0, 0], "origin": [20, 15, 10], "angle_deg": "degrees(2 * t / 8)"}, "translate": ["0 * d", "0 * d", "-1 * d"]},
+    {"name": "result", "op": "fuse", "a": "a", "b": "b"}
+  ],
+  "result": "result",
+  "analytic": {}
+}

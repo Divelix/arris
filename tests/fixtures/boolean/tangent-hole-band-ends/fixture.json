@@ -1,0 +1,15 @@
+{
+  "description": "tangent-hole's hole, touching the plate's side face from inside, moved across the contact by four tolerances (1e-7), out through the face (d > 0) and in off it (d < 0): the ends of the band either side of the tangent contact, a clean cut either way. A quarter of a tolerance either way is the contact itself, boolean/tangent-hole-a-quarter-off (plans/c3-tolerance-apart step 9, the band's ends).",
+  "params": {"d": 0.0000004, "t": 0, "g": 0},
+  "variants": {
+    "minus-4": {"d": -0.0000004, "t": 0, "g": 0}
+  },
+  "steps": [
+    {"name": "a", "op": "box", "min": [0, 0, 0], "max": [40, 30, 10]},
+    {"name": "b0", "op": "cylinder", "base": [3, 15, 4], "axis": [0, 0, 1], "radius": 3, "height": 12},
+    {"name": "b", "op": "transform", "of": "b0", "rotate": {"axis": [0, 1, 0], "origin": [0, 15, 7], "angle_deg": "degrees(2 * t / 6)"}, "translate": ["-1 * d", "0 * d", "0 * d"]},
+    {"name": "result", "op": "cut", "target": "a", "tool": "b"}
+  ],
+  "result": "result",
+  "analytic": {}
+}

@@ -40,6 +40,8 @@ def compare_step(directory: Path, step_file: Path, variant: str = "default") -> 
         # The recipe states a convention Arris does not follow and gives
         # its own counts; the oracle's stay in expected.json as the record.
         result = {**result, "counts": {"shells": 1, "solids": 1, **analytic["counts"]}}
+        if "genus" in analytic:
+            result["genus"] = analytic["genus"]
     if analytic.get("measure_differs"):
         # The recipe states the oracle's measurements are wrong and gives
         # closed forms for them (ADR-0015); the oracle's stay in

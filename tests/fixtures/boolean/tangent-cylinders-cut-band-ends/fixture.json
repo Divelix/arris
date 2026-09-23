@@ -1,0 +1,15 @@
+{
+  "description": "tangent-cylinders-cut's tool, touching the target along a ruling from outside, moved four tolerances (4e-7) across the contact, into the target (d > 0) and away from it (d < 0): the target less a sliver, and the target whole. A quarter of a tolerance is tangent-cylinders-a-quarter-off (plans/c3-tolerance-apart step 9, the band's ends).",
+  "params": {"d": 4e-07, "t": 0, "g": 0},
+  "variants": {
+    "minus-4": {"d": -4e-07, "t": 0, "g": 0}
+  },
+  "steps": [
+    {"name": "a", "op": "cylinder", "base": [0, 0, 0], "axis": [0, 0, 1], "radius": 1, "height": 2},
+    {"name": "b0", "op": "cylinder", "base": [0, 2, -1], "axis": [0, 0, 1], "radius": 1, "height": 4},
+    {"name": "b", "op": "transform", "of": "b0", "rotate": {"axis": [1, 0, 0], "origin": [0, 1, 1], "angle_deg": "degrees(2 * t / 2)"}, "translate": ["0 * d", "-1 * d", "0 * d"]},
+    {"name": "result", "op": "cut", "target": "a", "tool": "b"}
+  ],
+  "result": "result",
+  "analytic": {}
+}

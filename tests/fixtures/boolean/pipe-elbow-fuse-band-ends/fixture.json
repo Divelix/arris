@@ -1,0 +1,18 @@
+{
+  "description": "pipe-elbow-fuse's pipe moved along its axis by a quarter of a tolerance (1e-7), into the bend (d > 0) and away from it (d < 0), pushed in by a whole tolerance, and grown by half of one (g): the ends of the band either side of the tube-circle contact that hold, and the two variants of the survey's regression fixture that steps 2 to 5c fixed. Four tolerances either way is regression/pipe-elbow-a-tolerance-off's (plans/c3-tolerance-apart step 9, the band's ends).",
+  "params": {"d": 0.000000025, "t": 0, "g": 0},
+  "variants": {
+    "minus-quarter": {"d": -0.000000025, "t": 0, "g": 0},
+    "into-1": {"d": 0.0000001, "t": 0, "g": 0},
+    "grown-half": {"d": 0, "t": 0, "g": 0.00000005}
+  },
+  "steps": [
+    {"name": "a_disc", "op": "profile", "plane": {"origin": [0, 0, 0], "x": [1, 0, 0], "y": [0, 0, 1]}, "outer": {"circle": {"center": [3, 0], "radius": 1}}},
+    {"name": "a", "op": "revolve", "profile": "a_disc", "axis": {"origin": [0, 0, 0], "direction": [0, 0, 1]}, "angle_deg": 90},
+    {"name": "b0", "op": "cylinder", "base": [3, 0, 0], "axis": [0, -1, 0], "radius": "1 + g", "height": 4},
+    {"name": "b", "op": "transform", "of": "b0", "rotate": {"axis": [0, 0, 1], "origin": [3, 0, 0], "angle_deg": "degrees(2 * t / 2)"}, "translate": ["0 * d", "1 * d", "0 * d"]},
+    {"name": "result", "op": "fuse", "a": "a", "b": "b"}
+  ],
+  "result": "result",
+  "analytic": {}
+}

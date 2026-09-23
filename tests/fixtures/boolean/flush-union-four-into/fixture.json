@@ -1,0 +1,13 @@
+{
+  "description": "flush-union's second box pushed four tolerances (4e-7) into the first, fused: one box 80 long, but where the two boxes' side faces overlap on their four common planes the strip between x = 40 − 4e-7 and x = 40 is a face of its own, 4e-7 wide, four tolerances apart from its edges' — Arris keeps what it is given apart by more than a tolerance. The union is a box 80 − 4e-7 long, volume 24000 − 300·4e-7 = 23999.99988 and area 7000 − 80·4e-7 = 6999.999968 in closed form, which Open CASCADE's reading of Arris's STEP gives to 1e-11; Open CASCADE's own fuse measures 23999.99984 and 6999.99996, the far side, so the fixture states volume 3e-9 and area 2e-9 against its 1.7e-9 and 1.1e-9 (plans/c3-tolerance-apart step 9, the band's ends).",
+  "params": {"d": 4e-07, "t": 0, "g": 0},
+  "steps": [
+    {"name": "a", "op": "box", "min": [0, 0, 0], "max": [40, 30, 10]},
+    {"name": "b0", "op": "box", "min": [40, 0, 0], "max": [80, 30, 10]},
+    {"name": "b", "op": "transform", "of": "b0", "rotate": {"axis": [0, 1, 0], "origin": [40, 15, 5], "angle_deg": "degrees(2 * t / 10)"}, "translate": ["-1 * d", "0 * d", "0 * d"]},
+    {"name": "result", "op": "fuse", "a": "a", "b": "b"}
+  ],
+  "result": "result",
+  "tolerances": {"volume_rel": 3e-9, "area_rel": 2e-9},
+  "analytic": {"counts": {"vertices": 16, "edges": 28, "faces": 14, "loops": 14, "shells": 1}, "genus": 0, "counts_differ": "Open CASCADE merges the 4e-7 strip where the two boxes' side faces overlap into the faces beside it (12/20/10/10); Arris keeps it, its two edges four tolerances apart"}
+}

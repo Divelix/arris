@@ -675,7 +675,7 @@ bound has to be established here.
   control-point table and step 6's fixture — the rejected alternatives,
   and the amendment of ADR-0018's and ADR-0019's fit target in its
   header. ADR-0018 and ADR-0019 are left as written (append-only).
-- [ ] Step 9 **[3]** — The band held. `tolerance_band.rs` un-ignored and
+- [x] Step 9 **[3]** — The band held. `tolerance_band.rs` un-ignored and
   asserting: every outcome is the flush body, the generic body or one of
   the named refusals (`TangentContact`, `NonManifold`,
   `BesideSingularity`, `OpError::Tolerance`) — never `Internal`, never
@@ -687,6 +687,108 @@ bound has to be established here.
   oracle merges what Arris keeps apart. What still fails is a
   `regression/` fixture and a backlog line each, listed in this plan
   under the step for `/retire-plan` to carry.
+
+  **Done 2026-09-23.** `tolerance_band.rs` asserts in two tests, and
+  the survey stays the recorder, ignored.
+  `the_band_is_held_where_it_holds` (8 shards, `HELD`) covers the cells
+  held in every pose: CoaxialBore under Offset and Tilt, all three
+  booleans, and EdgeOnEdge under Offset, cut only. That contact's fuse
+  at four tolerances in, posed, is L4, a backlog clause with no fixture,
+  since Open CASCADE's own fuse is no closed shell. It is green at 1000
+  cases in 128 s. `the_band_at_the_fixtures_numbers` is a one-way ratchet
+  against `crates/arris-ops/tests/tolerance_band.txt` (blessed with
+  `ARRIS_BLESS=1`) and runs in 36 s. `arris_debug::prop::body::band_pair_of`
+  and `BandContact::ALL` are new public items; `band_pair`'s body moved
+  into `band_pair_from` and draws the same pairs. The corpus runner,
+  `compare.py` and the lint take the fixture's own `genus` under
+  `counts_differ` (the lint closes the oracle's counts at the oracle's
+  genus), and `tests/fixtures/README.md` says so.
+
+  Twenty `boolean/*` fixtures, with oracle values and blessed dumps:
+  - `*-band-ends`: the band's ends that match the oracle.
+  - `*-a-quarter-off`: tangent contacts a quarter of a tolerance off,
+    `counts_differ` as at the contact; tangent-hole's is
+    `expect_error: tangent-contact`.
+  - The four-in ends whose slivers Open CASCADE merges:
+    `flush-union-four-into`, `boss-flush-four-into`,
+    `pin-in-bore-four-out`, `coaxial-fuse-four-off` and `-back`,
+    `edge-touching-four-into`. `boss-flush-four-into` and
+    `flush-union-four-into` state wider volume and area tolerances, with
+    the closed forms in the description; `coaxial-fuse-four-off` is
+    `measure_differs`, a mirror image Open CASCADE measures differently
+    (ADR-0015).
+  - `edge-touching-tilted-cut`, moved from `regression/` by the fix
+    below: the box with a vertex where the tool's edge crosses its edge,
+    `counts_differ`.
+
+  Variants that steps 2 to 5c fixed moved out of their `regression/`
+  fixtures: pipe-elbow's into-1 and grown-half, and tangent-outside's
+  tilt-half. The fixtures were rewritten and their `expected.json`
+  regenerated; pipe-elbow's also gains ±4, which fail on torus sections
+  called degenerate. TangentOutside's "volume past its bound" poses are
+  the measurement's drift with the distance from the origin: unposed the
+  same cut passes every corpus stage, and Open CASCADE reads Arris's STEP
+  as the box to 2.2e-8.
+
+  **Found and fixed, a regression of step 4.** Surveyed at step 1's
+  commit, EdgeOnEdge under Tilt failed about 28 of 112 booleans per op.
+  After step 4 it failed 97, and every op failed with `Split(Turn)` at
+  the fixture's numbers from ±¼ to ±1 tolerance. `along_block` asked
+  only the first face it found a piece on. The block of the box face's
+  section along the box's edge was then imaged on the tool's face, a
+  fraction of a tolerance inside, beside the tool's own edge between the
+  same vertices. Posed, the two edges' crossing is hit at points up to
+  1.3e-6 apart along them (6.4e-9 of a radian), so the pieces end on
+  neighbouring vertices. The fix asks the other face too
+  (`along_boundary`): a block that also lies within the tolerance of an
+  edge of the other face, wherever that edge is paved, is on both
+  boundaries and is neither a section edge nor an image. EdgeOnEdge Tilt
+  fails 31 per op, 26 of them plane against plane a hair off parallel;
+  no other cell of the survey changed. It is ADR-0022's addendum and
+  ARCHITECTURE's along verdict. No blessed dump changed.
+
+  Survey at 256 cases after the fix (the module doc): flush 3444, generic
+  3049, designed refusals 659, failed 3600 of 10 752 (step 1: 4248).
+  - Per step: ±¼ 23–27 %, ±½ 24–28 %, ±1 35–52 %, ±1½ 33–66 %, ±2
+    27–57 %, ±4 25–27 %, ±16 21–23 %.
+  - Per contact: CoaxialBore 0 %, FlushBoxes 11, EdgeOnEdge 11,
+    PinInBore 18, TangentCylinders 20, TangentOutside 35, TangentHole 39,
+    CoaxialRod 53, FlushBoss 54, PipeElbow 76.
+  - By mechanism: 2: 114, 2/4: 899, 4: 360, 5: 81, none 2210.
+
+  At 1000 cases, 13 154 of 43 008 failed (13 577 before the fix).
+
+  **Residue, for `/retire-plan` to carry.** Every class is a
+  `regression/` fixture on a `docs/BACKLOG.md` line, and
+  `tolerance_band.txt` holds each at the fixtures' numbers:
+  - *No verdict a hair off parallel, coincident or tangent* (the
+    backlog's "Two surfaces, a curve and a surface…" line):
+    `flush-union-a-tolerance-off`, `boss-flush-tilted`,
+    `boss-flush-posed-gap-fuse`, `pipe-elbow-a-tolerance-off`,
+    `coaxial-fuse-a-tolerance-off`, `coaxial-fuse-tilted-frame`,
+    `tangent-hole-a-tolerance-out`, `tangent-outside-tilted-posed-fuse`
+    and, new here, `edge-touching-tilted-posed-cut`: the grazing
+    crossing's scattered hits give two vertices where one is desired.
+  - *Slivers the polygons do not resolve* (the "Material a tolerance or
+    two thick…" line): `pin-in-bore-a-tolerance-off`,
+    `tangent-outside-a-tolerance-in`, `tangent-outside-grown-common`,
+    `tangent-cylinders-overlap-common`,
+    `seam-two-tolerances-from-crossing-common`, and the posed
+    edge-on-edge fuse (no fixture).
+  - *The builder and the checker* (the "The builder and the checker
+    refuse…" line): `tangent-hole-fuse`, `coaxial-fuse-a-tolerance-off`,
+    `tangent-cylinders-tilted-fuse`,
+    `tangent-outside-tilted-posed-common`.
+  - *This plan's own mechanisms across the band's poses* (a new line,
+    "The band survey still files failures under c3-tolerance-apart's own
+    mechanisms…"; the attribution is by fault name, not a diagnosis):
+    `flush-union-a-tolerance-off`, `tangent-cylinders-a-tolerance-in`,
+    `pin-in-bore-a-tolerance-off`, `coaxial-fuse-tilted-seam`,
+    `pipe-elbow-posed-fuse`, `tangent-outside-tilted-posed-fuse`,
+    `tangent-hole-tilted-posed-cut`.
+  - *The pinch* (step 7's line): `singular-bore-cut`, refused by name.
+  - Not this plan's: `ball-beside-pole-slice-cut`, `BesideSingularity`
+    (the polygons-by-span line).
 
 ## Acceptance
 

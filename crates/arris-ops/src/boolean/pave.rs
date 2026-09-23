@@ -1803,13 +1803,24 @@ impl<'m> Build<'m> {
             // boundary and its polygons cannot say it is inside: the
             // verdict comes first, and the other face decides the image.
             let (fa, fb) = (&self.faces[0][ia], &self.faces[1][ib]);
-            if let Some((side, edge, block)) = self.along_block(fa, fb, curve, range, start, end) {
-                self.along.push(Along {
-                    pair: pi,
-                    side,
-                    edge,
-                    block,
-                });
+            let along = [(0, fa), (1, fb)].into_iter().find_map(|(side, f)| {
+                self.along_block(side, f, fa, fb, curve, range, start, end)
+                    .map(|(edge, block)| (side, edge, block))
+            });
+            if let Some((side, edge, block)) = along {
+                // Along an edge of the other face as well, wherever that
+                // edge is paved, it is both faces' boundary: each edge's
+                // own piece there, neither a section edge nor an image of
+                // one on the other face.
+                let other = if side == 0 { (1, fb) } else { (0, fa) };
+                if !self.along_boundary(other.0, other.1, fa, fb, curve, range) {
+                    self.along.push(Along {
+                        pair: pi,
+                        side,
+                        edge,
+                        block,
+                    });
+                }
                 continue;
             }
             let Some(uv) = Self::inside_both(fa, fb, curve.point(range.midpoint())) else {
@@ -1905,9 +1916,10 @@ impl<'m> Build<'m> {
                 .is_ok_and(|on| on.distance <= tol.linear)
     }
 
-    /// The piece of an operand edge of `fa` or `fb` that the block
-    /// `range` of `curve`, from section vertex `start` to `end`, lies
-    /// along: a piece between the same two vertices, in either order,
+    /// The piece of an operand edge of `f`, the pair's face of operand
+    /// `side`, that the block `range` of `curve` of the pair `fa`, `fb`,
+    /// from section vertex `start` to `end`, lies along: a piece between
+    /// the same two vertices, in either order,
     /// that every point the model checks the block at lies within the
     /// tolerance of, inside the piece's own range. Two curves of one
     /// surface crossing at a shallow angle twice stay within the
@@ -1919,45 +1931,81 @@ impl<'m> Build<'m> {
     /// verdict is the block's alone, beside the whole-curve one
     /// (`curves_coincide`) the curve's blocks are first held to; `None`
     /// when no piece is along it.
+    #[allow(clippy::too_many_arguments)]
     fn along_block(
         &self,
+        side: usize,
+        f: &FaceInfo<'m>,
         fa: &FaceInfo<'m>,
         fb: &FaceInfo<'m>,
         curve: &Curve,
         range: Interval,
         start: usize,
         end: usize,
-    ) -> Option<(usize, EdgeId, Block)> {
+    ) -> Option<(EdgeId, Block)> {
         let (start, end) = (End::Section(start), End::Section(end));
         let points: Vec<Point3> = samples(range, self.precision.check_samples)
             .into_iter()
             .map(|t| curve.point(t))
             .collect();
-        for (side, f) in [(0, fa), (1, fb)] {
-            for &eid in f.edges() {
-                let Some(e) = self.edge_info(side, eid) else {
+        for &eid in f.edges() {
+            let Some(e) = self.edge_info(side, eid) else {
+                continue;
+            };
+            let within = e.tolerance.max(fa.tolerance.max(fb.tolerance));
+            for block in self.blocks_of(e) {
+                let ends = (self.canonical(block.start), self.canonical(block.end));
+                if ends != (start, end) && ends != (end, start) {
                     continue;
-                };
-                let within = e.tolerance.max(fa.tolerance.max(fb.tolerance));
-                for block in self.blocks_of(e) {
-                    let ends = (self.canonical(block.start), self.canonical(block.end));
-                    if ends != (start, end) && ends != (end, start) {
-                        continue;
-                    }
-                    let lies_along = points.iter().all(|&p| {
-                        e.curve.project(p).is_ok_and(|on| {
-                            on.distance <= within
-                                && e.in_range(on.t)
-                                    .is_some_and(|t| Self::within_block(e, block.range, t))
-                        })
-                    });
-                    if lies_along {
-                        return Some((side, eid, block));
-                    }
+                }
+                let lies_along = points.iter().all(|&p| {
+                    e.curve.project(p).is_ok_and(|on| {
+                        on.distance <= within
+                            && e.in_range(on.t)
+                                .is_some_and(|t| Self::within_block(e, block.range, t))
+                    })
+                });
+                if lies_along {
+                    return Some((eid, block));
                 }
             }
         }
         None
+    }
+
+    /// Whether every point the model checks the block `range` of `curve`
+    /// at lies within the tolerance of an edge of `f`, the face of operand
+    /// `side` of the pair `fa`, `fb`, inside that edge's range: the block
+    /// runs along `f`'s boundary, whatever vertices pave the edges there.
+    /// Two edges crossing at a grazing angle are hit at points scattered
+    /// along them by the rounding over the angle, further apart than a
+    /// tolerance, so the pieces of the two edges need not end on the same
+    /// vertices.
+    fn along_boundary(
+        &self,
+        side: usize,
+        f: &FaceInfo<'m>,
+        fa: &FaceInfo<'m>,
+        fb: &FaceInfo<'m>,
+        curve: &Curve,
+        range: Interval,
+    ) -> bool {
+        let edges: Vec<&EdgeInfo<'m>> = f
+            .edges()
+            .iter()
+            .filter_map(|&eid| self.edge_info(side, eid))
+            .collect();
+        samples(range, self.precision.check_samples)
+            .into_iter()
+            .all(|t| {
+                let p = curve.point(t);
+                edges.iter().any(|e| {
+                    let within = e.tolerance.max(fa.tolerance.max(fb.tolerance));
+                    e.curve
+                        .project(p)
+                        .is_ok_and(|on| on.distance <= within && e.in_range(on.t).is_some())
+                })
+            })
     }
 
     /// `t`, placed in `e`'s range, inside `range` or beyond either end by

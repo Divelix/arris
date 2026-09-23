@@ -1,0 +1,16 @@
+{
+  "description": "flush-union's second box moved along the shared face's normal by a quarter of a tolerance (1e-7), into the first box (d > 0) and away from it (d < 0), and by four away: the flush union within the tolerance, two lumps a gap apart four out. Four in is flush-union-four-into (plans/c3-tolerance-apart step 9, the band's ends).",
+  "params": {"d": 2.5e-08, "t": 0, "g": 0},
+  "variants": {
+    "minus-quarter": {"d": -2.5e-08, "t": 0, "g": 0},
+    "minus-4": {"d": -4e-07, "t": 0, "g": 0}
+  },
+  "steps": [
+    {"name": "a", "op": "box", "min": [0, 0, 0], "max": [40, 30, 10]},
+    {"name": "b0", "op": "box", "min": [40, 0, 0], "max": [80, 30, 10]},
+    {"name": "b", "op": "transform", "of": "b0", "rotate": {"axis": [0, 1, 0], "origin": [40, 15, 5], "angle_deg": "degrees(2 * t / 10)"}, "translate": ["-1 * d", "0 * d", "0 * d"]},
+    {"name": "result", "op": "fuse", "a": "a", "b": "b"}
+  ],
+  "result": "result",
+  "analytic": {}
+}

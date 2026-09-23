@@ -197,3 +197,32 @@ loop hugging a tube circle is walked in `u`, and its turning points'
 cubics, matched to those steps, run the branch up to `7·10⁻⁷` along the
 section from its fit at the same parameter there, on both surfaces — a
 backlog line, a loop walked in `v` throughout.
+
+## Addendum: a block along an edge of each face (plan step 9, 2026-09-23)
+
+Decision 4's block verdict looks at both faces. A section block that lies
+along a piece of an operand edge of one face, and within the tolerance
+of an edge of the other face over its whole length, is on both faces'
+boundaries. Each edge keeps its own piece, and the block is neither a
+section edge nor an image. The other face's edge is not asked to end on
+the same vertices: two edges crossing at a grazing angle are hit at
+points scattered along them by the rounding over the angle, further
+apart than a tolerance, so their pieces can end on neighbouring
+vertices. Imaging the one edge's piece on the other face would lay it a
+fraction of a tolerance inside, beside the face's own edge, and bound a
+sliver of zero area. *Grounds (step 9's survey):* two boxes touching
+along an edge, one turned about the edge's middle by a quarter of a tolerance to one,
+failed every boolean with `Split(Turn)` at the fixture's numbers once
+decision 4 landed. Over the survey's poses 97 of 112 failed per boolean,
+against about 28 before it. One face's section block along the box's
+edge was imaged on the tool's face beside the tool's own edge. Asking
+the other face for an edge between the same two vertices cleared the
+fixture's numbers and brought the poses to 84: posed, the crossing is
+hit at points up to 1.3e-6 apart, and the two edges' pieces end on
+different vertices. Asking it for any edge along the block brought them
+to 31, 26 of those plane against plane a hair off parallel, which is no
+verdict's (the backlog). Over the whole band 3798 failures fell to
+3600, and no other cell of the survey changed. The fuse and common give
+the contact's own outcome, and the cut gives the box with a vertex where
+the two edges cross (`boolean/edge-touching-tilted-cut`). No blessed
+dump changed.

@@ -1,6 +1,10 @@
 {
-  "description": "edge-touching-fuse's boxes, the second turned as in edge-touching-tilted by one tolerance (1e-7) and cut from the first: the result fails the checker (a panic in a debug build): E2, two edges whose curves end 1.41e-7 apart hold one vertex — two points a tolerance and a half apart taken as one without the edge between them going. The desired result is the first box, clean (plans/c3-tolerance-apart step 1, the band survey)",
-  "params": {"d": 0, "t": 0.0000001, "g": 0},
+  "description": "edge-touching-fuse's two boxes, meeting along an edge, moved across it by a quarter of a tolerance (1e-7), into each other (d > 0) and apart (d < 0), and four apart, the first cut by the second: the first box whole each time. Four in is edge-touching-four-into (plans/c3-tolerance-apart step 9, the band's ends).",
+  "params": {"d": 2.5e-08, "t": 0, "g": 0},
+  "variants": {
+    "minus-quarter": {"d": -2.5e-08, "t": 0, "g": 0},
+    "minus-4": {"d": -4e-07, "t": 0, "g": 0}
+  },
   "steps": [
     {"name": "a", "op": "box", "min": [0, 0, 0], "max": [10, 10, 10]},
     {"name": "b0", "op": "box", "min": [10, 10, 0], "max": [20, 20, 10]},

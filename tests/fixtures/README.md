@@ -194,9 +194,11 @@ of the step that made the fixture pass, and a later change to it is a
   counts that differ from Open CASCADE's by a stated convention
   (`boolean/tangent-outside-cut`: Open CASCADE imprints the tangent
   ruling on the touched face, Arris keeps the face whole); `counts` is
-  then required and is Arris's, the runner and `compare.py` hold the
-  result to it, the oracle's counts stay in `expected.json` as the
-  record, and the lint holds both to the Euler line. `inertia` is the
+  then required and is Arris's, and so is `genus` where the convention
+  changes it (`boolean/coaxial-fuse-four-off`: Open CASCADE closes a
+  crescent hole 4e-7 wide), the runner and `compare.py` hold the result
+  to them, the oracle's counts stay in `expected.json` as the record, and
+  the lint holds both to the Euler line. `inertia` is the
   tensor about the centroid at unit density, rows of expressions in
   `expected.json`'s convention (products of inertia negated), checked
   against the oracle's relative to its largest component.

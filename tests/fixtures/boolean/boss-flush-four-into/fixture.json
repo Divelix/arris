@@ -1,0 +1,13 @@
+{
+  "description": "boss-flush's boss pushed four tolerances (4e-7) into the plate, fused: the plate and a boss 10 − 4e-7 tall above it, volume 12000 + 16π(10 − 4e-7) = 12502.654804468 and area 3800 + 8π(10 − 4e-7) = 4051.327402234 in closed form, which Open CASCADE's reading of Arris's STEP gives to 1e-11. Open CASCADE's own fuse measures 12502.654817872 and 4051.327412287, a boss 1.3e-7 in and one a whole 10 tall — the far side, as in frustum-stub-cut-then-fuse — so the fixture states volume 2e-9 and area 5e-9 against its 1.07e-9 and 2.5e-9 (plans/c3-tolerance-apart step 9, the band's ends).",
+  "params": {"d": 4e-07, "t": 0, "g": 0},
+  "steps": [
+    {"name": "a", "op": "box", "min": [0, 0, 0], "max": [40, 30, 10]},
+    {"name": "b0", "op": "cylinder", "base": [20, 15, 10], "axis": [0, 0, 1], "radius": 4, "height": 10},
+    {"name": "b", "op": "transform", "of": "b0", "rotate": {"axis": [1, 0, 0], "origin": [20, 15, 10], "angle_deg": "degrees(2 * t / 8)"}, "translate": ["0 * d", "0 * d", "-1 * d"]},
+    {"name": "result", "op": "fuse", "a": "a", "b": "b"}
+  ],
+  "result": "result",
+  "tolerances": {"volume_rel": 2e-09, "area_rel": 5e-09},
+  "analytic": {}
+}

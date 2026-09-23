@@ -1,59 +1,63 @@
-//! The tolerance band (plans/c3-tolerance-apart): every designed contact
-//! the corpus holds — flush planes, coincident and coaxial cylinders,
-//! tangent walls, a tube circle, an edge on an edge — in a random pose,
-//! one operand moved off it by a fraction of the tolerance to sixteen
-//! tolerances, along the contact's normal, tilted, or grown
-//! ([`prop::body::band_pair`]), and `fuse`, `common` and `cut` run over
-//! each.
+//! The tolerance band (plans/c3-tolerance-apart, ADR-0022): every
+//! designed contact the corpus holds — flush planes, coincident and
+//! coaxial cylinders, tangent walls, a tube circle, an edge on an edge —
+//! in a random pose, one operand moved off it by a fraction of the
+//! tolerance to sixteen tolerances, along the contact's normal, tilted,
+//! or grown ([`prop::body::band_pair`]), and `fuse`, `common` and `cut`
+//! run over each. The outcome per perturbation is the body the contact
+//! itself gives (**flush**), another clean body (**generic**), a named
+//! refusal, an `Internal` fault, checker-red or a panic, and the volume
+//! is compared with the contact's own.
 //!
-//! Step 1 of the plan *records* rather than asserts: the outcome per
-//! perturbation — the body the contact itself gives (**flush**), another
-//! clean body (**generic**), a named refusal, an `Internal` fault,
-//! checker-red, a panic — and the volume against the contact's own. Step
-//! 9 makes it assert. The survey at 256 cases, the default seed, 10752
-//! booleans off their contact (`the_band_survey`):
+//! Two tests assert. `the_band_is_held_where_it_holds` holds the cells
+//! of the band that are held in every pose ([`HELD`]) to the flush body,
+//! a generic body or a designed refusal, and the volume to its bound.
+//! `the_band_at_the_fixtures_numbers` runs each contact unposed at its
+//! fixture's own numbers and holds it to its record,
+//! `tests/tolerance_band.txt`, one way: nothing held may be lost. The
+//! record's failures are the band's residue, each a `regression/` fixture
+//! and a line of `docs/BACKLOG.md`. `the_band_survey` records the whole
+//! band and asserts nothing. At 256 cases, the default seed, 10 752
+//! booleans off their contact, after step 9:
 //!
 //! ```text
 //! outcome          booleans   per step     failed   per contact    failed
-//! flush                3430   ±16          21–23%   CoaxialBore        0%
-//! generic              2612   ±4           27–29%   FlushBoxes        22%
-//! designed refusal      462   ±2           30–66%   EdgeOnEdge        22%
-//!   TangentContact 294        ±1½          35–75%   PinInBore         29%
-//!   Empty 153                 ±1           44–62%   TangentOutside    38%
-//!   NonManifold 15            ±½           36–37%   TangentCylinders  39%
-//! failed               4248   ±¼           33–35%   TangentHole       40%
+//! flush                3444   ±16          21–23%   CoaxialBore        0%
+//! generic              3049   ±4           25–27%   FlushBoxes        11%
+//! designed refusal      659   ±2           27–57%   EdgeOnEdge        11%
+//!   TangentContact 486        ±1½          33–66%   PinInBore         18%
+//!   Empty 153                 ±1           35–52%   TangentCylinders  20%
+//!   NonManifold 20            ±½           24–28%   TangentOutside    35%
+//! failed               3600   ±¼           23–27%   TangentHole       39%
+//!   (step 1: 4248)                                  CoaxialRod        53%
 //!                                                   FlushBoss         54%
-//!                                                   CoaxialRod        58%
 //!                                                   PipeElbow         76%
 //!
-//! failures by the plan step whose mechanism they are (`mechanism`),
-//! with the 64 at TangentHole's own contact (its fuse and common):
-//!   step 2    two points a tolerance apart, one vertex            157
-//!   step 2/4  a section edge ending where nothing else does      1356
-//!   step 4    two curves crossing with no vertex, a seam crossed  459
-//!   step 5    a fit off its branch, S5 between two fits            56
-//!   step 6    two splines of one section compared                   0
-//!   none      no verdict a hair off parallel or tangent:
-//!               Unsupported plane–plane 333, plane–point 69,
-//!               cylinder–plane 60, plane–line 18, circle 18;
-//!               torus sections called degenerate 672;
-//!               a degenerate cylinder frame, an ellipse off
-//!               its surfaces 66, a singular fit 3;
-//!             slivers: NoInterior 449, Hole 13, L4/L2 panics 98;
-//!             the builder and the checker: EdgeUses 434 (64 at
-//!               the contact), NotClosed 5, B1 15, V2/V3 panics 4;
-//!             shells that meet (Lumps) 27                        2284
+//! failures by the plan step whose mechanism the fault's name points at
+//! (`mechanism`), which is not a diagnosis:
+//!   step 2    two points a tolerance apart, one vertex            114
+//!   step 2/4  a section edge ending where nothing else does       899
+//!   step 4    two curves crossing with no vertex, a seam crossed  360
+//!   step 5    a fit off its branch                                 81
+//!   none      no verdict a hair off parallel or tangent (plane–
+//!               plane 366, torus sections called degenerate 672,
+//!               …), slivers (NoInterior 446, L4 96, …), the
+//!               builder and the checker (EdgeUses 288, B1 66, …),
+//!               shells that meet                                 2210
 //!
-//! volume past its bound: 17, every one a posed PipeElbow flush fuse
-//! at a radius off by ¼ or ½ of a tolerance, up to 5.2× the bound and
-//! the same either sign — the measurement's drift with the distance
-//! from the origin (`docs/BACKLOG.md`), not the boolean's.
+//! volume past its bound: 27, posed PipeElbow flush fuses and posed
+//! TangentOutside tilted cuts and fuses at ¼ and ½ of a tolerance — the
+//! measurement's drift with the distance from the origin
+//! (`docs/BACKLOG.md`): unposed, TangentOutside's cut passes every
+//! corpus stage, and Open CASCADE reads Arris's STEP as the box to
+//! 2.2e-8.
 //! ```
 //!
-//! Each failure's distinct kind is a `regression/` fixture, at its
-//! contact fixture's own numbers where it reproduces there
-//! (`the_band_at_the_fixtures_numbers`) and at the survey's where it
-//! does not; the report prints every failure as the recipe it came from.
+//! At step 1 the same survey failed 4248: 157 under step 2's mechanism,
+//! 1356 under 2/4, 459 under 4, 56 under 5 and 2284 none. Each failure's
+//! distinct kind is a `regression/` fixture, at its contact fixture's own
+//! numbers where it reproduces there and at the survey's where it does
+//! not; the report prints every failure as the recipe it came from.
 
 use arris_debug::prop::body::{BAND_STEPS, BandContact, BandMotion, BandPair};
 use arris_debug::testing::REL;
@@ -63,6 +67,7 @@ use arris_ops::arris_check::{Level, check};
 use arris_ops::measure::mass_properties;
 use arris_ops::{Fault, OpError, common, cut, fuse};
 
+use proptest::prop_assert;
 use std::collections::BTreeMap;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Mutex;
@@ -387,7 +392,7 @@ fn survey(pair: &BandPair) -> Vec<Record> {
 /// per contact, motion and boolean, then every distinct failure with the
 /// first pair that shows it.
 #[test]
-#[ignore = "the band survey records and does not assert: plans/c3-tolerance-apart step 9 makes it"]
+#[ignore = "the survey records the whole band, the part not yet held as well, and asserts nothing: run by hand (plans/c3-tolerance-apart)"]
 fn the_band_survey() {
     std::panic::set_hook(Box::new(|_| {}));
     let shards = std::thread::available_parallelism().map_or(8, |n| n.get() as u32);
@@ -727,12 +732,93 @@ fn fixture_pairs() -> Vec<BandPair> {
     out
 }
 
-/// The band at the fixtures' own numbers: per pair and boolean, the class
-/// at every step, the contact's own first.
-#[test]
-#[ignore = "the band survey records and does not assert: plans/c3-tolerance-apart step 9 makes it"]
-fn the_band_at_the_fixtures_numbers() {
-    std::panic::set_hook(Box::new(|_| {}));
+/// The refusals a contact is designed to give, and so what a boolean off
+/// it may give too: a touch the result cannot hold (`TangentContact`, a
+/// shell touching itself, a section beside a singular point), a common
+/// of what only touches (`Empty`, `ZeroThickness`), two vertices of one
+/// operand one point (`Tolerance`).
+const DESIGNED: [&str; 6] = [
+    "TangentContact",
+    "NonManifold",
+    "BesideSingularity",
+    "Empty",
+    "ZeroThickness",
+    "Tolerance",
+];
+
+/// Whether a class is held: the flush body, another clean body, or a
+/// designed refusal.
+fn is_held(class: &str) -> bool {
+    class == "flush"
+        || class == "generic"
+        || class
+            .strip_prefix("refused ")
+            .is_some_and(|r| DESIGNED.contains(&r))
+}
+
+/// Where the band is held, measured at `ARRIS_PROPTEST_CASES=1000` over
+/// every contact, motion and boolean ([`the_band_survey`]): a bore off its
+/// cylinder's axis, moved or turned, under all three booleans, and two
+/// boxes moved across their shared edge, the first cut by the second —
+/// their fuse leaves a sliver face of zero signed area at four
+/// tolerances in (L4) and their common a body B1 refuses, material a
+/// tolerance or two thick. Everything else in the band is the survey's
+/// and `docs/BACKLOG.md`'s.
+const HELD: [(BandContact, BandMotion, &[&str]); 3] = [
+    (
+        BandContact::CoaxialBore,
+        BandMotion::Offset,
+        &["fuse", "common", "cut"],
+    ),
+    (
+        BandContact::CoaxialBore,
+        BandMotion::Tilt,
+        &["fuse", "common", "cut"],
+    ),
+    (BandContact::EdgeOnEdge, BandMotion::Offset, &["cut"]),
+];
+
+/// [`HELD`]'s cells, for [`prop::body::band_pair_of`].
+static HELD_CELLS: [(BandContact, BandMotion); 3] = [
+    (BandContact::CoaxialBore, BandMotion::Offset),
+    (BandContact::CoaxialBore, BandMotion::Tilt),
+    (BandContact::EdgeOnEdge, BandMotion::Offset),
+];
+
+arris_debug::prop_shards! {
+    /// The band where it is held ([`HELD`]): a pair in a random pose, off
+    /// its contact by every step of [`BAND_STEPS`] both ways, gives the
+    /// flush body, another clean body at `Full` or a designed refusal
+    /// under every boolean the cell holds — never a kernel fault, a body
+    /// the checker refuses or a panic — and every body's volume is the
+    /// contact's own within the contact's area, or its line's lens, times
+    /// the offset (`BandPair::volume_bound`).
+    the_band_is_held_where_it_holds
+        [shard_0 shard_1 shard_2 shard_3 shard_4 shard_5 shard_6 shard_7]
+        (pair) = prop::body::band_pair_of(&HELD_CELLS) => {
+            let ops = HELD
+                .iter()
+                .find(|(c, m, _)| *c == pair.contact && *m == pair.motion)
+                .map_or(&[][..], |cell| cell.2);
+            for r in survey(&pair).iter().filter(|r| r.step != 0.0 && ops.contains(&r.op)) {
+                prop_assert!(
+                    is_held(&r.class),
+                    "{:?} {:?} {} at {} tolerances: {}",
+                    r.contact, r.motion, r.op, r.step, r.class
+                );
+                prop_assert!(
+                    r.ratio.is_none_or(|x| x <= 1.0),
+                    "{:?} {:?} {} at {} tolerances: the volume {}× its bound",
+                    r.contact, r.motion, r.op, r.step, r.ratio.unwrap_or(0.0)
+                );
+            }
+            Ok(())
+        }
+}
+
+/// The band at the fixtures' own numbers, a record per pair, boolean and
+/// step, the contact's own first: `pair op step: class`.
+fn at_the_fixtures_numbers() -> Vec<(String, Record)> {
     let pairs = fixture_pairs();
     let lines = Mutex::new(BTreeMap::new());
     std::thread::scope(|scope| {
@@ -740,28 +826,89 @@ fn the_band_at_the_fixtures_numbers() {
             let lines = &lines;
             scope.spawn(move || {
                 let records = survey(pair);
-                let mut text = String::new();
+                let mut rows = Vec::new();
                 for op in ["fuse", "common", "cut"] {
-                    let cells: Vec<String> = records
-                        .iter()
-                        .filter(|r| r.op == op)
-                        .map(|r| format!("{:+}:{}", r.step, r.class))
-                        .collect();
-                    text += &format!(
-                        "{:?} {:?} {op}: {}\n",
-                        pair.contact,
-                        pair.motion,
-                        cells.join(" | ")
-                    );
+                    for r in records.iter().filter(|r| r.op == op) {
+                        let key = format!("{:?} {:?} {op} {:+}", pair.contact, pair.motion, r.step);
+                        rows.push((key, r.clone()));
+                    }
                 }
-                lines.lock().expect("no poisoned survey").insert(i, text);
+                lines.lock().expect("no poisoned survey").insert(i, rows);
             });
         }
     });
+    lines
+        .into_inner()
+        .expect("no poisoned survey")
+        .into_values()
+        .flatten()
+        .collect()
+}
+
+/// Where [`the_band_at_the_fixtures_numbers`] keeps its record.
+fn record_path() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/tolerance_band.txt")
+}
+
+/// Each contact at its fixture's own numbers, unposed, under every motion
+/// that moves it ([`fixture_pairs`]), off it by every step both ways —
+/// where the survey's failures were shrunk to — held to its record,
+/// `tests/tolerance_band.txt`, one way: an outcome the record holds (the
+/// flush body, another clean body, a designed refusal) stays exactly
+/// that, and every body's volume is within its bound, unposed so that the
+/// measurement's own drift with the distance from the origin
+/// (`docs/BACKLOG.md`) is not in it. A failure the record keeps may turn
+/// into a held outcome; the test then says so, and `ARRIS_BLESS=1`
+/// writes the record again. The record's failures are the band's
+/// residue, each a `regression/` fixture and a line of `docs/BACKLOG.md`
+/// (plans/c3-tolerance-apart step 9).
+#[test]
+fn the_band_at_the_fixtures_numbers() {
+    std::panic::set_hook(Box::new(|_| {}));
+    let rows = at_the_fixtures_numbers();
     let _ = std::panic::take_hook();
-    for text in lines.into_inner().expect("no poisoned survey").values() {
-        print!("{text}");
+    let text: String = rows
+        .iter()
+        .map(|(key, r)| format!("{key}: {}\n", r.class))
+        .collect();
+    if std::env::var_os(arris_debug::corpus::BLESS_VAR).is_some() {
+        std::fs::write(record_path(), &text).expect("the record is written");
+        return;
     }
+    let record = std::fs::read_to_string(record_path()).expect("the record is committed");
+    let recorded: BTreeMap<&str, &str> =
+        record.lines().filter_map(|l| l.split_once(": ")).collect();
+    let mut lost = Vec::new();
+    let mut gained = Vec::new();
+    for (key, r) in &rows {
+        match recorded.get(key.as_str()) {
+            Some(&was) if is_held(was) && was != r.class => {
+                lost.push(format!("{key}: {was} → {}", r.class));
+            }
+            Some(&was) if !is_held(was) && is_held(&r.class) => {
+                gained.push(format!("{key}: {was} → {}", r.class));
+            }
+            None => lost.push(format!("{key}: not in the record")),
+            _ => {}
+        }
+        if r.ratio.is_some_and(|x| x > 1.0) {
+            lost.push(format!(
+                "{key}: the volume {}× its bound",
+                r.ratio.unwrap_or(0.0)
+            ));
+        }
+    }
+    assert!(
+        lost.is_empty(),
+        "the band at the fixtures' numbers lost what it held:\n{}",
+        lost.join("\n")
+    );
+    assert!(
+        gained.is_empty(),
+        "the band at the fixtures' numbers holds more than its record; bless it with {}=1:\n{}",
+        arris_debug::corpus::BLESS_VAR,
+        gained.join("\n")
+    );
 }
 
 /// A number as the recipe grammar reads it.
