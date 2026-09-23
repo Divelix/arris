@@ -620,9 +620,17 @@ bound has to be established here.
   boolean section and error table name the case. The check runs on every
   boolean: the workspace at 1000 cases is green at 1169 tests, so no
   other result closes into two fans.
-- [ ] Step 8 **[1]** — ADR-0022, indexed in `docs/adr/README.md`, with
+- [x] Step 8 **[1]** — ADR-0022, indexed in `docs/adr/README.md`, with
   the measurements of steps 2, 4 and 5b as its grounds and the amendment
   of ADR-0018/0019's fit target stated as such.
+
+  **Done 2026-09-23.** `docs/adr/0022-the-same-within-a-tolerance-is-an-equivalence.md`,
+  indexed: seven decisions, one per mechanism of steps 2 to 7, each with
+  its grounds — the 72 710 unchanged vertices of step 2, the 3802 moved
+  pcurve ends of step 2b, step 4's crossing found to 5e-12, step 5b's
+  control-point table and step 6's fixture — the rejected alternatives,
+  and the amendment of ADR-0018's and ADR-0019's fit target in its
+  header. ADR-0018 and ADR-0019 are left as written (append-only).
 - [ ] Step 9 **[3]** — The band held. `tolerance_band.rs` un-ignored and
   asserting: every outcome is the flush body, the generic body or one of
   the named refusals (`TangentContact`, `NonManifold`,
