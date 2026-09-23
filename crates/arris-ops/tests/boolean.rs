@@ -1905,3 +1905,38 @@ fn a_section_beside_a_pole_is_refused_by_name() {
         "the model is as it was"
     );
 }
+
+/// A drill touching the main wall from inside at a singular point of
+/// their section leaves the wall two pieces meeting only at that vertex,
+/// pinched between the drill's exits: one shell touching itself at a
+/// point, which a manifold `Solid` does not hold. The cut is
+/// `Reason::NonManifold` naming the vertex by the two faces whose section
+/// made it — it was `Internal`, the builder unable to close the shell —
+/// and the model is as it was (`regression/singular-bore-cut`).
+#[test]
+fn a_wall_pinched_at_a_singular_point_is_non_manifold() {
+    let (mut m, main, drill) = inputs("regression/singular-bore-cut");
+    let i = interferences(&m, main, drill).unwrap();
+    // The singular vertex: at (0, R, 0), where the drill touches the wall.
+    let touch = Point3::new(0.0, 1.0, 0.0);
+    let v = i
+        .vertices
+        .iter()
+        .find(|v| (v.point - touch).norm() <= v.tolerance)
+        .expect("a section vertex at the touch");
+    assert_eq!(v.source, VertexSource::SectionCrossing);
+    let pair = &i.pairs[i.section_crossings[v.section_crossings[0]].pair];
+    let named = vec![
+        Shape::new(pair.a, Orientation::Forward),
+        Shape::new(pair.b, Orientation::Forward),
+    ];
+    let before = arris_debug::dump_text(&m, main).unwrap();
+    match cut(&mut m, main, drill) {
+        Err(OpError::Degenerate {
+            reason: Reason::NonManifold,
+            entities,
+        }) => assert_eq!(entities, named),
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(arris_debug::dump_text(&m, main).unwrap(), before);
+}

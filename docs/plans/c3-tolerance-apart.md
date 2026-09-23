@@ -596,7 +596,7 @@ bound has to be established here.
   `quadric_operands_obey_every_identity` green at 1000, and the
   workspace at 1000 cases green at 1168 tests. No blessed dump changed
   but the fixture's own.
-- [ ] Step 7 **[2]** — The pinch is refused by name (open question 1).
+- [x] Step 7 **[2]** — The pinch is refused by name (open question 1).
   `singular-bore-cut`: a result vertex whose face uses close into more
   than one fan is found in `result.rs` before `assemble` and returned as
   `OpError::Degenerate { reason: Reason::NonManifold }` naming the vertex,
@@ -605,6 +605,21 @@ bound has to be established here.
   the fixture stays in `regression/` holding the desired body, its
   `#[ignore]` reason restated; a backlog line for a shell that touches
   itself at a vertex, with the `General` body.
+
+  **Done 2026-09-23.** `pinched` in `result.rs`, asked at the end of
+  `shells` beside the two-lump checks: per result vertex, the corners of
+  the kept pieces' loops there — a use arriving and the next leaving —
+  joined wherever two share an edge piece; more than one fan is
+  `Degenerate { reason: NonManifold }` naming the vertex as the other
+  refusals do, a section vertex by the faces and edges that made it —
+  here the main wall and the drill's, the singular point's section
+  crossing. `a_wall_pinched_at_a_singular_point_is_non_manifold` asserts
+  the refusal, its entities and the model unchanged; the fixture stays in
+  `regression/`, its ignore reason restated; the backlog line is the
+  `General` body's. `Reason::NonManifold`'s doc and ARCHITECTURE's
+  boolean section and error table name the case. The check runs on every
+  boolean: the workspace at 1000 cases is green at 1169 tests, so no
+  other result closes into two fans.
 - [ ] Step 8 **[1]** — ADR-0022, indexed in `docs/adr/README.md`, with
   the measurements of steps 2, 4 and 5b as its grounds and the amendment
   of ADR-0018/0019's fit target stated as such.

@@ -328,11 +328,11 @@ fn regression_seam_two_tolerances_from_crossing_common() {
 }
 
 /// A drill touching the main wall from inside, at a singular point of the
-/// traced section: the pave model makes the point one vertex that ends
-/// both branches, and the main wall is left two pieces meeting only
-/// there.
+/// traced section: the pave model makes the point one section vertex
+/// that ends both branches, and the main wall is left two pieces meeting
+/// only there — one shell touching itself at a point.
 #[test]
-#[ignore = "OpError::Internal, BuildError::NotClosed: the main wall's two pieces meet only at the singular vertex, pinched between the drill's exits, and the builder cannot close the shell there (docs/BACKLOG.md, features a tolerance apart)"]
+#[ignore = "OpError::Degenerate, Reason::NonManifold naming the singular vertex: the main wall's two pieces meet only there, pinched between the drill's exits, a shell touching itself at a point that a manifold Solid does not hold; the desired body is a General one (docs/BACKLOG.md, a shell touching itself at a vertex)"]
 fn regression_singular_bore_cut() {
     run("regression/singular-bore-cut");
 }

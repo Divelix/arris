@@ -80,10 +80,13 @@ pub enum Reason {
     /// the other face of the pair and the singular vertex.
     BesideSingularity,
     /// The result's shells would touch along an edge or at a vertex — an
-    /// edge used by four faces, a vertex two lumps share, a full revolve's
-    /// profile touching its axis at a vertex with no segment along it —
-    /// which a manifold `Solid`'s shells never do (ADR-0006); the error's
-    /// entities are the shared edges or vertices, none for a sweep. A body
+    /// edge used by four faces, a vertex two lumps share, a shell touching
+    /// itself at a vertex where its faces close into more than one fan, a
+    /// full revolve's profile touching its axis at a vertex with no
+    /// segment along it — which a manifold `Solid`'s shells never do
+    /// (ADR-0006); the error's entities are the shared edges or vertices —
+    /// a section vertex named by the edges and faces whose hits and
+    /// crossings made it — none for a sweep. A body
     /// that touches itself so is a `General` one, which no operation builds
     /// yet.
     NonManifold,

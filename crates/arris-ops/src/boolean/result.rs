@@ -943,7 +943,81 @@ impl<'m> Build<'m> {
                 reason: Reason::NonManifold,
             });
         }
+        // One shell touching itself at a vertex is the same statement: the
+        // faces round the vertex close into more than one fan — a wall
+        // left two pieces that meet only at a singular point of the
+        // section, pinched between a drill's two exits — which no
+        // manifold `Solid` holds (plans/c3-tolerance-apart, open
+        // question 1).
+        if let Some(v) = self.pinched() {
+            return Err(OpError::Degenerate {
+                entities: self
+                    .vertex_entities(v)
+                    .into_iter()
+                    .collect::<BTreeSet<_>>()
+                    .into_iter()
+                    .collect(),
+                reason: Reason::NonManifold,
+            });
+        }
         Ok(shells)
+    }
+
+    /// The first vertex, in `VRef` order, whose kept face uses close into
+    /// more than one fan: the corners there — a use arriving at the
+    /// vertex and the next leaving it, in one loop of one piece — joined
+    /// wherever two share an edge piece. A manifold vertex's corners are
+    /// one fan, a disc round it; `None` when every vertex's are.
+    fn pinched(&self) -> Option<VRef> {
+        let ends = |u: &PieceUse| {
+            let [a, b] = self.edge_ends(u.edge)?;
+            Some(if u.orientation.is_reversed() {
+                [b, a]
+            } else {
+                [a, b]
+            })
+        };
+        // Per vertex, its corners as the two edge pieces of each.
+        let mut corners: BTreeMap<VRef, Vec<[ERef; 2]>> = BTreeMap::new();
+        for piece in &self.kept {
+            for l in &piece.loops {
+                for (k, u) in l.iter().enumerate() {
+                    let Some(next) = l.get((k + 1) % l.len()) else {
+                        continue;
+                    };
+                    let Some([_, v]) = ends(u) else {
+                        continue;
+                    };
+                    corners.entry(v).or_default().push([u.edge, next.edge]);
+                }
+            }
+        }
+        corners.into_iter().find_map(|(v, cs)| {
+            let mut parent: Vec<usize> = (0..cs.len()).collect();
+            fn root(parent: &mut [usize], mut i: usize) -> usize {
+                while parent[i] != i {
+                    parent[i] = parent[parent[i]];
+                    i = parent[i];
+                }
+                i
+            }
+            let mut owner: BTreeMap<ERef, usize> = BTreeMap::new();
+            for (k, c) in cs.iter().enumerate() {
+                for e in c {
+                    match owner.get(e) {
+                        Some(&j) => {
+                            let (a, b) = (root(&mut parent, k), root(&mut parent, j));
+                            parent[a] = b;
+                        }
+                        None => {
+                            owner.insert(*e, k);
+                        }
+                    }
+                }
+            }
+            let fans = (0..cs.len()).filter(|&k| root(&mut parent, k) == k).count();
+            (fans > 1).then_some(v)
+        })
     }
 
     /// The vertices at the two ends of an edge piece, `None` for a piece
