@@ -48,8 +48,8 @@ use arris_ops::{
 use crate::dump::dump_text;
 use crate::fixtures::geom::{self as geom_spec, build_profile};
 use crate::fixtures::{
-    self, Class, Counts, ExpectError, ExprError, Fixture, FixtureError, Measured, Num, Rotate,
-    Step, Tolerances,
+    self, Class, Counts, ExpectError, Expected, ExprError, Fixture, FixtureError, Measured, Num,
+    Recipe, Rotate, Step, Tolerances,
 };
 use crate::oracle::{self, OracleError};
 use sha2::{Digest, Sha256};
@@ -430,19 +430,52 @@ fn model_for(fixture: &Fixture) -> Result<Model, CorpusError> {
 /// assert!(!chain.steps["result"].provenance.is_empty());
 /// ```
 pub fn chain(dir: &Path, variant: &str) -> Result<Chain, CorpusError> {
-    let fixture = fixtures::load(dir)?;
+    chain_of(&fixtures::load(dir)?, variant)
+}
+
+/// [`chain`] for a recipe with no directory and no oracle answer yet — a
+/// generated one (`prop::recipe`) — built under its `default` variant;
+/// `name` is what its errors call it. Errors: as [`chain`]'s, and every
+/// one but [`CorpusError::Op`] says the recipe itself is malformed.
+///
+/// ```
+/// use arris_debug::corpus;
+/// use arris_debug::fixtures::Recipe;
+///
+/// let recipe: Recipe = serde_json::from_str(
+///     r#"{"steps": [{"op": "box", "name": "b", "min": [0, 0, 0], "max": [1, 2, 3]}], "result": "b"}"#,
+/// )
+/// .unwrap();
+/// assert!(corpus::build("generated/box", &recipe).unwrap().result().is_some());
+/// ```
+pub fn build(name: &str, recipe: &Recipe) -> Result<Chain, CorpusError> {
+    let fixture = Fixture {
+        dir: PathBuf::new(),
+        name: name.to_string(),
+        recipe: recipe.clone(),
+        recipe_sha256: String::new(),
+        expected: Expected {
+            occt: String::new(),
+            recipe_sha256: String::new(),
+            results: BTreeMap::new(),
+        },
+    };
+    chain_of(&fixture, "default")
+}
+
+fn chain_of(fixture: &Fixture, variant: &str) -> Result<Chain, CorpusError> {
     let Some(params) = fixture.recipe.params_of(variant) else {
         return Err(CorpusError::Variant {
             fixture: fixture.name.clone(),
             variant: variant.to_string(),
         });
     };
-    let mut model = model_for(&fixture)?;
+    let mut model = model_for(fixture)?;
     let mut steps = BTreeMap::new();
     let mut profiles = BTreeMap::new();
     build_all(
         &mut model,
-        &fixture,
+        fixture,
         &params,
         None,
         &mut steps,

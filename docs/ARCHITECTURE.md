@@ -1316,10 +1316,16 @@ B-Rep).
   it, the chords beside that side closing at a cone's apex or a sphere's
   pole, whose segments sweep cones both ways, spheres and tori,
   the last two each given as a `Sweep` with the axis, a revolve angle and an extrude
-  length; and `prop::sweep`, Pappus's
+  length; `prop::sweep`, Pappus's
   theorems as the oracle a sweep's volume and area are held to, taken
   in the profile's plane by `region_integral` and a quadrature over its
-  boundary, an independent path from `measure`'s flux). `prop` runs a
+  boundary, an independent path from `measure`'s flux; and
+  `prop::recipe`, whole corpus recipes — two to four boxes, cylinders and
+  swept sketches, a box or cylinder edge blended first, each placed near
+  the others under a shared pose and chained by one to three booleans,
+  probed at every operand's centre and just in and out of its faces —
+  which `corpus::build` builds without a directory or an oracle answer,
+  ADR-0024's differential over both kernels). `prop` runs a
   property whole through `check`, or split across `k` shards through
   `prop_shards!`, which writes one `#[test]` per shard over a body given
   once so libtest's pool runs them at once instead of one property holding

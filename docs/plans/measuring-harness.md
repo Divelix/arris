@@ -131,7 +131,7 @@ bound has to be established here.
     process spawns nothing. A `Mismatch` is not cached.
   - Measured: `tools/test-timings.sh` on the corpus binary, cold and warm,
     with both numbers in the commit body.
-- [ ] Step 3 **[2]** — **The recipe strategy** (`prop::recipe`). It draws
+- [x] Step 3 **[2]** — **The recipe strategy** (`prop::recipe`). It draws
   from the eleven operations:
   - boxes, cylinders and `profile` → `extrude`/`revolve` from the existing
     profile strategies;
@@ -145,8 +145,16 @@ bound has to be established here.
   
   Test: every drawn recipe survives the serde round trip, passes the
   fixture loader, hashes identically to `recipe_hash` on the Python side
-  for one sample, and builds in Arris to `Ok` or a typed error with no
-  panic, at the hook's case count.
+  for one sample, and builds in Arris to `Ok` or a typed error — never
+  a malformed recipe's error — at the hook's case count, its probes
+  classified against each operand as labelled.
+  
+  *Found at step 3:* the draw reaches kernel panics at the hook's count —
+  the debug build's checker guard, L4 — so the test lets a panic pass as
+  not the draw's fault, and "no panic" is held by steps 4–5, which were
+  always where a `Panic` or `CheckerViolation` fails the run. The first
+  two are shrunk to `regression/tilted-cylinder-slot-cut` and
+  `pin-at-disc-rim-common-fuse`.
 - [ ] Step 4 **[3]** — **The differential runner.**
   - Flow: N seeded recipes are written as scratch fixtures, and one
     `expected_batch` call answers all of them. Each recipe then runs
@@ -305,6 +313,16 @@ here and recorded by step 1's ADR:
   unpublished and not bound by the kernel crates' `forbid(unsafe_code)`.
 - A nightly failure shows as a red run and nothing else. It opens no issue,
   because anything posted outward is the human's call.
+
+Found while executing:
+
+- Step 3's property could not also assert "no kernel panic": the first
+  draw at 256 cases meets the checker's L4 guard. The assertion lives in
+  the differential (steps 4–5); step 3 holds the generator only.
+- The oracle refuses a draw that cuts an elliptic extrusion with a curved
+  trim (the backlog's surface-of-extrusion line): a steady source of
+  `OracleRefuses`, and why step 3's hash sample takes the first draw the
+  oracle builds.
 
 One number is left open by design: the nightly case count is set from
 step 6's measured wall clock, not guessed now.

@@ -112,7 +112,7 @@ pub struct Probe {
     pub point: [Num; 3],
     /// The classification the fixture's author expects, if the answer is
     /// the same in every variant; `None` leaves it to the oracle.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expect: Option<Class>,
 }
 
@@ -217,7 +217,7 @@ pub struct Rotate {
     /// The axis direction.
     pub axis: [Num; 3],
     /// A point on the axis; the origin if absent.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin: Option<[Num; 3]>,
     /// The angle in degrees, right-handed about `axis`.
     pub angle_deg: Num,
@@ -290,10 +290,10 @@ pub enum Step {
         /// The step transformed.
         of: String,
         /// Translation.
-        #[serde(default)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         translate: Option<[Num; 3]>,
         /// Rotation.
-        #[serde(default)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         rotate: Option<Rotate>,
     },
     /// Boolean union.
@@ -535,15 +535,20 @@ pub struct Analytic {
     /// The result has no volume (Arris: `OpError::Degenerate`).
     pub degenerate: bool,
     /// Arris refuses the result the oracle builds, with this error.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub expect_error: Option<ExpectError>,
     /// Volume.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub volume: Option<Num>,
     /// Surface area.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub area: Option<Num>,
     /// Centroid.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub centroid: Option<[Num; 3]>,
     /// Entity counts: the oracle's, cross-checked by the lint — or, with
     /// `counts_differ`, Arris's.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub counts: Option<Counts>,
     /// Why Arris's counts differ from the oracle's by a stated convention
     /// (`boolean/tangent-outside-cut`: Open CASCADE imprints the tangent
@@ -552,11 +557,13 @@ pub struct Analytic {
     /// oracle's `compare.py` hold the result to; the oracle's counts stay
     /// in `expected.json` as the record, and the lint holds both to the
     /// Euler line with `genus`.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub counts_differ: Option<String>,
     /// The inertia tensor about the centroid at unit density, as rows, in
     /// `expected.json`'s convention (the products of inertia negated).
     /// Cross-checked against the oracle's like the other closed forms;
     /// required under `measure_differs`.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub inertia: Option<[[Num; 3]; 3]>,
     /// Why the oracle's measurements of this result are wrong, and the
     /// closed forms right (ADR-0015: a motion that is the identity on the
@@ -565,6 +572,7 @@ pub struct Analytic {
     /// the oracle's `compare.py` hold the result to; the oracle's values
     /// stay in `expected.json` as the record, and the lint requires at
     /// least one of them to differ from its closed form in every variant.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub measure_differs: Option<String>,
     /// Why Open CASCADE's own STEP of this result does not read back as
     /// the result (ADR-0023: its reader hands back other counts or
@@ -572,8 +580,10 @@ pub struct Analytic {
     /// it, and skips that round trip; the runner and `compare.py` still
     /// read Arris's STEP of the result back through Open CASCADE and hold
     /// it to `expected.json`, so nothing Arris is held to changes.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub step_differs: Option<String>,
     /// Genus.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub genus: Option<i64>,
 }
 

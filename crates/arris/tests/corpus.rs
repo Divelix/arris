@@ -606,6 +606,22 @@ fn regression_edge_touching_tilted_posed_cut() {
     run("regression/edge-touching-tilted-posed-cut");
 }
 
+/// A tilted cylinder less a slab whose rectangle crosses its section on
+/// all four sides (prop::recipe's draw, shrunk).
+#[test]
+#[ignore = "the cut's output fails the checker's L4 (a hole loop outside every outer loop), a debug-build panic (docs/BACKLOG.md, the recipe draw's L4 findings)"]
+fn regression_tilted_cylinder_slot_cut() {
+    run("regression/tilted-cylinder-slot-cut");
+}
+
+/// A disc in common with a pin crossing its wall, fused with a parallel
+/// thinner disc (prop::recipe's draw, shrunk).
+#[test]
+#[ignore = "the fuse's output fails the checker's L4 (a hole loop outside every outer loop), a debug-build panic (docs/BACKLOG.md, the recipe draw's L4 findings)"]
+fn regression_pin_at_disc_rim_common_fuse() {
+    run("regression/pin-at-disc-rim-common-fuse");
+}
+
 /// A tee of equal radii: the branch's rim circle touches the main wall
 /// exactly at the two crossing vertices, and each touch cuts the rim
 /// there.

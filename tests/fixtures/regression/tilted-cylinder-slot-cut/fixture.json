@@ -1,0 +1,88 @@
+{
+  "description": "a cylinder r 9, h 18, turned 101.36\u00b0 about a skew axis, less a slab 1 \u00d7 19.4 \u00d7 9.2 posed off its centre: the cut's output fails the checker's L4 (a face's hole loop outside every outer loop), a debug-build panic where Open CASCADE builds one shell of nine faces. Drawn by prop::recipe (plans/measuring-harness step 3) and shrunk by hand to rounder numbers; 101.4\u00b0 instead of 101.36\u00b0, or either translation dropped, builds",
+  "steps": [
+    {
+      "op": "cylinder",
+      "name": "b0",
+      "base": [
+        0.0,
+        0.0,
+        -9.0
+      ],
+      "axis": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "radius": 9.0,
+      "height": 18.0
+    },
+    {
+      "op": "transform",
+      "name": "o0",
+      "of": "b0",
+      "translate": [
+        1.12,
+        1.95,
+        1.64
+      ],
+      "rotate": {
+        "axis": [
+          -0.555,
+          -0.033,
+          -0.831
+        ],
+        "angle_deg": 101.36
+      }
+    },
+    {
+      "op": "box",
+      "name": "b1",
+      "min": [
+        -0.5,
+        -9.7,
+        -4.6
+      ],
+      "max": [
+        0.5,
+        9.7,
+        4.6
+      ]
+    },
+    {
+      "op": "transform",
+      "name": "o1",
+      "of": "b1",
+      "translate": [
+        3.9,
+        2.4,
+        -1.9
+      ]
+    },
+    {
+      "op": "cut",
+      "name": "r1",
+      "target": "o0",
+      "tool": "o1"
+    }
+  ],
+  "result": "r1",
+  "probes": [
+    {
+      "label": "cylinder-centre",
+      "point": [
+        1.12,
+        1.95,
+        1.64
+      ]
+    },
+    {
+      "label": "slab-centre",
+      "point": [
+        3.9,
+        2.4,
+        -1.9
+      ]
+    }
+  ]
+}
