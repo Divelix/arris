@@ -9,7 +9,10 @@
 //! **singular points**. Between them the section is a graph `v(u)`, and a
 //! branch is such graphs joined through their turning points by ADR-0018's
 //! device, `u = u_T ± L(1 − cos θ)`, which takes the square root out of a
-//! turn: one smooth callable, closed or open, as a ruled pair's is.
+//! turn: one smooth callable, closed or open, as a ruled pair's is. Inside
+//! a turning point's cell a graph is evaluated along `v` from that square
+//! root, and not along `u`, where a rounding in `u` is its square root
+//! along the curve (`Fold`).
 //!
 //! What a ruled pair has in closed form — the root a ruling's quadratic
 //! gives — is here the root of the other surface's signed distance along
@@ -167,6 +170,17 @@ const GOLDEN_STEPS: usize = 40;
 /// is put, and a branch seeded on `u = 0` then starts on the circle and
 /// not a rounding away from it.
 const EDGE_SNAP: f64 = 1e-9;
+
+/// How far from a turning point in `v` its arms are walked in `v`
+/// ([`Fold`]), in radians. The root along `u` is `√ε` off within about
+/// `√ε` of the turn, and at a thousandth of a radian it is good to
+/// `ε / 10⁻³` again; the cubic in `√off` meets the arm there in value and
+/// slope and not in curvature, a break a fitted section spends control
+/// points on, which the nearer the turn it is the less it weighs: over a
+/// whole turning point's cell the torus fixtures' loops took up to four
+/// times their control points, and at `10⁻²` to `10⁻⁴` the same as the
+/// walk along `u`. A reach, not a tolerance.
+const FOLD_REACH: f64 = 1e-3;
 
 /// The step of the central differences that give the gradient of the
 /// distance with a tube circle divided out of it
@@ -420,6 +434,18 @@ impl Walker {
         newton_in_interval(slope, curvature, bracket, 0.0).unwrap_or(model.clamp(lo, hi))
     }
 
+    /// `(u, v)` beside a turning point, `off` from it in `u` along the
+    /// arm `fold` is: `v` from `√off`, and `u` the root along that line of
+    /// constant `v`, which the turning point's cell holds alone and which
+    /// is well conditioned there, where the root along `u` is not.
+    fn beside(&self, fold: &Fold, off: f64) -> Option<[f64; 2]> {
+        let r = off.sqrt();
+        let [a1, a2, a3] = fold.coeffs;
+        let v = fold.at[1] + r * (a1 + r * (a2 + r * a3));
+        let u = self.root_u(v, fold.span[0], fold.span[1])?;
+        Some([u, v])
+    }
+
     /// `v` on `arc` at `u`.
     fn v_on(&self, arc: &TorusArc, u: f64) -> f64 {
         let i = arc
@@ -483,6 +509,37 @@ pub(crate) struct TorusArc {
     cells: Vec<Cell>,
     /// `(u, v)` where the march started and where it ended.
     ends: [[f64; 2]; 2],
+    /// How the graph is evaluated beside a turning point it ends at.
+    folds: [Option<Fold>; 2],
+}
+
+/// An arm of a turning point, as the graph ending there is evaluated
+/// inside the point's cell: by `v` and not by `u`.
+///
+/// At a turn the section is tangent to the line of constant `u`, so the
+/// root along it moves by `√ε` for a rounding `ε` in `u`, and two arms
+/// each finding the turn's `v` from its `u` end that far apart. Along the
+/// line of constant `v` the root is well conditioned all over the cell
+/// (its certificate is `∂f/∂u` of one sign), so the arm is walked in `v`:
+/// `v − v_T = a₁r + a₂r² + a₃r³` in `r = √off`, `off` the offset from the
+/// turn in `u` as the branch's parameter gives it — smooth through the
+/// turn, as `Arc1`'s parameter makes `√off` — and `u` the root along that
+/// `v`, as far as [`FOLD_REACH`] or the cell's edge. Both arms are `v_T`
+/// at the turn itself, one point; `a₁` is the fold's own, `(u − u_T) ≈
+/// c·(v − v_T)²`, the same for the two arms, so the branch is smooth
+/// through the turn; `a₂` and `a₃` meet the walk along `u` and its slope
+/// where it takes over, so the branch is smooth there too.
+#[derive(Debug, Clone, Copy)]
+struct Fold {
+    /// The turning point, in the graph's angles.
+    at: [f64; 2],
+    /// How far from it in `u` the arm is walked in `v`: to where the
+    /// walk along `u` takes over.
+    reach: f64,
+    /// `[a₁, a₂, a₃]`, signed towards the arm.
+    coeffs: [f64; 3],
+    /// The turning point's cell in `u`, where the root along `v` is.
+    span: [f64; 2],
 }
 
 /// The arcs of one branch in the order it runs through them, each with
@@ -497,26 +554,46 @@ pub(crate) struct TorusWalk {
 }
 
 impl TorusWalk {
-    /// The point of arc `i` at `u`, in that arc's own angles.
-    pub(crate) fn point(&self, i: usize, u: f64) -> Point3 {
-        match self.arcs.get(i) {
-            Some(arc) => self.walker.torus.point(u, self.walker.v_on(arc, u)),
-            None => self.walker.torus.point(0.0, 0.0),
+    /// `(u, v)` of arc `i` at the walked angle `u`, in that arc's own
+    /// angles; `anchor` is the turning point `u` is measured from and
+    /// half the offset, as `Arc1::angle` gives them.
+    fn local(&self, i: usize, u: f64, anchor: Option<(f64, f64)>) -> Option<[f64; 2]> {
+        let arc = self.arcs.get(i)?;
+        if let Some((turn, half)) = anchor {
+            let off = 2.0 * half.abs();
+            let fold = (arc.folds.iter().flatten()).find(|f| f.at[0] == turn && off <= f.reach);
+            if let Some(uv) = fold.and_then(|fold| self.walker.beside(fold, off)) {
+                return Some(uv);
+            }
         }
+        Some([u, self.walker.v_on(arc, u)])
     }
 
-    /// `(u, v)` of arc `i` at `u`, in the branch's angles; `at_end` says
-    /// the parameter is the branch's start or its end.
-    pub(crate) fn uv(&self, i: usize, u: f64, at_end: [bool; 2]) -> Point2 {
+    /// The point of arc `i` at `u`, measured from `anchor`.
+    pub(crate) fn point(&self, i: usize, u: f64, anchor: Option<(f64, f64)>) -> Point3 {
+        let [u, v] = self.local(i, u, anchor).unwrap_or([0.0; 2]);
+        self.walker.torus.point(u, v)
+    }
+
+    /// `(u, v)` of arc `i` at `u`, measured from `anchor`, in the
+    /// branch's angles; `at_end` says the parameter is the branch's start
+    /// or its end.
+    pub(crate) fn uv(
+        &self,
+        i: usize,
+        u: f64,
+        anchor: Option<(f64, f64)>,
+        at_end: [bool; 2],
+    ) -> Point2 {
         for (pin, at) in self.pins.iter().zip(at_end) {
             if let (Some([u, v]), true) = (pin, at) {
                 return Point2::new(*u, *v);
             }
         }
-        let (Some(arc), Some(shift)) = (self.arcs.get(i), self.shifts.get(i)) else {
+        let (Some([u, v]), Some(shift)) = (self.local(i, u, anchor), self.shifts.get(i)) else {
             return Point2::origin();
         };
-        Point2::new(u + shift[0], self.walker.v_on(arc, u) + shift[1])
+        Point2::new(u + shift[0], v + shift[1])
     }
 }
 
@@ -531,6 +608,8 @@ struct TurningCell {
     /// How far from the point in `u` the arm below it and the arm above
     /// it are followed inside the cell.
     extent: [f64; 2],
+    /// `c` of the fold `|u − u_T| ≈ c·(v − v_T)²`.
+    fold: f64,
 }
 
 /// What a march ended at: an arm of a turning point — `0` below it, `1`
@@ -1255,6 +1334,7 @@ impl Tracer<'_> {
                         half: [a, b],
                         side,
                         extent: [below, above],
+                        fold,
                     });
                 }
             }
@@ -1456,6 +1536,7 @@ impl Tracer<'_> {
                 let probe = TorusArc {
                     cells: vec![first],
                     ends: [s.at; 2],
+                    folds: [None; 2],
                 };
                 let start = [edge, self.walker.v_on(&probe, edge)];
                 marched.push(self.arc_from(first, s.at, start, dir, ArcEnd::Singular(i, arm))?);
@@ -1474,6 +1555,7 @@ impl Tracer<'_> {
                     arc: TorusArc {
                         cells,
                         ends: [start, last],
+                        folds: [None; 2],
                     },
                     ends: [ArcEnd::Home, end],
                 });
@@ -1502,6 +1584,7 @@ impl Tracer<'_> {
             arc: TorusArc {
                 cells,
                 ends: [from, last],
+                folds: [None; 2],
             },
             ends: [end, last_end],
         })
@@ -1546,8 +1629,65 @@ impl Tracer<'_> {
         }
     }
 
+    /// How graph `m` is evaluated beside the turning point its end `side`
+    /// is, if it is one ([`Fold`]).
+    fn fold(&self, m: &Marched, side: usize) -> Option<Fold> {
+        let ArcEnd::Turning(i, _) = m.ends[side] else {
+            return None;
+        };
+        let t = self.turning.get(i)?;
+        let at = *m.arc.ends.get(side)?;
+        // The arm lies to the turning point's side in `u`, and its own
+        // cell is the graph's first or last as the graph ascends; it is
+        // walked in `v` to `FOLD_REACH` from the turn, `c·FOLD_REACH²` in
+        // `u`, or to the cell's edge if that is nearer.
+        let cell = if t.side > 0.0 {
+            m.arc.cells.first()?.u[1]
+        } else {
+            m.arc.cells.last()?.u[0]
+        };
+        let reach = (cell - at[0]).abs().min(t.fold * FOLD_REACH * FOLD_REACH);
+        let handover = at[0] + t.side * reach;
+        if reach <= ANGLE_SLACK {
+            return None;
+        }
+        let v = self.walker.v_on(&m.arc, handover);
+        let (w, sign) = ((v - at[1]).abs(), (v - at[1]).signum());
+        let slope = self.walker.value(handover, v).1;
+        let r = reach.sqrt();
+        // The walk along `u`'s `|v − v_T|` against `r` where it takes
+        // over, and its slope in `r`: `d|v|/d(off) · 2r`.
+        let d = (slope[0] / slope[1]).abs() * 2.0 * r;
+        let a1 = t.fold.sqrt().recip();
+        let (e1, e2) = (w - a1 * r, d - a1);
+        let a3 = (e2 * r - 2.0 * e1) / (r * r * r);
+        let a2 = (3.0 * e1 - e2 * r) / (r * r);
+        // Rising all the way, or the arm is `v` linear in `r` to its
+        // handover — continuous, and no longer smooth there.
+        let rise = |x: f64| a1 + x * (2.0 * a2 + 3.0 * a3 * x);
+        let vertex = -a2 / (3.0 * a3);
+        let rising = [a1, a2, a3].iter().all(|a| a.is_finite())
+            && rise(0.0) > 0.0
+            && rise(r) > 0.0
+            && !(vertex > 0.0 && vertex < r && rise(vertex) <= 0.0);
+        let coeffs = if rising {
+            [a1, a2, a3]
+        } else {
+            [w / r, 0.0, 0.0]
+        };
+        (w > 0.0).then_some(Fold {
+            at,
+            reach,
+            coeffs: coeffs.map(|a| sign * a),
+            span: [at[0] - t.half[0], at[0] + t.half[0]],
+        })
+    }
+
     fn chained(self, marched: Vec<Marched>) -> Result<SectionTrace, SectionFault> {
         let circles = self.section_circles()?;
+        let folds: Vec<[Option<Fold>; 2]> = (marched.iter())
+            .map(|m| [0, 1].map(|side| self.fold(m, side)))
+            .collect();
         let tol = self.tol;
         let walker = Arc::new(self.walker);
         // The graph that holds the other arm of a turning point.
@@ -1658,6 +1798,10 @@ impl Tracer<'_> {
                             i + 1 == last && turns(m.ends[to]),
                         ],
                         ends: [w[0].1, w[1].1],
+                        fold: [
+                            (i == 0).then(|| folds[k][from]).flatten(),
+                            (i + 1 == last).then(|| folds[k][to]).flatten(),
+                        ],
                     });
                 }
             }
@@ -1734,6 +1878,7 @@ impl Tracer<'_> {
                 graphs.push(TorusArc {
                     cells: marched[piece.graph].arc.cells.clone(),
                     ends: [piece.from, piece.to],
+                    folds: piece.fold,
                 });
             }
             let (Some(first), Some(last)) = (group.first(), group.last()) else {
@@ -1774,4 +1919,6 @@ struct Piece {
     /// The point a branch ends at there, an index into the points as
     /// they are found.
     ends: [Option<usize>; 2],
+    /// How the stretch is evaluated beside a turning point at that end.
+    fold: [Option<Fold>; 2],
 }

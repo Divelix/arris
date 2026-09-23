@@ -320,13 +320,11 @@ fn a_branch_runs_at_a_steady_speed_through_its_turning_points() {
 /// both turn meet: `point` is continuous there as everywhere
 /// (`SectionBranch`'s guarantee), so the loop closes to rounding — the
 /// point just short of the period is the point at `0` less the step's
-/// own travel. Each arc finds the turn's `v` from its `u`, where the
-/// section is tangent to the line of constant `u` and a rounding `ε` in
-/// the turn's `u` is `√ε` along the curve: the two arcs end 2e-8 to
-/// 4.3e-7 apart, above the tolerance on the thin ring, and a fit held to
-/// the branch cannot follow the jump (plans/c3-tolerance-apart step 5).
+/// own travel. Found from `u`, the turn's `v` is `√ε` off for a rounding
+/// `ε` in the turn's `u`, and the two arcs ended 2e-8 to 4.3e-7 apart,
+/// above the tolerance on the thin ring; inside the turn's cell the arms
+/// are walked in `v`, and meet in one point.
 #[test]
-#[ignore = "the torus walk finds a turning point's v from its u, and two arcs meeting there end up to 4.3e-7 apart (plans/c3-tolerance-apart step 5)"]
 fn a_loop_closes_through_its_turning_point_to_rounding() {
     for (big, small) in [(2.0, 0.5), (10.0, 1.0), (100.0, 1.0)] {
         let torus = Surface::Torus {

@@ -450,7 +450,7 @@ bound has to be established here.
   builds), a clause on the sliver backlog line, and the strategy keeps
   that tilt's turn off the seam's band. Open CASCADE's own cut there
   returns the whole ball in two shells.
-- [ ] Step 5 **[3]** — A torus branch continuous through its turning
+- [x] Step 5 **[3]** — A torus branch continuous through its turning
   points. `SectionBranch` promises `point` continuous over its domain;
   a branch of `trace_torus` is not, where two arcs meet at a turning
   point. Each arc finds `v` from `u` by a root along the tube circle,
@@ -472,6 +472,35 @@ bound has to be established here.
   green at 1000; no blessed dump changed but a torus section's, staged
   as `fixtures:` with the reason. Found by step 5b's first attempt,
   below.
+
+  **Done 2026-09-23.** The walk in `v`, not the anchored difference: the
+  difference in the torus's implicit still evaluates `f` near the turn to
+  its rounding, and a rounding in `f` there is its square root along the
+  curve as one in `u` is. Inside a turning point's cell a graph ending
+  there is evaluated along `v` (`torus_walk::Fold`): `v − v_T = a₁r +
+  a₂r² + a₃r³` in `r = √off`, `off` the offset from the turn that
+  `Arc1::angle`'s anchor gives to full relative precision, and `u` the
+  root along that `v`, which the cell's `∂f/∂u` certificate makes unique
+  and well conditioned. Both arms are `v_T` at the turn, one point; `a₁ =
+  1/√c` from the fold `|u − u_T| ≈ c·(v − v_T)²`, one value for both arms,
+  so the branch is smooth through the turn; `a₂`, `a₃` meet the walk
+  along `u` in value and slope where it takes over. A cubic that does not
+  rise all the way falls back to `v` linear in `r`; over the torus
+  properties of `trace_torus.rs` and `intersect_surfaces.rs` at 1000
+  cases, 125 900 folds, none fell back and no root along `v` was missed.
+  **Found:** walked in `v` over the whole turning cell, the four torus
+  fixtures' fitted loops took 1.5–4× their control points (119 → 197,
+  57 → 259): the handover matches slope, not curvature, and a break that
+  far out costs the fit. `FOLD_REACH`, a thousandth of a radian of `v`
+  (or the cell, if nearer), puts it where it weighs nothing — at `10⁻²`,
+  `10⁻³` and `10⁻⁴` every loop has exactly its blessed count — while the
+  walk along `u` is good to `ε/10⁻³` there. Sampled at 20 000 points, the
+  nine poses' branches have no curvature above today's and speed jumps
+  as low or lower; the loops close to rounding.
+  `a_loop_closes_through_its_turning_point_to_rounding` is un-ignored and
+  green. The dumps of `ring-pin-cut`, `ring-slab-common`,
+  `ring-corner-common` and `filleted-boss-drill-cut` are re-blessed: same
+  structure and counts, every number within 4.4e-8 — the jump removed.
 - [ ] Step 5b **[2]** — The fit held to the exact branch.
   `section::fitted`'s deviation is the larger of today's surface term and
   the fit's distance from `branch.point` — to decide: at the same

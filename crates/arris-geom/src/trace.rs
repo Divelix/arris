@@ -673,7 +673,7 @@ impl SectionBranch {
                 Some(&label) => pencil.point(s, anchor, label),
                 None => pencil.frame.origin(),
             },
-            Walk::Torus(walk) => walk.point(i, s),
+            Walk::Torus(walk) => walk.point(i, s, anchor),
         }
     }
 
@@ -688,8 +688,8 @@ impl SectionBranch {
             return None;
         };
         let t = self.inside(t);
-        let (i, s, _) = self.located(t);
-        Some(walk.uv(i, s, [t <= 0.0, t >= self.length]))
+        let (i, s, anchor) = self.located(t);
+        Some(walk.uv(i, s, anchor, [t <= 0.0, t >= self.length]))
     }
 
     /// `t` wrapped into the domain on a closed branch and clamped to it

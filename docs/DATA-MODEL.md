@@ -617,7 +617,12 @@ roots of `f(0, ·)` seed all of them: the branch structure is proven, not
 sampled, as the ruled tracer's is. A branch is graphs `v(u)` joined
 through their turning points by the same parameter, each stretch proven
 in a cell of its own on the polynomial's coefficients before its root is
-followed; every point of it is on the torus **exactly** — `uv(t)` is its
+followed. Within a thousandth of a radian of a turning point a graph is
+walked in `v`, not in `u` — `v` from the square root of the offset, `u`
+the root along that `v`, well conditioned where the root along `u` moves
+by `√ε` for a rounding `ε` — so two arms meet at the turn in one point
+and the branch is continuous through it, as the ruled tracer's anchored
+discriminant makes its own; every point of it is on the torus **exactly** — `uv(t)` is its
 (u, v) there, unwrapped across both seams and `None` for a ruled branch —
 and on the other surface to rounding. A critical point of the other
 surface's distance over the torus that is within `tol.linear` of zero is
