@@ -741,7 +741,7 @@ fn every_other_pair_is_unsupported() {
         // Every pair of analytic surfaces is decided in every pose — by a
         // closed form, an exact conic, the ruled tracer (ADR-0018) or the
         // torus's (ADR-0019) — so `Unsupported` is left the pairs with a
-        // `Surface::Nurbs` in them, which are C4's.
+        // `Surface::Nurbs` in them, which are the NURBS cycle's.
         let nurbs = |k| k == SurfaceKind::Nurbs;
         let supported = !nurbs(a.kind()) && !nurbs(b.kind());
         match intersect_surfaces(&a, &b, &within(), tol()) {

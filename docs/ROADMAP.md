@@ -7,12 +7,12 @@ status line (`/close-cycle`), and the next is appended below.
 
 Spine: **C1** M0 → M1 → M2 → M3 → M4 → M5 (the vertical slice, done), then
 **C2** (the application gate, done 2026-09-19), then **C3** (every quadric
-pair — closure: what Arris builds, Arris takes as an operand), then the
-reader cycle (the STEP reader and a real-part corpus), and after it the
-cycle that corpus's refusal histogram and the first consumer's
-side-by-side regressions pick. An unopened cycle carries a name, not a
-number: it takes its number when `/close-cycle` opens its section
-(ADR-0020).
+pair — closure: what Arris builds, Arris takes as an operand; done
+2026-09-24), then **C4** (the reader: the STEP reader and a real-part
+corpus), and after it the cycle that corpus's refusal histogram and the
+first consumer's side-by-side regressions pick. An unopened cycle carries
+a name, not a number: it takes its number when `/close-cycle` opens its
+section (ADR-0020).
 
 ---
 
@@ -341,89 +341,42 @@ un-ignored are the consumer's own acceptance, not this cycle's (ADR-0017).
 
 *Goal: a boolean takes a cone, sphere, torus or elliptic-cylinder face as
 an operand in any pose, because every quadric pair meets in the
-intersector: conics by closed form, and the curves that are not conics
-stored as the ADR that closes the quadric-curve `⚠ OPEN` decides. Faces
-that meet within a tolerance, touching or coincident, are a corpus of
-their own and not left to luck.*
+intersector — closure: a body Arris built is a body Arris takes
+(ADR-0020). Faces that meet within a tolerance, touching or coincident,
+are a corpus of their own and not left to luck.*
 
-*It comes first because it is closure: `ops::fillet`, `ops::chamfer` and
-`ops::revolve` return tori, spheres and cones, and a body Arris built has
-to be a body Arris takes (ADR-0020).*
+**Status: done 2026-09-24, tag `c3`, released as `v0.2.0`.** Retired
+closure: every pair of analytic surfaces meets in the intersector in
+every pose, conics exact and the rest traced and fitted to NURBS under
+one `Meets` result, `Unsupported` left only where a `Surface::Nurbs` is
+in the pair; every quadric face is a boolean operand, a section through
+an apex or a pole included; and "the same within a tolerance" is an
+equivalence decided once per level. ADR-0018 to ADR-0022.
 
-**Status: every line done (2026-09-24); the cycle is `/close-cycle`'s.**
-Every pair of analytic surfaces meets in the
-intersector in every pose — conics exact, the quartics of a ruled pair
-traced by its rulings and fitted to NURBS inside a region (ADR-0018,
-done 2026-09-19), a torus's section traced in the torus's own parameter
-plane and fitted whole (ADR-0019, done 2026-09-20) — with one `Meets`
-result for every meeting, and `Unsupported` left only where a
-`Surface::Nurbs` is in the pair; a boolean of cylinders cuts through the
-fitted edge it left, and S5 and B1 decide every such pair. A boolean
-takes a cone, sphere, torus or elliptic-cylinder face as an operand, a
-section through an apex or a pole included and one beside it refused by
-name (ADR-0021, done 2026-09-22): every conic meets every analytic
-surface, every curve on one has a pcurve, and the M4 identities hold
-over quadric operands at random poses. "The same within a tolerance"
-is an equivalence decided once per level (ADR-0022, done 2026-09-24):
-section vertices by closure, fits held to the exact branch, a section
-edge known by its surfaces, a block along an operand edge that edge's
-piece, and the pinch refused by name.
-
-- The general quadric pairs in `intersect_surfaces`. **Done**: a plane
-  oblique to a cone's axis or parallel to it and off it; two
-  cylinders on crossing axes of unequal radii or skew axes within the
-  radii; cylinder, cone and sphere against a cone or a sphere sharing no
-  axis; the elliptic cylinder against the quadrics; the result type of a
-  pair that mixes kinds (ADR-0018). Every pair with a torus sharing no
-  axis with the other surface, the spiric sections and the Villarceau
-  circles among them, on the second tracer's interface and the same fit,
-  with a tube circle the other surface holds returned exact (ADR-0019).
+- The general quadric pairs in `intersect_surfaces`: the ruled pairs
+  traced by their rulings and fitted inside a region (ADR-0018), every
+  pair with a torus traced in the torus's parameter plane and fitted
+  whole, a tube circle the other surface holds returned exact (ADR-0019).
 - Conics against a cone, a sphere or a torus in `intersect_curve_surface`,
-  and two coplanar conics that are not the same conic in
-  `intersect_curves`, for the pave model's edge–face hits. **Done**
-  (`geom/c3-conic-hits`), as is a fitted `Curve::Nurbs` against every
-  analytic surface and against a line, a circle or an ellipse (ADR-0018).
-- A fitted pcurve fallback on cones, spheres and tori for the oblique
-  sections a boolean leaves there. **Done**, over the surface's own
-  projection on every analytic surface, the torus's too — the branch's
-  (u, v) is no pcurve of the fitted curve an edge carries, which lies a
-  fraction of a tolerance off it — and split at an apex or a pole
+  two coplanar conics in `intersect_curves`, and a fitted `Curve::Nurbs`
+  against every analytic surface, a line and a conic.
+- A fitted pcurve on every analytic surface over its own projection,
+  split at an apex or a pole; a section beside one refused by name
   (ADR-0021).
-- The pave model's quadric guard lifted: booleans with cone, sphere, torus
-  and elliptic-cylinder operand faces, each a corpus fixture against the
-  oracle. **Done**: the frustum, ball, ring, elliptic, filleted and
-  chamfered `boolean/*` fixtures, a section through an apex or a pole, a
-  contact along a circle, and `quadric_operands_obey_every_identity`.
-- S5 and B1 over every such pair, so a posed blend's cylinders on skew axes
-  and a corner's sphere against a blend cylinder are checked, not listed as
-  unchecked. **Done** for every pair of analytic surfaces (ADR-0018,
-  ADR-0019): `blend_prop.rs` holds nothing unchecked, and a torus face is
-  decided against anything — a pin through the tube, a pipe elbow welded
-  along a tube circle, two shells interlocked.
-- Features a tolerance apart: section vertices clustered by closure rather
-  than first-come merging (`regression/seam-a-tolerance-from-crossing-fuse`),
-  and a corpus of faces touching and coincident within a tolerance.
-  **Done** (ADR-0022): a section vertex is a component of candidate
-  points whose balls meet, its edges' pcurves ending on its own (u, v); a
-  fitted section held to the exact branch at a quarter tolerance, so two
-  fits of one section agree within half; an operand edge on a pair's
-  section known by its surfaces, a section block along an operand edge
-  that edge's piece; a shell pinched at a vertex `Reason::NonManifold`.
-  `seam-a-tolerance-from-crossing-fuse`, `grazing-ball-bar-cut`,
-  `frustum-stub-cut-then-fuse` and `pole-slice-beside-seam-cut` pass from
-  `boolean/`, with twenty band-end fixtures beside them;
-  `tolerance_band.rs` holds the band where it holds — a coaxial bore in
-  every pose, an edge on an edge under offset — and ratchets the rest
-  against its record. It leaves a third of the band survey failing, none
-  of it this line's mechanisms by design: no verdict a hair off parallel
-  or tangent, slivers the polygons do not resolve, the builder and the
-  checker refusing near-tangent results — each a `regression/` fixture
-  and a `docs/BACKLOG.md` line.
+- The pave model's quadric guard lifted: the frustum, ball, ring,
+  elliptic, filleted and chamfered `boolean/*` fixtures, and
+  `quadric_operands_obey_every_identity`.
+- S5 and B1 over every pair of analytic surfaces.
+- Features a tolerance apart (ADR-0022): section vertices by closure,
+  fits held to the exact branch, a section edge known by its surfaces, a
+  block along an operand edge that edge's piece, a pinch refused as
+  `Reason::NonManifold`; `tolerance_band.rs` holding the band where it
+  holds and ratcheting the rest, whose failures are `regression/`
+  fixtures and `docs/BACKLOG.md` lines.
 
 **Out:** NURBS operands and NURBS–NURBS intersection (the NURBS cycle's);
 blends on quadric face pairs (the blend-network cycle's); a spindle
-torus; a revolve of an elliptic segment;
-the STEP reader.
+torus; a revolve of an elliptic segment; the STEP reader.
 
 **Accept:** property tests at random poses of every quadric pair — every
 intersection point on both surfaces within the tolerance, the curve's
@@ -437,39 +390,7 @@ passing every corpus stage against Open CASCADE;
 
 ---
 
-## Beside the cycles
-
-Two lines of work that are not cycles. Neither changes a public type or a
-signature, so neither earns a minor version (`.agents/rules/git.md`
-§Tags); each stands beside whatever cycle is open (ADR-0020).
-
-**The measuring harness.** What it measures decides what comes after the
-reader cycle, so it exists before the reader does: benchmarks over
-tessellation and the boolean corpus, so a robustness fix that costs 10×
-shows up as a number; the oracle cached by `recipe_hash`, so an unchanged
-recipe is not re-run on every test run — `oracle::scratch_fixture` runs it
-today whatever the recipe says; a property tier above CI's case count, run
-nightly; random *recipes* evaluated by both kernels — the recipe grammar
-already carries the same eleven operations on each side (`Step` in
-`arris-debug`, the `op` dispatch in `tools/oracle`), so the generator is
-a `proptest` strategy over `Step` beside the oracle's existing evaluator
-and needs no new interpreter on either side; `cargo-fuzz` targets over
-the intersectors and, once it exists, the STEP reader, seeded from the
-corpus. Its numbers — benchmark baselines, cases per night — live in
-this section once they exist. Its one open question is the case count
-the pre-commit hook runs against CI's, which is the human's call.
-
-**The first-party binding.** Code-first and agent-driven modelling is one
-of the consumers `SEED.md` §1 names, and a binding in this repository is
-how that consumer exists before an application is written on top of it.
-It starts once C3 closes: a second crate under every C3 API break pays
-for the break twice. Its layer position, the `#![forbid(unsafe_code)]`
-exception a binding needs, `publish`, the wasm job and PyPI beside
-crates.io are its own idea and its own ADR.
-
----
-
-## Next — the reader and the real-part corpus
+## C4 — the reader and the real-part corpus
 
 *Goal: Arris reads a part it did not design, and every refusal it returns
 over a public corpus of real parts is counted. That count, beside the
@@ -479,7 +400,12 @@ every fixture in the corpus is a recipe written out of the operations
 Arris has. The first consumer wants the cycle for its own reason — its
 roadmap imports vendor parts (ADR-0017).*
 
-**Status: not opened.** It takes its number from `/close-cycle`.
+*Chosen by rule, not measured into: ADR-0020 names the reader as the
+cycle after C3 because nothing can be measured until it exists, so this
+choice rests on no numbers. An accepted ADR that cites `C4` means the
+NURBS cycle, read through ADR-0020's table, not this one.*
+
+**Status: opened 2026-09-24.**
 
 - A Part 21 parser: the exchange structure, references, the schema
   header, string and number encodings, and a typed error carrying the
@@ -491,7 +417,13 @@ roadmap imports vendor parts (ADR-0017).*
 - Pcurves rebuilt rather than read — a file's are optional, approximate,
   or absent. Closed form on the analytic surfaces (data-model §Pcurves),
   which pulls `project` onto a NURBS surface forward: it is
-  `GeomError::Unsupported` today, by cycle-1 design.
+  `GeomError::Unsupported` today, by cycle-1 design. What the writer
+  drops is rebuilt the same way, from the 3D curve and the surface's
+  singularity: a left-handed pcurve conic (`AXIS2_PLACEMENT_2D` is
+  direct) and a degenerate edge's coedge.
+- A closed NURBS curve that is not periodic, met by a surface at its
+  seam, reported as one hit rather than one at each end (data-model
+  §Curves) — no curve the kernel makes is one, a file's may be.
 - Each entity's tolerance assigned from its own measured gaps, not from
   the file's global value, so the per-entity model the kernel is built on
   survives the import.
@@ -509,6 +441,38 @@ and centroid the fixture asserts; a public corpus of real parts read
 either to checker-green — mass properties within the fixture's tolerance
 of the oracle's — or to a typed refusal, with no panic and no wrong
 solid; and the refusal histogram over that corpus printed.
+
+---
+
+## Beside the cycles
+
+Two lines of work that are not cycles. Neither changes a public type or a
+signature, so neither earns a minor version (`.agents/rules/git.md`
+§Tags); each stands beside whatever cycle is open (ADR-0020).
+
+**The measuring harness.** What it measures decides what comes after
+C4, so it exists before C4 closes: benchmarks over
+tessellation and the boolean corpus, so a robustness fix that costs 10×
+shows up as a number; the oracle cached by `recipe_hash`, so an unchanged
+recipe is not re-run on every test run — `oracle::scratch_fixture` runs it
+today whatever the recipe says; a property tier above CI's case count, run
+nightly; random *recipes* evaluated by both kernels — the recipe grammar
+already carries the same eleven operations on each side (`Step` in
+`arris-debug`, the `op` dispatch in `tools/oracle`), so the generator is
+a `proptest` strategy over `Step` beside the oracle's existing evaluator
+and needs no new interpreter on either side; `cargo-fuzz` targets over
+the intersectors and, once it exists, the STEP reader, seeded from the
+corpus. Its numbers — benchmark baselines, cases per night — live in
+this section once they exist. Its one open question is the case count
+the pre-commit hook runs against CI's, which is the human's call.
+
+**The first-party binding.** Code-first and agent-driven modelling is one
+of the consumers `SEED.md` §1 names, and a binding in this repository is
+how that consumer exists before an application is written on top of it.
+It waited for C3 to close, since a second crate under every C3 API break
+would have paid for the break twice; it can start now. Its layer position, the `#![forbid(unsafe_code)]`
+exception a binding needs, `publish`, the wasm job and PyPI beside
+crates.io are its own idea and its own ADR.
 
 ---
 

@@ -22,7 +22,7 @@ re-exports the public API. Lower crates never name types from upper ones.
 | `arris-topo` | `Model` (the arena), typed ids, `Shape`/`Body`/`Face`/… handles, orientation, entities, pcurves, per-entity tolerances, Euler operators including the assembly seam (`Assembly::of_body`, `effective_uses`, `AssemblySlots`), the Euler line (`euler::EulerLine`), adjacency and iteration, `Provenance` and its audit; re-exports `arris-geom` and `arris-math` | `arris-geom`, `arris-math`, `thiserror`, `serde` (feature) | 0 — representation |
 | `arris-check` | The invariant checker: `check(&Model, Body, Level) -> Report` and the `Violation` list of data-model §Invariants; the shared face domain (`domain::FaceDomain`), point classifier (`classify::Classifier`, `classify_point`) and region flux (`flux::face_flux`) every `Full` row, the boolean and tessellation read a face through; re-exports `arris-topo` | `arris-topo`, `serde` (feature, forwarded to `arris-topo`) | 1 |
 | `arris-ops` | Primitives, extrude and revolve of a `Profile`, transform, booleans, the blends, each returning `Provenance`; the queries `measure` (mass properties) and `query` (projection onto a plane, a face's outward frame) | `arris-check`, `thiserror`, `rayon` (feature) | 2 — algorithms |
-| `arris-mesh` | `TriMesh`, `Polyline`, the constrained Delaunay triangulation in (u, v) (`cdt`, ADR-0003), tessellation of faces and edges with shared edge discretisation; re-exports `arris-math`'s `Aabb` | `arris-check`, `arris-topo`, `thiserror`, `rayon` (feature) | 2 — algorithms |
+| `arris-mesh` | `TriMesh`, `Polyline`, the constrained Delaunay triangulation in (u, v) (`cdt`, ADR-0003), tessellation of faces and edges with shared edge discretisation; re-exports `arris-math`'s `Aabb` and `Interval` | `arris-check`, `arris-topo`, `thiserror`, `rayon` (feature) | 2 — algorithms |
 | `arris-io` | STEP AP214 Part 21 writer (later reader), the native format (`native`), STL and OBJ mesh writers (`stl`, `obj`, ADR-0013); re-exports `arris-check` and `arris-mesh` | `arris-check`, `arris-mesh`, `thiserror`, `serde`, `serde_json`, `postcard` (the last three behind the `serde` feature) | 2 — algorithms |
 | `arris-debug` | Text dump, the hand-built sample bodies (`sample`), PNG render (own software rasteriser over `image`), Rerun stream (feature), the fixture loader and corpus lint, the corpus runner (`corpus`) and the oracle seam (`oracle`), the seeded property-test runner and strategies | `arris-ops`, `arris-mesh`, `arris-io`, `arris-topo`, `arris-geom`, `arris-math`, `image`, `serde`, `serde_json`, `sha2`, `thiserror`, `proptest` (not on `wasm32`), `rerun` (feature) | 3 — dev-facing |
 | `arris` | Facade: re-exports | `math` through `io`; `debug` as a dev-dependency only | 4 |
@@ -67,8 +67,8 @@ defaults depends on it directly with `default-features = false` and
 forwards the feature itself, as `arris`'s own `serde` feature and
 `cargo check -p arris --no-default-features` do (`arris-ops`, `-mesh`
 and `-io` reach no serde type at all with it off — `cargo tree -p arris
---no-default-features -e normal` has neither `serde` nor `serde_json`,
-which CI asserts). The facade forwards `serde`, `parallel` and
+--no-default-features -e normal` has neither `serde` nor `serde_json`;
+CI asserts the second). The facade forwards `serde`, `parallel` and
 `paranoid`.
 
 ## The model, the arena and handles
@@ -775,7 +775,7 @@ along its plane's normal, either way: `direction` is the normal or its
 opposite within `angular_tolerance` (`Reason::DirectionNotNormal`
 otherwise — an oblique extrusion of an arc is a cylinder of elliptical
 section, which `Surface::EllipticCylinder` (ADR-0014) could hold, but it
-waits for cycle 5's sweep along a path), `length` finite and above
+waits for the sweep cycle's sweep along a path), `length` finite and above
 `default_tolerance` (`NotPositive` at or below zero, `ZeroThickness`
 within the tolerance). The sweep is the plane's exact normal, never the
 caller's rounding of it. The profile face keeps its plane's frame
@@ -803,7 +803,7 @@ involved, so the message a consumer shows — or the agent reads — says
 | Variant | When | Carries |
 |---|---|---|
 | `InvalidInput` | an input body fails the checker (checked in debug builds before the operation starts, and in release when the `paranoid` feature is on) | `Body`, the `Report` |
-| `Unsupported` | the exhaustive dispatch reached a surface or curve pair the kernel has no formula for yet — a boolean's face pair, a blend's face pair outside its table or the face across a blend's end | the two `GeomKind`s with their entities |
+| `Unsupported` | the exhaustive dispatch reached a surface or curve pair the kernel has no formula for yet — a boolean's face pair with a NURBS face in it, a tangent contact or an `On` piece that neither the curvature rule nor the transversal rule decides, a blend's face pair outside its table or the face across a blend's end | the two `GeomKind`s with their entities |
 | `Degenerate` | the requested result has no valid representation: a parameter that makes no geometry (`Reason::NonFinite`, `Reason::NotPositive` naming it — a zero radius, a box whose `min` is not below its `max`, a revolve angle at or below zero, a zero extrude direction; `Reason::AngleAboveTurn` past `2π`), a zero-thickness intersection or an extrude of zero length (`Reason::ZeroThickness`), a revolve whose axis is off the profile's plane (`Reason::AxisNotInProfilePlane`), whose profile crosses its axis (`Reason::ProfileCrossesAxis`) or lies within the tolerance of it everywhere (`Reason::ZeroThickness`), or whose arc's circle crosses it (`Reason::SpindleTorus`), or whose profile has an elliptic segment (`Reason::EllipticRevolve` naming the loop and segment, ADR-0014); an extrude off its plane's normal (`Reason::DirectionNotNormal`); a boolean that selects no material (`Reason::Empty`: a target inside its tool, a `common` of disjoint operands); result shells that would touch along an edge or at a vertex, a shell that would touch itself at a vertex whose faces close into more than one fan — a wall pinched at a singular point of a section — or a full revolve touching its axis at a vertex with no segment along it (`Reason::NonManifold`, naming the shared edges or vertices, none for a sweep); faces touching along a curve interior to both result faces (`Reason::TangentContact`); a section passing a face's apex or pole without running through it, nearer than the face's (u, v) polygons resolve (`Reason::BesideSingularity`, naming the two faces and the vertex, ADR-0021); a blend asked for no edges (`Reason::NoEdges`), for an edge twice (`Reason::RepeatedEdge`) or for an edge of another body (`Reason::EdgeNotInBody`), one that leaves its face, outruns a corner edge or a seam, or around a closed edge would need a torus that is not a ring torus or a contact reaching the axis (`Reason::BlendTooLarge`), one at a tangent dihedral or ending on a tangent corner edge (`Reason::TangentChain`), or one at a corner the closed forms do not cover (`Reason::VertexBlend`, ADR-0007); a query on a body that is not a `Solid` (`Reason::NotSolid`); a projection handed a face, shell or body (`Reason::NotProjectable`), a degenerate edge (`Reason::DegenerateEdge`), or a curve that projects to a point or a segment (`Reason::ProjectionCollapses`); `face_frame` on a curved face (`Reason::NotPlanar`); `frame_at` at a `(u, v)` outside the face's domain (`Reason::OutOfDomain`) or at a singular one with no normal (`Reason::Singular`) | the entities (none for a primitive or a sweep) and a `Reason` enum |
 | `Profile` | a sweep's sketch is not a valid profile: `Profile::edges` refused it (data-model §Profiles). An invalid profile has no entities to name, so it is neither `InvalidInput` nor `Degenerate` | the `ProfileError`, naming the loop and segment |
 | `Tolerance` | the result would need an entity tolerance above `Precision::max_tolerance` | the entity, the tolerance it wanted |
@@ -886,7 +886,7 @@ every analytic surface by closed form (ADR-0008), so only a NURBS face is
 `ClassifyError::Geometry`; a hit at a cone's apex or a sphere's pole lands
 on that face's degenerate edge, a boundary like any other, and abandons
 its direction. B1 is the same
-code over one shell's faces — `Checker::shell_contains` and `nesting`
+code over one shell's faces — `Checker::shell_classifier` and `nesting`
 build one `Classifier` per shell rather than one per ray, and a boolean's
 piece selection builds one per operand rather than one per piece it
 classifies — so the row that proves a shell nesting and the predicate
@@ -944,10 +944,12 @@ The checker never repairs. Healing is an operation — the healing cycle's
 `Surface` and `Curve` are open enums, not trait objects (`SEED.md` §9).
 Every intersection, projection and classification is an exhaustive `match`
 over the pair of variants, so adding a variant makes every dispatch fail to
-compile until it is handled, and a pair without an exact formula is a
-`GeomError::Unsupported` arm naming both kinds (`OpError::Unsupported`
-once an operation wraps it with the entities) — never a wildcard falling
-back to a generic marcher where a closed form exists. The results are
+compile until it is handled. A pair without a closed form is traced
+exactly and fitted (below), and a pair nothing decides — a NURBS surface
+against any surface, two NURBS curves — is a `GeomError::Unsupported` arm
+naming both kinds (`OpError::Unsupported` once an operation wraps it with
+the entities) — never a wildcard falling back to a generic marcher where
+a closed form exists. The results are
 enums too: `SurfaceIntersection::{Empty, Coincident, Meets { curves,
 points }}` for a surface pair — each curve and isolated point of a
 `Meets` a `Crossing` or a `Touch`, the two kinds together in one result

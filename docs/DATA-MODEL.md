@@ -135,8 +135,8 @@ form: `INFINITY` along a flat or ruled direction (both on a plane, `v` on
 a cylinder, an elliptic cylinder and a cone), the cone's `u` curvature
 read at the radius of the region's far `v` bound, an elliptic cylinder's
 `u` step bounded by its major radius, a sphere its radius in both directions and a
-torus `R + r` in `u` and `r` in `v` with the chord shared between the
-two directions, a NURBS the form's three coefficients sampled over
+torus `R + r` in `u` and `r` in `v`, each with the chord shared between
+the two directions, a NURBS the form's three coefficients sampled over
 `bounds` and one step for both. What tessellation sizes an edge's samples
 and a face's interior grid by.
 
@@ -199,13 +199,14 @@ ruling, or nothing), cylinder–cylinder in every pose by the first table
 below — lines and conics by closed form, the quartics traced and fitted
 inside the region `within` (below the tracer) — every pair with a cone, a
 sphere or a torus in it wherever the two share an axis, by the meridian
-arm of the second table (ADR-0008), and elsewhere a plane against a cone
+arm of the third table (ADR-0008), and elsewhere a plane against a cone
 in an exact conic and a cylinder, a cone or a sphere against a cone or a
-sphere traced and fitted, and the elliptic cylinder's pairs by the third
+sphere traced and fitted, and the elliptic cylinder's pairs by the second
 table (ADR-0014), and a torus against any of them in a section traced in
 the torus's own parameter plane (below the torus tracer, ADR-0019); every
 pair with a `Nurbs` operand is an explicit `Unsupported` arm, and no
-other pair is. Every curve and every point
+other pair of kinds is (a partial coincidence on a shared axis, below, is
+refused by pose, not by kind). Every curve and every point
 of a `Meets` carries its `MeetKind` (ADR-0018): a curve is a `Crossing`
 when the surfaces cross along it and a `Touch` when they are tangent all
 along it; a point is a `Touch` when the surfaces are tangent there and
@@ -380,10 +381,11 @@ operand order.
 
 `intersect_curve_surface(c, s, tol)` returns `CurveSurfaceIntersection::{
 Points(Vec<CurveSurfaceHit>), Coincident}` for the pairs with a closed form
-— line–plane, line–cylinder, conic–plane and conic–cylinder, *conic*
-being a circle or an ellipse, and a line against a cone, a sphere or a
-torus — for a conic against a cone, a sphere or an elliptic cylinder in
-any plane and against a torus (below), for a `Nurbs` curve against every
+— line–plane, line–cylinder, line–elliptic cylinder, conic–plane and
+conic–cylinder, *conic* being a circle or an ellipse, a line against a
+cone, a sphere or a torus, and a conic in a plane across an elliptic
+cylinder's axis — for a conic against a cone, a sphere or an elliptic
+cylinder in any other plane and against a torus (below), for a `Nurbs` curve against every
 analytic surface (below), and `GeomError::Unsupported` naming the pair
 for the one arm left without a form: any curve against a `Nurbs`
 surface. A hit is
@@ -512,8 +514,8 @@ and the second's within `tol.linear` of it, hits ascending by `ta`, a
 periodic parameter in `[0, 2π)`. Two lines are the closed form —
 parallel within `tol.angular` gives `Coincident` or nothing by the
 distance between them, and otherwise the nearest approach is a hit when
-it is shorter than `tol.linear`. Every other supported pair has a conic
-operand and goes through *that conic's plane*: the other curve's hits on
+it is shorter than `tol.linear`. Every other pair of a line or a conic has a
+conic operand and goes through *that conic's plane*: the other curve's hits on
 the plane are the candidates, and a candidate is a hit when the conic's
 own projection of it is within `tol.linear`, which gives `tb` with it. A
 curve the plane reports `Coincident` with is the coplanar case, where the
@@ -599,7 +601,8 @@ walked rulings (`BranchEnd::Clipped`), again at the roots of a quartic;
 everything inside `within` is returned and a loop inside it stays
 closed. Which operand is walked is a rule on the two surfaces — parallel
 rulings before a cone's, the smaller radius or narrower cone first, then
-the frames coordinate by coordinate — so swapping the arguments changes
+a circular section before an elliptic one, then the frames coordinate
+by coordinate — so swapping the arguments changes
 nothing, bit for bit.
 
 `trace_torus(a, b, tol) -> Result<SectionTrace, GeomError>` is the exact
@@ -1030,7 +1033,7 @@ from `1` — in walking order:
 | every hole is inside the outer loop | `HoleOutside { hole }` |
 | no hole is inside another | `NestedHoles { holes }` |
 
-Each loop's structural checks — the first four rows — run before the next
+Each loop's structural checks — the first six rows — run before the next
 loop's, then each loop's area and self-intersection, then the checks
 between loops, so the error reported is the first fault in that order;
 each names its loop or loops, and the segment where one is at fault, by
@@ -1318,9 +1321,8 @@ are each their own inverse, so one function walks both ways.
 `FaceSpec::from_face(model, face_use, edge_key)` reads a face whole into
 a `FaceSpec::New` through it — the surface, the tolerance, every loop's
 uses in effective order, each edge named through the caller's own
-`edge_key` — what `finish`, `keep_face`, `transform` and a boolean's own
-assembly each used to walk by hand; now one function does, and they
-differ only in the `edge_key` they pass. `Assembly::of_body(model, body,
+`edge_key`. `finish`, `keep_face` and a boolean's own assembly walk
+their loops through `effective_uses` directly. `Assembly::of_body(model, body,
 remap: &mut impl GeometryRemap) -> Result<(Assembly, BodyIndex),
 NotFound>` builds on it to describe a whole body shell by shell with
 every entity `New`, its curves, surfaces and vertex points named through
@@ -1429,8 +1431,9 @@ may carry different tolerances.
   entity goes below), `max_tolerance` (an operation that would exceed it
   returns `OpError::Tolerance`), `angular_tolerance` (radians, for
   parallel/tangent decisions), `parametric_tolerance` (how far a pcurve
-  may deviate in (u, v), derived from `default_tolerance` and the surface's
-  scale), and `check_samples` (how many parameters the checker samples
+  may deviate in (u, v) at unit parametric speed; the checker scales it by
+  the surface's parametric derivative, so on a cylinder of radius `r` the
+  bound in `u` is it over `r`), and `check_samples` (how many parameters the checker samples
   along an edge). Default values are chosen for a model whose features are
   of order 1–1000 units.
 - **No literals.** A tolerance in an algorithm is the entity's, or a field
@@ -1512,10 +1515,11 @@ and `S` the number of shells. `E` leaves degenerate edges out: a cone's apex
 or a sphere's pole is a singular point of the surface, not a boundary
 between faces (S2's exemption), and counting it would give a sphere genus 1
 and a cone an odd line; the oracle leaves out the edges Open CASCADE marks
-degenerate, so both sides count alike. The count is one function,
-`arris_topo::euler::EulerLine::of`, which the checker's report, `Builder::counts`,
-`assemble`'s per-shell test, the dump and the fixture lint all take; a builder
-counts no degenerate edge either, and `finish` refuses one not used exactly
+degenerate, so both sides count alike. The line is one type,
+`arris_topo::euler::EulerLine`: the checker's report and the dump take it
+with `EulerLine::of` over a closure, and `Builder::counts`, `assemble`'s
+per-shell test and the fixture lint build it with `EulerLine::new` from
+their own counts; a builder counts no degenerate edge either, and `finish` refuses one not used exactly
 once. The genus `G` is *derived* from the counts,
 as the oracle derives it, so the line cannot fail on its genus; what it
 checks is its parity — a count set that leaves a residual of one cannot
@@ -1733,8 +1737,8 @@ it is read (`Frame::from_orthonormal`, `NurbsCurve::new`, `Interval::new`,
 than a built one; a dangling reference is stored as it is and is the
 checker's M1 to report. Deterministic byte-for-byte for the same model
 (`BTreeMap`s, the shortest round-trip decimal in JSON); a model that
-round-trips through it dumps identically before and after, and every
-fixture asserts so. Two encodings, a `serde` choice per call:
+round-trips through it dumps identically before and after, with the
+same ids (`arris-io`'s native tests). Two encodings, a `serde` choice per call:
 `to_bytes`/`from_bytes` over `postcard` for storage, `to_json`/`from_json`
 for diffs. The schema is the model; a file of another version is
 `NativeError::Version`, a refusal, since a version bump is a design delta

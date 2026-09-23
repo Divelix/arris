@@ -1222,7 +1222,7 @@ pub fn revolve(
 /// direction, [`Reason::ZeroThickness`] for a length within
 /// `default_tolerance` of zero, and [`Reason::DirectionNotNormal`] for a
 /// direction off the plane's normal — an oblique extrusion of an arc is a
-/// cylinder of elliptical section, a sweep along a path (cycle 5).
+/// cylinder of elliptical section, a sweep along a path (the sweep cycle's).
 ///
 /// ```
 /// use arris_ops::extrude;

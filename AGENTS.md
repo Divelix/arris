@@ -31,13 +31,11 @@ lives under `tests/fixtures/regression/`. ADR-0001 to 0005.
 shapes pass the corpus in its own units: blends, lumps, cylinder–cylinder
 booleans, quadrics on a shared axis, the facade decisions, mesh formats,
 elliptic profiles. ADR-0006 to 0017.
-**C3 every line done (2026-09-24):** every pair of analytic surfaces
-meets in the intersector, fitted to NURBS where no conic is exact
-(ADR-0018, 0019); any analytic face is a boolean operand (ADR-0021);
-"the same within a tolerance" is an equivalence decided once per level
-(ADR-0022). The direction after it is ADR-0020's.
-**Next:** `/close-cycle` for C3, then the measuring harness and the
-reader cycle.
+**C3 done (2026-09-24): every quadric pair.** Every analytic face is a
+boolean operand in any pose — sections exact or traced and fitted to
+NURBS, "the same within a tolerance" an equivalence. ADR-0018 to 0022.
+**Next:** C4, the STEP reader and a real-part corpus, with the measuring
+harness and the first-party binding beside it (ADR-0020).
 
 ## Rules that are not derivable from the code
 

@@ -57,7 +57,7 @@ pub enum Reason {
     },
     /// An extrude direction is off the profile plane's normal by more than
     /// the angular tolerance; an oblique extrusion is a sweep along a path
-    /// (cycle 5).
+    /// (the sweep cycle's).
     DirectionNotNormal,
     /// The query needs an enclosed volume and the body is not a solid:
     /// a sheet, a wire, a general body.
@@ -111,7 +111,7 @@ pub enum Reason {
     /// there is no corner to roll a ball into; or the edge ends at a
     /// vertex where a corner edge's faces are tangent — a blend's contact
     /// line, where a second blend reaches a first one's end — so the blend
-    /// would run on along a chain. A tangent chain is cycle 6's. The
+    /// would run on along a chain. A tangent chain is the blend-network cycle's. The
     /// error's entities are the edge and its two faces, or at an end the
     /// edge, the tangent corner edge and the vertex.
     TangentChain,
