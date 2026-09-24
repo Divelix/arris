@@ -238,7 +238,7 @@ bound has to be established here.
   4-core runner; the six filtersets partition the suite's 1238 tests
   exactly (`cargo nextest list`). The box is ticked by the human's green
   `workflow_dispatch` run, which no local check stands in for.
-- [ ] Step 8 **[2]** — **Benchmarks.**
+- [x] Step 8 **[2]** — **Benchmarks.**
   - `arris_debug::bench`: a warm-up, a fixed iteration count, the median
     and median absolute deviation, and a JSON report. It is unit-tested on
     a synthetic clock.
@@ -250,6 +250,13 @@ bound has to be established here.
     comment on why 3× and not 10×).
   - The reference machine's totals go in the commit body. `cargo bench
     --no-run` is already covered by the hook's `clippy --all-targets`.
+
+  *Found at step 8:* `cargo bench` runs the binary in the crate's
+  directory, so `--save` and `--compare` take a relative path from the
+  workspace root. On the reference machine: 250 cases from 125 fixtures,
+  build 1.60 s and mesh 0.73 s, 2.33 s in all; a second run against the
+  first is at most 1.13× on any case. Thirteen fixtures are the corpus's
+  designed refusals and are skipped by name.
 - [ ] Step 9 **[1]** — **Benchmarks nightly.**
   - The nightly job runs the benches, uploads the report as an artifact,
     and compares it against the previous successful night's artifact,

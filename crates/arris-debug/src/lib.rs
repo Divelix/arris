@@ -2,7 +2,8 @@
 //! software rasteriser that renders a mesh to a PNG the agent can read, the
 //! samplers that turn a curve or a surface into polylines for it, the
 //! fixture loader, the corpus runner and the seam to the Open CASCADE oracle, and the property-test configuration
-//! and strategies.
+//! and strategies, the differential over both kernels and the benchmark
+//! timer.
 //!
 //! Guarantees: this is the only crate in the workspace that writes files,
 //! and it is a dependency of the workspace's tests, never of a consumer
@@ -11,6 +12,8 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+#[cfg(not(target_arch = "wasm32"))]
+pub mod bench;
 pub mod body;
 pub mod corpus;
 #[cfg(not(target_arch = "wasm32"))]
