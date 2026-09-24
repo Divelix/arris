@@ -33,6 +33,11 @@ use proptest::prelude::*;
 /// Points on the result curves against both surfaces, and the closed
 /// forms of the ellipse's axes and the tangent ruling.
 const EXACT: f64 = 1e-12 * DEFAULT_SCALE;
+/// The relative rounding of a closed-form point and of its implicit
+/// distance, both taken as differences of coordinates of the point's
+/// magnitude: a grazing plane's ellipse is centred up to 1e6 out, where
+/// one ulp is already past [`EXACT`].
+const ROUNDING: f64 = 8.0 * f64::EPSILON;
 /// Parameters sampled along every result curve.
 const SAMPLES: usize = 17;
 
@@ -118,7 +123,9 @@ fn on_both(c: &Curve, a: &Surface, b: &Surface, slack: f64) -> Result<(), TestCa
                 slack + SECTION_FIT_FRACTION * tol().linear + 1e-11 * (1.0 + p.coords.norm())
             }
             Curve::Circle { .. } if tube_circle => tol().linear,
-            Curve::Line { .. } | Curve::Circle { .. } | Curve::Ellipse { .. } => EXACT,
+            Curve::Line { .. } | Curve::Circle { .. } | Curve::Ellipse { .. } => {
+                EXACT + ROUNDING * p.coords.norm()
+            }
         };
         let (da, db) = (implicit_distance(a, p), implicit_distance(b, p));
         prop_assert!(
@@ -1403,6 +1410,29 @@ fn meridian_at(s: &Surface, axis: &Frame, t: f64) -> Point3 {
     }
 }
 
+/// The meridian parameter of the one kink of `s`'s meridian, a cone's
+/// apex; every other meridian is smooth.
+fn meridian_kink(s: &Surface, axis: &Frame) -> Option<f64> {
+    match *s {
+        Surface::Cone {
+            ref frame,
+            radius,
+            half_angle,
+        } => {
+            let (sa, ca) = half_angle.sin_cos();
+            let apex = frame.origin() - (radius * ca / sa) * frame.z().into_inner();
+            Some((apex - axis.origin()).dot(&axis.z().into_inner()))
+        }
+        Surface::Plane { .. }
+        | Surface::Cylinder { .. }
+        | Surface::Sphere { .. }
+        | Surface::Torus { .. } => None,
+        Surface::EllipticCylinder { .. } | Surface::Nurbs(_) => {
+            unreachable!("not a surface of revolution: `coaxial_kind` never makes one")
+        }
+    }
+}
+
 /// The range of the meridian parameter that reaches every meeting the
 /// strategies can make: the slides, the radii and a cone's apex offset
 /// are all within a few scales, and a cone meets a plane at most a few
@@ -1500,9 +1530,16 @@ fn meets_where_the_meridians_meet(
         meetings.push(p);
     }
     let (lo, hi) = meridian_range(a);
+    // A cone's V kinks at the apex, and a chord across the kink misses a
+    // crossing beside it by up to the step times the cone's slope — so the
+    // apex is a sample of its own and every chord runs along one nappe.
+    let mut ts: Vec<f64> = (0..=MERIDIAN_SAMPLES)
+        .map(|i| lo + (hi - lo) * i as f64 / MERIDIAN_SAMPLES as f64)
+        .chain(meridian_kink(a, axis).filter(|t| (lo..=hi).contains(t)))
+        .collect();
+    ts.sort_by(f64::total_cmp);
     let mut previous: Option<(Point3, f64)> = None;
-    for i in 0..=MERIDIAN_SAMPLES {
-        let t = lo + (hi - lo) * i as f64 / MERIDIAN_SAMPLES as f64;
+    for t in ts {
         let p = meridian_at(a, axis, t);
         let f = signed_distance(b, p);
         if let Some((q, g)) = previous {

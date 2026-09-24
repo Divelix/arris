@@ -451,3 +451,53 @@ prop_shards! {
             blends_as_their_closed_forms(case, Blend::Chamfer)
         }
 }
+
+/// Shard 6 of `fillets_match_their_closed_forms` at 5000 cases on the
+/// fixed seed, shrunk: every edge of a small L but two sides' top and
+/// bottom, filleted at 0.012 about 95 out. Each corner's squareness
+/// was read off the directions from the ball's centre to its three touch
+/// points, and a body that far out with a ball that small puts them 2e-12
+/// off the faces' normals — past the angular tolerance, so a square
+/// corner was refused as `VertexBlend` (plans/measuring-harness step 6).
+#[test]
+fn a_small_fillet_corner_far_out_is_still_square() {
+    use arris_ops::arris_check::arris_topo::arris_math::nalgebra::{Quaternion, Unit};
+    let case = Case {
+        prism: Prism::Ell {
+            x: 1.0,
+            y: 1.0,
+            arm_x: 0.3762546790021239,
+            arm_y: 0.5247994758022808,
+            height: 1.0,
+        },
+        edges: vec![
+            PrismEdge::Bottom(0),
+            PrismEdge::Top(0),
+            PrismEdge::Rise(0),
+            PrismEdge::Bottom(1),
+            PrismEdge::Top(1),
+            PrismEdge::Rise(1),
+            PrismEdge::Rise(2),
+            PrismEdge::Rise(3),
+            PrismEdge::Bottom(4),
+            PrismEdge::Top(4),
+            PrismEdge::Rise(4),
+            PrismEdge::Bottom(5),
+            PrismEdge::Top(5),
+            PrismEdge::Rise(5),
+        ],
+        size: 0.012445353519596015,
+        pose: Isometry::new(
+            Unit::new_unchecked(Quaternion::new(
+                0.47173495514794034,
+                0.0,
+                0.7989230761002037,
+                0.373079147857608,
+            )),
+            Vec3::new(66.25009385227327, 66.38690084404882, 0.0),
+        ),
+    };
+    if let Err(e) = blends_as_their_closed_forms(case, Blend::Fillet) {
+        panic!("{e}");
+    }
+}

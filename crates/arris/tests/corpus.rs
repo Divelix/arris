@@ -686,6 +686,15 @@ fn regression_box_revolve_cylinder_common_fuse_builder_fault() {
     run("regression/box-revolve-cylinder-common-fuse-builder-fault");
 }
 
+/// A cylinder along x lying on a plate, its seam on the touch, cut from
+/// the plate (boolean_prop's tangent pair at 5000 cases, shrunk;
+/// plans/measuring-harness step 6).
+#[test]
+#[ignore = "Fault::Split, a section edge ending at a node nothing else reaches, where the desired cut is the plate (docs/BACKLOG.md, the seam on a touch)"]
+fn regression_tangent_seam_on_face_cut() {
+    run("regression/tangent-seam-on-face-cut");
+}
+
 /// A tee of equal radii: the branch's rim circle touches the main wall
 /// exactly at the two crossing vertices, and each touch cuts the rim
 /// there.

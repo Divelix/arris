@@ -1464,13 +1464,32 @@ fn corner(
                 *wp = r / r.norm();
             }
             // The pole: the point of a face square to the other two, taken
-            // off the first blend that has one across it.
+            // off the first blend that has one across it. Square is read
+            // off the planes' own normals, which `w` is up to sign: `w`
+            // comes through points as far out as the body and a radius as
+            // small as the blend, and a body 100 out with a blend of 0.01
+            // puts it 2e-12 off a normal — past the angular tolerance.
+            let mut normal = [Vec3::zeros(); 3];
+            for (n, &f) in normal.iter_mut().zip(&faces) {
+                *n = match m.surface(m.face(f)?.surface())? {
+                    Surface::Plane { frame } => frame.z().into_inner(),
+                    Surface::Cylinder { .. }
+                    | Surface::EllipticCylinder { .. }
+                    | Surface::Cone { .. }
+                    | Surface::Sphere { .. }
+                    | Surface::Torus { .. }
+                    | Surface::Nurbs(_) => return Err(vertex_blend()),
+                };
+            }
             let mut pole_at = None;
             for ends in &contact_point {
                 let p = (0..3)
                     .find(|q| !ends.contains(q))
                     .ok_or(invariant("a corner face off each blend"))?;
-                if ends.iter().all(|&q| w[p].dot(&w[q]).abs() <= tol.angular) {
+                if ends
+                    .iter()
+                    .all(|&q| normal[p].dot(&normal[q]).abs() <= tol.angular)
+                {
                     pole_at = Some((p, *ends));
                     break;
                 }

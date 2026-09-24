@@ -271,6 +271,34 @@ fn both_primitives_mesh() {
     assert_eq!(mesh, tessellate(&m, cylinder, 1e-2).unwrap(), "two runs");
 }
 
+/// `random_cylinders_in_random_poses_mesh_within_the_bound` at 5000 cases
+/// on the fixed seed, shrunk: a cylinder of radius and height 0.1 about 120
+/// out. `signed_volume` summed its triple products about the world origin,
+/// each of the order of the distance cubed, and lost 9e-9 of the volume to
+/// their cancellation; about the mesh's own box it holds to rounding
+/// (plans/measuring-harness step 6).
+#[test]
+fn a_small_cylinder_far_out_keeps_its_mesh_volume() {
+    let (r, h, chord) = (0.1, 0.1, 0.1 * 0.1);
+    let mut m = Model::default();
+    let origin = Point3::new(-64.57238853865147, 68.58539347065553, 76.73988644277067);
+    let axis = Axis::new(origin, Vec3::x()).unwrap();
+    let (body, _) = primitive_cylinder(&mut m, axis, r, h).unwrap();
+    let mesh = tessellate(&m, body, chord).unwrap();
+    let n = mesh
+        .edge_polyline(m.edges(body).unwrap()[0].id)
+        .unwrap()
+        .len()
+        - 1;
+    let theta = TAU / n as f64;
+    let ratio = mesh.signed_volume().unwrap() / (PI * r * r * h);
+    assert!(
+        (ratio - theta.sin() / theta).abs() <= 1e-12,
+        "ratio {ratio} vs sin θ / θ {}",
+        theta.sin() / theta
+    );
+}
+
 #[test]
 fn random_cylinders_in_random_poses_mesh_within_the_bound() {
     check(

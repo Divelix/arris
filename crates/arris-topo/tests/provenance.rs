@@ -193,10 +193,74 @@ fn chain() -> impl Strategy<Value = (Provenance, Provenance, Provenance)> {
     })
 }
 
+/// The named exclusion of the property below, a predicate over its
+/// failure as the differential's are (ADR-0024, step 5b amendment): two
+/// records that differ only in the order of some origin's *generated*
+/// outputs — the same sets, every modified list and the deletions alike.
+/// `then` flattens an origin's generated outputs into one list, which no
+/// longer says which piece each came through, so a later record
+/// generating from a piece of a split lands before or after it by the
+/// bracketing, where ADR-0009's nesting puts piece `i`'s outputs before
+/// piece `i + 1`'s. The fix is a representation question for ADR-0009
+/// (`then_nests_what_later_records_generate_from_pieces`,
+/// plans/measuring-harness step 6); it lifts this.
+fn differ_only_in_generated_order(x: &Provenance, y: &Provenance) -> bool {
+    let origins = |p: &Provenance| p.origins_recorded().collect::<BTreeSet<Origin>>();
+    let sorted = |v: &[Shape]| v.iter().copied().collect::<BTreeSet<Shape>>();
+    origins(x) == origins(y)
+        && x.deleted().collect::<BTreeSet<_>>() == y.deleted().collect::<BTreeSet<_>>()
+        && origins(x).into_iter().all(|o| {
+            x.modified_from(o) == y.modified_from(o)
+                && sorted(x.generated_from(o)) == sorted(y.generated_from(o))
+        })
+}
+
+/// `then_is_associative_on_random_small_records` at 5000 cases on the
+/// fixed seed, shrunk twice. First: `a` splits f3 into [f6, f7], `b`
+/// generates f10 from f7 and `c` f12 from f6; nested, f3's generated
+/// outputs are [f12, f10] — piece 0's first — which `a·(b·c)` gives and
+/// `(a·b)·c` does not. Second: `a` modifies a box face's role into f7,
+/// `b` generates f8 from the role and modifies f7 into f9, `c` generates
+/// f12 from f9: [f8, f12] one way, [f12, f8] the other.
+#[test]
+#[ignore = "then loses the nesting of what later records generate from pieces (docs/BACKLOG.md, plans/measuring-harness step 6 finding)"]
+fn then_nests_what_later_records_generate_from_pieces() {
+    let mut a = Provenance::new();
+    a.add_modified(face(3), face(6));
+    a.add_modified(face(3), face(7));
+    let mut b = Provenance::new();
+    b.add_generated(face(7), face(10));
+    let mut c = Provenance::new();
+    c.add_generated(face(6), face(12));
+    let (left, right) = (a.then(&b).then(&c), a.then(&b.then(&c)));
+    assert!(
+        differ_only_in_generated_order(&left, &right),
+        "the exclusion covers it"
+    );
+    assert_eq!(left, right, "a split's pieces");
+
+    let role = Origin::Role(Role::Box(BoxPart::Face(Coord::Z, Side::Max)));
+    let mut a = Provenance::new();
+    a.add_modified(role, face(7));
+    let mut b = Provenance::new();
+    b.add_generated(role, face(8));
+    b.add_modified(face(7), face(9));
+    let mut c = Provenance::new();
+    c.add_generated(face(9), face(12));
+    let (left, right) = (a.then(&b).then(&c), a.then(&b.then(&c)));
+    assert!(
+        differ_only_in_generated_order(&left, &right),
+        "the exclusion covers it"
+    );
+    assert_eq!(left, right, "a role named twice");
+}
+
 #[test]
 fn then_is_associative_on_random_small_records() {
     arris_debug::prop::check(chain(), |(a, b, c)| {
-        prop_assert_eq!(a.then(&b).then(&c), a.then(&b.then(&c)));
+        let (left, right) = (a.then(&b).then(&c), a.then(&b.then(&c)));
+        prop_assume!(left == right || !differ_only_in_generated_order(&left, &right));
+        prop_assert_eq!(left, right);
         prop_assert_eq!(
             a.then(&Provenance::new()),
             a.clone(),

@@ -202,7 +202,7 @@ bound has to be established here.
     it.
   - `differential.rs` is green at the fixed seed and CI's count, its
     `#[ignore]` off, and the histogram is in the commit body.
-- [ ] Step 6 **[2]** — **The known high-count property failures.** These
+- [x] Step 6 **[2]** — **The known high-count property failures.** These
   are the backlog's two properties that fail at 3000 cases:
   - `random_plane_and_cylinder_agree_on_every_common_property`: the bound
     scales with the point's magnitude.
@@ -214,6 +214,13 @@ bound has to be established here.
   Then `tools/test-timings.sh` runs the whole suite at the nightly count
   chosen in step 7 on the fixed seed. It is green, or every failure is
   handled the same way. The two backlog lines are removed.
+
+  *Found at step 6:* the whole suite was held green under `cargo nextest
+  run --workspace` at 5000 rather than through `tools/test-timings.sh`,
+  whose first pass runs each binary alone and kept seven percent of the
+  machine busy for hours; nextest's per-test durations stand in for its
+  per-binary column. Eight failures, in the order each property's first
+  one hid the next — see *Found while executing*.
 - [ ] Step 7 **[1]** — **The nightly workflow** (`nightly.yml`, on a
   schedule and on `workflow_dispatch`).
   - Seed: `sha256(date)`, printed as `ARRIS_PROPTEST_SEED=…`.
@@ -405,5 +412,48 @@ Found while executing:
   recipe, and the second has no committed dump to diff. The corpus holds
   both for every fixture that a finding becomes.
 
-One number is left open by design: the nightly case count is set from
-step 6's measured wall clock, not guessed now.
+- Step 6, at 5000 cases on the fixed seed, the nightly count (step 7).
+  The two backlog properties were test-side: the plane–cylinder ellipse
+  is held to rounding relative to its distance from the origin (4.5e5
+  out, one ulp is past the absolute 1e-10), and the coaxial meridians are
+  sampled at a cone's apex, since a chord across the V's kink misses a
+  crossing beside it. Three kernel faults were fixed where they were
+  found:
+  - the `parallel` passes of the boolean and the mesh returned whichever
+    error a `rayon` thread met first, so `tolerance_band` changed class
+    by the schedule, and CI's `parallel` job had been red since fda163d
+    (its own commit, 443719b);
+  - `TriMesh::signed_volume` summed about the world origin and lost 9e-9
+    of a cylinder of radius 0.1 about 120 out, the leak step 5a closed in
+    `mass_properties`; it now sums about the mesh's box centre;
+  - a fillet corner's squareness was read off directions from the ball's
+    centre to points 95 out, 2e-12 off the faces' normals for a ball of
+    0.012, past the angular tolerance: a square corner of a posed L was
+    refused as `VertexBlend`. It reads the planes' normals now.
+
+  Four are kernel findings, each an ignored regression beside its
+  property and a named exclusion in it, and each a backlog line:
+  - a touch within tolerance of a box face's rim — the corner on the
+    wall, or a cap's rim grazing the edge — rebuilds those entities under
+    new ids (`touch_at_the_face_rim`);
+  - a cylinder whose seam is the tangent ruling on a face fails the cut
+    with `Fault::Split` (`seam_on_the_touch`,
+    `regression/tangent-seam-on-face-cut`);
+  - `quadric_operands` reaches the L4 fault in eleven of sixteen shards,
+    held to the differential's own `hole-loop-outside-every-outer-loop`
+    through `differential::exclusion_of_panic`, so one fix lifts both;
+  - `Provenance::then` breaks ADR-0009's nesting across a composition: a
+    later record generating from a piece of a split lands before or
+    after the other pieces' outputs by the bracketing, since the flat
+    generated list no longer says which piece it came through. The
+    exclusion is a predicate over the failure, as step 5b's are: the two
+    bracketings differ only in a generated list's order. The fix is a
+    representation change and an ADR-0009 amendment, a plan of its own.
+
+  The suite at 5000: 99,600 CPU-seconds, 57 minutes of `cargo nextest
+  run --workspace` on the reference machine's 32 cores. `boolean_prop` is
+  72% of it: `quartic_cylinders` 19,000, `quadric_operands` 16,200,
+  `crossing_cylinders` 15,300 and the rest of it 21,200; the rest of
+  `arris-ops` 13,200 and every other crate together 14,600. At 1000 it
+  was 22,300 CPU-seconds, and CI's `test` job 2 h 21 min on a 4-core
+  runner, which is 0.385 runner-seconds per CPU-second here.

@@ -411,14 +411,21 @@ impl TriMesh {
     /// over the triangles: positive for outward normals. `None` when the
     /// mesh is not closed, because the sum then depends on the origin and
     /// means nothing.
+    ///
+    /// The positions are taken about the centre of the mesh's box, where
+    /// a closed mesh's sum is the same: about the world origin each term
+    /// is of the order of the distance cubed, and a body small against
+    /// its distance lost its volume to their cancellation — a cylinder of
+    /// radius 0.1 about 120 out was 9e-9 off, relative.
     pub fn signed_volume(&self) -> Option<f64> {
         self.is_closed().then(|| {
+            let centre = self.aabb().map_or([0.0; 3], |b| b.center());
             self.triangles
                 .iter()
                 .map(|t| {
-                    let a = self.pos(t[0]);
-                    let b = self.pos(t[1]);
-                    let c = self.pos(t[2]);
+                    let a = sub(self.pos(t[0]), centre);
+                    let b = sub(self.pos(t[1]), centre);
+                    let c = sub(self.pos(t[2]), centre);
                     dot(a, cross(b, c))
                 })
                 .sum::<f64>()

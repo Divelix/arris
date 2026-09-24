@@ -381,9 +381,28 @@ pub fn refusal(e: &OpError) -> String {
     }
 }
 
+/// The named exclusion that covers a panic caught on the test side, if
+/// any: how a property test over the same operations holds the same
+/// [`EXCLUSIONS`] as the differential, so one fix lifts both
+/// (plans/measuring-harness step 6).
+///
+/// ```
+/// use arris_debug::differential::exclusion_of_panic;
+///
+/// let guard = "kernel bug: an operation's output fails the checker\n  L4 f18: hole loop 0 lies outside every outer loop";
+/// let caught = std::panic::catch_unwind(|| panic!("{guard}")).unwrap_err();
+/// assert_eq!(exclusion_of_panic(&*caught).unwrap().name, "hole-loop-outside-every-outer-loop");
+/// let other = std::panic::catch_unwind(|| panic!("index out of bounds")).unwrap_err();
+/// assert!(exclusion_of_panic(&*other).is_none());
+/// ```
+pub fn exclusion_of_panic(payload: &(dyn std::any::Any + Send)) -> Option<&'static Exclusion> {
+    let outcome = panicked(payload);
+    EXCLUSIONS.iter().find(|e| e.covers(&outcome))
+}
+
 /// The outcome of a caught panic: the debug build's checker guard is a
 /// [`Outcome::CheckerViolation`], any other a [`Outcome::Panic`].
-fn panicked(payload: Box<dyn std::any::Any + Send>) -> Outcome {
+fn panicked(payload: &(dyn std::any::Any + Send)) -> Outcome {
     let message = payload
         .downcast_ref::<&str>()
         .map(|s| s.to_string())
@@ -423,7 +442,7 @@ pub fn judge(name: &str, recipe: &Recipe, oracle: Result<&Fixture, &str>) -> Out
 fn sort(name: &str, recipe: &Recipe, oracle: Result<&Fixture, &str>) -> Outcome {
     let built = match catch_unwind(AssertUnwindSafe(|| corpus::build(name, recipe))) {
         Ok(built) => built,
-        Err(payload) => return panicked(payload),
+        Err(payload) => return panicked(&*payload),
     };
     let oracle_solid =
         matches!(oracle, Ok(f) if f.expected.results.get("default").is_some_and(|r| !r.degenerate));
@@ -473,7 +492,7 @@ fn sort(name: &str, recipe: &Recipe, oracle: Result<&Fixture, &str>) -> Outcome 
             stage: e.stage(),
             what: e.to_string(),
         },
-        Err(payload) => panicked(payload),
+        Err(payload) => panicked(&*payload),
     }
 }
 
@@ -977,10 +996,10 @@ mod tests {
 
     #[test]
     fn a_panic_is_a_checker_violation_only_from_the_guard() {
-        let guard = panicked(Box::new(format!("{CHECKER_GUARD}\nL4 …")));
+        let guard = panicked(&format!("{CHECKER_GUARD}\nL4 …"));
         assert!(matches!(guard, Outcome::CheckerViolation(_)));
         assert_eq!(
-            panicked(Box::new("index out of bounds")),
+            panicked(&"index out of bounds"),
             Outcome::Panic("index out of bounds".into())
         );
         assert!(guard.fails() && !Outcome::BothRefuse.fails());

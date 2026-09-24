@@ -14,8 +14,8 @@
 //! failures).
 
 use arris_debug::prop::body::{
-    Boxed, CrossingPair, Cylindrical, OverlappingPair, QuadricPair, QuarticPair, SingularSlice,
-    SingularSolid, TangentPair,
+    Boxed, CrossingPair, Cylindrical, OverlappingPair, QuadricPair, QuadricSolid, QuadricTool,
+    QuarticPair, SingularSlice, SingularSolid, TangentPair,
 };
 use arris_debug::testing::{REL, close_to, fail, fitted_rel};
 use arris_debug::{dump_text, prop, prop_shards};
@@ -220,46 +220,185 @@ prop_shards! {
 #[test]
 fn a_cylinder_tangent_to_a_box_face_leaves_the_box_and_shares_nothing() {
     prop::check(prop::body::tangent_pair(), |pair: TangentPair| {
-        let mut m = Model::default();
-        let (a, b) = pair.build(&mut m).map_err(fail)?;
-        let pa = mass_properties(&m, a).map_err(fail)?;
-        let before = dump_text(&m, a).map_err(fail)?;
-        let (body, _) = run(&mut m, "cut(box, cylinder)", cut, a, b)?;
-        let faces = |body: Body| -> Result<Vec<_>, TestCaseError> {
-            Ok(m.faces(body).map_err(fail)?.iter().map(|f| f.id).collect())
-        };
-        prop_assert_eq!(faces(body)?, faces(a)?, "every face of the box kept by id");
-        let after = mass_properties(&m, body).map_err(fail)?;
-        prop_assert!(close(after.volume, pa.volume, pa.volume));
-        prop_assert!(close(after.area, pa.area, pa.area));
-        prop_assert!((after.centroid - pa.centroid).norm() <= REL * pa.area.sqrt());
-        match common(&mut m, a, b) {
-            Err(OpError::Degenerate {
-                reason: Reason::Empty,
-                ..
-            }) => {}
-            Ok(_) => return Err(fail("common(box, cylinder): a touch shares no material")),
-            Err(e) => return Err(fail(format!("common(box, cylinder): {e}"))),
-        }
-        match fuse(&mut m, a, b) {
-            Err(OpError::Degenerate {
-                reason: Reason::TangentContact,
-                ..
-            }) => {}
-            Ok(_) => {
-                return Err(fail(
-                    "fuse(box, cylinder): the face and the wall would share a slit",
-                ));
-            }
-            Err(e) => return Err(fail(format!("fuse(box, cylinder): {e}"))),
-        }
-        prop_assert_eq!(
-            dump_text(&m, a).map_err(fail)?,
-            before,
-            "the model is as it was"
-        );
-        Ok(())
+        prop_assume!(!touch_at_the_face_rim(&pair));
+        prop_assume!(!seam_on_the_touch(&pair));
+        a_tangent_cylinder_leaves_the_box(&pair)
     });
+}
+
+/// The named exclusion of the property above: a touch within the two
+/// bodies' tolerances of the touched face's own rim, where the cut
+/// rebuilds the rim's vertex, edges and faces under new ids that it
+/// should keep. Two ways in: a corner of the face on the wall — the face's
+/// two edges there lie in the tangent plane, so a ruling within
+/// `√(4 R tol)` of the corner puts it on the wall
+/// (`a_touch_at_a_box_corner_keeps_its_ids`) — and an end of the touching
+/// ruling within that reach of the face's edge, where the cap's rim
+/// grazes the edge (`a_rim_grazing_the_face_edge_keeps_its_ids`). Lifted
+/// by their fix (plans/measuring-harness step 6).
+fn touch_at_the_face_rim(pair: &TangentPair) -> bool {
+    let tol = arris_ops::arris_check::arris_topo::arris_math::Precision::DEFAULT
+        .tolerance()
+        .linear;
+    let (min, max) = (pair.cuboid.min, pair.cuboid.max);
+    let (j, k) = ((pair.face.0 + 1) % 3, (pair.face.0 + 2) % 3);
+    let axis = &pair.cylinder.axis;
+    let r = pair.cylinder.radius;
+    let d = axis.direction.into_inner();
+    let corner_on_wall = [(min, min), (min, max), (max, min), (max, max)]
+        .iter()
+        .any(|&(a, b)| {
+            let mut corner = if pair.face.1 { max } else { min };
+            corner[j] = a[j];
+            corner[k] = b[k];
+            let w = corner - axis.origin;
+            let off_axis = (w - w.dot(&d) * d).norm();
+            (off_axis - r).abs() <= 2.0 * tol
+        });
+    let reach = (4.0 * r * tol).sqrt();
+    let end_at_edge = [0.0, pair.cylinder.height].iter().any(|&t| {
+        let end = axis.at(t) - r * pair.normal();
+        [j, k].iter().any(|&c| {
+            let inside = end[c] >= min[c] - reach && end[c] <= max[c] + reach;
+            let other = if c == j { k } else { j };
+            let within = end[other] >= min[other] - reach && end[other] <= max[other] + reach;
+            inside
+                && within
+                && ((end[c] - min[c]).abs() <= reach || (end[c] - max[c]).abs() <= reach)
+        })
+    });
+    corner_on_wall || end_at_edge
+}
+
+/// The property above at 5000 cases on the fixed seed, once the corner
+/// was excluded, shrunk: a cylinder of radius 0.5 whose end's rim touches
+/// the face 1.25e-4 from its edge, within the `√(2 r tol)` the rim stays
+/// on the face for. The cut is the box, with that edge's faces rebuilt
+/// under new ids.
+#[test]
+#[ignore = "a cap's rim grazing a box edge rebuilds it under new ids (plans/measuring-harness step 6 finding)"]
+fn a_rim_grazing_the_face_edge_keeps_its_ids() {
+    let half_turn = Isometry::new(
+        UnitQuaternion::new_unchecked(Quaternion::new(0.0, 0.0, 1.0, 0.0)),
+        Vec3::zeros(),
+    );
+    let pair = TangentPair {
+        cuboid: Boxed {
+            min: Point3::new(-9.835693963533036, -8.255260674403228, -0.5),
+            max: Point3::new(9.835693963533036, 8.255260674403228, 0.5),
+            pose: half_turn,
+        },
+        cylinder: Cylindrical {
+            axis: Axis::new(
+                Point3::new(-1.1563076784374635, -8.255135824278263, -1.0),
+                Vec3::new(-0.9396571492496195, 0.3421175848507037, 0.0),
+            )
+            .unwrap(),
+            radius: 0.5,
+            height: 14.286588459948725,
+            pose: half_turn,
+        },
+        face: (2, false),
+    };
+    assert!(touch_at_the_face_rim(&pair), "the exclusion covers it");
+    if let Err(e) = a_tangent_cylinder_leaves_the_box(&pair) {
+        panic!("{e}");
+    }
+}
+
+/// The second named exclusion: the touch along the cylinder's seam,
+/// within the two bodies' tolerances — an axis along a box edge, whose
+/// seam `Frame::from_z` puts on the side against the face. The cut fails
+/// with `Fault::Split`, a section edge ending at a node nothing else
+/// reaches (`regression/tangent-seam-on-face-cut`, plans/measuring-harness
+/// step 6); the fix lifts it.
+fn seam_on_the_touch(pair: &TangentPair) -> bool {
+    let tol = arris_ops::arris_check::arris_topo::arris_math::Precision::DEFAULT
+        .tolerance()
+        .linear;
+    let axis = &pair.cylinder.axis;
+    let Ok(frame) = Frame::from_z(axis.origin, axis.direction.into_inner()) else {
+        return false;
+    };
+    let toward_face = -pair.normal();
+    pair.cylinder.radius * (1.0 - frame.x().dot(&toward_face)) <= 2.0 * tol
+}
+
+fn a_tangent_cylinder_leaves_the_box(pair: &TangentPair) -> Result<(), TestCaseError> {
+    let mut m = Model::default();
+    let (a, b) = pair.build(&mut m).map_err(fail)?;
+    let pa = mass_properties(&m, a).map_err(fail)?;
+    let before = dump_text(&m, a).map_err(fail)?;
+    let (body, _) = run(&mut m, "cut(box, cylinder)", cut, a, b)?;
+    let faces = |body: Body| -> Result<Vec<_>, TestCaseError> {
+        Ok(m.faces(body).map_err(fail)?.iter().map(|f| f.id).collect())
+    };
+    prop_assert_eq!(faces(body)?, faces(a)?, "every face of the box kept by id");
+    let after = mass_properties(&m, body).map_err(fail)?;
+    prop_assert!(close(after.volume, pa.volume, pa.volume));
+    prop_assert!(close(after.area, pa.area, pa.area));
+    prop_assert!((after.centroid - pa.centroid).norm() <= REL * pa.area.sqrt());
+    match common(&mut m, a, b) {
+        Err(OpError::Degenerate {
+            reason: Reason::Empty,
+            ..
+        }) => {}
+        Ok(_) => return Err(fail("common(box, cylinder): a touch shares no material")),
+        Err(e) => return Err(fail(format!("common(box, cylinder): {e}"))),
+    }
+    match fuse(&mut m, a, b) {
+        Err(OpError::Degenerate {
+            reason: Reason::TangentContact,
+            ..
+        }) => {}
+        Ok(_) => {
+            return Err(fail(
+                "fuse(box, cylinder): the face and the wall would share a slit",
+            ));
+        }
+        Err(e) => return Err(fail(format!("fuse(box, cylinder): {e}"))),
+    }
+    prop_assert_eq!(
+        dump_text(&m, a).map_err(fail)?,
+        before,
+        "the model is as it was"
+    );
+    Ok(())
+}
+
+/// The property above at 5000 cases on the fixed seed, shrunk: a ruling
+/// passing 4.3e-4 from a corner of the touched face, a cylinder of radius
+/// 5.05, so the corner is 1.9e-8 off the wall. The cut is the box, but
+/// with the corner's vertex, edges and faces rebuilt under new ids.
+#[test]
+#[ignore = "a touch at a box corner rebuilds it under new ids (plans/measuring-harness step 6 finding)"]
+fn a_touch_at_a_box_corner_keeps_its_ids() {
+    let half_turn = Isometry::new(
+        UnitQuaternion::new_unchecked(Quaternion::new(0.0, 0.0, 1.0, 0.0)),
+        Vec3::zeros(),
+    );
+    let pair = TangentPair {
+        cuboid: Boxed {
+            min: Point3::new(-0.5, -0.7717329406756528, -1.961474021437454),
+            max: Point3::new(0.5, 0.7717329406756528, 1.961474021437454),
+            pose: half_turn,
+        },
+        cylinder: Cylindrical {
+            axis: Axis::new(
+                Point3::new(-5.549081524292037, -5.182674682392934, 8.433831597890485),
+                Vec3::new(0.0, 0.5631140638662752, -0.8263791811729098),
+            )
+            .unwrap(),
+            radius: 5.049081524292037,
+            height: 18.8267736124392,
+            pose: half_turn,
+        },
+        face: (0, false),
+    };
+    assert!(touch_at_the_face_rim(&pair), "the exclusion covers it");
+    if let Err(e) = a_tangent_cylinder_leaves_the_box(&pair) {
+        panic!("{e}");
+    }
 }
 
 /// The dump with every number, and the sign in front of every id,
@@ -1366,5 +1505,72 @@ prop_shards! {
         [shard_0 shard_1 shard_2 shard_3 shard_4 shard_5 shard_6 shard_7
          shard_8 shard_9 shard_10 shard_11 shard_12 shard_13 shard_14
          shard_15]
-        (pair) = prop::body::quadric_pair() => { quadric_identities(&pair) }
+        (pair) = prop::body::quadric_pair() => {
+            under_exclusions(|| quadric_identities(&pair))
+        }
+}
+
+/// `f`, with a panic that one of the differential's named exclusions
+/// covers turned into a rejected case: the debug build's checker guard
+/// reporting a hole loop outside every outer loop (L4), which a thin
+/// tool through a frustum or an elliptic prism reaches in eleven shards of
+/// `quadric_operands_obey_every_identity` at 5000 cases on the fixed seed
+/// (`a_thin_slab_through_a_frustum_passes_the_checker`,
+/// plans/measuring-harness step 6). One list, `differential::EXCLUSIONS`,
+/// so the fix that lifts it there lifts it here; any other panic fails as
+/// before.
+fn under_exclusions(f: impl FnOnce() -> Result<(), TestCaseError>) -> Result<(), TestCaseError> {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
+        Ok(result) => result,
+        Err(payload) => match arris_debug::differential::exclusion_of_panic(&*payload) {
+            Some(exclusion) => Err(TestCaseError::reject(exclusion.name)),
+            None => std::panic::resume_unwind(payload),
+        },
+    }
+}
+
+/// `quadric_operands_obey_every_identity` at 5000 cases on the fixed seed,
+/// shard 12 of 16, shrunk: a frustum of radii 0.1 and 0.5, 0.2 tall and
+/// turned half a turn about y, and a slab 0.04 thick through it. One of
+/// the six booleans' output fails the checker's L4 — a hole loop outside
+/// every outer loop — which the debug build's guard turns into a panic.
+#[test]
+#[ignore = "the checker's L4, a hole loop outside every outer loop (docs/BACKLOG.md, the L4 findings; differential::EXCLUSIONS hole-loop-outside-every-outer-loop)"]
+fn a_thin_slab_through_a_frustum_passes_the_checker() {
+    let half_turn = Isometry::new(
+        UnitQuaternion::new_unchecked(Quaternion::new(0.0, 0.0, 1.0, 0.0)),
+        Vec3::zeros(),
+    );
+    let pair = QuadricPair {
+        solid: QuadricSolid::Frustum {
+            bottom: 0.1,
+            top: 0.5,
+            height: 0.2,
+        },
+        tool: QuadricTool::Box(Boxed {
+            min: Point3::new(
+                -0.020000000000000004,
+                -0.673145600891813,
+                -0.1710401140284179,
+            ),
+            max: Point3::new(0.020000000000000004, 0.673145600891813, 0.1710401140284179),
+            pose: Isometry::new(
+                UnitQuaternion::new_unchecked(Quaternion::new(
+                    0.35469347939734847,
+                    -0.7371988246533198,
+                    -0.46908439236099336,
+                    0.33270145993981504,
+                )),
+                Vec3::new(
+                    0.020280696329477547,
+                    -0.3195423506272533,
+                    -0.1747667029906671,
+                ),
+            ),
+        }),
+        pose: half_turn,
+    };
+    if let Err(e) = quadric_identities(&pair) {
+        panic!("{e}");
+    }
 }
