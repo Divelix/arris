@@ -715,7 +715,11 @@ fn triangulate_faces(works: &[FaceWork]) -> Result<Vec<FaceTriangles>, MeshError
     #[cfg(feature = "parallel")]
     {
         use rayon::prelude::*;
-        works.par_iter().map(triangulate_face).collect()
+        // Every result first, then the first error in face order: a
+        // `Result` collected straight from `rayon` is whichever error a
+        // thread met first.
+        let all: Vec<_> = works.par_iter().map(triangulate_face).collect();
+        all.into_iter().collect()
     }
     #[cfg(not(feature = "parallel"))]
     {

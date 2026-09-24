@@ -840,7 +840,12 @@ impl<'m> Build<'m> {
         #[cfg(feature = "parallel")]
         {
             use rayon::prelude::*;
-            work.par_iter().map(one).collect()
+            // Every result first, then the first error in order: a
+            // `Result` collected straight from `rayon` is whichever error
+            // a thread met first, so two failing items would make the
+            // error — a refusal or a fault — depend on the schedule.
+            let all: Vec<_> = work.par_iter().map(one).collect();
+            all.into_iter().collect()
         }
         #[cfg(not(feature = "parallel"))]
         {

@@ -1138,7 +1138,9 @@ B-Rep).
   every candidate face pair, and the splitting of every face in its own
   (u, v). Each collects its results in the sequential order before
   anything mutable sees them, which is what makes a result byte-identical
-  either way. Parallelism *across* operations is clone-evaluate-import,
+  either way — its error included: every item is evaluated and the first
+  error *in order* is returned, since a `Result` collected straight from
+  `rayon` is whichever error a thread met first. Parallelism *across* operations is clone-evaluate-import,
   above.
 - `wasm32-unknown-unknown` builds every crate with default features; CI
   checks it. No kernel crate touches the filesystem, the clock, threads or
