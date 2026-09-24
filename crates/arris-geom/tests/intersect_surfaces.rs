@@ -2441,3 +2441,57 @@ fn a_plane_cuts_a_cone_off_its_axis_in_every_conic() {
             .all(|c| matches!(c, Curve::Line { origin, .. } if (origin - apex).norm() < 1e-12))
     );
 }
+
+/// Found by the `intersect_surfaces` fuzz target (`fuzz/`, ADR-0024 §5):
+/// a plane 2e-12 from square to an elliptic cylinder's axis — past the
+/// angular tolerance, so the oblique arm — cut a section of radius 1000
+/// that was 3e-6 small, the in-plane basis it read the semi-diameters in
+/// being off the plane by the rounding of a near-cancelling difference.
+#[test]
+fn a_plane_a_hair_from_square_cuts_an_elliptic_cylinder_to_its_radii() {
+    let axis = Vec3::new(0.0, -1.0, -1.0);
+    for (a, b) in [(999.999, 999.999), (1000.0, 400.0)] {
+        let wall = Surface::EllipticCylinder {
+            frame: Frame::new(Point3::new(-472.0, -936.0, 488.0), axis, -Vec3::x()).unwrap(),
+            major_radius: a,
+            minor_radius: b,
+        };
+        for tilt in [2e-12, 5e-12, 1e-10, 1e-8] {
+            let normal = axis + Vec3::new(0.0, tilt, -tilt);
+            let cap = Surface::Plane {
+                frame: Frame::new(Point3::origin(), normal, -Vec3::x()).unwrap(),
+            };
+            let hit = intersect_surfaces(
+                &cap,
+                &wall,
+                &Aabb {
+                    min: [-2e3; 3],
+                    max: [2e3; 3],
+                },
+                tol(),
+            )
+            .unwrap();
+            let [meet] = hit.curves() else {
+                panic!("{hit:?}")
+            };
+            let Curve::Ellipse {
+                major_radius,
+                minor_radius,
+                ..
+            } = meet.curve
+            else {
+                panic!("{meet:?}")
+            };
+            // The section's semi-axes are `a` and `b` to first order in
+            // the tilt, the stretch along the tilt `1/cos` of it.
+            assert!(
+                (major_radius - a).abs() <= 1e-9 * a,
+                "{tilt:e}: {major_radius} for {a}"
+            );
+            assert!(
+                (minor_radius - b).abs() <= 1e-9 * a,
+                "{tilt:e}: {minor_radius} for {b}"
+            );
+        }
+    }
+}

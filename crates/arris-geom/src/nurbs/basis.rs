@@ -22,10 +22,15 @@ pub(crate) type Row = [f64; MAX_DEGREE + 1];
 /// in `1..=MAX_DEGREE`; there are at least `degree + 1` control points
 /// and exactly `n + degree + 1` finite, non-decreasing knots; the domain
 /// `[knots[degree], knots[n]]` has positive length and its last span is
-/// not empty (so evaluation at the domain's end divides by nothing); no
-/// knot value has multiplicity above `degree + 1`, and none strictly
-/// inside the domain has multiplicity above `degree` (a higher one would
-/// break the curve).
+/// not empty (so evaluation at the domain's end divides by nothing); two
+/// knots that differ differ by more than rounding
+/// ([`arris_math::RELATIVE_ROUNDING`] of the larger of their magnitude
+/// and one, the scale the kernel's parameters are resolved at), since a
+/// span that short is divided by in every derivative and its reciprocal
+/// is past `f64` — a curve over `[0, 5e-315]` evaluated to NaN; no knot
+/// value has multiplicity above `degree + 1`, and none strictly inside
+/// the domain has multiplicity above `degree` (a higher one would break
+/// the curve).
 pub(crate) fn validate(degree: usize, knots: &[f64], n: usize) -> Result<(), String> {
     if degree == 0 || degree > MAX_DEGREE {
         return Err(format!("degree {degree} is not in 1..={MAX_DEGREE}"));
@@ -49,6 +54,16 @@ pub(crate) fn validate(degree: usize, knots: &[f64], n: usize) -> Result<(), Str
     if let Some(i) = knots.windows(2).position(|w| w[0] > w[1]) {
         return Err(format!(
             "knots {i} and {} decrease: {} > {}",
+            i + 1,
+            knots[i],
+            knots[i + 1]
+        ));
+    }
+    if let Some(i) = knots.windows(2).position(|w| {
+        w[1] > w[0] && arris_math::is_negligible(w[1] - w[0], w[0].abs().max(w[1].abs()).max(1.0))
+    }) {
+        return Err(format!(
+            "knots {i} and {} differ only by rounding: {} and {}",
             i + 1,
             knots[i],
             knots[i + 1]
@@ -196,6 +211,23 @@ mod tests {
         assert!(validate(3, &flat, 4).unwrap_err().contains("is empty"));
         let nan = [0.0, 0.0, f64::NAN, 1.0, 1.0, 1.0];
         assert!(validate(2, &nan, 3).unwrap_err().contains("not finite"));
+        // Found by the `intersect_curves` fuzz target (`fuzz/`, ADR-0024
+        // §5): a domain of 5e-315 passed, and every derivative over it
+        // was infinite.
+        let subnormal = [0.0, 0.0, 0.0, 5e-315, 5e-315, 5e-315];
+        assert!(
+            validate(2, &subnormal, 3)
+                .unwrap_err()
+                .contains("differ only by rounding")
+        );
+        let rounding = [1.0, 1.0, 1.0, 1.0 + f64::EPSILON, 2.0, 2.0, 2.0];
+        assert!(
+            validate(2, &rounding, 4)
+                .unwrap_err()
+                .contains("knots 2 and 3 differ only by rounding")
+        );
+        let short = [0.0, 0.0, 0.0, 1e-9, 1e-9, 1e-9];
+        assert_eq!(validate(2, &short, 3), Ok(()));
     }
 
     #[test]

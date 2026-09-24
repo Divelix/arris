@@ -20,7 +20,11 @@ operation contract are in [architecture](ARCHITECTURE.md).
   orthonormal `UnitVec3` and `z = x × y`, built only through validating
   constructors (`Frame::new(origin, z, x_hint)`, `Frame::from_z`, which
   picks `x` by the rule of Open CASCADE's `gp_Ax3(P, N)` so an axis-built
-  cylinder seams where the oracle's does, `Frame::from_rotation`). Every
+  cylinder seams where the oracle's does, `Frame::from_rotation`). Both
+  scale a direction by its largest coordinate before normalising it, so
+  an axis given at `1e-154` is as unit as one given at `1`, and
+  `Frame::new` refuses a hint that is along `z` to rounding, whose
+  residue has no direction. Every
   analytic surface and curve is placed by a frame, so a transform is a
   frame change and nothing else: an **`Isometry`** (a rotation then a
   translation) moves geometry through `Frame::transformed`. A **`Frame2`**
@@ -1082,8 +1086,10 @@ sums), and knot insertion as the primitive edit (degree elevation is in
 the backlog). The constructors validate and return
 `GeomError::Degenerate` naming the fault: a knot value's multiplicity is
 at most `p + 1`, and at most `p` strictly inside the domain
-`[knots[p], knots[n]]`, which is non-empty and whose last span is not.
-A knot vector need not be clamped. A curve or a surface direction is
+`[knots[p], knots[n]]`, which is non-empty and whose last span is not,
+and two knots that differ do so by more than `RELATIVE_ROUNDING` of the
+larger of their magnitude and one, since every derivative divides by that
+span. A knot vector need not be clamped. A curve or a surface direction is
 **periodic** exactly when its structure wraps: the knots repeat `n − p`
 places on shifted by the domain's length and the last `p` control points
 (rows, for a surface) repeat the first `p`, both to rounding; `period()`

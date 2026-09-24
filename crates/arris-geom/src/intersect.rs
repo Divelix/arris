@@ -866,6 +866,16 @@ fn plane_elliptic_cylinder(
     let Some(e1) = UnitVec3::try_new(z - nz * n.into_inner(), 0.0) else {
         return Err(frame_degenerate(kind));
     };
+    // The axis's part in the plane is short when the plane is a hair
+    // past square to it — the difference of two near-equal unit vectors —
+    // and normalised it keeps the rounding of that difference along `n`,
+    // 8e-5 of it at 2e-12 from square: `e2` came out short by 3e-9 and a
+    // section of radius 1000 was 3e-6 small (the `intersect_surfaces`
+    // fuzz target, ADR-0024 §5). One pass of Gram–Schmidt puts it back
+    // in the plane.
+    let Some(e1) = UnitVec3::try_new(e1.into_inner() - e1.dot(&n) * n.into_inner(), 0.0) else {
+        return Err(frame_degenerate(kind));
+    };
     let e2 = n.cross(&e1);
     let (major, minor, phi) = principal_axes(
         Vec2::new(big.dot(&e1), big.dot(&e2)),

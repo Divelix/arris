@@ -13,8 +13,8 @@ pub enum FrameError {
     NonFinite,
     /// The axis has zero length.
     ZeroAxis,
-    /// The `x` hint has no component perpendicular to the axis: it is zero
-    /// or exactly parallel to `z`.
+    /// The `x` hint has no component perpendicular to the axis beyond
+    /// rounding: it is zero, or parallel to `z` to rounding.
     DegenerateHint,
     /// Axes given as a frame are not unit and mutually perpendicular to
     /// rounding, or `z ≠ x × y` for a 3D frame.
@@ -110,16 +110,26 @@ impl Frame {
     /// `x_hint`'s component perpendicular to `z`; `y = z × x`.
     ///
     /// Errors: a non-finite input, a zero `z`, or a hint with no
-    /// perpendicular component. A hint that is *nearly* parallel to `z`
-    /// still yields an orthonormal frame, but its `x` is whatever rounding
-    /// left of the perpendicular component; a caller who wants to reject
-    /// that compares the hint against `z` with its own `Tolerance` first.
+    /// perpendicular component beyond rounding
+    /// ([`crate::RELATIVE_ROUNDING`] of the hint's length): what is left
+    /// of a hint along `z` is noise whose direction means nothing, and
+    /// may lie along `z` itself. A hint that is *nearly* parallel to `z`,
+    /// past rounding, still yields an orthonormal frame, but its `x` is
+    /// only as good as the few bits of the perpendicular component; a
+    /// caller who wants to reject that compares the hint against `z` with
+    /// its own `Tolerance` first.
     pub fn new(origin: Point3, z: Vec3, x_hint: Vec3) -> Result<Self, FrameError> {
         if !(is_finite3(&origin.coords) && is_finite3(&z) && is_finite3(&x_hint)) {
             return Err(FrameError::NonFinite);
         }
-        let z = UnitVec3::try_new(z, 0.0).ok_or(FrameError::ZeroAxis)?;
+        let z = rescaled(z)
+            .and_then(|z| UnitVec3::try_new(z, 0.0))
+            .ok_or(FrameError::ZeroAxis)?;
+        let x_hint = rescaled(x_hint).ok_or(FrameError::DegenerateHint)?;
         let perpendicular = x_hint - z.dot(&x_hint) * z.into_inner();
+        if crate::is_negligible(perpendicular.norm(), x_hint.norm()) {
+            return Err(FrameError::DegenerateHint);
+        }
         let x = UnitVec3::try_new(perpendicular, 0.0).ok_or(FrameError::DegenerateHint)?;
         Ok(Self::orthonormalised(origin, x, z))
     }
@@ -137,7 +147,9 @@ impl Frame {
         if !(is_finite3(&origin.coords) && is_finite3(&z)) {
             return Err(FrameError::NonFinite);
         }
-        let z = UnitVec3::try_new(z, 0.0).ok_or(FrameError::ZeroAxis)?;
+        let z = rescaled(z)
+            .and_then(|z| UnitVec3::try_new(z, 0.0))
+            .ok_or(FrameError::ZeroAxis)?;
         let (a, b, c) = (z.x, z.y, z.z);
         let (aa, ba, ca) = (a.abs(), b.abs(), c.abs());
         let hint = if ba <= aa && ba <= ca {
@@ -295,6 +307,24 @@ impl Frame {
 
 fn is_finite3(v: &Vec3) -> bool {
     v.iter().all(|c| c.is_finite())
+}
+
+/// `v` scaled by a power of two that brings its largest coordinate into
+/// `[1, 2)`: the same direction, so the squares its normalisation sums
+/// neither underflow nor overflow. A vector whose coordinates are near
+/// `1e-154` has squares in the subnormal range, and normalised directly
+/// it comes out a few parts in ten thousand off unit length. A power of
+/// two scales exactly, so a vector already in range normalises to the
+/// same bits as without it. `None` for the zero vector.
+fn rescaled(v: Vec3) -> Option<Vec3> {
+    let largest = v.amax();
+    if largest <= 0.0 {
+        return None;
+    }
+    // In [-1023, 1074]: applied in two halves, since `2^1074` is not an
+    // `f64` and neither half overflows or underflows on the way.
+    let k = -(largest.log2().floor() as i32);
+    Some(v * 2f64.powi(k / 2) * 2f64.powi(k - k / 2))
 }
 
 /// Which way a [`Frame2`]'s `y` turns from its `x`.
@@ -478,6 +508,60 @@ impl Frame2 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Found by the `intersect_surfaces` fuzz target (`fuzz/`,
+    /// ADR-0024 §5): a hint along `z` up to rounding leaves a residue
+    /// that can itself lie along `z`, whose cross product with it is zero
+    /// and normalises to NaN axes.
+    #[test]
+    fn a_hint_along_the_axis_to_rounding_is_degenerate_not_nan() {
+        let mut nan = Vec::new();
+        for k in 1..=2000 {
+            let scale = 0.001 * f64::from(k);
+            for z in [
+                Vec3::new(-1.0, -1.0, -1.0),
+                Vec3::new(1.0, 2.0, 3.0),
+                Vec3::new(0.3, -0.7, 0.1),
+            ] {
+                let hint = z * scale;
+                match Frame::new(Point3::origin(), z, hint) {
+                    Err(FrameError::DegenerateHint) => {}
+                    Ok(f) => nan.push((z, scale, f)),
+                    Err(e) => panic!("{z:?} × {scale}: {e}"),
+                }
+            }
+        }
+        assert!(
+            nan.is_empty(),
+            "{} frames built: {:?}",
+            nan.len(),
+            nan.first()
+        );
+    }
+
+    /// Found by the `intersect_surfaces` fuzz target beside the one
+    /// above: an axis whose coordinates are near `1e-154` has squares in
+    /// the subnormal range, and normalised as given it came out 8e-4 off
+    /// unit length — a cylinder about it was a different cylinder.
+    #[test]
+    fn a_tiny_axis_or_hint_still_makes_an_orthonormal_frame() {
+        for scale in [1e-160, 1e-155, 1e-154, 1e-150, 1.0, 1e150, 1e154] {
+            let z = Vec3::new(-0.7, 3e-300, -0.7) * scale;
+            let hint = Vec3::new(0.3, -1.0, 0.2) * scale;
+            for f in [
+                Frame::new(Point3::origin(), z, hint).unwrap(),
+                Frame::from_z(Point3::origin(), z).unwrap(),
+            ] {
+                for axis in [f.x(), f.y(), f.z()] {
+                    assert!(
+                        (axis.norm() - 1.0).abs() <= crate::RELATIVE_ROUNDING,
+                        "{scale:e}: {axis:?}"
+                    );
+                }
+                assert!(f.x().dot(&f.z()).abs() <= crate::RELATIVE_ROUNDING);
+            }
+        }
+    }
 
     #[test]
     fn world_frame_is_the_identity() {
