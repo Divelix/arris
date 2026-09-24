@@ -178,7 +178,17 @@ bound has to be established here.
   takes the ignore off. An `OpError::Internal` is typed and never a
   panic, so it counts under `ArrisRefuses` as `Internal(<fault>)`, where
   the histogram shows it. Step 5 decides whether it fails the run.
-- [ ] Step 5 **[3]** — **The differential's first findings.**
+- [x] Step 5a **[2]** — **`mass_properties` about the body, not the
+  origin** (split out of step 5, which found it). The volume and first
+  moments are integrated about the centre of the body's vertices. Faces
+  whose pcurves of one section are fitted apart close only to the fit,
+  and each gap leaks flux in proportion to its distance from the point
+  the integral is taken about.
+  - Test: a tilted cylinder 110 from the origin under an oblique plane
+    measures to `π r² t` within 1e-11. Before the fix it was 4.9e-9 off.
+  - `boolean_prop`'s `cut_then_fuse_of_a_cylinder_across_a_small_box`
+    now holds to `REL`. It had pinned the leak as a fit difference.
+- [ ] Step 5b **[3]** — **The differential's first findings.**
   - Run at CI's count (1000) on the fixed seed.
   - Every `Disagree`, `CheckerViolation` or `Panic` class is shrunk into
     `tests/fixtures/regression/<slug>/` with its oracle value and the
@@ -340,6 +350,20 @@ Found while executing:
   `OracleRefuses`, 6 `ArrisRefuses` (4 `Degenerate(Empty)`, one
   `Internal(Geometry)` and one `Internal(Split)`), and 71 `Disagree` (67
   measure, 3 counts, 1 mesh). There was no panic on this seed.
+- Step 5, at CI's count (1000) on the fixed seed, shrink off: 530
+  `Agree`, 69 `BothRefuse`, 137 `OracleRefuses`, 20 `ArrisRefuses`, 9
+  `CheckerViolation` and 235 `Disagree` (222 measure, 11 counts, 2 mesh).
+  The step-4 question, which side is off, has one answer for almost all
+  of the measure cases: Arris. Case 172 is a posed cylinder in common
+  with a box, and its closed form puts Open CASCADE 2.5e-10 off and Arris
+  1.4e-9 off. The error came from `mass_properties` taking its first pass
+  about the world origin. Taken about the body's own centroid, the
+  same model is 1e-12 off, and cases 345 and 553 go from 3e-4 and 4.2e-7
+  to 7e-7 and 9e-9. Before the fix, 220 of the 222 were already inside
+  `(tol_arris + tol_occ) · A / V`, the most that the two shapes'
+  tolerances allow. A tolerance-derived bound would have passed them and
+  left the leak in place, so step 5 was split. Step 5a fixes the
+  integral, and step 5b sorts what the differential still finds after it.
 - Step 4: `OpError::Internal` is a caught kernel bug, but it is typed.
   It counts as `ArrisRefuses/Internal(<fault>)` for now. Step 5 decides
   whether that class fails the run, which would be an ADR-0024 amendment.

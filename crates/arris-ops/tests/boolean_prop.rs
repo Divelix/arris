@@ -527,13 +527,13 @@ fn cut_then_fuse_of_an_oblique_cylinder_through_a_box() {
 /// The second shrunk failure of the property above, the one that fixed
 /// its bound (seed and count in the commit body): a cylinder across a
 /// box a tenth of its length, at a pose 38 units from the origin. Every
-/// count matches and the additivity identities hold to 1e-15, but
-/// `V((A − B) ∪ B)` and `V(A ∪ B)` differ by 1.02e-9 relative — the
-/// section curve's pcurve on the cylinder is a NURBS fitted once for
-/// the union and again for the cut it is restored from, each within the
-/// edge's tolerance, so the two (u, v) regions differ by that. The
-/// difference scales linearly with the model's tolerance, which is what
-/// [`fitted_rel`] states.
+/// count matched and the additivity identities held to 1e-15, but
+/// `V((A − B) ∪ B)` and `V(A ∪ B)` differed by 1.02e-9 relative. The
+/// section's pcurve on the cylinder is fitted once for the union and
+/// again for the cut it is restored from, and the gap each fit leaves was
+/// integrated about the origin, 38 away. `mass_properties` now takes its
+/// first pass about the body's own vertices (plans/measuring-harness
+/// step 5), and the two agree to [`REL`].
 #[test]
 fn cut_then_fuse_of_a_cylinder_across_a_small_box() {
     let pose = Isometry::new(
@@ -569,14 +569,7 @@ fn cut_then_fuse_of_a_cylinder_across_a_small_box() {
         arris_debug::dump::euler_line(&m, restored).unwrap(),
         arris_debug::dump::euler_line(&m, union).unwrap()
     );
-    assert!(
-        !close(prestored.volume, punion.volume, 1.0),
-        "the case no longer needs the fitted bound: {} vs {}",
-        prestored.volume,
-        punion.volume
-    );
-    let rel = fitted_rel(&m, &punion);
-    assert_same_properties_to(&prestored, &punion, "(a − b) ∪ b against a ∪ b", rel).unwrap();
+    assert_same_properties_to(&prestored, &punion, "(a − b) ∪ b against a ∪ b", REL).unwrap();
 }
 
 // -- two cylinders on parallel or crossing axes ---------------------------

@@ -15,7 +15,7 @@
 //! fixture corpus.
 
 use arris_check::arris_topo::arris_geom::integrate::{inner_step, region_integral};
-use arris_check::arris_topo::arris_math::{Matrix3, Point3, Vec3};
+use arris_check::arris_topo::arris_math::{Aabb, Matrix3, Point3, Vec3};
 use arris_check::arris_topo::entity::{Body as BodyEntity, BodyKind};
 use arris_check::arris_topo::{Body, FaceId, Model, Shape};
 use arris_check::flux::{FluxError, face_flux};
@@ -106,6 +106,12 @@ const SECOND: [Integrand; 6] = [
 /// the B-Rep — no mesh, no chord tolerance, and no sampling of the
 /// surfaces beyond a quadrature the closed forms are exact under.
 ///
+/// The volume and the first moments are integrated about the centre of
+/// the body's vertices rather than the origin: faces whose pcurves of one
+/// section are fitted apart close only to the fit, and each gap leaks
+/// flux in proportion to its distance from the point the integral is
+/// taken about — the body's size, not its distance from the origin.
+///
 /// The second moments are integrated about the centroid itself rather
 /// than about the origin and carried there by the parallel-axis theorem:
 /// a small body far from the origin has `∫ x² dV ≈ V |c|²`, orders of
@@ -151,7 +157,8 @@ pub fn mass_properties(m: &Model, body: Body) -> Result<MassProperties, OpError>
     }
     let faces = face_uses(m, body, entity)?;
 
-    let first = integrate_faces(m, body, &faces, Vec3::zeros(), &FIRST)?;
+    let reference = reference_point(m, body)?;
+    let first = integrate_faces(m, body, &faces, reference, &FIRST)?;
     let volume = first[0];
     if !(volume.is_finite() && volume > 0.0) {
         return Err(OpError::Degenerate {
@@ -162,7 +169,7 @@ pub fn mass_properties(m: &Model, body: Body) -> Result<MassProperties, OpError>
             },
         });
     }
-    let centroid = Point3::new(first[1], first[2], first[3]) / volume;
+    let centroid = Point3::from(reference + Vec3::new(first[1], first[2], first[3]) / volume);
     let second = integrate_faces(m, body, &faces, centroid.coords, &SECOND)?;
     // The physical tensor: the diagonal is `∫ (|r|² − x_i²) dV`, the
     // off-diagonal the negated products, symmetric by construction.
@@ -183,6 +190,25 @@ pub fn mass_properties(m: &Model, body: Body) -> Result<MassProperties, OpError>
         centroid,
         inertia,
     })
+}
+
+/// The point the first pass is taken about: the centre of the box
+/// around the body's vertices, or the origin for a body with none.
+///
+/// A flux over a closed surface does not depend on where it is taken
+/// about, but a boundary whose faces carry their own fitted pcurves of
+/// one section is closed only to its tolerance, and every gap between
+/// them leaks flux of `P / 3` and `x² / 2` in proportion to `|P|` and
+/// `|P|²`. About the origin that is the body's distance from the origin;
+/// about a point of the body it is the body's own size. A cylinder posed
+/// 100 from the origin and cut by an oblique plane measures 1e-9 off its
+/// closed form about the origin and 1e-12 about its own vertices.
+fn reference_point(m: &Model, body: Body) -> Result<Vec3, OpError> {
+    let mut points = Vec::new();
+    for v in m.vertices(body)? {
+        points.push(m.vertex(v.id)?.point().coords.into());
+    }
+    Ok(Aabb::of_points(&points).map_or_else(Vec3::zeros, |b| Vec3::from(b.center())))
 }
 
 /// The body's face uses with their effective orientation, through the
@@ -273,5 +299,42 @@ mod tests {
             OpError::NotFound(id) => assert_eq!(id, AnyId::from(gone)),
             other => panic!("{other:?}"),
         }
+    }
+
+    /// A tilted cylinder far from the origin, less what lies above an
+    /// oblique plane crossing every one of its rulings: `π r² t` exactly,
+    /// `t` the axis's length below the plane. Its section is fitted on the
+    /// cylinder side, so its faces close only to the fit; taken about the
+    /// origin, 110 away, the volume was 1e-9 off (plans/measuring-harness
+    /// step 5, the differential's case 172 of the fixed seed).
+    #[test]
+    fn a_body_far_from_the_origin_measures_to_its_closed_form() {
+        use core::f64::consts::PI;
+
+        use arris_check::arris_topo::arris_math::Axis;
+
+        use crate::{common, primitive_box, primitive_cylinder};
+
+        let mut m = Model::default();
+        let base = Point3::new(100.0, -80.0, 60.0);
+        let axis = Axis::new(base, Vec3::new(0.3, 0.2, 1.0)).unwrap();
+        let (radius, t) = (1.0, 3.0);
+        let (cylinder, _) = primitive_cylinder(&mut m, axis, radius, 6.0).unwrap();
+        let top = base.z + t * axis.direction.z;
+        let (slab, _) = primitive_box(
+            &mut m,
+            base - Vec3::new(10.0, 10.0, 10.0),
+            Point3::new(base.x + 10.0, base.y + 10.0, top),
+        )
+        .unwrap();
+        let (below, _) = common(&mut m, cylinder, slab).unwrap();
+        let p = mass_properties(&m, below).unwrap();
+        let volume = PI * radius * radius * t;
+        assert!(
+            (p.volume - volume).abs() < 1e-11 * volume,
+            "{} vs {volume}: {:e} relative",
+            p.volume,
+            (p.volume - volume) / volume
+        );
     }
 }

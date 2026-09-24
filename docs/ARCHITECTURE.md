@@ -206,9 +206,13 @@ Green's theorem in each face's own (u, v) (`geom::integrate`), as the
 checker's B2 row already computes an enclosed volume: nothing is
 discretised, so the numbers are the geometry's and not a mesh's, and the
 corpus holds them to the oracle's within each fixture's tolerance. The
-second moments are integrated about the centroid itself rather than
-carried there by the parallel-axis theorem, which a small body far from
-the origin would pay for in cancellation. A body that is not a `Solid`
+volume and first moments are integrated about the centre of the body's
+vertices, and the second moments about the centroid itself rather than
+carried there by the parallel-axis theorem. Both are for a body far from
+the origin: the parallel-axis theorem would pay for its distance in
+cancellation, and faces whose pcurves of one section are fitted apart
+close only to the fit, so every gap leaks flux in proportion to its
+distance from the point the integral is taken about. A body that is not a `Solid`
 is `OpError::Degenerate` with `Reason::NotSolid`; an invalid one
 `InvalidInput`, as an operation's input is.
 

@@ -42,13 +42,14 @@ pub fn close_to(a: f64, b: f64, floor: f64, rel: f64) -> bool {
 /// its edge's tolerance, so a face's (u, v) region is bounded to within
 /// `tol` in 3D and every mass property — each an integral over that
 /// boundary — carries a relative error of order `tol` over a length of
-/// the body, taken as `√A`. Measured twice, each time scaling with the
-/// model's tolerance: a boolean's section curve fitted once for a union
-/// and again for the cut it is restored from, 7.4e-9 in a volume of 7.2
-/// at `tol` 1e-7 and 8.3e-11 at 1e-9; a fillet miter's ellipse fitted on
-/// a unit box moved 60 away, 9.4e-9 of its closed-form volume at 1e-7,
-/// 6.9e-11 at 1e-8 and 1e-11 at 1e-9. `REL` alone is a literal, and the
-/// kernel's rule is that the tolerance is the model's.
+/// the body, taken as `√A`. `REL` alone is a literal, and the kernel's
+/// rule is that the tolerance is the model's. The two cases it was first
+/// measured on, a union against the cut it is restored from 38 away
+/// from the origin and a fillet miter on a box 60 away, were mostly the
+/// gaps between fits integrated about the origin, which
+/// `mass_properties` no longer does (plans/measuring-harness step 5); a
+/// section on a cone, a sphere or a torus fitted twice still needs the
+/// bound.
 pub fn fitted_rel(m: &Model, p: &MassProperties) -> f64 {
     REL + m.precision().default_tolerance / p.area.sqrt()
 }
