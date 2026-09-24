@@ -622,6 +622,70 @@ fn regression_pin_at_disc_rim_common_fuse() {
     run("regression/pin-at-disc-rim-common-fuse");
 }
 
+/// A cylinder fused with a revolved profile, less a posed extrusion (the differential's draw, shrunk; plans/measuring-harness step
+/// 5b).
+#[test]
+#[ignore = "the cut's result fails the checker's L5 (a loop intersects itself) (docs/BACKLOG.md, the differential's findings)"]
+fn regression_revolve_fuse_extrude_cut_loop_crosses_itself() {
+    run("regression/revolve-fuse-extrude-cut-loop-crosses-itself");
+}
+
+/// A revolved profile fused with a posed cylinder and then an extrusion (the differential's draw, shrunk; plans/measuring-harness step
+/// 5b).
+#[test]
+#[ignore = "one shell and three faces fewer than Open CASCADE's: a cavity is missing (docs/BACKLOG.md, the differential's findings)"]
+fn regression_revolve_cylinder_extrude_fuse_misses_a_shell() {
+    run("regression/revolve-cylinder-extrude-fuse-misses-a-shell");
+}
+
+/// A full revolve less an elliptic extrusion (the differential's draw, shrunk; plans/measuring-harness step
+/// 5b).
+#[test]
+#[ignore = "more faces, edges and vertices than Open CASCADE's (docs/BACKLOG.md, the differential's findings)"]
+fn regression_revolve_cut_by_extrusion_extra_faces() {
+    run("regression/revolve-cut-by-extrusion-extra-faces");
+}
+
+/// A revolved profile fused with a posed box (the differential's draw, shrunk; plans/measuring-harness step
+/// 5b).
+#[test]
+#[ignore = "the tessellation at chord 1e-3 is not closed (docs/BACKLOG.md, the differential's findings)"]
+fn regression_revolve_box_fuse_mesh_not_closed() {
+    run("regression/revolve-box-fuse-mesh-not-closed");
+}
+
+/// Three posed cylinders fused in turn (the differential's draw, shrunk; plans/measuring-harness step
+/// 5b).
+#[test]
+#[ignore = "the second fuse returns OpError::Internal(Split) (docs/BACKLOG.md, the differential's findings)"]
+fn regression_three_cylinders_fuse_split_fault() {
+    run("regression/three-cylinders-fuse-split-fault");
+}
+
+/// A box, a revolved profile and a chamfered cylinder fused in turn (the differential's draw, shrunk; plans/measuring-harness step
+/// 5b).
+#[test]
+#[ignore = "a fuse returns OpError::Internal(Geometry) (docs/BACKLOG.md, the differential's findings)"]
+fn regression_box_revolve_cylinder_chamfer_fuse_geometry_fault() {
+    run("regression/box-revolve-cylinder-chamfer-fuse-geometry-fault");
+}
+
+/// A box, a revolved profile and a cylinder fused in turn (the differential's draw, shrunk; plans/measuring-harness step
+/// 5b).
+#[test]
+#[ignore = "a fuse returns OpError::Internal(Lumps) (docs/BACKLOG.md, the differential's findings)"]
+fn regression_box_revolve_cylinder_fuse_lumps_fault() {
+    run("regression/box-revolve-cylinder-fuse-lumps-fault");
+}
+
+/// A box in common with a revolved profile, fused with a cylinder (the differential's draw, shrunk; plans/measuring-harness step
+/// 5b).
+#[test]
+#[ignore = "a boolean returns OpError::Internal(Builder) (docs/BACKLOG.md, the differential's findings)"]
+fn regression_box_revolve_cylinder_common_fuse_builder_fault() {
+    run("regression/box-revolve-cylinder-common-fuse-builder-fault");
+}
+
 /// A tee of equal radii: the branch's rim circle touches the main wall
 /// exactly at the two crossing vertices, and each touch cuts the rim
 /// there.

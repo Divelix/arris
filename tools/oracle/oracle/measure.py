@@ -443,28 +443,77 @@ def tolerance_of(shape: TopoDS_Shape) -> float:
     return t
 
 
+def own_measures(shape: TopoDS_Shape, measured: dict) -> dict | None:
+    """What the first-order bound of `within_own_tolerance` is taken
+    over: the shape's largest vertex tolerance `tolerance`, the total
+    length of its edges `edge_length`, and `reach`, the farthest corner of
+    its bounding box from the centroid; and its `removable_vertices`. None
+    for a result with no solid or no tolerance. The differential (`expected.py --own`) records these
+    so that Arris can add its own tolerance to the oracle's before it
+    compares the two (ADR-0024 §2)."""
+    t = tolerance_of(shape)
+    if measured["degenerate"] or t == 0.0:
+        return None
+    props = GProp_GProps()
+    BRepGProp.LinearProperties_s(shape, props)
+    c = measured["centroid"]
+    box = Bnd_Box()
+    BRepBndLib.Add_s(shape, box)
+    lo, hi = box.CornerMin(), box.CornerMax()
+    reach = max(math.dist(c, (x, y, z)) for x in (lo.X(), hi.X()) for y in (lo.Y(), hi.Y()) for z in (lo.Z(), hi.Z()))
+    return {"tolerance": t, "edge_length": props.Mass(), "reach": reach, "removable_vertices": removable_vertices(shape)}
+
+
+def removable_vertices(shape: TopoDS_Shape) -> int:
+    """The vertices that split one edge between the same two faces into
+    two: exactly two distinct edges meet there, neither closed nor
+    degenerate, and both lie on the same two faces. Removing one merges
+    two edges and changes no face, loop or shell, so two B-reps of one
+    solid may differ by such vertices alone. Open CASCADE keeps one where
+    a section crossed an operand's seam; Arris merges it. The differential
+    compares counts net of them (ADR-0024 §2)."""
+    vm = IndexedMapOfShape()
+    em = IndexedMapOfShape()
+    fm = IndexedMapOfShape()
+    TopExp.MapShapes_s(shape, TopAbs_VERTEX, vm)
+    TopExp.MapShapes_s(shape, TopAbs_EDGE, em)
+    TopExp.MapShapes_s(shape, TopAbs_FACE, fm)
+    faces_of: dict[int, set[int]] = {}
+    for fi in range(1, fm.Extent() + 1):
+        explorer = TopExp_Explorer(fm.FindKey(fi), TopAbs_EDGE)
+        while explorer.More():
+            faces_of.setdefault(em.FindIndex(explorer.Current()), set()).add(fi)
+            explorer.Next()
+    edges_at: dict[int, list[int]] = {}
+    for ei in range(1, em.Extent() + 1):
+        edge = TopoDS.Edge(em.FindKey(ei))
+        if BRep_Tool.Degenerated_s(edge):
+            continue
+        for v in (TopExp.FirstVertex_s(edge), TopExp.LastVertex_s(edge)):
+            edges_at.setdefault(vm.FindIndex(v), []).append(ei)
+    return sum(
+        1
+        for es in edges_at.values()
+        if len(es) == 2 and es[0] != es[1] and len(faces_of.get(es[0], ())) == 2 and faces_of.get(es[0]) == faces_of.get(es[1])
+    )
+
+
 def within_own_tolerance(tolerances: dict, shape: TopoDS_Shape, measured: dict) -> dict:
     """`tolerances` widened to what `shape` itself declares: a reader may
     move any point of the boundary by up to its largest vertex tolerance
     `t` and still hand back the same shape, so a STEP round trip of it is
     held to the first-order change such a move makes and no closer. Over a
     boundary of area `A` and volume `V`, edges of total length `L`, and
-    the corners of its bounding box within `R` of the centroid, that is
-    `A·t` of volume, `L·t` of area (the edges moved across their faces),
-    `A·t·R / V` of centroid and `A·t·R²` of each inertia component. Counts,
-    genus and probe classes are not widened: a move within the tolerance
-    changes none of them."""
-    t = tolerance_of(shape)
-    if measured["degenerate"] or t == 0.0:
+    the corners of its bounding box within `R` of the centroid
+    (`own_measures`), that is `A·t` of volume, `L·t` of area (the edges
+    moved across their faces), `A·t·R / V` of centroid and `A·t·R²` of
+    each inertia component. Counts, genus and probe classes are not
+    widened: a move within the tolerance changes none of them."""
+    m = own_measures(shape, measured)
+    if m is None:
         return dict(tolerances)
-    props = GProp_GProps()
-    BRepGProp.LinearProperties_s(shape, props)
-    length = props.Mass()
-    volume, area, c = abs(measured["volume"]), measured["area"], measured["centroid"]
-    box = Bnd_Box()
-    BRepBndLib.Add_s(shape, box)
-    lo, hi = box.CornerMin(), box.CornerMax()
-    reach = max(math.dist(c, (x, y, z)) for x in (lo.X(), hi.X()) for y in (lo.Y(), hi.Y()) for z in (lo.Z(), hi.Z()))
+    t, length, reach = m["tolerance"], m["edge_length"], m["reach"]
+    volume, area = abs(measured["volume"]), measured["area"]
     scale = max((abs(x) for row in measured.get("inertia") or [[0.0]] for x in row), default=0.0) or 1.0
     own = {
         "volume_rel": area * t / volume,

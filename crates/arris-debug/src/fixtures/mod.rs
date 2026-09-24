@@ -472,6 +472,70 @@ impl Default for Tolerances {
     }
 }
 
+impl Tolerances {
+    /// These tolerances widened to what a boundary known only to within
+    /// `t` supports — the first-order bound of the oracle's
+    /// `within_own_tolerance`, over the sizes `measured.own` records: `A·t`
+    /// of volume, `L·t` of area, `A·t·R / V` of centroid and `A·t·R²` of
+    /// each inertia component, for area `A`, volume `V`, edge length `L`
+    /// and reach `R`; and `A·(δ + t)` of the mesh's volume, its
+    /// tessellation lying within `mesh_chord` `δ` of a boundary itself
+    /// known to `t`. Never narrower than `self`; `self` unchanged when
+    /// `measured` records no `own` or no volume and area. The differential
+    /// passes the sum of both shapes' tolerances: each kernel vouches for
+    /// its boundary to within its own, so no comparison of the two is
+    /// finer than that.
+    ///
+    /// ```
+    /// use arris_debug::fixtures::{Counts, Measured, Own, Tolerances};
+    ///
+    /// let measured = Measured {
+    ///     degenerate: false,
+    ///     counts: Counts { vertices: 8, edges: 12, faces: 6, loops: 6, shells: 1, solids: 1 },
+    ///     volume: Some(1.0),
+    ///     area: Some(6.0),
+    ///     centroid: Some([0.5; 3]),
+    ///     inertia: None,
+    ///     euler_characteristic: Some(2),
+    ///     genus: Some(0),
+    ///     probes: Vec::new(),
+    ///     own: Some(Own { tolerance: 1e-7, edge_length: 12.0, reach: 0.87, removable_vertices: 0 }),
+    /// };
+    /// let held = Tolerances::default().within(&measured, 1e-7);
+    /// assert!((held.volume_rel - 6e-7).abs() < 1e-20);
+    /// assert_eq!(held.probe, Tolerances::default().probe);
+    /// ```
+    pub fn within(&self, measured: &Measured, t: f64) -> Tolerances {
+        let (Some(own), Some(volume), Some(area)) = (measured.own, measured.volume, measured.area)
+        else {
+            return *self;
+        };
+        let volume = volume.abs();
+        if !(volume > 0.0 && area > 0.0 && t.is_finite()) {
+            return *self;
+        }
+        let scale = measured
+            .inertia
+            .iter()
+            .flatten()
+            .flatten()
+            .fold(0.0f64, |m, x| m.max(x.abs()));
+        let scale = if scale > 0.0 { scale } else { 1.0 };
+        Tolerances {
+            volume_rel: self.volume_rel.max(area * t / volume),
+            area_rel: self.area_rel.max(own.edge_length * t / area),
+            centroid_abs: self.centroid_abs.max(area * t * own.reach / volume),
+            inertia_rel: self
+                .inertia_rel
+                .max(area * t * own.reach * own.reach / scale),
+            mesh_volume_rel: self
+                .mesh_volume_rel
+                .max(area * (self.mesh_chord + t) / volume),
+            ..*self
+        }
+    }
+}
+
 /// Entity counts of a result.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Counts {
@@ -682,6 +746,29 @@ pub struct Measured {
     /// Probe classifications.
     #[serde(default)]
     pub probes: Vec<ProbeResult>,
+    /// The oracle shape's own tolerance and the sizes a boundary moved
+    /// within it is measured over: written by `expected.py --own`, which
+    /// only the differential runs, and absent from every corpus fixture.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub own: Option<Own>,
+}
+
+/// What the oracle's shape declares of itself (`oracle.measure.own_measures`):
+/// the first-order bound a boundary moved within `tolerance` puts on each
+/// mass property is taken over these ([`Tolerances::within`]).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Own {
+    /// The shape's largest vertex tolerance.
+    pub tolerance: f64,
+    /// The total length of its edges.
+    pub edge_length: f64,
+    /// The farthest corner of its bounding box from its centroid.
+    pub reach: f64,
+    /// Its vertices that only split an edge between two faces in two
+    /// (`oracle.measure.removable_vertices`): the differential compares
+    /// counts net of them.
+    #[serde(default)]
+    pub removable_vertices: usize,
 }
 
 /// An `expected.json`.

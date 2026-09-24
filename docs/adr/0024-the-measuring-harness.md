@@ -167,3 +167,49 @@ posts nothing: anything that leaves the repository is the human's call.
   rule inside the workspace.
 - **Open an issue on a red nightly.** Useful, and outward-facing; the
   human can add it.
+
+## Amendment (2026-09-24, plan `measuring-harness` step 5b)
+
+The first run at CI's count (1000 recipes, the fixed seed) changed four
+things in §2.
+
+- **`Internal` fails the run.** An `OpError::Internal` is a fault the
+  kernel caught and typed, not a refusal of the input. It is now a class
+  of its own, named by its fault (`Internal(Split)`), and it fails the run
+  whatever the oracle did. Counting it beside the typed refusals would
+  have let a kernel bug pass as the kernel's rule working.
+- **Mass properties are held to what both shapes support.** Almost every
+  measure disagreement of the first run was one kernel's fitted section.
+  Each kernel vouches for its boundary only to within its own tolerance.
+  Open CASCADE's boolean output declared 1e-7 to 4e-3, and Arris's fits
+  are made to 1e-7. So the differential holds each drawn result to the
+  first-order bound of a boundary moved within `t_arris + t_occ`:
+  - `A·t` of volume;
+  - `L·t` of area;
+  - `A·t·R / V` of centroid;
+  - `A·t·R²` of each inertia component;
+  - `A·(δ + t)` of the mesh's volume, at mesh chord `δ`.
+
+  `oracle.measure.within_own_tolerance` already holds the oracle's STEP
+  round trip to the same bound. The fixture defaults are the floor, and
+  the corpus's own fixtures keep them, because their geometry meets 1e-9.
+  The evidence is in the plan: two closed forms, Arris rebuilt at 1e-9
+  and 1e-10, and the one real defect the comparison showed, which was
+  `mass_properties` integrating about the origin and is fixed.
+- **Counts are compared net of removable vertices.** A removable vertex
+  is one that only splits an edge between the same two faces into two.
+  Open CASCADE keeps one where a section crossed an operand's seam, and
+  Arris merges it. The two B-reps are of one solid, so a difference in
+  such vertices alone is not a disagreement. `expected.py --own` records
+  the oracle's count, and the differential counts Arris's the same way.
+- **A named exclusion matches a symptom, not a recipe.** No generator
+  can say which draws reach a kernel bug. An exclusion is a predicate
+  over the failing outcome instead, stating one symptom and nothing
+  else: a checker row ("lies outside every outer loop"), an internal
+  fault (`Internal(Split)`), or a count off in one direction (fewer
+  shells than the oracle). It cites the regression fixtures that pin the
+  symptom, and the corpus lint fails once one of them has left
+  `regression/`. The CI job runs the differential at 1000 recipes
+  (`ARRIS_DIFF_CASES`), and the hook at its default of 32.
+
+The other decisions of §2 are unchanged.

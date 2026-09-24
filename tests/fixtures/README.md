@@ -454,6 +454,17 @@ hand-picked test beside the property) with the *desired* assertion,
 body — so the original case stays reproducible after the shrinker or the
 strategy changes (`.agents/rules/kernel.md` §Testing, `inspect` skill).
 
+A finding of the differential (`arris_debug::differential`,
+`crates/arris/tests/differential.rs`) takes the same path. The run prints
+each failing case shrunk as a `fixture.json`, with the tolerances the case
+was judged at. Those are the fixture defaults, widened to what both
+shapes' own tolerances support (ADR-0024, amendment of step 5b). That
+recipe is committed under `regression/<slug>/`, and its `expected.json`
+comes from plain `expected.py`. If the draw keeps reaching the failure,
+a named exclusion in `differential::EXCLUSIONS` covers its symptom and
+cites the slug. The corpus lint then fails once the fixture leaves
+`regression/`, so the commit that fixes it also lifts the exclusion.
+
 ## Conventions the numbers assume
 
 Open CASCADE's, which Arris matches (`docs/DATA-MODEL.md`

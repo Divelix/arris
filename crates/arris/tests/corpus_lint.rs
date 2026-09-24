@@ -2,10 +2,12 @@
 //! has a recipe and the oracle's answer, the answer is not stale, the Euler
 //! line is zero, the closed forms agree with the oracle, and every
 //! fixture the runner compares in the corpus's areas carries its blessed
-//! dump — zero ignored fixtures there as a test, not a grep.
+//! dump — zero ignored fixtures there as a test, not a grep — and every
+//! exclusion of the differential waits on a fixture under `regression/`.
 
 use std::path::Path;
 
+use arris_debug::differential;
 use arris_debug::fixtures::{Kind, corpus, corpus_root, kind_of, lint, load};
 
 #[test]
@@ -18,6 +20,15 @@ fn every_fixture_directory_is_clean() {
     );
     let problems: Vec<String> = dirs.iter().flat_map(|d| lint(d)).collect();
     assert!(problems.is_empty(), "corpus lint:\n{}", problems.join("\n"));
+}
+
+/// Every named exclusion of the differential cites fixtures still
+/// waiting under `regression/`; the fix that moves one out lifts it
+/// (ADR-0024 §2).
+#[test]
+fn every_differential_exclusion_waits_on_a_regression_fixture() {
+    let problems = differential::exclusion_problems(&corpus_root(), differential::EXCLUSIONS);
+    assert!(problems.is_empty(), "{}", problems.join("\n"));
 }
 
 #[test]

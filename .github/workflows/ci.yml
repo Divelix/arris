@@ -54,6 +54,9 @@ jobs:
     runs-on: ubuntu-latest
     env:
       ARRIS_PROPTEST_CASES: "1000"
+      # The differential at CI's count too (ADR-0024 §2); the hook runs
+      # its default of 32.
+      ARRIS_DIFF_CASES: "1000"
       # CI never trusts an oracle cache (ADR-0024 §1).
       ARRIS_ORACLE_CACHE: "off"
     steps:

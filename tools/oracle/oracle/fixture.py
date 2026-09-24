@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from . import OracleError, occt_version
-from .measure import DEFAULT_TOLERANCES, measure
+from .measure import DEFAULT_TOLERANCES, measure, own_measures
 from .geometry import compute_geometry
 from .recipe import build, fixture_kind, probes, recipe_hash, variant_names
 
@@ -41,9 +41,12 @@ def fixture_dirs(root: Path | None = None) -> list[Path]:
     return sorted(p.parent for p in root.glob(f"**/{FIXTURE}"))
 
 
-def compute_expected(fixture: dict) -> dict:
+def compute_expected(fixture: dict, own: bool = False) -> dict:
     """The expected.json content for a recipe: one result per variant for
-    the solid kind, the samples and pairs for the geometry kind."""
+    the solid kind, the samples and pairs for the geometry kind. `own`
+    adds each solid result's `own_measures` under `"own"`: what the
+    differential bounds its comparison by, never written for a corpus
+    fixture."""
     if fixture_kind(fixture) == "geometry":
         return {"occt": occt_version(), "recipe_sha256": recipe_hash(fixture), "kind": "geometry", **compute_geometry(fixture)}
     tol = {**DEFAULT_TOLERANCES, **fixture.get("tolerances", {})}
@@ -56,6 +59,8 @@ def compute_expected(fixture: dict) -> dict:
     for variant in variant_names(fixture):
         shape, _ = build(fixture, variant)
         results[variant] = measure(shape, probes(fixture, variant), tol["probe"], manifold)
+        if own and (measures := own_measures(shape, results[variant])) is not None:
+            results[variant]["own"] = measures
     return {"occt": occt_version(), "recipe_sha256": recipe_hash(fixture), "results": results}
 
 

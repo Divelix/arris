@@ -1,0 +1,239 @@
+{
+  "description": "Arris's cut has more faces, edges and vertices than Open CASCADE's, where Open CASCADE builds the solid. Drawn by the differential (plans/measuring-harness step 5b), case 422 of seed 61727269732d70726f70657274792d74657374732d736565642d763100000000 at 1000 recipes, shrunk by its ValueTree; tolerances are those the differential held it to (ADR-0024, amendment of step 5b).",
+  "params": {},
+  "variants": {},
+  "steps": [
+    {
+      "op": "profile",
+      "name": "sk0",
+      "plane": {
+        "origin": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "x": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "y": [
+          0.0,
+          1.0,
+          0.0
+        ]
+      },
+      "outer": {
+        "start": [
+          10.0,
+          0.0
+        ],
+        "segments": [
+          {
+            "line_to": [
+              5.000000000000001,
+              8.660254037844386
+            ]
+          },
+          {
+            "line_to": [
+              -4.999999999999998,
+              8.660254037844387
+            ]
+          },
+          {
+            "arc_to": [
+              -10.0,
+              1.2246467991473533e-15
+            ],
+            "via": [
+              -9.232050807568877,
+              5.3301270189221945
+            ]
+          },
+          {
+            "line_to": [
+              -5.000000000000004,
+              -8.660254037844384
+            ]
+          },
+          {
+            "line_to": [
+              4.999999999999993,
+              -8.66025403784439
+            ]
+          },
+          {
+            "line_to": [
+              10.0,
+              0.0
+            ]
+          }
+        ]
+      },
+      "holes": []
+    },
+    {
+      "op": "revolve",
+      "name": "b0",
+      "profile": "sk0",
+      "axis": {
+        "origin": [
+          10.0,
+          0.0,
+          0.0
+        ],
+        "direction": [
+          0.5,
+          -0.8660254037844387,
+          -0.0
+        ]
+      },
+      "angle_deg": 360.0
+    },
+    {
+      "op": "transform",
+      "name": "o0",
+      "of": "b0",
+      "translate": [
+        10.961580320051787,
+        -9.094772278115293,
+        -13.307635799530178
+      ],
+      "rotate": {
+        "axis": [
+          0.45230078218974695,
+          -0.49561482756706615,
+          0.7414782162182585
+        ],
+        "angle_deg": 94.40104940803432
+      }
+    },
+    {
+      "op": "profile",
+      "name": "sk1",
+      "plane": {
+        "origin": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "x": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "y": [
+          0.0,
+          1.0,
+          0.0
+        ]
+      },
+      "outer": {
+        "start": [
+          6.0,
+          0.0
+        ],
+        "segments": [
+          {
+            "line_to": [
+              1.8541019662496847,
+              5.706339097770921
+            ]
+          },
+          {
+            "line_to": [
+              -4.854101966249684,
+              3.5267115137548393
+            ]
+          },
+          {
+            "line_to": [
+              -4.854101966249686,
+              -3.5267115137548384
+            ]
+          },
+          {
+            "line_to": [
+              1.8541019662496834,
+              -5.706339097770922
+            ]
+          },
+          {
+            "line_to": [
+              6.0,
+              0.0
+            ]
+          }
+        ]
+      },
+      "holes": []
+    },
+    {
+      "op": "extrude",
+      "name": "b1",
+      "profile": "sk1",
+      "direction": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "length": 9.248919606343046
+    },
+    {
+      "op": "transform",
+      "name": "o1",
+      "of": "b1",
+      "translate": [
+        -3.5731040582481373,
+        0.0,
+        -5.651848500958575
+      ]
+    },
+    {
+      "op": "cut",
+      "name": "r1",
+      "target": "o0",
+      "tool": "o1"
+    }
+  ],
+  "result": "r1",
+  "probes": [
+    {
+      "label": "o0-centre",
+      "point": [
+        4.621868446765395,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "label": "o1-centre",
+      "point": [
+        -3.5731040582481373,
+        0.0,
+        -1.0273886977870523
+      ]
+    }
+  ],
+  "precision": {
+    "default_tolerance": 1e-07,
+    "min_tolerance": 1e-12,
+    "max_tolerance": 0.01,
+    "angular_tolerance": 1e-12,
+    "parametric_tolerance": 1e-07,
+    "check_samples": 23
+  },
+  "tolerances": {
+    "volume_rel": 2.44176783922097e-07,
+    "area_rel": 2.720713282908814e-07,
+    "centroid_abs": 7.1556660067200505e-06,
+    "probe": 1e-07,
+    "mesh_chord": 0.001,
+    "mesh_volume_rel": 0.002,
+    "inertia_rel": 1.5596323749335995e-06
+  },
+  "analytic": {
+    "degenerate": false
+  }
+}

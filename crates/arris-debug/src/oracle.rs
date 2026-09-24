@@ -144,10 +144,12 @@ pub fn write_recipe(dir: &Path, recipe: &Recipe) -> Result<(), OracleError> {
         })
 }
 
-/// Has `expected.py` write `expected.json` into every one of `dirs` — each
-/// a scratch fixture holding a `fixture.json` ([`write_recipe`]) — in one
-/// process for all of them, the cache answering every one it holds
-/// first. Returns one answer per directory in `dirs`' order: `Ok` with
+/// Has `expected.py --own` write `expected.json` into every one of
+/// `dirs` — each a scratch fixture holding a `fixture.json`
+/// ([`write_recipe`]) — in one process for all of them, the cache
+/// answering every one it holds first. `--own` records each result's
+/// [`Own`](crate::fixtures::Own), which the differential bounds its
+/// comparison by. Returns one answer per directory in `dirs`' order: `Ok` with
 /// its `expected.json` written, or `Err` with why the oracle refused that
 /// recipe, its `expected.json` removed. A refusal is not cached (ADR-0024
 /// §1); an answer is, keyed by the `fixture.json` bytes. If Open CASCADE
@@ -178,7 +180,7 @@ pub fn expected_batch(dirs: &[PathBuf]) -> Result<Vec<Result<(), String>>, Oracl
     for (i, dir) in dirs.iter().enumerate() {
         let expected = dir.join("expected.json");
         let spec = std::fs::read(dir.join("fixture.json")).ok();
-        let slot = cache::slot("expected.py", &[spec.as_deref()], None);
+        let slot = cache::slot("expected.py --own", &[spec.as_deref()], None);
         if let Some(bytes) = slot.as_ref().and_then(|(d, k)| cache::load(d, k)) {
             std::fs::write(&expected, bytes).map_err(|e| OracleError::Write {
                 path: expected.clone(),
@@ -202,7 +204,11 @@ pub fn expected_batch(dirs: &[PathBuf]) -> Result<Vec<Result<(), String>>, Oracl
         slots.push(slot);
     }
     while !pending.is_empty() {
-        let output = spawn(uv("expected.py").args(pending.iter().map(|&i| &dirs[i])))?;
+        let output = spawn(
+            uv("expected.py")
+                .arg("--own")
+                .args(pending.iter().map(|&i| &dirs[i])),
+        )?;
         let stderr = String::from_utf8_lossy(&output.stderr);
         let mut progress = false;
         for &i in &pending {

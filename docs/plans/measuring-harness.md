@@ -188,7 +188,7 @@ bound has to be established here.
     measures to `π r² t` within 1e-11. Before the fix it was 4.9e-9 off.
   - `boolean_prop`'s `cut_then_fuse_of_a_cylinder_across_a_small_box`
     now holds to `REL`. It had pinned the leak as a fit difference.
-- [ ] Step 5b **[3]** — **The differential's first findings.**
+- [x] Step 5b **[3]** — **The differential's first findings.**
   - Run at CI's count (1000) on the fixed seed.
   - Every `Disagree`, `CheckerViolation` or `Panic` class is shrunk into
     `tests/fixtures/regression/<slug>/` with its oracle value and the
@@ -364,9 +364,42 @@ Found while executing:
   tolerances allow. A tolerance-derived bound would have passed them and
   left the leak in place, so step 5 was split. Step 5a fixes the
   integral, and step 5b sorts what the differential still finds after it.
+- Step 5b: Arris rebuilt at tolerances 1e-9 and 1e-10 sorted the 203
+  measure disagreements left after 5a. In 147 cases Arris converges to
+  1e-12 and the oracle stays away. A closed form confirms the oracle is
+  off there: on case 431 Arris is 3e-16 off and Open CASCADE 1.1e-9. In
+  54 cases the difference was Arris's own 1e-7 fit, and 2 did not build
+  at the tighter tolerance. Open CASCADE's boolean output declares 1e-7
+  to 4e-3. The differential therefore holds each case to the first-order
+  bound for a boundary known to `t_arris + t_occ`, which is the bound
+  `within_own_tolerance` already puts on the oracle's STEP round trip.
+  The mesh's volume gets the same bound over its chord.
+  Nine of the eleven counts disagreements were vertices that only split
+  an edge. Open CASCADE keeps one where a section crossed an old seam, so
+  counts are compared net of them. `OpError::Internal` now fails the run.
+  An exclusion is a predicate over the failing outcome, because a recipe
+  cannot state a kernel bug. The ADR-0024 amendment records all four.
+- Step 5b at 1000 draws of the fixed seed, shrink off: 762 `Agree`, 67
+  `BothRefuse`, 137 `OracleRefuses`, 14 `ArrisRefuses` (all
+  `Degenerate(Empty)`), and 20 `Excluded`:
+  - 8 L4, a hole loop outside every outer loop;
+  - 7 `Internal(Split)`;
+  - 1 `Internal(Geometry)`;
+  - 1 L5, a loop crossing itself;
+  - 1 missing cavity shell;
+  - 1 case with extra faces;
+  - 1 unclosed mesh.
+
+  There are no failures. 762 of 1000 reach a comparison (76%). The run
+  takes 265 s cold, 0.26 s per recipe of wall clock, and Arris 1.7 s
+  per recipe on one thread. There are eight new regression fixtures,
+  including two faults the shrinker drifted into (`Internal(Lumps)` and
+  `Internal(Builder)`). A shrink now keeps the checker row and the fault
+  name it started from.
 - Step 4: `OpError::Internal` is a caught kernel bug, but it is typed.
   It counts as `ArrisRefuses/Internal(<fault>)` for now. Step 5 decides
   whether that class fails the run, which would be an ADR-0024 amendment.
+  Step 5b decided that it does.
 - Step 4: the differential skips the STEP round trip and the dump. The
   first reads a committed directory and would start one `compare.py` per
   recipe, and the second has no committed dump to diff. The corpus holds
