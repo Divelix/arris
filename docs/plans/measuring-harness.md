@@ -257,12 +257,21 @@ bound has to be established here.
   build 1.60 s and mesh 0.73 s, 2.33 s in all; a second run against the
   first is at most 1.13× on any case. Thirteen fixtures are the corpus's
   designed refusals and are skipped by name.
-- [ ] Step 9 **[1]** — **Benchmarks nightly.**
+- [x] Step 9 **[1]** — **Benchmarks nightly.**
   - The nightly job runs the benches, uploads the report as an artifact,
     and compares it against the previous successful night's artifact,
     flagged in the job summary, never failing.
   - `tools/bench-compare.sh` does the same locally against a report under
     `target/`.
+
+  *Found at step 9:* "the previous successful night" is read as the last
+  night whose `bench` job uploaded a report, not the last all-green run:
+  a red property job says nothing about the timings. The nightly job runs
+  `tools/bench-compare.sh` itself, so the two cannot drift, and the bench
+  gained `--table <file>` to hand it the comparison as markdown. A first
+  night has no baseline and says so in the summary. Proven locally (first
+  run, `--bless`, against the baseline, a missing one); the artifact
+  download is proven by the second night after the push.
 - [ ] Step 10 **[2]** — **Fuzz targets over the intersectors.**
   - `fuzz/` with `intersect_surfaces`, `intersect_curve_surface` and
     `intersect_curves`. Each decodes analytic kinds in a pose from

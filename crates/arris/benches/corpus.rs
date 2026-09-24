@@ -7,12 +7,15 @@
 //! cargo bench -p arris --bench corpus                          # print the timings
 //! cargo bench -p arris --bench corpus -- --save target/bench.json
 //! cargo bench -p arris --bench corpus -- --compare target/bench.json
+//! cargo bench -p arris --bench corpus -- --compare target/bench.json --table target/table.md
 //! cargo bench -p arris --bench corpus -- --filter boolean/     # a subset
 //! ```
 //!
 //! A relative path is taken from the workspace root. `--compare` prints
 //! each case's ratio against the saved report and
-//! flags those past `bench::RATIO_FLAG`; it never fails on a time. A
+//! flags those past `bench::RATIO_FLAG`; it never fails on a time.
+//! `--table` also writes that comparison, as markdown, to a file — what
+//! `tools/bench-compare.sh` hands the nightly's job summary. A
 //! fixture that refuses by design (`expected.degenerate`) has nothing to
 //! time and is skipped by name.
 
@@ -29,6 +32,7 @@ const AREAS: [&str; 3] = ["boolean/", "sweep/", "blend/"];
 struct Args {
     save: Option<PathBuf>,
     compare: Option<PathBuf>,
+    table: Option<PathBuf>,
     filter: Option<String>,
 }
 
@@ -36,6 +40,7 @@ fn args() -> Result<Args, String> {
     let mut out = Args {
         save: None,
         compare: None,
+        table: None,
         filter: None,
     };
     let mut it = std::env::args().skip(1);
@@ -44,6 +49,7 @@ fn args() -> Result<Args, String> {
         match a.as_str() {
             "--save" => out.save = Some(at_root(value()?)),
             "--compare" => out.compare = Some(at_root(value()?)),
+            "--table" => out.table = Some(at_root(value()?)),
             "--filter" => out.filter = Some(value()?),
             // What `cargo bench` passes every bench target.
             "--bench" => {}
@@ -74,6 +80,10 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
+    if args.table.is_some() && args.compare.is_none() {
+        eprintln!("corpus bench: --table needs --compare");
+        return ExitCode::from(2);
+    }
     let config = Config::default();
     let mut clock = Wall::new();
     let mut report = Report::default();
@@ -131,11 +141,16 @@ fn main() -> ExitCode {
     );
     if let Some(path) = &args.compare {
         match Report::load(path) {
-            Ok(before) => println!(
-                "\nAgainst {}:\n\n{}",
-                path.display(),
-                bench::comparison_table(&bench::compare(&before, &report))
-            ),
+            Ok(before) => {
+                let table = bench::comparison_table(&bench::compare(&before, &report));
+                println!("\nAgainst {}:\n\n{table}", path.display());
+                if let Some(out) = &args.table {
+                    if let Err(e) = std::fs::write(out, &table) {
+                        eprintln!("corpus bench: {}: {e}", out.display());
+                        return ExitCode::FAILURE;
+                    }
+                }
+            }
             Err(e) => {
                 eprintln!("corpus bench: {}: {e}", path.display());
                 return ExitCode::FAILURE;

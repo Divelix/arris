@@ -2,8 +2,8 @@
 # Wall-clock timings of the workspace's test suite, for the before/after of
 # a change to how the suite is run (`docs/ARCHITECTURE.md` §Formats and
 # tools). Not a benchmark harness: it times whole test binaries, not
-# operations, and a `divan`/`criterion` bench of the boolean corpus stays
-# its own backlog line.
+# operations; the corpus's operations are timed by
+# `tools/bench-compare.sh` (ADR-0024 §4).
 #
 #   tools/test-timings.sh                       256 cases (the default)
 #   ARRIS_PROPTEST_CASES=1000 tools/test-timings.sh

@@ -115,3 +115,48 @@ jobs:
       - run: echo "ARRIS_PROPTEST_SEED=$ARRIS_PROPTEST_SEED ARRIS_DIFF_CASES=$ARRIS_DIFF_CASES"
       - run: cargo nextest run -p arris --test differential --no-capture
       - run: cargo nextest run -p arris --test corpus --run-ignored only --no-tests pass -E 'not test(/^regression_/)'
+
+  # The corpus benchmark (ADR-0024 §4) against the last night that saved a
+  # report, through `tools/bench-compare.sh`, the same script run locally.
+  # The comparison goes to the job summary with every case past 3×
+  # flagged; time never fails the job, only a bench that cannot run does.
+  # The baseline is the newest `bench-report` artifact of an earlier run on
+  # `main`, whatever the rest of that run did: a red property job says
+  # nothing about the timings, and skipping its report would compare
+  # against an older night than the last one measured. The first night,
+  # or one after the artifacts expired, has no baseline and says so.
+  bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Fetch the last night's report
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          id=$(gh api "repos/$REPO/actions/artifacts?name=bench-report&per_page=50" \
+            --jq "[.artifacts[] | select(.expired | not)
+                   | select(.workflow_run.id != $RUN_ID)
+                   | select(.workflow_run.head_branch == \"main\")][0].workflow_run.id // empty" || true)
+          if [ -n "$id" ]; then
+            echo "baseline: run $id"
+            gh run download "$id" --repo "$REPO" -n bench-report -D target/bench/previous || true
+          else
+            echo "baseline: none"
+          fi
+      - run: tools/bench-compare.sh target/bench/previous/latest.json
+      - uses: actions/upload-artifact@v7
+        with:
+          name: bench-report
+          path: |
+            target/bench/latest.json
+            target/bench/comparison.md
+          if-no-files-found: error
+          retention-days: 90
