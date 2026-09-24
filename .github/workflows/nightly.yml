@@ -1,0 +1,117 @@
+name: Nightly
+
+# The nightly tier of ADR-0024 §3: the property tests above CI's count on a
+# seed that changes every night, the differential at CI's recipe count on
+# the same seed, and the corpus's ignored tests. Its depth comes from the
+# seeds adding up across nights, not from one night's count.
+#
+# A red run is the only thing a failure does (ADR-0024 §6): nothing here
+# opens an issue or posts anywhere. Reproduce a night locally with the
+# `ARRIS_PROPTEST_SEED=…` the `seed` job prints and the job's case count.
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+    inputs:
+      seed:
+        description: "64 hex digits to replay a night; empty draws today's"
+        required: false
+        default: ""
+
+env:
+  CARGO_TERM_COLOR: always
+  # The nightly never trusts an oracle cache (ADR-0024 §1).
+  ARRIS_ORACLE_CACHE: "off"
+
+jobs:
+  # One seed for every job of the run, so a job that starts after midnight
+  # still tests the night's draw: `sha256` of the UTC date.
+  seed:
+    runs-on: ubuntu-latest
+    outputs:
+      seed: ${{ steps.seed.outputs.seed }}
+    steps:
+      - id: seed
+        env:
+          GIVEN: ${{ inputs.seed }}
+        run: |
+          seed="${GIVEN:-$(date -u +%F | tr -d '\n' | sha256sum | cut -d' ' -f1)}"
+          echo "ARRIS_PROPTEST_SEED=$seed"
+          echo "ARRIS_PROPTEST_SEED=\`$seed\`" >>"$GITHUB_STEP_SUMMARY"
+          echo "seed=$seed" >>"$GITHUB_OUTPUT"
+
+  # The property tier at 5000 cases, five times CI's (ADR-0024 §3). At
+  # 5000 the suite is 99,600 CPU-seconds on the reference machine, and a
+  # 4-core runner takes about 0.385 s per such CPU-second (CI's `test`
+  # job: 2 h 21 min for the 22,300 of 1000 cases), so one job would take
+  # about ten and a half hours. The matrix splits it by nextest filterset
+  # into six jobs of at most about 2 h 20 min each, which leaves more than
+  # twice the margin under the runner's six hours for a slower host.
+  # `boolean_prop` is 72% of the suite, so its three costliest properties
+  # get a job each (plans/measuring-harness step 6's timings).
+  properties:
+    name: properties (${{ matrix.name }})
+    needs: seed
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 19,000 CPU-seconds at 5000 cases.
+          - name: boolean-quartic
+            filter: "binary(boolean_prop) and test(/^quartic_cylinders/)"
+          # 16,200.
+          - name: boolean-quadric
+            filter: "binary(boolean_prop) and test(/^quadric_operands/)"
+          # 15,300.
+          - name: boolean-crossing
+            filter: "binary(boolean_prop) and test(/^crossing_cylinders/)"
+          # 21,200.
+          - name: boolean-rest
+            filter: "binary(boolean_prop) and not test(/^(quartic_cylinders|quadric_operands|crossing_cylinders)/)"
+          # 13,200.
+          - name: ops-rest
+            filter: "package(arris-ops) and not binary(boolean_prop)"
+          # 14,600.
+          - name: workspace-rest
+            filter: "not package(arris-ops)"
+    env:
+      ARRIS_PROPTEST_SEED: ${{ needs.seed.outputs.seed }}
+      ARRIS_PROPTEST_CASES: "5000"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@nextest
+      - uses: astral-sh/setup-uv@v10.1.0
+        with:
+          enable-cache: true
+      - run: uv sync --project tools/oracle
+      - run: echo "ARRIS_PROPTEST_SEED=$ARRIS_PROPTEST_SEED ARRIS_PROPTEST_CASES=$ARRIS_PROPTEST_CASES"
+      - run: cargo nextest run --workspace --no-fail-fast -E "$FILTER"
+        env:
+          FILTER: ${{ matrix.filter }}
+
+  # The differential at CI's recipe count, on the night's seed rather than
+  # the fixed one (ADR-0024 §2), and the corpus's ignored tests but the
+  # waiting regressions, as in `ci.yml`.
+  differential:
+    needs: seed
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    env:
+      ARRIS_PROPTEST_SEED: ${{ needs.seed.outputs.seed }}
+      ARRIS_DIFF_CASES: "1000"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@nextest
+      - uses: astral-sh/setup-uv@v10.1.0
+        with:
+          enable-cache: true
+      - run: uv sync --project tools/oracle
+      - run: echo "ARRIS_PROPTEST_SEED=$ARRIS_PROPTEST_SEED ARRIS_DIFF_CASES=$ARRIS_DIFF_CASES"
+      - run: cargo nextest run -p arris --test differential --no-capture
+      - run: cargo nextest run -p arris --test corpus --run-ignored only --no-tests pass -E 'not test(/^regression_/)'

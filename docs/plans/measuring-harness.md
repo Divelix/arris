@@ -232,6 +232,12 @@ bound has to be established here.
     `ARRIS_ORACLE_CACHE=off` throughout.
   - Proof: one `workflow_dispatch` run is green. The human pushes and
     triggers it, and its duration goes in the roadmap line at retirement.
+
+  *Landed, box open:* the workflow is committed at 5000 cases in six
+  matrix jobs, estimated from step 6's timings at 2 h 20 min at most on a
+  4-core runner; the six filtersets partition the suite's 1238 tests
+  exactly (`cargo nextest list`). The box is ticked by the human's green
+  `workflow_dispatch` run, which no local check stands in for.
 - [ ] Step 8 **[2]** — **Benchmarks.**
   - `arris_debug::bench`: a warm-up, a fixed iteration count, the median
     and median absolute deviation, and a JSON report. It is unit-tested on
