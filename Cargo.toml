@@ -4,6 +4,8 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
+# The fuzz crate builds on nightly under `cargo fuzz` (ADR-0024 §5).
+exclude = ["fuzz"]
 
 [workspace.package]
 version = "0.3.0-dev"

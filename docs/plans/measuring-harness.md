@@ -272,7 +272,7 @@ bound has to be established here.
   night has no baseline and says so in the summary. Proven locally (first
   run, `--bless`, against the baseline, a missing one); the artifact
   download is proven by the second night after the push.
-- [ ] Step 10 **[2]** — **Fuzz targets over the intersectors.**
+- [x] Step 10 **[2]** — **Fuzz targets over the intersectors.**
   - `fuzz/` with `intersect_surfaces`, `intersect_curve_surface` and
     `intersect_curves`. Each decodes analytic kinds in a pose from
     `arbitrary` bytes, including the fitted `Nurbs` curves the sections
@@ -283,6 +283,22 @@ bound has to be established here.
     operand pair.
   - `cargo +nightly fuzz build` is added to the nightly workflow. The
     harness's own test is a 60-second run of each target.
+
+  *Found at step 10:* the seed corpus is 76 surface pairs, 272 curve–
+  surface inputs (among them every section curve of a fixture's surface
+  pair against both of its surfaces) and 19 curve pairs. The targets run
+  with `-s none`: ASan finds nothing in `forbid(unsafe_code)` crates and
+  costs twentyfold (19 against 356 executions per second on
+  `intersect_curves`). The 60-second run of each target failed within
+  seconds with two kernel findings, which step 11 takes:
+  - `Frame::new` takes an `x` hint parallel to `z` up to rounding and
+    returns NaN axes: the perpendicular residue is not zero, only too
+    small to normalise. A cone and a circle on such a frame made the
+    first two crashes.
+  - A NURBS curve whose knot domain is 5e-315 wide passes
+    `NurbsCurve::new` and is `Coincident` with a line 800 away.
+  The nightly's `fuzz` job is therefore red until step 11. `fuzz/show.rs`
+  prints what a crash decodes to.
 - [ ] Step 11 **[2]** — **Fuzzing's first findings.**
   - Run each target for one hour locally, then each night for a fixed
     time, with the corpus kept as a workflow cache.
