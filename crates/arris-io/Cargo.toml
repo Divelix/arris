@@ -34,6 +34,7 @@ postcard = { workspace = true, optional = true }
 # they make (the workspace manifest says why).
 arris-debug.workspace = true
 arris-ops = { path = "../arris-ops" }
+proptest.workspace = true
 
 [lints]
 workspace = true

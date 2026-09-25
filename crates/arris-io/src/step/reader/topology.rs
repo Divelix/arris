@@ -24,9 +24,12 @@
 //!   every face it bounds, each use's copy moved by whole periods so that
 //!   it starts where the use before it in the loop ends. An edge used
 //!   twice in one loop is a seam, and the walk around the loop puts its
-//!   two copies a period apart. A loop is then moved by whole periods so
-//!   that its box's centre lies in the period that starts at the widest
-//!   loop's lower bound, so a hole lies inside its outer loop.
+//!   two copies a period apart. The widest loop is then moved by whole
+//!   periods so that its box's centre lies in the surface's own period —
+//!   the translate a projection answers in, within a period of which a
+//!   face's domain looks for a point — and every other so that its box's
+//!   centre lies in the period that starts at the widest loop's lower
+//!   bound, so a hole lies inside its outer loop.
 //! - **Degenerate edges** the writer left out are rebuilt where two uses
 //!   meet at a singular point of the surface — a sphere's pole, a cone's
 //!   apex, a NURBS surface's collapsed row ([`Surface::singularities`]):
@@ -601,7 +604,7 @@ impl Geometry<'_> {
                     }
                     loops.push(uses);
                 }
-                place_loops(&mut loops, surface.period());
+                place_loops(&mut loops, surface.period(), surface.domain());
                 rebuilt_faces.resize(rebuilt.len(), face.id);
                 for uses in &loops {
                     gaps.measure_uses(&surface, uses, &points, &edges, &rebuilt, model, precision);
@@ -1600,11 +1603,15 @@ fn whole_periods(d: Vec2, period: [Option<f64>; 2]) -> Vec2 {
     Vec2::new(round(d.x, period[0]), round(d.y, period[1]))
 }
 
-/// Moves each loop by whole periods so that the centre of its box in
-/// (u, v) lies in the period starting at the lower bound of the widest
-/// loop's box, parameter by parameter: a hole lands inside its outer
-/// loop, whose box spans at most a period.
-fn place_loops(loops: &mut [Vec<Use>], period: [Option<f64>; 2]) {
+/// Moves each loop by whole periods, parameter by parameter: the widest
+/// loop so that the centre of its box lies in the surface's own period
+/// (`domain`'s, `[0, 2π)` on the analytic surfaces) — the translate a
+/// projection answers in, within a period of which a face's domain looks
+/// for a point (`arris_check::domain::shifts`) — and every other so that
+/// its centre lies in the period starting at the widest loop's lower
+/// bound: a hole lands inside its outer loop, whose box spans at most a
+/// period.
+fn place_loops(loops: &mut [Vec<Use>], period: [Option<f64>; 2], domain: [Interval; 2]) {
     let boxes: Vec<[[f64; 2]; 2]> = loops.iter().map(|l| loop_box(l)).collect();
     for k in 0..2 {
         let Some(p) = period[k] else { continue };
@@ -1614,7 +1621,13 @@ fn place_loops(loops: &mut [Vec<Use>], period: [Option<f64>; 2]) {
         }) else {
             continue;
         };
-        let lo = boxes[widest][0][k];
+        let [lo, hi] = [boxes[widest][0][k], boxes[widest][1][k]];
+        let base = if domain[k].lo().is_finite() {
+            domain[k].lo()
+        } else {
+            0.0
+        };
+        let lo = lo - p * ((0.5 * (lo + hi) - base) / p).floor();
         for (i, l) in loops.iter_mut().enumerate() {
             let centre = 0.5 * (boxes[i][0][k] + boxes[i][1][k]);
             let shift = -p * ((centre - lo) / p).floor();

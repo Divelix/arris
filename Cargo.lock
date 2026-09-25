@@ -134,6 +134,7 @@ dependencies = [
  "arris-mesh",
  "arris-ops",
  "postcard",
+ "proptest",
  "serde",
  "serde_json",
  "thiserror",

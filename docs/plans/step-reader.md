@@ -451,7 +451,7 @@ after, because it is routine.
     corpus's own raised tolerances and the healing tools' defaults.
     Steps 14 and 15 measure the gaps on Open CASCADE's files and revise
     its comment, or its value, with them.
-- [ ] Step 13 **[2]** — The write → read round trip as a property over
+- [x] Step 13 **[2]** — The write → read round trip as a property over
   `prop::body`'s shapes in random poses, sharded (`prop_shards!`). It
   asserts:
   - the checker at `Full` is green, with nothing unchecked;
@@ -462,6 +462,28 @@ after, because it is routine.
     read-back body.
 
   The hook runs it at 256 cases, CI at 1000 and the nightly at its tier.
+
+  Done: `crates/arris-io/tests/step_round_trip.rs`, eight shards over a
+  frustum, ball, ring or elliptic prism in a random pose, alone or cut,
+  fused or intersected with a box or a cylinder through it (`prop::body`'s
+  `quadric_solid` and `quadric_pair`), so the files carry fitted section
+  curves, seams, poles and apexes. Green at 256, 1000 and 5000 cases on
+  the fixed seed. Findings:
+  - **Loops were placed in any translate.** `place_loops` anchored every
+    loop to the widest one's own box, which the walk could leave two
+    periods from the surface's own period; the classifier's face domain
+    looks within one period of it (`domain::shifts`), so a read cone
+    face missed a ray's hit and a point outside read as inside. The
+    widest loop now lands in the surface's own period. The checker does
+    not hold a loop's translate, so only the probes saw it.
+  - **The boolean's known L4 fault** (`hole-loop-outside-every-outer-
+    loop`) reaches the round trip at 1000 cases, in the cut it writes, not
+    in the read: rejected under the differential's exclusion as the
+    boolean properties reject it, the shrunk case an ignored test beside
+    the property, and the backlog's L4 line names it.
+  - **Held to the entities' own bound** through `corpus::within_own_
+    tolerance` (step 12), with the probes' `On` answers on either side
+    left out: a read may move the boundary within the tolerance.
 - [ ] Step 14 **[2]** — Open CASCADE's STEP of every corpus fixture read
   back. `tools/oracle/occt_step.py` writes it, under ADR-0024's cache.
   `corpus::read_back_stage` holds the read result to `expected.json`'s
