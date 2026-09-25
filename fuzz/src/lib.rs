@@ -40,8 +40,8 @@ pub const SMALLEST: f64 = 1e-3;
 pub const MAX_EXTRA_POINTS: usize = 12;
 
 /// How many points of a returned curve are checked against both
-/// operands.
-pub const SAMPLES: usize = 32;
+/// operands, before those outside a surface pair's region are dropped.
+pub const SAMPLES: usize = 64;
 
 /// The tolerance every target intersects at: the kernel's default.
 pub fn tolerance() -> Tolerance {
@@ -194,10 +194,21 @@ impl<'a> Decoder<'a> {
     /// control points, or one curve of a section of two surfaces.
     pub fn curve(&mut self) -> Option<Curve> {
         Some(match self.byte()? % CURVE_KINDS {
-            0 => Curve::Line {
-                origin: self.point()?,
-                direction: UnitVec3::try_new(self.direction()?, 0.0)?,
-            },
+            0 => {
+                let origin = self.point()?;
+                // Scaled first, as `Frame::new` scales an axis: normalised
+                // as drawn, a direction near `1e-154` is not unit, and the
+                // line would be the decoder's fault.
+                let d = self.direction()?;
+                let largest = d.amax();
+                if largest == 0.0 {
+                    return None;
+                }
+                Curve::Line {
+                    origin,
+                    direction: UnitVec3::try_new(d / largest, 0.0)?,
+                }
+            }
             1 => Curve::Circle {
                 frame: self.frame()?,
                 radius: self.radius()?,
@@ -504,15 +515,27 @@ fn hold(what: &str, d: Option<f64>, allowed: f64) {
     }
 }
 
+/// Whether `p` is in `region`.
+fn inside(region: &Aabb, p: Point3) -> bool {
+    (0..3).all(|i| (region.min[i]..=region.max[i]).contains(&p[i]))
+}
+
 /// The second property of a surface pair: every curve and point of a
-/// `Meets` lies on both surfaces within the tolerance — a line checked
-/// across the region, where the section was asked for.
+/// `Meets` lies on both surfaces within the tolerance, where the section
+/// was asked for — a curve's samples inside `within` only. The closed
+/// forms return their curves unbounded, and a boolean asks about the
+/// region of its faces: two planes a hair from parallel meet in a line
+/// 1e10 away, and a ruling there is as far off as rounding at 1e10
+/// allows, which is no question the region asked.
 pub fn check_surfaces(a: &Surface, b: &Surface, within: &Aabb, hit: &SurfaceIntersection) {
     let tol = tolerance();
     let size = surface_size(a).max(surface_size(b)) + within.diagonal();
     for (i, meet) in hit.curves().iter().enumerate() {
         for t in samples(&meet.curve, 0.5 * within.diagonal()) {
             let p = meet.curve.point(t);
+            if !inside(within, p) {
+                continue;
+            }
             let allowed = allowance(p, size, tol);
             hold(
                 &format!("curve {i} at {t} on a"),
@@ -638,7 +661,7 @@ mod tests {
     }
 
     #[test]
-    fn an_encoded_surface_and_curve_decode_to_themselves() {
+    fn an_encoded_surface_and_curve_decode_to_themselves_to_rounding() {
         let frame = Frame::new(
             Point3::new(1.0, -2.0, 0.5),
             Vec3::new(0.0, 0.6, 0.8),
@@ -686,11 +709,16 @@ mod tests {
         }
         let bytes = e.finish();
         let mut d = Decoder::new(&bytes);
+        // `Frame::new` rebuilds the axes, which may move each by an ulp;
+        // twelve decimals are the same values to rounding.
+        let same = |a: &dyn core::fmt::Debug, b: &dyn core::fmt::Debug| {
+            assert_eq!(format!("{a:.12?}"), format!("{b:.12?}"));
+        };
         for s in &surfaces {
-            assert_eq!(d.surface().as_ref(), Some(s));
+            same(&d.surface(), &Some(s));
         }
         for c in &curves {
-            assert_eq!(d.curve().as_ref(), Some(c));
+            same(&d.curve(), &Some(c));
         }
     }
 

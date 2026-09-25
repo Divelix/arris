@@ -299,13 +299,37 @@ bound has to be established here.
     `NurbsCurve::new` and is `Coincident` with a line 800 away.
   The nightly's `fuzz` job is therefore red until step 11. `fuzz/show.rs`
   prints what a crash decodes to.
-- [ ] Step 11 **[2]** — **Fuzzing's first findings.**
+- [x] Step 11 **[2]** — **Fuzzing's first findings.**
   - Run each target for one hour locally, then each night for a fixed
     time, with the corpus kept as a workflow cache.
   - Every panic or off-surface hit is shrunk into a `geometry` regression
     fixture under `tests/fixtures/regression/` with its oracle values, and
     `#[ignore]`d.
   - The hour's executions per second and findings go in the commit body.
+
+  *Found at step 11:* three kernel faults in a five-minute triage before
+  the hour, all three fixed where they were found (4bc1b5c), each with a
+  test that fails without it:
+  - `Frame::new` NaN axes for a hint along `z` to rounding, and
+    non-unit axes from an axis near `1e-154`, fixed by scaling by a power
+    of two, which keeps every existing frame's bits;
+  - knots that differ only by rounding, now `Degenerate`;
+  - a plane a hair past square to an elliptic cylinder, whose section
+    was 3e-6 small, fixed by one Gram–Schmidt pass.
+  Two harness corrections: a decoded line's direction is scaled before
+  it is normalised, as a frame's is, and a surface pair's curves are held
+  only inside the region they were asked for. The closed forms return
+  them unbounded, and two planes a hair from parallel meet 1e10 out,
+  where rounding at 1e10 answers no question the region asked.
+  The hour on 24 of the reference machine's 32 cores, 8 forks a target,
+  found no crash: `intersect_surfaces` 90,514 executions (25/s),
+  `intersect_curve_surface` 149,936 (42/s), `intersect_curves` 99,402
+  (28/s); coverage 3580, 4317 and 3486 edges; corpora of 1013, 1547 and
+  1355 inputs. Rate is set by 218 slow units (over 5 s, median 13 s, at
+  most 6 min: a torus against a very thin elliptic cylinder), a backlog
+  line. The nightly job runs each target for 30 minutes on the runner's
+  four cores, from a corpus kept in the Actions cache and minimised
+  before it is saved.
 - [ ] Step 12 **[1]** — **Retire.** The docs list below. The roadmap's
   harness line holds every number the steps recorded.
 

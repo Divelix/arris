@@ -162,13 +162,16 @@ jobs:
           retention-days: 90
 
   # The fuzz targets over the intersectors (ADR-0024 §5), on the nightly
-  # toolchain outside the workspace: seeded from every geometry fixture's
-  # pairs, then each target for a fixed time. A crash — a panic, a hit off
-  # an operand, two answers to one input — fails the job, and its input is
-  # uploaded for `fuzz/show.rs` and `cargo fuzz tmin`.
+  # toolchain outside the workspace: each target for thirty minutes on the
+  # runner's four cores, from the corpus the earlier nights grew — kept in
+  # the Actions cache, minimised before it is saved — and the seeds from
+  # every geometry fixture's pairs. A crash (a panic, a hit off an operand,
+  # two answers to one input) fails the job, and its input is uploaded for
+  # `fuzz/show.rs` and `cargo fuzz tmin`. Its depth comes from the nights
+  # adding up, as the property tier's does.
   fuzz:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -180,10 +183,15 @@ jobs:
         with:
           workspaces: fuzz
       - run: cargo install cargo-fuzz --locked
+      - uses: actions/cache/restore@v6
+        with:
+          path: fuzz/corpus/${{ matrix.target }}
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
+          restore-keys: fuzz-corpus-${{ matrix.target }}-
       - run: cargo run --manifest-path fuzz/Cargo.toml --example seed
       - run: cargo fuzz build -s none ${{ matrix.target }}
         working-directory: fuzz
-      - run: cargo fuzz run -s none ${{ matrix.target }} -- -max_total_time=60
+      - run: cargo fuzz run -s none ${{ matrix.target }} -- -max_total_time=1800 -fork=4
         working-directory: fuzz
       - if: failure()
         uses: actions/upload-artifact@v7
@@ -191,3 +199,14 @@ jobs:
           name: fuzz-${{ matrix.target }}
           path: fuzz/artifacts/${{ matrix.target }}
           if-no-files-found: ignore
+      # The corpus is saved whatever the night found: a crash's input is
+      # in the artifacts, and the coverage reached before it is the next
+      # night's start.
+      - if: always()
+        run: cargo fuzz cmin -s none ${{ matrix.target }}
+        working-directory: fuzz
+      - if: always()
+        uses: actions/cache/save@v6
+        with:
+          path: fuzz/corpus/${{ matrix.target }}
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
