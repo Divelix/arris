@@ -148,7 +148,9 @@ and a face's interior grid by.
 dispatch tables. `Surface::frame()` is the placing frame of an analytic
 variant and `None` for `Nurbs`, which is placed by its control points;
 `project` onto a `Nurbs` is `GeomError::Unsupported` (there is
-no closed form, and no operation asks for it yet). `Surface` and `Curve`
+no closed form, and no operation asks for it yet). `Surface::to_nurbs(bounds)`
+is the part of any analytic surface over a parameter rectangle as an exact
+`NurbsSurface` (§NURBS, exact forms). `Surface` and `Curve`
 are `Clone`, not `Copy`: the NURBS variants own their knots and control
 points.
 
@@ -1105,6 +1107,38 @@ takes any range of at most one period wherever it starts, read on the
 curve unrolled over two periods, so an edge's block past the knots' end
 is a piece like any other (the STEP writer's, architecture §Formats and
 tools).
+
+**Exact forms.** What a file calls a conic, an extrusion or a revolution,
+and what an analytic surface is when it must be a `Nurbs`, has an exact
+rational form — the same point set to rounding, never a fit
+(ADR-0025 §1). `NurbsCurve::circle` and `ellipse` are rational quadratic
+arcs of at most a quarter turn each, with weights `1, cos(h), 1` for the
+arc's half-angle `h`; the parameter is the angle at every arc end and a
+monotone reparametrisation between (a rational arc has no angle
+parametrisation). `parabola` is the quadratic polynomial it is, in the
+parameter of ISO 10303-42, so `eval(t)` is the parabola's own point;
+`hyperbola` is one rational Bézier arc, the homogeneous form
+`(a(q² + 1)/2, b(q² − 1)/2, q)` in `q = eᵗ` being quadratic. Every angle
+range is **clamped**, and a full turn is therefore *closed* — its first
+and last control points coincide — and not periodic: a periodic rational
+circle needs its knots doubled at each arc end, and a domain that starts
+on a doubled knot ends on one, which the constructor refuses. That is
+also what a closed B-spline in a file is, and why the seam handling of
+`pcurve_on` onto a NURBS surface (plan `step-reader` step 4) treats a
+closed direction that is not periodic. `NurbsSurface::extrusion(curve, d,
+range)` is `C(u) + v·d`, degree one in `v`, whose parameter is the
+distance along `d`. `NurbsSurface::revolution(curve, origin, axis,
+angle)` is the tensor product of the curve with the angle's arcs: `u` is
+the angle (counter-clockwise about the axis, from the curve as placed) and
+`v` the curve's own parameter, the order of every quadric. A control
+point on the axis makes a **collapsed row** exactly — a pole or an apex —
+decided by `is_negligible` against the coordinates that formed it, never
+by a tolerance. `Surface::to_nurbs(bounds)` gives the part of any
+analytic surface over a parameter rectangle in these forms (a plane a
+bilinear patch; a cylinder and an elliptic cylinder the extrusion of a
+conic; a cone, a sphere and a torus the revolution of a line or a conic),
+with the parameter linear exactly where the analytic one is linear and
+the angle at every arc end otherwise.
 
 ## Topology
 

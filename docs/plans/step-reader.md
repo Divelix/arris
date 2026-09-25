@@ -164,7 +164,7 @@ after, because it is routine.
   §C4: C4 is two plans, this one and then `real-part-corpus`, and its
   accept line skips `step_differs` fixtures. Delete
   `docs/ideas/reader-cycle-scope.md` once the ADR carries everything in it.
-- [ ] Step 2 **[2]** — Exact NURBS forms in `arris-geom`:
+- [x] Step 2 **[2]** — Exact NURBS forms in `arris-geom`:
   - conic arcs as rational quadratics;
   - the extrusion of a NURBS curve;
   - its revolution through any angle, as rational quadratic arcs of at

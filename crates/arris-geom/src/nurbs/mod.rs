@@ -14,6 +14,7 @@
 
 mod basis;
 mod curve;
+mod exact;
 mod fit;
 mod spline;
 mod surface;

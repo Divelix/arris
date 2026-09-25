@@ -7,8 +7,8 @@ use arris_math::{
     Aabb, Frame, Interval, Isometry, Point3, Tolerance, UnitVec3, Vec3, is_negligible,
 };
 
-use crate::NurbsSurface;
 use crate::curve::{active_points, coords, linear_range, product_range, sinusoid_range};
+use crate::{GeomError, GeomKind, NurbsCurve, NurbsSurface};
 
 /// A surface, placed by its frame, with the parametrisation of
 /// `docs/DATA-MODEL.md` §Surfaces (the one Open CASCADE's `Geom`
@@ -391,6 +391,160 @@ impl Surface {
                 let along = sinusoid_range(0.0, minor_radius * z, v);
                 [o + radial[0] + along[0], o + radial[1] + along[1]]
             })),
+        }
+    }
+
+    /// The part of the surface over the parameter rectangle `bounds` as
+    /// a rational B-spline, exactly: every point of the result is a point
+    /// of the surface and every point of the surface over `bounds` is one
+    /// of the result, to rounding. A plane is a bilinear patch and a
+    /// cylinder, elliptic cylinder, cone, sphere and torus are the
+    /// extrusion or revolution of a conic or a line
+    /// ([`NurbsSurface::extrusion`], [`NurbsSurface::revolution`]), so
+    /// what a reader converts a `SURFACE_OF_REVOLUTION` to and what an
+    /// analytic face becomes are one representation. A NURBS is returned
+    /// whole, whatever `bounds`.
+    ///
+    /// The parametrisation matches where the analytic one is linear —
+    /// both a plane's parameters, a cylinder's, elliptic cylinder's and
+    /// cone's `v` — and is otherwise a monotone reparametrisation that
+    /// agrees at every arc end. The domain of the result is not `bounds`
+    /// where an angle is involved, though it covers the same points. A
+    /// range of a full turn in `u` is closed and not periodic; the sphere's
+    /// `v = ±π/2` rows and the cone's apex row are collapsed to a single point exactly
+    /// (`docs/DATA-MODEL.md` §Surfaces).
+    ///
+    /// Errors: [`GeomError::Degenerate`] for a `bounds` that is not
+    /// finite, is empty in a direction, or spans more than a turn of an
+    /// angle, and for a radius that is not finite and positive.
+    ///
+    /// ```
+    /// use arris_geom::Surface;
+    /// use arris_math::{Frame, Interval, Point3};
+    ///
+    /// let ball = Surface::Sphere { frame: Frame::world(), radius: 2.0 };
+    /// let twin = ball.to_nurbs(ball.domain()).unwrap();
+    /// // Both poles are single points, and the twin closes in `u`.
+    /// let [n, m] = twin.counts();
+    /// assert_eq!(twin.control_point(0, 3), twin.control_point(n - 1, 3));
+    /// assert_eq!(twin.control_point(0, m - 1), twin.control_point(4, m - 1));
+    /// let [du, dv] = twin.domain();
+    /// let north = twin.eval(du.lerp(0.3), dv.hi()).point;
+    /// assert!((north - Point3::new(0.0, 0.0, 2.0)).norm() < 1e-14);
+    /// ```
+    pub fn to_nurbs(&self, bounds: [Interval; 2]) -> Result<NurbsSurface, GeomError> {
+        let [u, v] = bounds;
+        let kind = GeomKind::Surface(self.kind());
+        let fault = |reason: String| GeomError::Degenerate { kind, reason };
+        if ![u, v].iter().all(|r| r.is_bounded()) {
+            return Err(fault("the parameter bounds are not finite".into()));
+        }
+        let radius = |what: &str, r: f64| {
+            if r.is_finite() && r > 0.0 {
+                Ok(r)
+            } else {
+                Err(fault(format!("{what} {r} is not finite and positive")))
+            }
+        };
+        let line = |from: Point3, to: Point3, range: Interval| {
+            NurbsCurve::new(
+                1,
+                vec![range.lo(), range.lo(), range.hi(), range.hi()],
+                vec![from, to],
+                vec![1.0; 2],
+            )
+        };
+        match self {
+            Surface::Nurbs(s) => Ok(s.clone()),
+            Surface::Plane { .. } => {
+                let end = |a: f64, b: f64| self.point(a, b);
+                NurbsSurface::new(
+                    [1, 1],
+                    [
+                        vec![u.lo(), u.lo(), u.hi(), u.hi()],
+                        vec![v.lo(), v.lo(), v.hi(), v.hi()],
+                    ],
+                    vec![
+                        end(u.lo(), v.lo()),
+                        end(u.lo(), v.hi()),
+                        end(u.hi(), v.lo()),
+                        end(u.hi(), v.hi()),
+                    ],
+                    vec![1.0; 4],
+                )
+            }
+            &Surface::Cylinder {
+                ref frame,
+                radius: r,
+            } => {
+                let r = radius("radius", r)?;
+                let section = NurbsCurve::circle(frame, r, u)?;
+                NurbsSurface::extrusion(&section, frame.z().into_inner(), v)
+            }
+            &Surface::EllipticCylinder {
+                ref frame,
+                major_radius,
+                minor_radius,
+            } => {
+                let a = radius("major radius", major_radius)?;
+                let b = radius("minor radius", minor_radius)?;
+                let section = NurbsCurve::ellipse(frame, a, b, u)?;
+                NurbsSurface::extrusion(&section, frame.z().into_inner(), v)
+            }
+            &Surface::Cone {
+                ref frame,
+                radius: r,
+                half_angle,
+            } => {
+                let r = radius("radius", r)?;
+                let (sa, ca) = half_angle.sin_cos();
+                let ruling = |t: f64| {
+                    frame.origin()
+                        + (r + t * sa) * frame.x().into_inner()
+                        + (t * ca) * frame.z().into_inner()
+                };
+                let generatrix = line(ruling(v.lo()), ruling(v.hi()), v)?;
+                NurbsSurface::revolution(&generatrix, frame.origin(), frame.z(), u)
+            }
+            &Surface::Sphere {
+                ref frame,
+                radius: r,
+            } => {
+                let r = radius("radius", r)?;
+                let meridian = NurbsCurve::ellipse(
+                    &Frame::from_orthonormal(
+                        frame.origin(),
+                        frame.x().into_inner(),
+                        frame.z().into_inner(),
+                        -frame.y().into_inner(),
+                    )
+                    .map_err(|e| fault(e.to_string()))?,
+                    r,
+                    r,
+                    v,
+                )?;
+                NurbsSurface::revolution(&meridian, frame.origin(), frame.z(), u)
+            }
+            &Surface::Torus {
+                ref frame,
+                major_radius,
+                minor_radius,
+            } => {
+                let big = radius("major radius", major_radius)?;
+                let small = radius("minor radius", minor_radius)?;
+                let tube = NurbsCurve::circle(
+                    &Frame::from_orthonormal(
+                        frame.origin() + big * frame.x().into_inner(),
+                        frame.x().into_inner(),
+                        frame.z().into_inner(),
+                        -frame.y().into_inner(),
+                    )
+                    .map_err(|e| fault(e.to_string()))?,
+                    small,
+                    v,
+                )?;
+                NurbsSurface::revolution(&tube, frame.origin(), frame.z(), u)
+            }
         }
     }
 
