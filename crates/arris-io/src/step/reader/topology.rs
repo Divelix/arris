@@ -924,8 +924,9 @@ struct Junctions<'a> {
     /// The model's parametric tolerance: two values along a singular row
     /// nearer than it are one.
     parametric: f64,
-    /// The tolerance a pcurve ended on a junction is fitted to, where it
-    /// has to be fitted first.
+    /// The tolerance a pcurve ended on a junction is first fitted to,
+    /// where it has to be fitted first: the model's default, grown by
+    /// [`GAP_GROWTH`] up to the cap where the fit misses.
     fit: f64,
     /// The face's effective normal is its surface's turned, so a walk in
     /// effective order keeps the face on its right in (u, v).
@@ -1187,17 +1188,28 @@ impl Junctions<'_> {
                 Orientation::Forward => [start, end],
                 Orientation::Reversed => [end, start],
             };
-            u.pcurve = pcurve_ending_on(&u.pcurve, u.range, ends, self.surface, self.fit)
-                .map_err(|e| (u.edge, e))?;
+            // A pcurve that must be fitted first is fitted as `fitted`
+            // fits one: from the default, grown up to the cap.
+            let mut linear = self.fit;
+            u.pcurve = loop {
+                match pcurve_ending_on(&u.pcurve, u.range, ends, self.surface, linear) {
+                    Ok(p) => break p,
+                    Err(GeomError::Fit(_)) if linear < self.cap => {
+                        linear = (GAP_GROWTH * linear).min(self.cap);
+                    }
+                    Err(e) => return Err((u.edge, e)),
+                }
+            };
         }
         Ok(())
     }
 }
 
 /// How much the tolerance a pcurve is fitted to grows each time its
-/// curve is found farther from the surface than it, or, once it has been,
-/// its fit misses: from the model's default to the cap in a handful of
-/// fits. A search step, not a tolerance — the pcurve's own deviation is
+/// curve is found farther from the surface than it, or its fit misses —
+/// a file's curve fitted within a tolerance of the surface, which
+/// wanders about it by a fraction of it: from the model's default to the
+/// cap in a handful of fits. A search step, not a tolerance — the pcurve's own deviation is
 /// measured afterwards and is what its edge carries.
 const GAP_GROWTH: f64 = 2.0;
 
@@ -1229,8 +1241,8 @@ impl PcurveFault {
 
 /// The pcurve of `curve` over `range` on `surface`, fitted at the model's
 /// default tolerance, or — where the curve lies farther from the surface
-/// than that — at the gap it lies at, grown by [`GAP_GROWTH`] up to the
-/// cap.
+/// than that, or wanders about it so that no fit reaches it — at the gap
+/// it lies at, grown by [`GAP_GROWTH`] up to the cap.
 fn fitted(
     curve: &Curve,
     range: Interval,
@@ -1239,19 +1251,22 @@ fn fitted(
     cap: f64,
 ) -> Result<Curve2, PcurveFault> {
     let mut linear = precision.default_tolerance;
-    let mut off = false;
+    let mut gap: f64 = 0.0;
     loop {
         let tol = Tolerance::new(linear, precision.angular_tolerance);
         let needed = match pcurve_on(curve, range, surface, tol) {
             Ok(p) => return Ok(p),
             Err(GeomError::NotOnSurface { distance, .. }) => {
-                off = true;
                 if distance > cap {
                     return Err(PcurveFault::Gap(distance));
                 }
+                gap = gap.max(distance);
                 GAP_GROWTH * linear.max(distance)
             }
-            Err(GeomError::Fit(_)) if off => GAP_GROWTH * linear,
+            Err(e @ GeomError::Fit(_)) if linear >= cap && gap == 0.0 => {
+                return Err(PcurveFault::Geom(e));
+            }
+            Err(GeomError::Fit(_)) => GAP_GROWTH * linear,
             Err(e) => return Err(PcurveFault::Geom(e)),
         };
         if linear >= cap {

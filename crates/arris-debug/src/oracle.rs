@@ -343,6 +343,75 @@ pub fn compare_dir(
     }
 }
 
+/// Open CASCADE's own STEP of the result of the fixture in `dir` under
+/// `variant` (`default` when `None`) — built from the recipe by the
+/// oracle and written by `STEPControl_Writer`, or, with `nurbs`, passed
+/// through `BRepBuilderAPI_NurbsConvert` first — as text: the file the
+/// STEP reader is held to (`tools/oracle/occt_step.py`, ADR-0025). Kept in
+/// [`cache`] under the directory's `fixture.json`, the variant and the
+/// flag, so an unchanged recipe starts no Python; the file is also left
+/// at `target/inspect/<tag>.step` for inspection.
+///
+/// Errors: [`OracleError::Write`]; [`OracleError::Environment`] when `uv`
+/// could not run, the environment is missing, or the oracle could not
+/// build the recipe.
+///
+/// ```no_run
+/// use arris_debug::{fixtures, oracle};
+///
+/// let dir = fixtures::corpus_root().join("primitive/box");
+/// let text = oracle::occt_step(&dir, None, false, "occt-box").unwrap();
+/// assert!(text.contains("MANIFOLD_SOLID_BREP"));
+/// ```
+pub fn occt_step(
+    dir: &Path,
+    variant: Option<&str>,
+    nurbs: bool,
+    tag: &str,
+) -> Result<String, OracleError> {
+    let scratch = scratch_dir();
+    let file = scratch.join(format!("{tag}.step"));
+    let spec = std::fs::read(dir.join("fixture.json")).ok();
+    let variant = variant.unwrap_or("default");
+    let script = if nurbs {
+        "occt_step.py --nurbs"
+    } else {
+        "occt_step.py"
+    };
+    let slot = cache::slot(script, &[spec.as_deref()], Some(variant));
+    let written = |text: &str| {
+        std::fs::create_dir_all(&scratch)
+            .and_then(|()| std::fs::write(&file, text))
+            .map_err(|e| OracleError::Write {
+                path: file.clone(),
+                message: e.to_string(),
+            })
+    };
+    if let Some(bytes) = slot.as_ref().and_then(|(d, k)| cache::load(d, k)) {
+        let text = String::from_utf8_lossy(&bytes).into_owned();
+        written(&text)?;
+        return Ok(text);
+    }
+    std::fs::create_dir_all(&scratch).map_err(|e| OracleError::Write {
+        path: scratch.clone(),
+        message: e.to_string(),
+    })?;
+    let mut command = uv("occt_step.py");
+    command.arg(dir).arg(&file).args(["--variant", variant]);
+    if nurbs {
+        command.arg("--nurbs");
+    }
+    let output = spawn(&mut command)?;
+    if !output.status.success() {
+        return Err(environment(&output));
+    }
+    let text = std::fs::read_to_string(&file).map_err(|e| OracleError::Environment {
+        message: format!("occt_step.py wrote no file {}: {e}", file.display()),
+    })?;
+    keep(slot, text.as_bytes());
+    Ok(text)
+}
+
 /// Open CASCADE's `RWStl` reading of an STL file: how many facets it saw,
 /// their total area and their signed volume by the divergence theorem —
 /// the same formula `arris_mesh::TriMesh::signed_volume` and `area` use —

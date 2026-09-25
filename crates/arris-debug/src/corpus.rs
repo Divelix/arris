@@ -34,6 +34,8 @@ use arris_io::arris_check::arris_topo::arris_math::nalgebra::UnitQuaternion;
 use arris_io::arris_check::arris_topo::arris_math::{
     Axis, FrameError, Isometry, Point3, UnitVec3, Vec3,
 };
+use arris_io::arris_check::arris_topo::builder::{Assembly, Builder, FaceSpec};
+use arris_io::arris_check::arris_topo::entity::BodyKind;
 use arris_io::arris_check::arris_topo::{
     Body, Edge, EntityId, Model, Orientation, Provenance, TopoError,
 };
@@ -236,6 +238,17 @@ pub enum CorpusError {
     /// The oracle did not match Arris's STEP, or could not run.
     #[error(transparent)]
     Oracle(#[from] OracleError),
+    /// Open CASCADE's own STEP of the result did not read back
+    /// ([`read_back_stage`]): a parse error, or a solid refused.
+    #[error("{fixture}: Open CASCADE's STEP ({file}) reads back {what}")]
+    ReadBack {
+        /// The fixture.
+        fixture: String,
+        /// Which file: plain, or converted to NURBS.
+        file: &'static str,
+        /// What went wrong.
+        what: String,
+    },
     /// A mass property could not be computed, or is not the oracle's
     /// within the fixture's tolerance for it.
     #[error("{fixture}: measure: {what}")]
@@ -578,6 +591,8 @@ pub enum Stage {
     Provenance,
     /// STEP written and read back by the oracle.
     Step,
+    /// Open CASCADE's STEP read back by Arris ([`read_back_stage`]).
+    ReadBack,
     /// The text dump against the committed one.
     Dump,
 }
@@ -593,6 +608,7 @@ impl core::fmt::Display for Stage {
             Stage::Probes => "probes",
             Stage::Provenance => "provenance",
             Stage::Step => "step",
+            Stage::ReadBack => "read back",
             Stage::Dump => "dump",
         })
     }
@@ -621,6 +637,7 @@ impl CorpusError {
             CorpusError::Step { .. } | CorpusError::Part21 { .. } | CorpusError::Oracle(_) => {
                 Stage::Step
             }
+            CorpusError::ReadBack { .. } => Stage::ReadBack,
             CorpusError::Dump { .. } | CorpusError::Io { .. } => Stage::Dump,
         }
     }
@@ -709,6 +726,13 @@ pub fn run(dir: &Path, variant: &str) -> Result<(), CorpusError> {
     let tag = step_tag(&name, variant, dir);
     oracle::compare_dir(dir, &text, Some(variant), &tag)?;
 
+    // Open CASCADE's own STEP of the recipe, read back by Arris — unless
+    // the recipe says that file is lossy (ADR-0023).
+    if fixture.recipe.analytic.step_differs.is_none() {
+        let occt = oracle::occt_step(dir, Some(variant), false, &format!("occt-{tag}"))?;
+        read_back_stage(&fixture, variant, &occt, expected)?;
+    }
+
     // The dump.
     let dump = dump_text(m, body).map_err(|e| CorpusError::Dump {
         fixture: name.clone(),
@@ -744,6 +768,130 @@ pub fn run(dir: &Path, variant: &str) -> Result<(), CorpusError> {
             ),
         });
     }
+    Ok(())
+}
+
+/// Open CASCADE's own STEP of the fixture's result under `variant`,
+/// `text`, read by `arris_io::step::read` into a model of the fixture's
+/// precision (ADR-0025): every solid read — none refused — and together,
+/// a lump each as the oracle counts them, held to the checker at `Full`
+/// with nothing unchecked, to the oracle's own counts and genus (the file
+/// is Open CASCADE's topology, so `analytic.counts_differ` does not
+/// apply), and to the oracle's own measurements — the file carries Open
+/// CASCADE's shape, so `analytic.measure_differs`, which blames its
+/// boolean, does not apply either — at the fixture's tolerances, widened
+/// to the read body's own where those are wider (ADR-0023). A fixture
+/// whose `analytic.occt_step_refused` names a refusal passes on that
+/// refusal and fails on a read. Errors:
+/// [`CorpusError::ReadBack`] for a file that does not read, and the
+/// stage errors of [`check_stage`], [`counts_stage`] and
+/// [`measure_stage`].
+pub fn read_back_stage(
+    fixture: &Fixture,
+    variant: &str,
+    text: &str,
+    expected: &Measured,
+) -> Result<(), CorpusError> {
+    read_back(fixture, variant, text, expected, "plain")
+}
+
+/// [`read_back_stage`] of the file `which` names.
+fn read_back(
+    fixture: &Fixture,
+    variant: &str,
+    text: &str,
+    expected: &Measured,
+    which: &'static str,
+) -> Result<(), CorpusError> {
+    let fail = |what: String| CorpusError::ReadBack {
+        fixture: fixture.name.clone(),
+        file: which,
+        what,
+    };
+    let Some(params) = fixture.recipe.params_of(variant) else {
+        return Err(CorpusError::Variant {
+            fixture: fixture.name.clone(),
+            variant: variant.to_string(),
+        });
+    };
+    let mut model = model_for(fixture)?;
+    let read = step::read(&mut model, text, &step::ReadOptions::default())
+        .map_err(|e| fail(e.to_string()))?;
+    if let Some(refused) = &fixture.recipe.analytic.occt_step_refused {
+        // The file describes no solid by the standard: the refusal it
+        // names is the pass, and a read is the failure that lifts it.
+        let kinds: Vec<String> = (read.solids.iter())
+            .filter_map(|s| s.result.as_ref().err())
+            .map(|r| r.kind().to_string())
+            .collect();
+        if kinds.contains(&refused.kind) {
+            return Ok(());
+        }
+        return Err(fail(format!(
+            "with {kinds:?}, not the refusal analytic.occt_step_refused names ({}): lift it if it reads",
+            refused.kind
+        )));
+    }
+    let mut bodies = Vec::with_capacity(read.solids.len());
+    for solid in &read.solids {
+        let back = solid
+            .result
+            .as_ref()
+            .map_err(|r| fail(format!("refused: {r}")))?;
+        bodies.push(back.body);
+    }
+    let body = match bodies[..] {
+        [] => return Err(fail("no solid".into())),
+        [one] => one,
+        _ => {
+            // The lumps as one body, each read body's faces kept in a
+            // shell of it.
+            let mut shells = Vec::new();
+            for &b in &bodies {
+                for shell in model.shells(b).map_err(|e| fail(e.to_string()))? {
+                    let faces = model.shell(shell.id).map_err(|e| fail(e.to_string()))?;
+                    shells.push(faces.faces().iter().copied().map(FaceSpec::Keep).collect());
+                }
+            }
+            let assembly = Assembly {
+                shells,
+                ..Assembly::default()
+            };
+            let tolerance = model.precision().default_tolerance;
+            let (builder, _) =
+                Builder::assemble(&model, tolerance, assembly).map_err(|e| fail(e.to_string()))?;
+            builder
+                .finish(&mut model, BodyKind::Solid)
+                .map_err(|e| fail(e.to_string()))?
+                .body
+        }
+    };
+    let chain = Chain {
+        model,
+        steps: BTreeMap::from([(
+            "read".to_string(),
+            Made {
+                body,
+                provenance: Provenance::new(),
+                inputs: Vec::new(),
+            },
+        )]),
+        profiles: BTreeMap::new(),
+        result: "read".into(),
+        params,
+    };
+    let mut held = fixture.clone();
+    held.name = format!("{} [{which} OCCT STEP]", fixture.name);
+    held.recipe.analytic.counts_differ = None;
+    // Every `measure_differs` blames Open CASCADE's boolean, not its
+    // measure: its file carries its own shape, which its own measurements
+    // are of.
+    held.recipe.analytic.measure_differs = None;
+    held.recipe.tolerances =
+        within_own_tolerance(&fixture.recipe.tolerances, &chain.model, body).map_err(fail)?;
+    let (_, report) = check_stage(&held, &chain)?;
+    counts_stage(&held, &chain, &report, expected)?;
+    measure_stage(&held, &chain, expected)?;
     Ok(())
 }
 

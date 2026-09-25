@@ -138,6 +138,7 @@
     }
   ],
   "analytic": {
+    "occt_step_refused": {"kind": "open loop", "why": "Open CASCADE's own cut loses the sliver at the seam (analytic.measure_differs): its sphere face keeps the seam meridian up to the north pole, where the slice circle, which crosses that meridian a hair below the pole in the true face, arrives at u = −2e-5, so the face's walk in (u, v) needs the pole row run the wrong way round to close: the file's face bounds no region"},
     "volume": "(32 * pi / 3 - (pi * (4 * (2 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))) - (8 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^3) / 3)))",
     "area": "16 * pi - 4 * pi * (2 * (1 - (sin(radians(phi)) / sqrt(1 + k^2)))) + pi * (4 - (2 * (sin(radians(phi)) / sqrt(1 + k^2)))^2)",
     "centroid": [

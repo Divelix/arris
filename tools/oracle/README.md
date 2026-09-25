@@ -27,6 +27,7 @@ commit that says so (`.agents/rules/git.md`).
 |---|---|
 | `expected.py [--own] <fixture-dir>...` | Builds each recipe (every variant), measures it, writes `expected.json`, prints one summary line per result; for a geometry fixture, evaluates, projects and intersects instead. A recipe it cannot build prints `<dir>: ERROR <why>` on one line of stderr and the rest are still built, exit 1: `arris_debug::oracle::expected_batch` hands it many scratch fixtures at once — the differential's whole draw in one process — and reads each directory's answer apart. `--own` adds each solid result's `own` block (below), which only the differential asks for; a corpus fixture is never written with it |
 | `compare.py <fixture-dir> <file.step> [--variant NAME]` | Reads a STEP file (Arris's output), measures it, compares against `expected.json` within the fixture's tolerances, prints a table; exit 1 on mismatch, 2 on a stale `expected.json` or an environment error. Solid fixtures only: a geometry fixture is compared by `crates/arris-geom/tests/oracle.rs`. `arris_debug::oracle::compare` is the Rust seam to it, and the corpus runner (`arris_debug::corpus::run`) calls it on every fixture |
+| `occt_step.py <fixture-dir> <out.step> [--variant NAME] [--nurbs]` | Builds the recipe (one variant) and writes Open CASCADE's own STEP of the result — with `--nurbs`, passed through `BRepBuilderAPI_NurbsConvert` first — for Arris's STEP reader to read back (ADR-0025). Exit 2 with `occt_step: ERROR <why>` on stderr for a recipe it cannot build. `arris_debug::oracle::occt_step` is the Rust seam to it, cached like the others, and the corpus runner's read-back stage calls it on every fixture that does not say `analytic.step_differs` |
 | `mesh.py <file.stl>` | Reads an STL file (Arris's output, ASCII or binary) through Open CASCADE's `RWStl` and prints its triangle count, area and signed volume as JSON — an independent reader of the bytes, not a fixture comparison; exit 2 on a read error. `arris_debug::oracle::compare_stl` is the Rust seam to it |
 | `selftest.py [fixture-dir...]` | `tests/fixtures/expr-cases.json`'s expression grammar cases (the same ones `arris_debug::fixtures::expr`'s own test evaluates); inline smoke recipes covering every op and the geometry kind against closed forms; then for each fixture: a fresh `expected` must equal the committed one, and for a solid OCCT's own STEP of the result must compare clean — on its counts, genus and probes only where the recipe says `analytic.measure_differs` (ADR-0015) |
 
@@ -34,7 +35,7 @@ commit that says so (`.agents/rules/git.md`).
 
 The Rust seam (`arris_debug::oracle`) keeps every answer the oracle
 settles — a `compare.py` table that said `MATCH`, a scratch fixture's
-`expected.json`, a `mesh.py` reading — in `target/oracle-cache/`, one file
+`expected.json`, a `mesh.py` reading, an `occt_step.py` file — in `target/oracle-cache/`, one file
 per key (ADR-0024). The key is sha256 over the script's name, the bytes
 of every file it reads (the STEP or STL text, `fixture.json`,
 `expected.json`), the variant, and a digest of the oracle itself: every

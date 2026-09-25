@@ -38,7 +38,13 @@ test itself: it builds the recipe in Arris, runs the checker at `Full`
 result's lumps, `arris_check::lumps` — and genus against
 `expected.json`, writes STEP under `target/inspect/`, parses it back as
 Part 21 (`arris_io::step::part21`, every instance the writer defined kept
-once) and has the oracle read it back (`compare.py`), measures it over the B-Rep
+once) and has the oracle read it back (`compare.py`), has the oracle write
+its own STEP of the recipe (`occt_step.py`) and reads that back through
+Arris's reader (`corpus::read_back_stage`, ADR-0025): every solid read,
+the checker at `Full` clean, the oracle's own counts and genus — the file
+is Open CASCADE's topology, so `counts_differ` does not apply — and the
+oracle's own volume, area, centroid and inertia within the fixture's
+tolerances widened to the read body's own (ADR-0023), measures it over the B-Rep
 (`ops::measure::mass_properties`) and holds its volume, area, centroid
 and inertia tensor to the oracle's within `volume_rel`, `area_rel`,
 `centroid_abs` and `inertia_rel`, tessellates the result at `mesh_chord` and
@@ -218,8 +224,17 @@ of the step that made the fixture pass, and a later change to it is a
   not read back as the result — other counts, or another solid — while
   Arris's does (ADR-0023); the text gives both sides in numbers. Only the
   oracle's self-test reads it, and skips that fixture's round trip; the
-  runner and `compare.py` compare exactly as without it, and the lint
-  refuses it on a result Arris does not build. Every other round trip in
+  runner skips its read-back stage, `compare.py` compares exactly as
+  without it, and the lint refuses it on a result Arris does not build.
+  `occt_step_refused: {"kind": …, "why": …}` says Arris's reader refuses
+  Open CASCADE's own STEP of the result with that refusal kind (as
+  `RefusalKind` prints it): a file that describes no solid by ISO
+  10303-42 — Open CASCADE's writer turning a face's bounds, its boolean
+  leaving a face whose walk does not close. The read-back stage asserts
+  that refusal and fails once the file reads, so the entry is lifted with
+  the change that reads it. The runner holds a `measure_differs` fixture's
+  read-back to the oracle's own measurements: all of them blame Open
+  CASCADE's boolean, whose shape its file carries. Every other round trip in
   the self-test is held to the result's own tolerance where that is wider
   than the fixture's: a reader may move the boundary by its largest vertex
   tolerance. `genus` is what the

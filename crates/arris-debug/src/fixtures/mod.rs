@@ -592,6 +592,17 @@ pub enum ExpectError {
     EllipticRevolve,
 }
 
+/// A refusal the STEP reader is expected to return for Open CASCADE's own
+/// file of a result (`analytic.occt_step_refused`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReadRefused {
+    /// The refusal's kind, as `arris_io::step::RefusalKind` prints it
+    /// (`"not a closed shell"`, `"open loop"`).
+    pub kind: String,
+    /// Why the file is refused: what in it describes no solid.
+    pub why: String,
+}
+
 /// The closed forms a fixture's author states, cross-checking the oracle.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -646,6 +657,15 @@ pub struct Analytic {
     /// it to `expected.json`, so nothing Arris is held to changes.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub step_differs: Option<String>,
+    /// Why Arris's STEP reader refuses Open CASCADE's own STEP of this
+    /// result, and with which refusal (ADR-0025): a file that describes no
+    /// solid by the standard — Open CASCADE's writer turning a face's
+    /// bounds, or its own boolean leaving a face that does not close. The
+    /// runner's read-back stage then asserts that refusal instead of
+    /// comparing, and fails once the file reads, so the entry is lifted
+    /// with the change that reads it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub occt_step_refused: Option<ReadRefused>,
     /// Genus.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub genus: Option<i64>,
@@ -1039,6 +1059,14 @@ pub fn lint(dir: &Path) -> Vec<String> {
         }
         if a.step_differs.is_some() && (a.degenerate || a.expect_error.is_some()) {
             problem("analytic.step_differs needs a result Arris builds".into());
+        }
+        if a.occt_step_refused.is_some()
+            && (a.degenerate || a.expect_error.is_some() || a.step_differs.is_some())
+        {
+            problem(
+                "analytic.occt_step_refused needs a result Arris builds whose Open CASCADE STEP is read back"
+                    .into(),
+            );
         }
         if a.degenerate != m.degenerate {
             problem(format!(

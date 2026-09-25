@@ -484,13 +484,45 @@ after, because it is routine.
   - **Held to the entities' own bound** through `corpus::within_own_
     tolerance` (step 12), with the probes' `On` answers on either side
     left out: a read may move the boundary within the tolerance.
-- [ ] Step 14 **[2]** — Open CASCADE's STEP of every corpus fixture read
+- [x] Step 14 **[2]** — Open CASCADE's STEP of every corpus fixture read
   back. `tools/oracle/occt_step.py` writes it, under ADR-0024's cache.
   `corpus::read_back_stage` holds the read result to `expected.json`'s
   counts, volume, area and centroid at the fixture's tolerances.
   `step_differs` fixtures skip the stage (ADR-0023). Every fixture passes,
   or its failure is shrunk to a `regression/` fixture under the kernel
   rule.
+
+  Done: 168 corpus tests, every variant's Open CASCADE STEP read back
+  through `corpus::read_back_stage`, held to the checker at `Full`, the
+  oracle's own counts and genus and its measurements at the fixture's
+  tolerances widened to the read body's own. Findings:
+  - **A pcurve fit misses on Open CASCADE's many-span section curves**
+    (six fixtures: 5e-8–7e-8 left with the most spans a fit may use). A
+    file's curve wanders about its surface by a fraction of its own
+    tolerance; a missed fit now grows its tolerance up to the cap as an
+    off-surface curve does, and the deviation it ends at is measured into
+    the edge as before. The refit of a pcurve ended on a junction grows
+    the same way.
+  - **`measure_differs` blames Open CASCADE's boolean** in all three
+    fixtures that carry it, so its file carries its own shape: the
+    read-back is held to its own measurements (`coaxial-fuse-four-off`
+    read back at 16π, the oracle's closed crescent).
+  - **Two files describe no solid by ISO 10303-42.** Open CASCADE's
+    writer keeps the bounds' sense of a face reversed on a left-handed
+    torus frame while writing the frame right-handed with `same_sense`
+    turned (the fillets `hole-rim-fillet`, `boss-base-fillet`: an edge
+    walked the same way by both its faces); its own cut leaves a sphere
+    face whose walk needs the pole row run the wrong way round
+    (`pole-slice-beside-seam-cut`, its sliver lost at the seam). Each is
+    a refusal the reader is right to return, not a failure to shrink:
+    `analytic.occt_step_refused` names its kind and why, the stage
+    asserts it and fails once the file reads. The fillets' orientation
+    healing is a backlog line.
+  - **The gap cap's evidence**: the largest gap on the 202 files is
+    `8.5e-5` of the part's diagonal (`seam-beside-crossing-fuse`, whose
+    boolean Open CASCADE gets wrong by that much), every other at most
+    `2.5e-6`. `READ_GAP_FRACTION` stays `1e-4`, its comment citing
+    this.
 - [ ] Step 15 **[3]** — Free-form faces from a file. Every corpus fixture
   goes through `BRepBuilderAPI_NurbsConvert`, is written by Open CASCADE
   and is read back:

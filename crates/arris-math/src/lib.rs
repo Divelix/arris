@@ -57,7 +57,12 @@ pub const RELATIVE_ROUNDING: f64 = 8.0 * f64::EPSILON;
 /// digits, around `1e-15` of the part (Arris's own files); a kernel's
 /// raised tolerances reach a few `1e-7` on a part of unit size (the
 /// corpus's `boolean/seam-a-tolerance-from-crossing-fuse`, `1.2e-7` on a
-/// part of size 7). Healing tools commonly default their sewing
+/// part of size 7). Open CASCADE's own STEP of every corpus fixture
+/// (plans/step-reader step 14) measures at most `2.5e-6` of the part's
+/// diagonal on 201 of 202 files, and `8.5e-5` on the last — `7.4e-4` on a
+/// part `8.7` across, `boolean/seam-beside-crossing-fuse`, whose boolean
+/// Open CASCADE itself gets wrong by that much and whose file claims an
+/// uncertainty of `1e-4`. Healing tools commonly default their sewing
 /// tolerance to `1e-6`–`1e-3` of the model's size, so `1e-4` admits every
 /// file an exporting kernel called valid by its own tolerances and
 /// refuses the gaps a healer would have to sew. A tolerance policy, not a
