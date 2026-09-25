@@ -1,7 +1,8 @@
 //! The STEP reader on Arris's own files (ADR-0025, plans/step-reader
-//! step 10): the STEP of every corpus fixture reads back to one solid
-//! with the fixture's counts, and a volume, area and centroid within its
-//! tolerances, its provenance naming the file entity of every entity.
+//! steps 10 and 11): the STEP of every corpus fixture reads back to one
+//! solid with the fixture's counts, its degenerate edges — which the
+//! writer leaves out — rebuilt, and a volume, area and centroid within
+//! its tolerances, its provenance naming the file entity of every entity.
 
 use std::collections::BTreeMap;
 
@@ -9,34 +10,12 @@ use arris_debug::corpus::{self, Chain, Made};
 use arris_debug::fixtures::{self, DUMPED_AREAS, Fixture};
 use arris_io::arris_check::arris_topo::builder::{Assembly, Builder, FaceSpec};
 use arris_io::arris_check::arris_topo::entity::BodyKind;
-use arris_io::arris_check::arris_topo::entity::EdgeGeometry;
 use arris_io::arris_check::arris_topo::provenance::{Origin, Relation, Role};
 use arris_io::arris_check::arris_topo::{
     Body, Edge, Face, FileEntity, Model, Shape, Shell, Vertex,
 };
 use arris_io::arris_check::{Level, check};
 use arris_io::step::{self, ReadBody, ReadOptions};
-
-/// The fixtures whose result has a degenerate edge — a sphere's pole, a
-/// cone's apex — which the writer leaves out and the reader does not
-/// rebuild until step 11: each loop through one jumps in (u, v). The test
-/// asserts this list is exactly the corpus's bodies with a degenerate
-/// edge, so it can only shrink.
-const DEGENERATE_EDGES: &[&str] = &[
-    "blend/box-all-edges-fillet",
-    "blend/box-corner-three-fillets",
-    "boolean/ball-ball-common",
-    "boolean/ball-corner-cut",
-    "boolean/ball-offset-drill-cut",
-    "boolean/ball-on-apex-common",
-    "boolean/ball-polar-drill-cut",
-    "boolean/ball-pole-drill-cut",
-    "boolean/ball-pole-slice-cut",
-    "boolean/cone-apex-slice-cut",
-    "boolean/filleted-corner-notch-cut",
-    "boolean/grazing-ball-bar-cut",
-    "boolean/pole-slice-beside-seam-cut",
-];
 
 /// The fixtures whose result carries a tolerance an operation raised past
 /// the model's default — a vertex merged from points a tolerance apart —
@@ -46,23 +25,25 @@ const DEGENERATE_EDGES: &[&str] = &[
 /// lands.
 const RAISED_TOLERANCES: &[&str] = &["boolean/seam-a-tolerance-from-crossing-fuse"];
 
-/// `true` when the body has a degenerate edge.
-fn has_degenerate_edge(m: &Model, body: Body) -> bool {
-    let closure = m.closure(body).unwrap();
-    closure.edges.iter().any(|&e| {
-        matches!(
-            m.edge(e).unwrap().geometry(),
-            EdgeGeometry::Degenerate { .. }
-        )
-    })
+/// The number of degenerate edges of the body.
+fn degenerate_edges(m: &Model, body: Body) -> Result<usize, String> {
+    let closure = m.closure(body).map_err(|e| e.to_string())?;
+    let mut n = 0;
+    for &e in &closure.edges {
+        if m.edge(e).map_err(|e| e.to_string())?.is_degenerate() {
+            n += 1;
+        }
+    }
+    Ok(n)
 }
 
 /// Writes the fixture's result under `variant`, reads it back into a
 /// model of the fixture's precision, and holds it to the fixture's
-/// checker, counts and measure stages. `Ok(None)` for a variant with no
-/// solid to write, `Ok(Some(true))` when the result has a degenerate
-/// edge (and was not read).
-fn read_back(fixture: &Fixture, variant: &str) -> Result<Option<bool>, String> {
+/// checker, counts and measure stages, and to as many degenerate edges
+/// as the result has, which the writer leaves out and the reader
+/// rebuilds. `Ok(None)` for a variant with no solid to write, else the
+/// number of degenerate edges read back.
+fn read_back(fixture: &Fixture, variant: &str) -> Result<Option<usize>, String> {
     let Some(expected) = fixture.expected.results.get(variant) else {
         return Err("no expected result".into());
     };
@@ -71,9 +52,7 @@ fn read_back(fixture: &Fixture, variant: &str) -> Result<Option<bool>, String> {
     }
     let chain = corpus::chain(&fixture.dir, variant).map_err(|e| e.to_string())?;
     let body = chain.result().ok_or("no result")?;
-    if has_degenerate_edge(&chain.model, body) {
-        return Ok(Some(true));
-    }
+    let degenerate = degenerate_edges(&chain.model, body)?;
     let text = step::write(&chain.model, &[body]).map_err(|e| e.to_string())?;
     let mut model = Model::new(chain.model.precision()).map_err(|e| e.to_string())?;
     let read = step::read(&mut model, &text, &ReadOptions::default()).map_err(|e| e.to_string())?;
@@ -140,7 +119,13 @@ fn read_back(fixture: &Fixture, variant: &str) -> Result<Option<bool>, String> {
     let (_, report) = corpus::check_stage(fixture, &read_chain).map_err(|e| e.to_string())?;
     corpus::counts_stage(fixture, &read_chain, &report, expected).map_err(|e| e.to_string())?;
     corpus::measure_stage(fixture, &read_chain, expected).map_err(|e| e.to_string())?;
-    Ok(Some(false))
+    let rebuilt = degenerate_edges(&read_chain.model, body)?;
+    if rebuilt != degenerate {
+        return Err(format!(
+            "{rebuilt} degenerate edges read back of {degenerate}"
+        ));
+    }
+    Ok(Some(degenerate))
 }
 
 /// Every entity of the read body is generated from a file entity of the
@@ -177,7 +162,7 @@ fn provenance_names_the_file(
 /// together.
 fn area(area: &str) {
     let mut failures = Vec::new();
-    let mut degenerate = Vec::new();
+    let mut degenerate = 0;
     let mut read = 0;
     let mut raised = 0;
     let root = fixtures::corpus_root().join(area);
@@ -189,39 +174,28 @@ fn area(area: &str) {
         for variant in fixture.recipe.variant_names() {
             match read_back(&fixture, &variant) {
                 Ok(None) => {}
-                Ok(Some(true)) => {
-                    if !degenerate.contains(&fixture.name) {
-                        degenerate.push(fixture.name.clone());
-                    }
-                }
                 Err(e) if RAISED_TOLERANCES.contains(&fixture.name.as_str()) => {
                     assert!(e.contains("fails the checker"), "{}: {e}", fixture.name);
                     raised += 1;
                 }
-                Ok(Some(false)) if RAISED_TOLERANCES.contains(&fixture.name.as_str()) => {
+                Ok(Some(_)) if RAISED_TOLERANCES.contains(&fixture.name.as_str()) => {
                     panic!(
                         "{} [{variant}] reads back: lift it from RAISED_TOLERANCES",
                         fixture.name
                     )
                 }
-                Ok(Some(false)) => read += 1,
+                Ok(Some(n)) => {
+                    read += 1;
+                    degenerate += usize::from(n > 0);
+                }
                 Err(e) => failures.push(format!("{} [{variant}]: {e}", fixture.name)),
             }
         }
     }
-    let listed: Vec<String> = DEGENERATE_EDGES
-        .iter()
-        .filter(|n| n.starts_with(&format!("{area}/")))
-        .map(|n| n.to_string())
-        .collect();
-    assert_eq!(
-        degenerate, listed,
-        "the fixtures with a degenerate edge are the ones listed"
-    );
-    assert!(read > 0 || !listed.is_empty(), "nothing read in {area}");
+    assert!(read > 0, "nothing read in {area}");
     eprintln!(
-        "{area}: {read} read back, {} with a degenerate edge, {raised} with a raised tolerance",
-        degenerate.len()
+        "{area}: {read} read back, {degenerate} of them with a degenerate edge, \
+         {raised} with a raised tolerance"
     );
     assert!(
         failures.is_empty(),
@@ -338,7 +312,11 @@ fn a_faceted_brep_is_refused_beside_the_solid() {
     let mut m = Model::default();
     let read = step::read(&mut m, &text, &ReadOptions::default()).unwrap();
     assert_eq!(read.solids.len(), 2);
-    assert!(read.solids[0].result.is_ok());
+    assert!(
+        read.solids[0].result.is_ok(),
+        "{:?}",
+        read.solids[0].result.as_ref().err()
+    );
     let refusal = read.solids[1].result.as_ref().unwrap_err();
     assert_eq!(refusal.kind(), step::RefusalKind::Unsupported);
     assert_eq!(refusal.entity(), 90000);
@@ -354,4 +332,151 @@ fn a_parse_error_fails_the_file() {
     let mut m = Model::default();
     let err = step::read(&mut m, "ISO-10303-21;\nHEADER;", &ReadOptions::default()).unwrap_err();
     assert!(matches!(err, step::ReadError::Parse(_)), "{err}");
+}
+
+/// A bound whose (u, v) walk jumps where its edges meet in 3D — the
+/// cylinder's seam line moved to the far side of the wall, so the
+/// circles reach its vertex at `u = 0` and the seam leaves it at `u = π`
+/// — is an open loop, named by the face, the bound and the vertex.
+#[test]
+fn a_jump_off_a_singular_row_is_an_open_loop() {
+    let text = cylinder_step();
+    let seam_point = "#62 = CARTESIAN_POINT('',(4.,0.,0.));";
+    assert!(text.contains(seam_point));
+    let broken = text.replace(seam_point, "#62 = CARTESIAN_POINT('',(-4.,0.,0.));");
+    let mut m = Model::default();
+    let read = step::read(&mut m, &broken, &ReadOptions::default()).unwrap();
+    let refusal = read.solids[0].result.as_ref().unwrap_err();
+    assert_eq!(
+        refusal,
+        &step::Refusal::OpenLoop {
+            face: 24,
+            bound: 30,
+            vertex: 32
+        },
+        "{refusal}"
+    );
+    assert_eq!(refusal.kind(), step::RefusalKind::OpenLoop);
+}
+
+/// The header, the context and the circle of radius 4 about z at z = 0
+/// (`#31`, on its vertex `#32`) of the cylinder's file, the data section
+/// left open for the rest.
+fn circle_and_context() -> String {
+    let text = cylinder_step();
+    let keep = |line: &str| {
+        let id = line
+            .strip_prefix('#')
+            .and_then(|l| l.split(' ').next())
+            .and_then(|n| n.parse::<u64>().ok());
+        id.is_none_or(|id| id <= 21 || (26..=29).contains(&id) || (31..=56).contains(&id))
+    };
+    let data = text.strip_suffix("ENDSEC;\nEND-ISO-10303-21;\n").unwrap();
+    let body: String = data
+        .lines()
+        .filter(|l| keep(l))
+        .map(|l| format!("{l}\n"))
+        .collect();
+    body
+}
+
+/// A cone whose apex is a `VERTEX_LOOP`, as some writers bound it: the
+/// cone face has the base circle for one bound and the apex for the
+/// other, and no seam. The face is joined into one loop by the seam the
+/// file left out, the ruling from the circle's vertex to the apex, and
+/// the apex reads as its degenerate edge; the solid has the cone's
+/// volume.
+#[test]
+fn a_vertex_loop_at_an_apex_is_a_degenerate_edge() {
+    // A cone of radius 4 at z = 0 narrowing to its apex at z = −12, and
+    // the disc on top.
+    let body = circle_and_context();
+    let cone = format!(
+        "{body}#22 = MANIFOLD_SOLID_BREP('',#23);
+#23 = CLOSED_SHELL('',(#24,#106));
+#24 = ADVANCED_FACE('',(#30,#200),#25,.T.);
+#25 = CONICAL_SURFACE('',#26,4.,{});
+#30 = FACE_OUTER_BOUND('',#105,.T.);
+#57 = ORIENTED_EDGE('',*,*,#31,.F.);
+#105 = EDGE_LOOP('',(#57));
+#200 = FACE_BOUND('',#201,.T.);
+#201 = VERTEX_LOOP('',#202);
+#202 = VERTEX_POINT('',#203);
+#203 = CARTESIAN_POINT('',(0.,0.,-12.));
+#106 = ADVANCED_FACE('',(#107),#45,.T.);
+#107 = FACE_OUTER_BOUND('',#109,.T.);
+#108 = ORIENTED_EDGE('',*,*,#31,.T.);
+#109 = EDGE_LOOP('',(#108));
+ENDSEC;
+END-ISO-10303-21;
+",
+        (1.0f64 / 3.0).atan()
+    );
+    let mut m = Model::default();
+    let read = step::read(&mut m, &cone, &ReadOptions::default()).unwrap();
+    let back = read.solids[0].result.as_ref().unwrap();
+    let report = check(&m, back.body, Level::Full);
+    assert!(report.is_ok() && report.unchecked().is_empty(), "{report}");
+    assert_eq!(degenerate_edges(&m, back.body), Ok(1));
+    let closure = m.closure(back.body).unwrap();
+    // The base circle, the seam the face needs from its vertex to the
+    // apex, and the apex's degenerate edge.
+    assert_eq!((closure.faces.len(), closure.edges.len()), (2, 3));
+    let props = arris_ops::measure::mass_properties(&m, back.body).unwrap();
+    let volume = std::f64::consts::PI * 16.0 * 12.0 / 3.0;
+    assert!((props.volume - volume).abs() < 1e-9 * volume, "{props:?}");
+    assert!((props.centroid.z + 3.0).abs() < 1e-9, "{props:?}");
+    // The rebuilt edges are generated from the face they close.
+    let circle = m.edge(closure.edges[0]).unwrap();
+    assert!(circle.curve().is_some() && circle.is_closed());
+    for &e in &closure.edges[1..] {
+        assert_eq!(
+            back.provenance.origins(Shape::from(Edge::forward(e))),
+            [(
+                Relation::Generated,
+                Origin::Role(Role::File(FileEntity {
+                    id: 24,
+                    instance: 0
+                }))
+            )]
+        );
+    }
+}
+
+/// A hemisphere whose pole is a `VERTEX_LOOP`: the seam the face needs
+/// is the meridian from the equator's vertex to the pole, a circle, and
+/// the pole reads as the face's degenerate edge.
+#[test]
+fn a_vertex_loop_at_a_pole_is_a_degenerate_edge() {
+    let body = circle_and_context();
+    let dome = format!(
+        "{body}#22 = MANIFOLD_SOLID_BREP('',#23);
+#23 = CLOSED_SHELL('',(#24,#106));
+#24 = ADVANCED_FACE('',(#30,#200),#25,.T.);
+#25 = SPHERICAL_SURFACE('',#26,4.);
+#30 = FACE_OUTER_BOUND('',#105,.T.);
+#57 = ORIENTED_EDGE('',*,*,#31,.T.);
+#105 = EDGE_LOOP('',(#57));
+#200 = FACE_BOUND('',#201,.T.);
+#201 = VERTEX_LOOP('',#202);
+#202 = VERTEX_POINT('',#203);
+#203 = CARTESIAN_POINT('',(0.,0.,4.));
+#106 = ADVANCED_FACE('',(#107),#45,.F.);
+#107 = FACE_OUTER_BOUND('',#109,.F.);
+#108 = ORIENTED_EDGE('',*,*,#31,.T.);
+#109 = EDGE_LOOP('',(#108));
+ENDSEC;
+END-ISO-10303-21;
+"
+    );
+    let mut m = Model::default();
+    let read = step::read(&mut m, &dome, &ReadOptions::default()).unwrap();
+    let back = read.solids[0].result.as_ref().unwrap();
+    let report = check(&m, back.body, Level::Full);
+    assert!(report.is_ok() && report.unchecked().is_empty(), "{report}");
+    assert_eq!(degenerate_edges(&m, back.body), Ok(1));
+    let props = arris_ops::measure::mass_properties(&m, back.body).unwrap();
+    let volume = 2.0 / 3.0 * std::f64::consts::PI * 64.0;
+    assert!((props.volume - volume).abs() < 1e-9 * volume, "{props:?}");
+    assert!((props.centroid.z - 1.5).abs() < 1e-9, "{props:?}");
 }

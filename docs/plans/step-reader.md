@@ -139,6 +139,11 @@ A fuzz target over the parser and the reader runs each night.
     locus of a tie between distinct points of a NURBS surface. The tie is
     decided to rounding like every other locus, not by a tolerance:
     `project` takes none.
+- **`Surface::singularities() -> Vec<Singularity>`** (step 11): the
+  singular points `pcurve_on` already used, public so the reader
+  rebuilds a degenerate edge exactly where a pcurve ends on its row.
+  `Refusal::OpenLoop { face, bound, vertex }` and its `RefusalKind`
+  (step 11).
 - **A closed NURBS curve that is not periodic**, met by a surface at its
   closure, is one hit (step 5). Data-model §Curves says it is two today.
 - **`arris-math`: the named constant for the gap cap** (step 12),
@@ -369,7 +374,7 @@ after, because it is routine.
     lists it among its items; a solid no representation holds is
     `Malformed`. Step 16 reaches solids through the product structure
     instead.
-- [ ] Step 11 **[3]** — Degenerate edges rebuilt. A loop whose (u, v) walk
+- [x] Step 11 **[3]** — Degenerate edges rebuilt. A loop whose (u, v) walk
   jumps along a singular row — a sphere's pole, a cone's apex, a NURBS
   surface's collapsed row — gets the degenerate coedge the writer left
   out, on its own pcurve along the row, in the sense that closes the loop.
@@ -378,6 +383,32 @@ after, because it is routine.
 
   Test: step 10's exclusions are lifted, and every corpus fixture with a
   pole or an apex reads back to its counts, the degenerate edges included.
+
+  Done: `DEGENERATE_EDGES` is gone; 186 fixture variants read back, 15
+  of them with a degenerate edge, each to as many degenerate edges as the
+  original. Hand-written files: a cone and a hemisphere bounded by a
+  `VERTEX_LOOP`, to the checker at `Full` and their closed-form volume
+  and centroid; the cylinder's seam moved off its vertices, an
+  `OpenLoop`. Findings:
+  - **The sense along the row is the face's side of it**, read from the
+    uses beside the junction: `+u` with the face above the row, turned
+    for a free `v` and for a face whose effective normal is its
+    surface's turned. The run is within one period in that sense.
+  - **Two uses meeting the row at one value are two cases.** A seam's
+    up and down uses turn back on themselves: a whole turn. A closed
+    edge through a pole that leaves it along the seam's own meridian
+    (`boolean/ball-pole-slice-cut [along_seam]`) turns in towards the
+    face: no degenerate edge at all. The turn's sign in (u, v) decides.
+  - **A `VERTEX_LOOP` needs a seam the file does not have**: a face of a
+    wrapping loop and a lone degenerate loop has no area (L4). The
+    reader joins them by the exact iso-line from the bound's vertex
+    nearest the point — a cone's ruling, a sphere's meridian — and
+    refuses, by name, a seam that would cross the bound, a NURBS row
+    (whose isocurve has no exact form here), and a face of other than
+    one `EDGE_LOOP` beside it.
+  - **New public items**: `Surface::singularities` and `Singularity` in
+    `arris-geom`, moved out of `pcurve_on`'s private helper, and
+    `Refusal::OpenLoop` with its `RefusalKind`.
 - [ ] Step 12 **[2]** — Per-entity tolerances from measured gaps
   (ADR-0025 §4).
   - A vertex takes its distance to each edge's curve end.

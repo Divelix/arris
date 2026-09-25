@@ -123,6 +123,20 @@ impl fmt::Display for SurfaceKind {
     }
 }
 
+/// A singular point of a surface's parametrisation, where every value of
+/// one parameter names one point: a cone's apex, a sphere's pole, a
+/// NURBS surface's collapsed row ([`Surface::singularities`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Singularity {
+    /// The point.
+    pub point: Point3,
+    /// Which parameter is fixed along the row: `1` where every `u` names
+    /// the point at one `v`, as on the analytic surfaces.
+    pub fixed: usize,
+    /// The value it is fixed at.
+    pub value: f64,
+}
+
 /// A surface evaluated at one `(u, v)`: the point and its derivatives to
 /// second order. Derivatives are with respect to the parameters as
 /// stored, never normalised.
@@ -676,6 +690,62 @@ impl Surface {
             | Surface::Sphere { .. } => [Some(TAU), None],
             Surface::Torus { .. } => [Some(TAU), Some(TAU)],
             Surface::Nurbs(s) => s.closure(),
+        }
+    }
+
+    /// The singular points of the parametrisation, where a whole row of
+    /// one parameter names one point: a cone's apex, a sphere's two
+    /// poles, a NURBS surface's collapsed rows (boundary rows of control
+    /// points that are one point to rounding), and none on the others.
+    /// They are the points [`crate::pcurve_on`] ends a pcurve on, at the
+    /// row's own value, and where a loop's walk in (u, v) runs along the
+    /// row on a degenerate edge.
+    ///
+    /// ```
+    /// use arris_geom::Surface;
+    /// use arris_math::{Frame, Point3};
+    /// use core::f64::consts::FRAC_PI_2;
+    ///
+    /// let sphere = Surface::Sphere { frame: Frame::world(), radius: 2.0 };
+    /// let poles = sphere.singularities();
+    /// assert_eq!(poles.len(), 2);
+    /// assert_eq!((poles[0].fixed, poles[0].value), (1, FRAC_PI_2));
+    /// assert!((poles[0].point - Point3::new(0.0, 0.0, 2.0)).norm() < 1e-15);
+    /// ```
+    pub fn singularities(&self) -> Vec<Singularity> {
+        match *self {
+            Surface::Cone {
+                ref frame,
+                radius,
+                half_angle,
+            } => {
+                let (sin, cos) = half_angle.sin_cos();
+                let v = -radius / sin;
+                vec![Singularity {
+                    point: frame.origin() + v * cos * frame.z().into_inner(),
+                    fixed: 1,
+                    value: v,
+                }]
+            }
+            Surface::Sphere { ref frame, radius } => [1.0, -1.0]
+                .into_iter()
+                .map(|side| Singularity {
+                    point: frame.origin() + side * radius * frame.z().into_inner(),
+                    fixed: 1,
+                    value: side * FRAC_PI_2,
+                })
+                .collect(),
+            Surface::Nurbs(ref nurbs) => (nurbs.collapsed_rows().into_iter())
+                .map(|(fixed, value, point)| Singularity {
+                    point,
+                    fixed,
+                    value,
+                })
+                .collect(),
+            Surface::Plane { .. }
+            | Surface::Cylinder { .. }
+            | Surface::EllipticCylinder { .. }
+            | Surface::Torus { .. } => Vec::new(),
         }
     }
 

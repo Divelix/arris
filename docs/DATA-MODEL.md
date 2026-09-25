@@ -87,6 +87,14 @@ With `O, X, Y, Z` the frame and `c = cos`, `s = sin`:
 | Torus | `O + (R + r c v)(c u·X + s u·Y) + r s v·Z` | u, v ∈ [0, 2π) | u and v | seams at u = 0 and v = 0; `R > r` (no self-intersecting tori until an operation needs them: a revolve refuses one as `Reason::SpindleTorus`) |
 | Nurbs | Piegl & Tiller, rational; clamped or not (§NURBS) | knot range | either, where the knots and net wrap or a clamped direction's end rows are one row (its closure) | as the knots say; a clamped end row that is one point is a collapsed row, a singularity |
 
+`Surface::singularities()` lists a surface's singular points as
+`Singularity { point, fixed, value }` — the cone's apex, the sphere's two
+poles, a NURBS surface's collapsed rows — each the row of `fixed` at
+`value` that is one point. `pcurve_on` ends a pcurve on one at the row's
+own value, and a loop runs along the row there on a degenerate edge;
+the STEP reader rebuilds that edge where the file left it out (ADR-0025
+§1) by the same list.
+
 The surface normal is `∂P/∂u × ∂P/∂v`, normalised. For the analytic types
 that is: plane `Z`; cylinder, cone and sphere radially outward; an
 elliptic cylinder outward along its section's own normal `b c u·X + a s
@@ -1668,9 +1676,11 @@ pub struct Provenance {
   makes: the body from its `MANIFOLD_SOLID_BREP` or `BREP_WITH_VOIDS`,
   each shell from its `CLOSED_SHELL`, each face from its
   `ADVANCED_FACE`, each edge from its `EDGE_CURVE` and each vertex from
-  its `VERTEX_POINT`. A degenerate edge the reader rebuilds, which the
-  file has no entity for, is `Generated` from its face's entity, and an
-  edge split at a seam from its `EDGE_CURVE`.
+  its `VERTEX_POINT`. An edge the reader rebuilds, which the file has
+  no entity for — a degenerate edge the writer left out, or the seam
+  joining a `VERTEX_LOOP` to its face's other bound — is `Generated`
+  from its face's entity, and an edge split at a seam from its
+  `EDGE_CURVE`.
 - **Modified**: the output is a trimmed, split or re-tolerated piece of the
   input, same kind — the box's top face with a circle cut out of it, each
   half of a face split by an intersection curve (one input, several

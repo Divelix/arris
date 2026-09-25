@@ -758,58 +758,6 @@ fn on_torus(
     }
 }
 
-/// A singular point of a surface's parametrisation, where every value of
-/// one parameter names one point: a cone's apex, a sphere's pole, a
-/// NURBS surface's collapsed row.
-#[derive(Debug, Clone, Copy)]
-struct Singular {
-    point: Point3,
-    /// Which parameter is fixed there: `1` where every `u` names the point
-    /// at one `v`, as on the analytic surfaces.
-    fixed: usize,
-    /// The value it is fixed at.
-    value: f64,
-}
-
-/// The singular points of `surface`: a cone's apex, a sphere's two poles,
-/// a NURBS surface's collapsed rows, and none on the others.
-fn singular_points(surface: &Surface) -> Vec<Singular> {
-    match *surface {
-        Surface::Cone {
-            ref frame,
-            radius,
-            half_angle,
-        } => {
-            let (sin, cos) = half_angle.sin_cos();
-            let v = -radius / sin;
-            vec![Singular {
-                point: frame.origin() + v * cos * frame.z().into_inner(),
-                fixed: 1,
-                value: v,
-            }]
-        }
-        Surface::Sphere { ref frame, radius } => [1.0, -1.0]
-            .into_iter()
-            .map(|side| Singular {
-                point: frame.origin() + side * radius * frame.z().into_inner(),
-                fixed: 1,
-                value: side * FRAC_PI_2,
-            })
-            .collect(),
-        Surface::Nurbs(ref nurbs) => (nurbs.collapsed_rows().into_iter())
-            .map(|(fixed, value, point)| Singular {
-                point,
-                fixed,
-                value,
-            })
-            .collect(),
-        Surface::Plane { .. }
-        | Surface::Cylinder { .. }
-        | Surface::EllipticCylinder { .. }
-        | Surface::Torus { .. } => Vec::new(),
-    }
-}
-
 /// An end of the range that is on a singular point of the surface.
 #[derive(Debug, Clone, Copy)]
 struct SingularEnd {
@@ -898,7 +846,7 @@ fn singular_ends(
     let points: Vec<Point3> = ts.iter().map(|&t| curve.point(t)).collect();
     let band = PCURVE_SINGULAR_BAND * tol.linear;
     let mut ends = [None, None];
-    for singular in singular_points(surface) {
+    for singular in surface.singularities() {
         let d: Vec<f64> = (points.iter())
             .map(|p| (p - singular.point).norm())
             .collect();

@@ -190,6 +190,22 @@ pub enum Refusal {
         /// Why.
         what: String,
     },
+    /// A bound's walk in (u, v) jumps between two of its edges where
+    /// they meet, and not along a singular row of the face's surface —
+    /// a pole, an apex, a NURBS surface's collapsed row — where the
+    /// reader rebuilds the degenerate edge the file left out: the edges
+    /// meet in 3D but not on the face.
+    #[error(
+        "#{face}: its bound #{bound} jumps in (u, v) at vertex #{vertex}, not along a singular row"
+    )]
+    OpenLoop {
+        /// The face.
+        face: u64,
+        /// The bound.
+        bound: u64,
+        /// The `VERTEX_POINT` where the walk jumps.
+        vertex: u64,
+    },
     /// The body read fails the checker at `Level::Fast`, which the
     /// reader runs in every build (ADR-0025 §5): the file's fault, not
     /// the kernel's, so a refusal rather than a panic.
@@ -238,6 +254,8 @@ pub enum RefusalKind {
     Topology,
     /// [`Refusal::Pcurve`].
     Pcurve,
+    /// [`Refusal::OpenLoop`].
+    OpenLoop,
     /// [`Refusal::Invalid`].
     Invalid,
 }
@@ -265,6 +283,7 @@ impl Refusal {
             Refusal::Degenerate { .. } => RefusalKind::Degenerate,
             Refusal::Topology { .. } => RefusalKind::Topology,
             Refusal::Pcurve { .. } => RefusalKind::Pcurve,
+            Refusal::OpenLoop { .. } => RefusalKind::OpenLoop,
             Refusal::Invalid { .. } => RefusalKind::Invalid,
         }
     }
@@ -284,6 +303,7 @@ impl Refusal {
             | Refusal::Topology { entity, .. }
             | Refusal::Invalid { entity, .. } => *entity,
             Refusal::Pcurve { edge, .. } => *edge,
+            Refusal::OpenLoop { face, .. } => *face,
         }
     }
 }
@@ -302,6 +322,7 @@ impl fmt::Display for RefusalKind {
             RefusalKind::Degenerate => "degenerate geometry",
             RefusalKind::Topology => "not a closed shell",
             RefusalKind::Pcurve => "no pcurve",
+            RefusalKind::OpenLoop => "open loop",
             RefusalKind::Invalid => "fails the checker",
         })
     }
