@@ -1,6 +1,6 @@
 //! Pcurves: the (u, v) image of a 3D curve on a surface at the curve's own
 //! parameter, exact where a `Curve2` variant exists and a NURBS fitted
-//! over the surface's projection otherwise, on every analytic surface
+//! over the surface's projection otherwise, on every surface
 //! (`docs/DATA-MODEL.md` §Pcurves), and the projection of a curve onto a
 //! plane for a consumer's sketch.
 
@@ -45,9 +45,9 @@ pub const PCURVE_FIT_DEGREE: usize = 5;
 /// tolerance.
 pub const PCURVE_SINGULAR_BAND: f64 = 0.25;
 
-/// `d` moved into `(−π, π]`.
-fn wrap_pi(d: f64) -> f64 {
-    d - TAU * (d / TAU).round()
+/// `d` moved into `(−period / 2, period / 2]`.
+fn wrap_half(d: f64, period: f64) -> f64 {
+    d - period * (d / period).round()
 }
 
 /// The (u, v) coordinates of `p` in a plane's frame.
@@ -125,7 +125,21 @@ fn degenerate(kind: GeomKind, reason: impl Into<String>) -> GeomError {
 /// unwrapping halves the interval between two of its [`PCURVE_SAMPLES`]
 /// wherever the parameter swings by a quarter turn, which is what `u`
 /// does beside a pole or an apex, and a curve passing one fits from the
-/// band below out. A NURBS surface is the one `Unsupported` arm.
+/// band below out.
+///
+/// On a **NURBS surface** every curve is fitted, the distance that decides
+/// it is on the surface is [`Surface::project`]'s global one, and the
+/// fitted arm's projections start from the unwrapping table's own
+/// neighbour, falling back to the global search where that lands farther
+/// than the band from the curve. A direction the surface closes in
+/// ([`crate::NurbsSurface::closure`]: periodic knots, or a clamped
+/// direction whose ends are one row) is unwrapped by its closure as a
+/// turn is on the analytic surfaces, so a pcurve crossing the seam is
+/// continuous and may leave the domain, which evaluation wraps. A start on
+/// the seam reads at the knots' start, and a seam's other use is the
+/// caller's to place a period along ([`Surface::period`]), as on the
+/// analytic surfaces. A collapsed row — a pole, an apex — is a singular
+/// point like theirs, whichever parameter runs along it.
 ///
 /// A fitted pcurve never runs through a **singular point** of the
 /// surface — a cone's apex, a sphere's pole — where `u` has no value.
@@ -148,8 +162,8 @@ fn degenerate(kind: GeomKind, reason: impl Into<String>) -> GeomError {
 /// [`GeomError::Degenerate`] for an unbounded or empty range, a curve
 /// winding faster than the sampling resolves — or jumping, as one that
 /// changes a cone's nappe beside the apex does — or one that arrives at a
-/// singular point with no tangent; [`GeomError::Unsupported`] on a NURBS
-/// surface; [`GeomError::InvalidTolerance`].
+/// singular point with no tangent; [`GeomError::Ambiguous`] where the
+/// global projection onto a NURBS surface is; [`GeomError::InvalidTolerance`].
 ///
 /// ```
 /// use arris_geom::{Curve, Curve2, Surface, pcurve_on};
@@ -266,10 +280,21 @@ pub fn pcurve_on(
                 tol,
             )
         }
-        Surface::Nurbs(_) => Err(GeomError::Unsupported {
-            a: curve_kind,
-            b: GeomKind::Surface(surface.kind()),
-        }),
+        Surface::Nurbs(nurbs) => {
+            // The distance is the global projection's: a NURBS surface has
+            // no closed form, and a local one could call a curve on a fold
+            // of the surface off it.
+            let mut fault = None;
+            check_on(curve, range, surface, tol, |p| match nurbs.project(p) {
+                Ok(near) => near.distance,
+                Err(e) => {
+                    fault.get_or_insert(e);
+                    f64::NAN
+                }
+            })
+            .map_err(|e| fault.take().unwrap_or(e))?;
+            fitted_on(curve, range, surface, tol)
+        }
     }
 }
 
@@ -280,7 +305,7 @@ fn check_on(
     range: Interval,
     surface: &Surface,
     tol: Tolerance,
-    distance: impl Fn(arris_math::Point3) -> f64,
+    mut distance: impl FnMut(arris_math::Point3) -> f64,
 ) -> Result<(), GeomError> {
     for i in 0..=PCURVE_SAMPLES {
         let t = range.lerp(i as f64 / PCURVE_SAMPLES as f64);
@@ -733,17 +758,21 @@ fn on_torus(
     }
 }
 
-/// A singular point of a surface's parametrisation, where every `u`
-/// names one point: a cone's apex, a sphere's pole.
+/// A singular point of a surface's parametrisation, where every value of
+/// one parameter names one point: a cone's apex, a sphere's pole, a
+/// NURBS surface's collapsed row.
 #[derive(Debug, Clone, Copy)]
 struct Singular {
     point: Point3,
-    /// The `v` the parametrisation reaches it at.
-    v: f64,
+    /// Which parameter is fixed there: `1` where every `u` names the point
+    /// at one `v`, as on the analytic surfaces.
+    fixed: usize,
+    /// The value it is fixed at.
+    value: f64,
 }
 
 /// The singular points of `surface`: a cone's apex, a sphere's two poles,
-/// and none on the others.
+/// a NURBS surface's collapsed rows, and none on the others.
 fn singular_points(surface: &Surface) -> Vec<Singular> {
     match *surface {
         Surface::Cone {
@@ -755,21 +784,29 @@ fn singular_points(surface: &Surface) -> Vec<Singular> {
             let v = -radius / sin;
             vec![Singular {
                 point: frame.origin() + v * cos * frame.z().into_inner(),
-                v,
+                fixed: 1,
+                value: v,
             }]
         }
         Surface::Sphere { ref frame, radius } => [1.0, -1.0]
             .into_iter()
             .map(|side| Singular {
                 point: frame.origin() + side * radius * frame.z().into_inner(),
-                v: side * FRAC_PI_2,
+                fixed: 1,
+                value: side * FRAC_PI_2,
+            })
+            .collect(),
+        Surface::Nurbs(ref nurbs) => (nurbs.collapsed_rows().into_iter())
+            .map(|(fixed, value, point)| Singular {
+                point,
+                fixed,
+                value,
             })
             .collect(),
         Surface::Plane { .. }
         | Surface::Cylinder { .. }
         | Surface::EllipticCylinder { .. }
-        | Surface::Torus { .. }
-        | Surface::Nurbs(_) => Vec::new(),
+        | Surface::Torus { .. } => Vec::new(),
     }
 }
 
@@ -779,7 +816,8 @@ struct SingularEnd {
     point: Point3,
     /// By how much the curve's end misses the point, at most the band.
     miss: Vec3,
-    /// The pcurve's end: the `u` the curve arrives with, the point's `v`.
+    /// The pcurve's end: the free parameter the curve arrives with, the
+    /// point's own value of the fixed one.
     uv: Point2,
     /// The parameter beyond which the curve is left where it is.
     exit: f64,
@@ -886,15 +924,28 @@ fn singular_ends(
             if !at_end[side] {
                 continue;
             }
-            // The `u` the curve arrives with is its tangent's, read where
-            // the tangent leads from the point into the range.
+            // The free parameter the curve arrives with is its tangent's,
+            // read where the tangent leads from the point into the range:
+            // as far as the curve's middle on a surface of revolution,
+            // where every distance along it reads the same, and on a
+            // NURBS just clear of the fade, where the limit is read before
+            // the surface bends away from the tangent.
             let into = if side == 0 { 1.0 } else { -1.0 };
-            let reach = (curve.point(range.midpoint()) - singular.point).norm();
+            let middle = (curve.point(range.midpoint()) - singular.point).norm();
+            let reach = match surface {
+                Surface::Nurbs(_) => middle.min(SINGULAR_FADE[1] * band),
+                Surface::Plane { .. }
+                | Surface::Cylinder { .. }
+                | Surface::EllipticCylinder { .. }
+                | Surface::Cone { .. }
+                | Surface::Sphere { .. }
+                | Surface::Torus { .. } => middle,
+            };
             let tangent = (into * curve.eval(ts[end]).d1)
                 .try_normalize(0.0)
                 .filter(|_| reach > 0.0)
                 .ok_or_else(|| degenerate(kind, "arrives at a singular point with no tangent"))?;
-            let u = surface.project(singular.point + reach * tangent)?.uv.x;
+            let free = surface.project(singular.point + reach * tangent)?.uv[1 - singular.fixed];
             // Carried onto the point until the first sample clear of the
             // fade, or the middle of a range too short to have one.
             let far = SINGULAR_FADE[1] * band;
@@ -907,7 +958,11 @@ fn singular_ends(
             ends[side] = Some(SingularEnd {
                 point: singular.point,
                 miss: points[end] - singular.point,
-                uv: Point2::new(u, singular.v),
+                uv: if singular.fixed == 1 {
+                    Point2::new(free, singular.value)
+                } else {
+                    Point2::new(singular.value, free)
+                },
                 exit,
             });
         }
@@ -972,26 +1027,22 @@ fn fitted_on(
             | Surface::Nurbs(_) => uv,
         })
     };
-    let periodic = surface.period().map(|p| p.is_some());
+    // A turn on the analytic surfaces; a NURBS surface's closure, over
+    // which its projection already reports a parameter inside the domain.
+    let periods = surface.period();
     // `q` with each periodic parameter moved the short way round from
     // `near`'s, which is how far along the unwrapping it is.
     let beside = |near: [f64; 2], q: Point2| {
-        [0, 1].map(|k| {
-            if periodic[k] {
-                near[k] + wrap_pi(q[k] - near[k])
-            } else {
-                q[k]
-            }
+        [0, 1].map(|k| match periods[k] {
+            Some(period) => near[k] + wrap_half(q[k] - near[k], period),
+            None => q[k],
         })
     };
     let n = PCURVE_SAMPLES;
     let first = raw(range.lo())?;
-    let start = [0, 1].map(|k| {
-        if periodic[k] {
-            wrap_turn(first[k])
-        } else {
-            first[k]
-        }
+    let start = [0, 1].map(|k| match (periods[k], surface) {
+        (Some(_), Surface::Nurbs(_)) | (None, _) => first[k],
+        (Some(_), _) => wrap_turn(first[k]),
     });
     // The unwrapped parameters along `t`, and where in the table each of
     // the `n + 1` even samples is: the halvings lie between them.
@@ -1005,12 +1056,12 @@ fn fitted_on(
         while let Some(&(t, depth)) = pending.last() {
             let (t0, last) = table[table.len() - 1];
             let next = beside(last, raw(t)?);
+            // The swing as a fraction of the turn.
             let swing = (0..2)
-                .filter(|&k| periodic[k])
-                .map(|k| (next[k] - last[k]).abs())
+                .filter_map(|k| periods[k].map(|period| (next[k] - last[k]).abs() / period))
                 .fold(0.0, f64::max);
             // A NaN is not below the bound, and is not halved away either.
-            if swing < FRAC_PI_2 {
+            if swing < 0.25 {
                 table.push((t, next));
                 pending.pop();
             } else if depth < UNWRAP_DEPTH && swing.is_finite() {
@@ -1024,7 +1075,7 @@ fn fitted_on(
                 return Err(degenerate(
                     kind,
                     format!(
-                        "winds {swing} radians around the axis between two of {n} samples halved {UNWRAP_DEPTH} times: faster than the pcurve sampling resolves"
+                        "winds {swing} of a turn around the axis between two of {n} samples halved {UNWRAP_DEPTH} times: faster than the pcurve sampling resolves"
                     ),
                 ));
             }
@@ -1032,9 +1083,6 @@ fn fitted_on(
         even.push(table.len() - 1);
     }
     let f = |t: f64| {
-        let Ok(q) = raw(t) else {
-            return Point2::new(f64::NAN, f64::NAN);
-        };
         // The nearest even sample, and where an interval beside it was
         // halved, the nearest of what the halving put there.
         let s = ((t - range.lo()) / range.length() * n as f64).round();
@@ -1048,6 +1096,32 @@ fn fitted_on(
                 }
             }
         }
+        // On a NURBS surface, whose projection is a search, the table's
+        // own neighbour starts a local one: taken where it lands within
+        // the band of the curve — what the curve's own point is at most
+        // off a surface that holds it — and not beside a singular end,
+        // whose carrying `raw` does.
+        if let Surface::Nurbs(nurbs) = surface {
+            let beside_an_end = ends.iter().enumerate().any(|(side, end)| {
+                end.is_some_and(|end| {
+                    if side == 0 {
+                        t <= end.exit
+                    } else {
+                        t >= end.exit
+                    }
+                })
+            });
+            if !beside_an_end {
+                let local = nurbs.project_from(curve.point(t), Point2::new(near.1[0], near.1[1]));
+                if local.distance <= band {
+                    let [u, v] = beside(near.1, local.uv);
+                    return Point2::new(u, v);
+                }
+            }
+        }
+        let Ok(q) = raw(t) else {
+            return Point2::new(f64::NAN, f64::NAN);
+        };
         let [u, v] = beside(near.1, q);
         Point2::new(u, v)
     };

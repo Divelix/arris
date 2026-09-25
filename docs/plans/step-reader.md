@@ -125,6 +125,14 @@ A fuzz target over the parser and the reader runs each night.
   - `Surface::project` onto `Nurbs` (step 3) and `pcurve_on` onto `Nurbs`
     (step 4). Both are `GeomError::Unsupported` today, by cycle-1 design.
     Data-model §Surfaces and §Pcurves change where they say so.
+  - `NurbsSurface::closure` (step 4): a direction closed without
+    periodic knots — a clamped full turn, what every exact revolution
+    and a file's closed B-spline surface is — closes over its domain's
+    length. Evaluation wraps a parameter outside the domain by it, and
+    `Surface::period` reports it for a `Nurbs`, so the checker's seam
+    rows, the pcurve unwrapping and a caller's placing of a seam treat
+    it as a period. A behaviour change of two public methods, named in
+    step 4's commit.
   - `NurbsSurface::project`, which `Surface::project` calls, and
     `AmbiguousLocus::MedialAxis` (step 3): a new variant of a public,
     exhaustive enum, so a breaking change, named in the commit. It is the
@@ -197,7 +205,7 @@ after, because it is routine.
   - `tests/fixtures/geom/c4-nurbs-projections` against Open CASCADE's
     `GeomAPI_ProjectPointOnSurf` on free-form surfaces with no twin
     (a saddle, a bump, a surface folded back on itself).
-- [ ] Step 4 **[3]** — `pcurve_on` onto a NURBS surface. Projected samples
+- [x] Step 4 **[3]** — `pcurve_on` onto a NURBS surface. Projected samples
   at the surface's `chord_steps` are fitted to `Curve2::Nurbs`
   (`nurbs::fit`) and verified at E4's samples. The samples are unwrapped
   across a periodic seam, and across a *closed* seam that is not periodic

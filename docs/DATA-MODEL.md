@@ -85,7 +85,7 @@ With `O, X, Y, Z` the frame and `c = cos`, `s = sin`:
 | Cone | `O + (R + v·s α)(c u·X + s u·Y) + v·c α·Z` | u ∈ [0, 2π), v ∈ ℝ | u | seam at u = 0; apex at v = −R / s α, a degenerate edge. `α` ∈ (0, π/2) is the half-angle; `R` the radius at v = 0 |
 | Sphere | `O + R c v (c u·X + s u·Y) + R s v·Z` | u ∈ [0, 2π), v ∈ [−π/2, π/2] | u | seam at u = 0; poles at v = ±π/2, degenerate edges |
 | Torus | `O + (R + r c v)(c u·X + s u·Y) + r s v·Z` | u, v ∈ [0, 2π) | u and v | seams at u = 0 and v = 0; `R > r` (no self-intersecting tori until an operation needs them: a revolve refuses one as `Reason::SpindleTorus`) |
-| Nurbs | Piegl & Tiller, rational; clamped or not (§NURBS) | knot range | either, where the knots and net wrap | as the knots say |
+| Nurbs | Piegl & Tiller, rational; clamped or not (§NURBS) | knot range | either, where the knots and net wrap or a clamped direction's end rows are one row (its closure) | as the knots say; a clamped end row that is one point is a collapsed row, a singularity |
 
 The surface normal is `∂P/∂u × ∂P/∂v`, normalised. For the analytic types
 that is: plane `Z`; cylinder, cone and sphere radially outward; an
@@ -110,13 +110,15 @@ the seam is written with a seam edge (§Seams), not by unwrapping.
 
 `Surface::eval(u, v)` returns `SurfaceEval { point, du, dv, duu, duv, dvv }`
 for every finite parameter, inside the domain or not (a periodic parameter
-wraps); `normal(u, v)` is `None` where the parametrisation is singular —
+wraps, and so does a NURBS direction closed without being periodic, by
+its domain's length); `normal(u, v)` is `None` where the parametrisation is singular —
 the apex, the poles, a zero radius, a NURBS point whose two derivatives
 are parallel or vanish — decided to rounding (`arris_math::is_negligible`),
 never a direction made of noise. `domain()`
 gives the closed fundamental interval of a periodic direction, `[0, 2π]`,
 and `Interval::REAL` where the table says ℝ; `period()` the period per
-direction.
+direction — for a `Nurbs`, its `closure()`: the knots' period, or the
+domain's length where the direction is closed without it.
 
 `Surface::project(p)` returns the nearest point of the whole parametric
 surface (both nappes of a cone) as `SurfaceProjection { uv, point,
@@ -795,16 +797,26 @@ its `Z` along the axis, its major axis along the surface's `X` either
 way, the radii agreeing within `tol.linear` — at constant `v`, `u`
 starting at `0` or `π` by its `X` against the surface's and running in
 the sense of its `Z` against the surface's, as a parallel does on a
-cylinder. NURBS surfaces are the one `Unsupported` arm.
+cylinder. On a **NURBS surface** every curve is fitted (below).
 
-**The fitted fallback is one, for every analytic surface.** Every other
+**The fitted fallback is one, for every surface.** Every other
 curve on a cylinder, an elliptic cylinder, a cone, a sphere or a torus —
 an oblique section, a small circle about no axis of the sphere, a
-Villarceau circle, a traced quartic, any NURBS — is a `Nurbs` fitted by
+Villarceau circle, a traced quartic, any NURBS — and every curve on a
+NURBS surface is a `Nurbs` fitted by
 `fit_curve2` (below) over the surface's own projection of the curve
 (`Surface::project`), held to the curve in 3D. Each periodic parameter —
-`u`, and on a torus `v` as well — is unwrapped along `t`, so a seam
-crossing stays continuous and the parameter may leave `[0, 2π)`. The
+`u`, and on a torus `v` as well, and on a NURBS surface each direction
+with a closure, periodic or closed — is unwrapped along `t`, so a seam
+crossing stays continuous and the parameter may leave `[0, 2π)` (the
+domain, on a NURBS surface, whose evaluation wraps it back). On a NURBS
+surface the curve is on the surface by the global projection's
+distance, a start on a seam reads at the knots' start, and a seam's
+second use is placed a period along by the caller, as on the analytic
+surfaces; the fit's projections start from the unwrapping table's
+neighbour by Newton's iteration and fall back to the global search where
+that lands farther than the singular band from the curve — the search is
+global per call, and a fit asks thousands. The
 unwrapping reads a table of `PCURVE_SAMPLES` parameters and halves an
 interval over which a parameter swings by a quarter turn, up to
 thirty-two times, before it refuses the curve as winding faster than it
@@ -823,13 +835,18 @@ curve, where the branch's own (u, v) would be off the edge's curve by
 the fit's whole deviation.
 
 **A fitted pcurve never runs through a singular point** of the surface —
-a cone's apex, a sphere's pole — where every `u` names one point. The
+a cone's apex, a sphere's pole, a NURBS surface's collapsed row — where
+every `u` names one point (on a NURBS surface, every value of whichever
+parameter runs along the row). The
 decision is a distance: a curve within `PCURVE_SINGULAR_BAND` (a quarter)
 of `tol.linear` of the point is on it. A range with that inside it is
 `GeomError::ThroughSingularity { curve, surface, t }`, `t` the parameter
 of the nearest approach, and the caller splits there; a range that *ends*
 there is fitted, and its pcurve ends on the point's own `v` with the `u`
-the curve arrives with, the limit along it read from its tangent. The
+the curve arrives with, the limit along it read from its tangent — on
+a surface of revolution as far along it as the curve's middle, where
+every distance reads the same, and on a NURBS surface just clear of the
+fade below, before the surface bends away from the tangent. The
 band is a quarter because a pcurve that ends on the point is off the
 curve there by the curve's own miss, which no refinement removes, and the
 fit accepts half the tolerance: a quarter leaves the fit the other
@@ -1144,7 +1161,10 @@ circle needs its knots doubled at each arc end, and a domain that starts
 on a doubled knot ends on one, which the constructor refuses. That is
 also what a closed B-spline in a file is, and why the seam handling of
 `pcurve_on` onto a NURBS surface (plan `step-reader` step 4) treats a
-closed direction that is not periodic. `NurbsSurface::extrusion(curve, d,
+closed direction that is not periodic: `NurbsSurface::closure()` is the
+domain's length there, evaluation wraps a parameter outside the domain
+by it, and `Surface::period()` reports it, so a seam on a closed
+direction is a seam like a periodic one's. `NurbsSurface::extrusion(curve, d,
 range)` is `C(u) + v·d`, degree one in `v`, whose parameter is the
 distance along `d`. `NurbsSurface::revolution(curve, origin, axis,
 angle)` is the tensor product of the curve with the angle's arcs: `u` is

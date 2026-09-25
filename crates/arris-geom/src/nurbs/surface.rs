@@ -14,7 +14,10 @@ use crate::{GeomError, GeomKind, SurfaceEval, SurfaceKind};
 /// the domain is `[knots_u[p], knots_u[n]] × [knots_v[q], knots_v[m]]`;
 /// a direction is periodic exactly when its knots and the control net
 /// wrap in it (as for [`crate::NurbsCurve`]), and then `eval` wraps that
-/// parameter first.
+/// parameter first; a direction that is *closed* without being periodic —
+/// clamped at both ends, its first and last rows one row to rounding —
+/// wraps a parameter outside its domain by the domain's length
+/// ([`NurbsSurface::closure`]).
 ///
 /// ```
 /// use arris_geom::NurbsSurface;
@@ -48,6 +51,8 @@ pub struct NurbsSurface {
     points: Vec<Point3>,
     weights: Vec<f64>,
     period: [Option<f64>; 2],
+    /// Whether each direction is closed and not periodic.
+    closed: [bool; 2],
 }
 
 /// The wire form of a [`NurbsSurface`]: what [`NurbsSurface::new`] takes,
@@ -172,6 +177,14 @@ impl NurbsSurface {
                 (0..n).all(|i| same(i * m + a, i * m + b))
             }),
         ];
+        let clamped = |dir: usize| {
+            let (k, p, n) = (&knots[dir], degree[dir], counts[dir]);
+            k[..=p].iter().all(|&x| x == k[p]) && k[n..].iter().all(|&x| x == k[n])
+        };
+        let closed = [
+            period[0].is_none() && clamped(0) && (0..m).all(|j| same(j, (n - 1) * m + j)),
+            period[1].is_none() && clamped(1) && (0..n).all(|i| same(i * m, i * m + m - 1)),
+        ];
         Ok(NurbsSurface {
             degree,
             knots,
@@ -179,6 +192,7 @@ impl NurbsSurface {
             points: control_points,
             weights,
             period,
+            closed,
         })
     }
 
@@ -228,15 +242,98 @@ impl NurbsSurface {
         self.period
     }
 
+    /// The length each direction closes over: its period where it is
+    /// periodic, the domain's length where it is closed without being
+    /// periodic — clamped at both ends, with its first and last rows of
+    /// control points and weights the same to rounding, as a full turn of
+    /// a revolution is (`docs/DATA-MODEL.md` §NURBS) — and `None` where it
+    /// is open. `eval` wraps a parameter by it, so `P(u + c, v) = P(u, v)`
+    /// for the closure `c` of `u`, and a pcurve may cross the seam
+    /// continuously; it is what `Surface::period` reports for a `Nurbs`.
+    ///
+    /// ```
+    /// use arris_geom::Surface;
+    /// use arris_math::{Frame, Interval};
+    ///
+    /// let wall = Surface::Cylinder { frame: Frame::world(), radius: 2.0 };
+    /// let twin = wall.to_nurbs([Interval::TURN, Interval::UNIT]).unwrap();
+    /// // A full turn is clamped, so closed and not periodic.
+    /// assert_eq!(twin.period(), [None, None]);
+    /// assert_eq!(twin.closure()[0], Some(Interval::TURN.length()));
+    /// let (a, b) = (twin.eval(0.5, 0.5).point, twin.eval(0.5 + Interval::TURN.length(), 0.5).point);
+    /// assert!((a - b).norm() < 1e-14);
+    /// ```
+    pub fn closure(&self) -> [Option<f64>; 2] {
+        [0, 1].map(|dir| {
+            self.period[dir].or_else(|| self.closed[dir].then(|| self.domain_of(dir).length()))
+        })
+    }
+
     fn wrap(&self, dir: usize, t: f64) -> f64 {
+        let d = self.domain_of(dir);
         match self.period[dir] {
             Some(period) => {
-                let d = self.domain_of(dir);
                 let w = d.lo() + (t - d.lo()).rem_euclid(period);
+                if w >= d.hi() { d.lo() } else { w }
+            }
+            // A closed direction keeps its own end: the seam's two
+            // parameters are one point, but not one derivative.
+            None if self.closed[dir] && !d.contains(t) => {
+                let w = d.lo() + (t - d.lo()).rem_euclid(d.length());
                 if w >= d.hi() { d.lo() } else { w }
             }
             None => t,
         }
+    }
+
+    /// The rows of the net that are one point — a pole, an apex: for each
+    /// clamped end of each direction whose boundary row of control points
+    /// is one point to rounding, `(k, value, point)` with `k` the
+    /// direction whose parameter is fixed at `value` along the row.
+    pub(crate) fn collapsed_rows(&self) -> Vec<(usize, f64, Point3)> {
+        let [n, m] = self.counts;
+        let scale = self
+            .points
+            .iter()
+            .map(|p| p.coords.norm())
+            .fold(0.0, f64::max);
+        let mut out = Vec::new();
+        for k in 0..2 {
+            let (knots, p, count) = (&self.knots[k], self.degree[k], self.counts[k]);
+            let d = self.domain_of(k);
+            let ends = [
+                (knots[..=p].iter().all(|&x| x == knots[p]), 0, d.lo()),
+                (
+                    knots[count..].iter().all(|&x| x == knots[count]),
+                    count - 1,
+                    d.hi(),
+                ),
+            ];
+            for (clamped, row, value) in ends {
+                if !clamped {
+                    continue;
+                }
+                let at = |i: usize| {
+                    if k == 0 {
+                        self.points[row * m + i]
+                    } else {
+                        self.points[i * m + row]
+                    }
+                };
+                let len = if k == 0 { m } else { n };
+                let first = at(0);
+                if (1..len).all(|i| is_negligible((at(i) - first).norm(), scale)) {
+                    let other = self.domain_of(1 - k).midpoint();
+                    let point = if k == 0 {
+                        self.eval(value, other).point
+                    } else {
+                        self.eval(other, value).point
+                    };
+                    out.push((k, value, point));
+                }
+            }
+        }
+        out
     }
 
     /// The point and its derivatives to second order at `(u, v)`: the
@@ -318,6 +415,7 @@ impl NurbsSurface {
             points: self.points.iter().map(|p| motion.apply(*p)).collect(),
             weights: self.weights.clone(),
             period: self.period,
+            closed: self.closed,
         }
     }
 }

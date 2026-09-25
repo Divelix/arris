@@ -501,6 +501,70 @@ impl NurbsSurface {
         })
     }
 
+    /// The local minimum of the distance to `p` that Newton's iteration
+    /// reaches from `start`, across knot spans and, in a direction the
+    /// surface closes in ([`NurbsSurface::closure`]), across its seam
+    /// without wrapping the parameter: the answer is continuous with
+    /// `start`, which is what a pcurve following a curve along the
+    /// surface needs, and it may lie outside the domain there. An open
+    /// direction is held inside its domain. Not global: a caller that has
+    /// no nearby start, or whose answer is not near enough, asks
+    /// [`NurbsSurface::project`].
+    pub(crate) fn project_from(&self, p: Point3, start: Point2) -> SurfaceProjection {
+        let domain = self.domain();
+        let closure = self.closure();
+        let reach = self
+            .control_points()
+            .iter()
+            .map(|x| x.coords.norm())
+            .fold(p.coords.norm(), f64::max);
+        let hold = |k: usize, x: f64| match closure[k] {
+            Some(_) => x,
+            None => x.clamp(domain[k].lo(), domain[k].hi()),
+        };
+        let mut x = [hold(0, start.x), hold(1, start.y)];
+        let mut e = self.eval(x[0], x[1]);
+        let mut f = (e.point - p).norm_squared();
+        for _ in 0..MAX_STEPS {
+            let r = e.point - p;
+            let g = [e.du.dot(&r), e.dv.dot(&r)];
+            let held = |k: usize| {
+                closure[k].is_none()
+                    && ((x[k] <= domain[k].lo() && g[k] > 0.0)
+                        || (x[k] >= domain[k].hi() && g[k] < 0.0))
+            };
+            let free = [!held(0), !held(1)];
+            let step = newton_step(&e.du, &e.dv, &e.duu, &e.duv, &e.dvv, &r, g, free);
+            let mut alpha = 1.0;
+            let mut moved = None;
+            for _ in 0..MAX_BACKTRACKS {
+                let y = [
+                    hold(0, x[0] + alpha * step[0]),
+                    hold(1, x[1] + alpha * step[1]),
+                ];
+                let ey = self.eval(y[0], y[1]);
+                let fy = (ey.point - p).norm_squared();
+                if fy <= f + RELATIVE_ROUNDING * reach * reach {
+                    moved = Some((y, ey, fy));
+                    break;
+                }
+                alpha *= 0.5;
+            }
+            let Some((y, ey, fy)) = moved else { break };
+            let travelled =
+                ((y[0] - x[0]) * e.du.norm()).abs() + ((y[1] - x[1]) * e.dv.norm()).abs();
+            (x, e, f) = (y, ey, fy);
+            if is_negligible(travelled, reach) {
+                break;
+            }
+        }
+        SurfaceProjection {
+            uv: Point2::new(x[0], x[1]),
+            point: e.point,
+            distance: f.sqrt(),
+        }
+    }
+
     /// The local minimum of the distance to `p` inside the knot span `span`
     /// that a projected Newton iteration reaches from `start`, in canonical
     /// parameters. `reach` is the magnitude of the coordinates that enter
@@ -518,7 +582,7 @@ impl NurbsSurface {
     /// leaf finds the same point, which merges.
     fn refine(&self, p: Point3, start: [f64; 2], span: [[f64; 2]; 2], reach: f64) -> Candidate {
         let domain = self.domain();
-        let period = self.period();
+        let closure = self.closure();
         let wall = |k: usize, x: f64| x.clamp(span[k][0], span[k][1]);
         let eval = |x: [f64; 2]| {
             // The span's end belongs to the next span, or wraps to the first
@@ -578,11 +642,7 @@ impl NurbsSurface {
             if is_negligible((x[k] - lo) * derivative[k], reach) {
                 x[k] = lo;
             } else if is_negligible((hi - x[k]) * derivative[k], reach) {
-                x[k] = if period[k].is_some() || self.closed(k) {
-                    lo
-                } else {
-                    hi
-                };
+                x[k] = if closure[k].is_some() { lo } else { hi };
             }
         }
         for k in 0..2 {
@@ -595,29 +655,6 @@ impl NurbsSurface {
             uv: x,
             point,
             distance: (point - p).norm(),
-        }
-    }
-
-    /// Whether the first and last rows of the net in direction `k` are one
-    /// row of one surface, to rounding: the direction closes on itself
-    /// without being periodic.
-    fn closed(&self, k: usize) -> bool {
-        let [n, m] = self.counts();
-        let scale = self
-            .control_points()
-            .iter()
-            .map(|x| x.coords.norm())
-            .fold(0.0, f64::max);
-        let same = |a: usize, b: usize| {
-            is_negligible(
-                (self.control_points()[a] - self.control_points()[b]).norm(),
-                scale,
-            ) && is_negligible(self.weights()[a] - self.weights()[b], self.weights()[a])
-        };
-        if k == 0 {
-            (0..m).all(|j| same(j, (n - 1) * m + j))
-        } else {
-            (0..n).all(|i| same(i * m, i * m + m - 1))
         }
     }
 }

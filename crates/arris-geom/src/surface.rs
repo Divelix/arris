@@ -662,7 +662,11 @@ impl Surface {
         }
     }
 
-    /// The period of each parameter, `None` where it is not periodic.
+    /// The period of each parameter, `None` where it is not periodic: the
+    /// length after which `eval` repeats. A `Nurbs` direction's is its
+    /// [`crate::NurbsSurface::closure`] — its knots' period, or its
+    /// domain's length where it is closed without periodic knots, as a
+    /// full turn of an exact revolution is.
     pub fn period(&self) -> [Option<f64>; 2] {
         match self {
             Surface::Plane { .. } => [None, None],
@@ -671,7 +675,7 @@ impl Surface {
             | Surface::Cone { .. }
             | Surface::Sphere { .. } => [Some(TAU), None],
             Surface::Torus { .. } => [Some(TAU), Some(TAU)],
-            Surface::Nurbs(s) => s.period(),
+            Surface::Nurbs(s) => s.closure(),
         }
     }
 

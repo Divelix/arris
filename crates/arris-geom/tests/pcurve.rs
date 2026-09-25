@@ -8,7 +8,8 @@
 //! the tracer's exact (u, v); and by a singular point — an apex, a pole —
 //! a range that ends on it fits, one that runs through it is refused
 //! naming where to split, and one that passes beside it fits from the
-//! band outwards. Only a NURBS surface is `Unsupported`.
+//! band outwards. No surface is `Unsupported`; a NURBS one's arm is
+//! `tests/nurbs_pcurve.rs`'s.
 
 use core::f64::consts::{PI, TAU};
 
@@ -1240,7 +1241,7 @@ fn a_villarceau_circle_and_a_spiric_oval_are_unwrapped_across_both_seams() {
 }
 
 #[test]
-fn only_a_nurbs_surface_is_unsupported_and_a_curve_off_a_surface_is_not_on_it() {
+fn every_surface_fits_what_it_has_no_arm_for_and_a_curve_off_it_is_not_on_it() {
     let tol = tol();
     // Every analytic surface fits what it has no exact arm for: a
     // rational quarter of a sphere's equator, as a spline.
@@ -1291,8 +1292,12 @@ fn only_a_nurbs_surface_is_unsupported_and_a_curve_off_a_surface_is_not_on_it() 
     }
 }
 
+/// No arm of the table is `Unsupported` any more: a NURBS surface answers
+/// every curve kind, with a pcurve or a named error — a random curve is
+/// off a random surface, and says where (`tests/nurbs_pcurve.rs` holds
+/// the curves that are on one).
 #[test]
-fn a_nurbs_surface_is_the_one_unsupported_arm() {
+fn a_nurbs_surface_answers_every_curve() {
     check(
         (
             arris_debug::prop::geom::nurbs_surface(),
@@ -1300,12 +1305,10 @@ fn a_nurbs_surface_is_the_one_unsupported_arm() {
         ),
         |(s, c)| {
             let range = Interval::new(0.0, 1.0).unwrap();
-            let err = pcurve_on(&c, range, &Surface::Nurbs(s), tol()).unwrap_err();
-            let named = matches!(err, GeomError::Unsupported { a, b }
-                if a == arris_geom::GeomKind::Curve(c.kind())
-                && b == arris_geom::GeomKind::Surface(arris_geom::SurfaceKind::Nurbs));
-            prop_assert!(named, "{err}");
-            Ok(())
+            match pcurve_on(&c, range, &Surface::Nurbs(s), tol()) {
+                Ok(_) | Err(GeomError::NotOnSurface { .. }) => Ok(()),
+                Err(err) => Err(TestCaseError::fail(format!("{err}"))),
+            }
         },
     );
 }
