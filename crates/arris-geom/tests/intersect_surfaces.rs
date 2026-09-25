@@ -2528,3 +2528,36 @@ fn a_plane_a_hair_from_square_cuts_an_elliptic_cylinder_to_its_radii() {
         }
     }
 }
+
+/// Found by the `intersect_curves` fuzz target on the nightly
+/// (`fuzz/`, ADR-0024 §5): two planes 5.6e-9 of a radian from parallel,
+/// past the angular tolerance, meet in a line some 1e9 out, and its
+/// origin came out NaN — the determinant `1 − c²` rounded to zero.
+#[test]
+fn two_planes_a_hair_from_parallel_meet_in_a_finite_line_on_both() {
+    for tilt in [5.6e-9, 1e-10, 2e-12] {
+        let a = Surface::Plane {
+            frame: Frame::from_z(Point3::origin(), Vec3::new(1.0, tilt, 0.0)).unwrap(),
+        };
+        let b = Surface::Plane {
+            frame: Frame::from_z(Point3::new(5.5, 1.75, 1.5), -Vec3::x()).unwrap(),
+        };
+        let hit = intersect_surfaces(&a, &b, &within(), tol()).unwrap();
+        let [meet] = hit.curves() else {
+            panic!("{tilt:e}: {hit:?}")
+        };
+        let Curve::Line { origin, .. } = meet.curve else {
+            panic!("{meet:?}")
+        };
+        assert!(origin.iter().all(|x| x.is_finite()), "{tilt:e}: {origin}");
+        // On both planes to its rounding over the sine between them.
+        let bound = ROUNDING * origin.coords.norm() / tilt;
+        for s in [&a, &b] {
+            assert!(
+                implicit_distance(s, origin) <= bound,
+                "{tilt:e}: {} off",
+                implicit_distance(s, origin)
+            );
+        }
+    }
+}

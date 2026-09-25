@@ -55,7 +55,7 @@ FlushBoxes Tilt fuse +1.5: refused TangentContact
 FlushBoxes Tilt fuse -2: refused TangentContact
 FlushBoxes Tilt fuse +2: refused TangentContact
 FlushBoxes Tilt fuse -4: INTERNAL Split(Turn)
-FlushBoxes Tilt fuse +4: INTERNAL Split(Turn)
+FlushBoxes Tilt fuse +4: refused TangentContact
 FlushBoxes Tilt fuse -16: INTERNAL Split(Turn)
 FlushBoxes Tilt fuse +16: INTERNAL Split(Turn)
 FlushBoxes Tilt common +0: refused ZeroThickness
@@ -70,7 +70,7 @@ FlushBoxes Tilt common +1.5: refused TangentContact
 FlushBoxes Tilt common -2: refused TangentContact
 FlushBoxes Tilt common +2: refused TangentContact
 FlushBoxes Tilt common -4: INTERNAL Split(Turn)
-FlushBoxes Tilt common +4: INTERNAL Split(Turn)
+FlushBoxes Tilt common +4: refused TangentContact
 FlushBoxes Tilt common -16: INTERNAL Split(Turn)
 FlushBoxes Tilt common +16: INTERNAL Split(Turn)
 FlushBoxes Tilt cut +0: body
@@ -85,7 +85,7 @@ FlushBoxes Tilt cut +1.5: refused TangentContact
 FlushBoxes Tilt cut -2: refused TangentContact
 FlushBoxes Tilt cut +2: refused TangentContact
 FlushBoxes Tilt cut -4: INTERNAL Split(Turn)
-FlushBoxes Tilt cut +4: INTERNAL Split(Turn)
+FlushBoxes Tilt cut +4: refused TangentContact
 FlushBoxes Tilt cut -16: INTERNAL Split(Turn)
 FlushBoxes Tilt cut +16: INTERNAL Split(Turn)
 FlushBoss Offset fuse +0: body
@@ -140,14 +140,14 @@ FlushBoss Tilt fuse -0.5: UNSUPPORTED(PLANE SURFACE AGAINST PLANE SURFACE)
 FlushBoss Tilt fuse +0.5: UNSUPPORTED(PLANE SURFACE AGAINST PLANE SURFACE)
 FlushBoss Tilt fuse -1: UNSUPPORTED(PLANE SURFACE AGAINST PLANE SURFACE)
 FlushBoss Tilt fuse +1: UNSUPPORTED(PLANE SURFACE AGAINST PLANE SURFACE)
-FlushBoss Tilt fuse -1.5: INTERNAL Split(Dangling)
-FlushBoss Tilt fuse +1.5: INTERNAL Split(Dangling)
-FlushBoss Tilt fuse -2: INTERNAL Split(Dangling)
-FlushBoss Tilt fuse +2: INTERNAL Split(Dangling)
-FlushBoss Tilt fuse -4: INTERNAL Split(Dangling)
-FlushBoss Tilt fuse +4: INTERNAL Split(Dangling)
-FlushBoss Tilt fuse -16: INTERNAL Split(Dangling)
-FlushBoss Tilt fuse +16: INTERNAL Split(Dangling)
+FlushBoss Tilt fuse -1.5: generic
+FlushBoss Tilt fuse +1.5: generic
+FlushBoss Tilt fuse -2: generic
+FlushBoss Tilt fuse +2: generic
+FlushBoss Tilt fuse -4: generic
+FlushBoss Tilt fuse +4: generic
+FlushBoss Tilt fuse -16: generic
+FlushBoss Tilt fuse +16: generic
 FlushBoss Tilt common +0: refused ZeroThickness
 FlushBoss Tilt common -0.25: UNSUPPORTED(PLANE SURFACE AGAINST PLANE SURFACE)
 FlushBoss Tilt common +0.25: UNSUPPORTED(PLANE SURFACE AGAINST PLANE SURFACE)
@@ -155,14 +155,14 @@ FlushBoss Tilt common -0.5: UNSUPPORTED(PLANE SURFACE AGAINST PLANE SURFACE)
 FlushBoss Tilt common +0.5: UNSUPPORTED(PLANE SURFACE AGAINST PLANE SURFACE)
 FlushBoss Tilt common -1: UNSUPPORTED(PLANE SURFACE AGAINST PLANE SURFACE)
 FlushBoss Tilt common +1: UNSUPPORTED(PLANE SURFACE AGAINST PLANE SURFACE)
-FlushBoss Tilt common -1.5: INTERNAL Split(Dangling)
-FlushBoss Tilt common +1.5: INTERNAL Split(Dangling)
-FlushBoss Tilt common -2: INTERNAL Split(Dangling)
-FlushBoss Tilt common +2: INTERNAL Split(Dangling)
-FlushBoss Tilt common -4: INTERNAL Split(Dangling)
-FlushBoss Tilt common +4: INTERNAL Split(Dangling)
-FlushBoss Tilt common -16: INTERNAL Split(Dangling)
-FlushBoss Tilt common +16: INTERNAL Split(Dangling)
+FlushBoss Tilt common -1.5: generic
+FlushBoss Tilt common +1.5: generic
+FlushBoss Tilt common -2: generic
+FlushBoss Tilt common +2: generic
+FlushBoss Tilt common -4: generic
+FlushBoss Tilt common +4: generic
+FlushBoss Tilt common -16: generic
+FlushBoss Tilt common +16: generic
 FlushBoss Tilt cut +0: body
 FlushBoss Tilt cut -0.25: UNSUPPORTED(PLANE SURFACE AGAINST PLANE SURFACE)
 FlushBoss Tilt cut +0.25: UNSUPPORTED(PLANE SURFACE AGAINST PLANE SURFACE)
@@ -170,14 +170,14 @@ FlushBoss Tilt cut -0.5: UNSUPPORTED(PLANE SURFACE AGAINST PLANE SURFACE)
 FlushBoss Tilt cut +0.5: UNSUPPORTED(PLANE SURFACE AGAINST PLANE SURFACE)
 FlushBoss Tilt cut -1: UNSUPPORTED(PLANE SURFACE AGAINST PLANE SURFACE)
 FlushBoss Tilt cut +1: UNSUPPORTED(PLANE SURFACE AGAINST PLANE SURFACE)
-FlushBoss Tilt cut -1.5: INTERNAL Split(Dangling)
-FlushBoss Tilt cut +1.5: INTERNAL Split(Dangling)
-FlushBoss Tilt cut -2: INTERNAL Split(Dangling)
-FlushBoss Tilt cut +2: INTERNAL Split(Dangling)
-FlushBoss Tilt cut -4: INTERNAL Split(Dangling)
-FlushBoss Tilt cut +4: INTERNAL Split(Dangling)
-FlushBoss Tilt cut -16: INTERNAL Split(Dangling)
-FlushBoss Tilt cut +16: INTERNAL Split(Dangling)
+FlushBoss Tilt cut -1.5: generic
+FlushBoss Tilt cut +1.5: generic
+FlushBoss Tilt cut -2: generic
+FlushBoss Tilt cut +2: generic
+FlushBoss Tilt cut -4: generic
+FlushBoss Tilt cut +4: generic
+FlushBoss Tilt cut -16: generic
+FlushBoss Tilt cut +16: generic
 PinInBore Offset fuse +0: body
 PinInBore Offset fuse -0.25: flush
 PinInBore Offset fuse +0.25: flush
@@ -989,7 +989,7 @@ PipeElbow Offset cut +4: INTERNAL Geometry(the section of the torus surface and 
 PipeElbow Offset cut -16: generic
 PipeElbow Offset cut +16: refused NonManifold
 PipeElbow Tilt fuse +0: body
-PipeElbow Tilt fuse -0.25: INTERNAL Split(Turn)
+PipeElbow Tilt fuse -0.25: UNSUPPORTED(TORUS SURFACE AGAINST CIRCLE CURVE)
 PipeElbow Tilt fuse +0.25: INTERNAL Split(Turn)
 PipeElbow Tilt fuse -0.5: INTERNAL Split(Turn)
 PipeElbow Tilt fuse +0.5: INTERNAL Split(Turn)
@@ -1001,10 +1001,10 @@ PipeElbow Tilt fuse -2: INTERNAL Geometry(the section of the torus surface and t
 PipeElbow Tilt fuse +2: INTERNAL Geometry(the section of the torus surface and the plane s)
 PipeElbow Tilt fuse -4: INTERNAL Geometry(the section of the torus surface and the plane s)
 PipeElbow Tilt fuse +4: INTERNAL Geometry(the section of the torus surface and the plane s)
-PipeElbow Tilt fuse -16: UNSUPPORTED(PLANE SURFACE AGAINST PLANE SURFACE)
-PipeElbow Tilt fuse +16: UNSUPPORTED(PLANE SURFACE AGAINST PLANE SURFACE)
+PipeElbow Tilt fuse -16: generic
+PipeElbow Tilt fuse +16: UNSUPPORTED(CYLINDER SURFACE AGAINST CIRCLE CURVE)
 PipeElbow Tilt common +0: refused ZeroThickness
-PipeElbow Tilt common -0.25: INTERNAL Split(Turn)
+PipeElbow Tilt common -0.25: UNSUPPORTED(TORUS SURFACE AGAINST CIRCLE CURVE)
 PipeElbow Tilt common +0.25: INTERNAL Split(Turn)
 PipeElbow Tilt common -0.5: INTERNAL Split(Turn)
 PipeElbow Tilt common +0.5: INTERNAL Split(Turn)
@@ -1016,10 +1016,10 @@ PipeElbow Tilt common -2: INTERNAL Geometry(the section of the torus surface and
 PipeElbow Tilt common +2: INTERNAL Geometry(the section of the torus surface and the plane s)
 PipeElbow Tilt common -4: INTERNAL Geometry(the section of the torus surface and the plane s)
 PipeElbow Tilt common +4: INTERNAL Geometry(the section of the torus surface and the plane s)
-PipeElbow Tilt common -16: UNSUPPORTED(PLANE SURFACE AGAINST PLANE SURFACE)
-PipeElbow Tilt common +16: UNSUPPORTED(PLANE SURFACE AGAINST PLANE SURFACE)
+PipeElbow Tilt common -16: generic
+PipeElbow Tilt common +16: UNSUPPORTED(CYLINDER SURFACE AGAINST CIRCLE CURVE)
 PipeElbow Tilt cut +0: body
-PipeElbow Tilt cut -0.25: INTERNAL Split(Turn)
+PipeElbow Tilt cut -0.25: UNSUPPORTED(TORUS SURFACE AGAINST CIRCLE CURVE)
 PipeElbow Tilt cut +0.25: INTERNAL Split(Turn)
 PipeElbow Tilt cut -0.5: INTERNAL Split(Turn)
 PipeElbow Tilt cut +0.5: INTERNAL Split(Turn)
@@ -1031,8 +1031,8 @@ PipeElbow Tilt cut -2: INTERNAL Geometry(the section of the torus surface and th
 PipeElbow Tilt cut +2: INTERNAL Geometry(the section of the torus surface and the plane s)
 PipeElbow Tilt cut -4: INTERNAL Geometry(the section of the torus surface and the plane s)
 PipeElbow Tilt cut +4: INTERNAL Geometry(the section of the torus surface and the plane s)
-PipeElbow Tilt cut -16: UNSUPPORTED(PLANE SURFACE AGAINST PLANE SURFACE)
-PipeElbow Tilt cut +16: UNSUPPORTED(PLANE SURFACE AGAINST PLANE SURFACE)
+PipeElbow Tilt cut -16: refused NonManifold
+PipeElbow Tilt cut +16: UNSUPPORTED(CYLINDER SURFACE AGAINST CIRCLE CURVE)
 PipeElbow Radius fuse +0: body
 PipeElbow Radius fuse -0.25: flush
 PipeElbow Radius fuse +0.25: flush
@@ -1134,10 +1134,10 @@ EdgeOnEdge Tilt fuse -1.5: flush
 EdgeOnEdge Tilt fuse +1.5: flush
 EdgeOnEdge Tilt fuse -2: flush
 EdgeOnEdge Tilt fuse +2: flush
-EdgeOnEdge Tilt fuse -4: UNSUPPORTED(PLANE SURFACE AGAINST PLANE SURFACE)
-EdgeOnEdge Tilt fuse +4: UNSUPPORTED(PLANE SURFACE AGAINST PLANE SURFACE)
-EdgeOnEdge Tilt fuse -16: UNSUPPORTED(PLANE SURFACE AGAINST PLANE SURFACE)
-EdgeOnEdge Tilt fuse +16: UNSUPPORTED(PLANE SURFACE AGAINST PLANE SURFACE)
+EdgeOnEdge Tilt fuse -4: PANIC L4
+EdgeOnEdge Tilt fuse +4: PANIC L4
+EdgeOnEdge Tilt fuse -16: generic
+EdgeOnEdge Tilt fuse +16: generic
 EdgeOnEdge Tilt common +0: refused Empty
 EdgeOnEdge Tilt common -0.25: flush
 EdgeOnEdge Tilt common +0.25: flush
@@ -1149,10 +1149,10 @@ EdgeOnEdge Tilt common -1.5: flush
 EdgeOnEdge Tilt common +1.5: flush
 EdgeOnEdge Tilt common -2: flush
 EdgeOnEdge Tilt common +2: flush
-EdgeOnEdge Tilt common -4: UNSUPPORTED(PLANE SURFACE AGAINST PLANE SURFACE)
-EdgeOnEdge Tilt common +4: UNSUPPORTED(PLANE SURFACE AGAINST PLANE SURFACE)
-EdgeOnEdge Tilt common -16: UNSUPPORTED(PLANE SURFACE AGAINST PLANE SURFACE)
-EdgeOnEdge Tilt common +16: UNSUPPORTED(PLANE SURFACE AGAINST PLANE SURFACE)
+EdgeOnEdge Tilt common -4: PANIC L4
+EdgeOnEdge Tilt common +4: PANIC L4
+EdgeOnEdge Tilt common -16: generic
+EdgeOnEdge Tilt common +16: generic
 EdgeOnEdge Tilt cut +0: body
 EdgeOnEdge Tilt cut -0.25: generic
 EdgeOnEdge Tilt cut +0.25: generic
@@ -1164,7 +1164,7 @@ EdgeOnEdge Tilt cut -1.5: generic
 EdgeOnEdge Tilt cut +1.5: generic
 EdgeOnEdge Tilt cut -2: generic
 EdgeOnEdge Tilt cut +2: generic
-EdgeOnEdge Tilt cut -4: UNSUPPORTED(PLANE SURFACE AGAINST PLANE SURFACE)
-EdgeOnEdge Tilt cut +4: UNSUPPORTED(PLANE SURFACE AGAINST PLANE SURFACE)
-EdgeOnEdge Tilt cut -16: UNSUPPORTED(PLANE SURFACE AGAINST PLANE SURFACE)
-EdgeOnEdge Tilt cut +16: UNSUPPORTED(PLANE SURFACE AGAINST PLANE SURFACE)
+EdgeOnEdge Tilt cut -4: refused NonManifold
+EdgeOnEdge Tilt cut +4: refused NonManifold
+EdgeOnEdge Tilt cut -16: refused NonManifold
+EdgeOnEdge Tilt cut +16: refused NonManifold

@@ -677,15 +677,21 @@ fn plane_plane(pa: &Frame, pb: &Frame, tol: Tolerance) -> SurfaceIntersection {
     // The normals are not parallel, so the cross product has a length of
     // at least sin(tol.angular) and normalises; a failure here is a
     // non-finite frame, which no constructor produces.
-    let Some(direction) = UnitVec3::try_new(n1.cross(&n2), 0.0) else {
+    let across = n1.cross(&n2);
+    let Some(direction) = UnitVec3::try_new(across, 0.0) else {
         return SurfaceIntersection::Empty;
     };
     // Of the points on both planes, the one nearest to plane a's origin:
     // solve n1·x = h1, n2·x = h2 in the span of n1 and n2 over a's origin.
+    // The system's determinant is `1 − c²`, taken as `|n1 × n2|²`: for
+    // planes 5.6e-9 of a radian from parallel `c²` rounds to one and
+    // `1 − c²` to zero, which put the line's origin at NaN (the
+    // `intersect_curves` fuzz target, ADR-0024 §5), where the cross
+    // product keeps sin²θ to its own rounding.
     let c = n1.dot(&n2);
     let h1 = 0.0;
     let h2 = n2.dot(&(pb.origin() - pa.origin()));
-    let denom = 1.0 - c * c;
+    let denom = across.norm_squared();
     let s1 = (h1 - h2 * c) / denom;
     let s2 = (h2 - h1 * c) / denom;
     let origin = pa.origin() + s1 * n1.into_inner() + s2 * n2.into_inner();
