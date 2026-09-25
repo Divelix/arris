@@ -610,10 +610,15 @@ fn check_curve_curve_pair(a: &Curve, b: &Curve, res: &PairResult, errors: &mut V
     }
 }
 
-/// `|a − b|` modulo the curve's period, or infinity for a line so the
-/// plain difference wins.
+/// `|a − b|` modulo the curve's period — or its domain's length for a
+/// closed curve that is not periodic, whose two ends are one point — or
+/// infinity for an open curve so the plain difference wins.
 fn turn_diff(a: f64, b: f64, c: &Curve) -> f64 {
-    match c.period() {
+    let domain = c.domain();
+    let closed = domain.is_bounded()
+        && (c.point(domain.lo()) - c.point(domain.hi())).norm()
+            <= REL * c.point(domain.lo()).coords.norm().max(1.0);
+    match c.period().or(closed.then(|| domain.length())) {
         Some(p) => {
             let d = (a - b).rem_euclid(p);
             d.min(p - d)
@@ -626,8 +631,8 @@ fn turn_diff(a: f64, b: f64, c: &Curve) -> f64 {
 fn every_geometry_fixture_matches_the_oracle() {
     let fixtures = geometry_fixtures();
     assert!(
-        fixtures.len() >= 11,
-        "expected geom/analytic-eval, geom/c1-intersections, geom/c2-cylinder-pairs, geom/c2-quadric-pairs, geom/c3-cylinder-pairs, geom/c3-quadric-pairs, geom/c3-torus-pairs, geom/c3-conic-hits, geom/c3-nurbs-hits, geom/c3-nurbs-crossings and geom/c4-nurbs-projections"
+        fixtures.len() >= 12,
+        "expected geom/analytic-eval, geom/c1-intersections, geom/c2-cylinder-pairs, geom/c2-quadric-pairs, geom/c3-cylinder-pairs, geom/c3-quadric-pairs, geom/c3-torus-pairs, geom/c3-conic-hits, geom/c3-nurbs-hits, geom/c3-nurbs-crossings, geom/c4-nurbs-projections and geom/c4-closed-curve-hits"
     );
     let mut errors = Vec::new();
     for f in &fixtures {
@@ -1089,6 +1094,42 @@ fn the_c3_nurbs_hits_cross_as_built() {
         };
         assert_eq!(hits.len(), *count, "{a} vs {b}: {hits:?}");
         assert!(hits.iter().all(|h| !h.tangent), "{a} vs {b}: {hits:?}");
+    }
+}
+
+/// A closed B-spline that is not periodic, met at its join: one hit there,
+/// at the start parameter, as the oracle's general intersector counts it,
+/// and the pairs' counts as it counts them (plan step-reader step 5).
+#[test]
+fn a_closed_curve_meets_a_surface_at_its_join_once() {
+    let f = geometry_fixtures()
+        .into_iter()
+        .find(|f| f.name == "geom/c4-closed-curve-hits")
+        .expect("geom/c4-closed-curve-hits");
+    let built = build(&f);
+    let lo = built.curves["loop"].domain().lo();
+    // (surface, hits, one of them at the join)
+    let cases: &[(&str, usize, bool)] =
+        &[("sheet", 2, true), ("drum", 2, true), ("shelf", 2, false)];
+    assert_eq!(
+        cases.len(),
+        f.recipe.pairs.len(),
+        "every pair is pinned here"
+    );
+    for ((b, count, at_join), oracle) in cases.iter().zip(&f.expected.pairs) {
+        assert_eq!(oracle.hits.len(), *count, "{b}: the oracle's count");
+        let r = intersect_curve_surface(&built.curves["loop"], &built.surfaces[*b], tol())
+            .unwrap_or_else(|e| panic!("loop vs {b}: {e}"));
+        let CurveSurfaceIntersection::Points(hits) = &r else {
+            panic!("loop vs {b}: {r:?}")
+        };
+        assert_eq!(hits.len(), *count, "loop vs {b}: {hits:?}");
+        assert!(hits.iter().all(|h| !h.tangent), "loop vs {b}: {hits:?}");
+        assert_eq!(
+            hits.iter().any(|h| h.t == lo),
+            *at_join,
+            "loop vs {b}: {hits:?}"
+        );
     }
 }
 

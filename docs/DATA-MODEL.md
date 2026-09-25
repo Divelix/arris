@@ -530,7 +530,11 @@ surface to rounding. A hit at a stop is `tangent` when its run holds an
 extremum inside the curve: a curve that only **ends** within
 `tol.linear` of the surface meets it there and is no touch — that is a
 section edge ending on a face, which makes a vertex. A closed curve that
-is not periodic has its two ends for two stops. A span of degree 25
+is not periodic — a clamped B-spline whose two ends are one point to
+rounding, as a file's closed curve is and no curve the kernel makes is —
+goes round like a periodic one over its domain's length: its end is its
+start, read past it by wrapping, so a surface met at the join is one hit
+there, at the start parameter, not one at each end. A span of degree 25
 against a torus is a polynomial of degree 100, and is held to the line
 arm's hits by the property tests.
 

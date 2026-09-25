@@ -1109,6 +1109,45 @@ def c4_nurbs_projections():
     }
 
 
+# --- c4-closed-curve-hits --------------------------------------------------------------
+
+
+def c4_closed_curve_hits():
+    """A clamped cubic B-spline whose two ends are one point, crossing a
+    plane and a cylinder at that join and elsewhere (plan step-reader
+    step 5): the join is one hit, not one at each end."""
+    f = POSES["tilt"]
+    # The join at (2, 0, 0), left and arrived at along (0.5, 1.5, 0.8), so
+    # the curve is G1 there and crosses both surfaces through it.
+    local = [[2.0, 0.0, 0.0], [2.5, 1.5, 0.8], [0.0, 3.0, 1.2], [-2.5, 1.5, 0.4], [-2.5, -1.5, -0.6], [0.0, -3.0, -1.0], [1.5, -1.5, -0.8], [2.0, 0.0, 0.0]]
+    loop = {
+        "type": "nurbs",
+        "degree": 3,
+        "knots": [0.0] * 4 + [1.0, 2.0, 3.0, 4.0] + [5.0] * 4,
+        "control_points": [f.to_world(p) for p in local],
+        "weights": [1.0] * 8,
+    }
+    join = f.to_world([2.0, 0.0, 0.0])
+    surfaces = {
+        # Through the join, its normal across the curve's tangent there.
+        "sheet": {"type": "plane", **Frame(join, f.vec([0.0, 1.0, 0.3]), f.vec([1.0, 0.0, 0.0])).spec()},
+        # The join on its wall, the curve leaving outward.
+        "drum": {"type": "cylinder", **Frame(f.to_world([0.0, 0.0, -3.0]), f.z, f.vec([1.0, 0.0, 0.0])).spec(radius=2.0)},
+        # Clear of the join: a plane the curve crosses twice elsewhere.
+        "shelf": {"type": "plane", **Frame(f.to_world([0.0, 0.0, 0.5]), f.z, f.vec([1.0, 0.0, 0.0])).spec()},
+    }
+    samples = [{"of": "loop", "params": [0.0, 0.5, 2.5, 4.5, 5.0], "points": [f.to_world([2.5, 0.5, 0.0])]}]
+    pairs = [{"a": "loop", "b": s} for s in surfaces]
+    return {
+        "kind": "geometry",
+        "description": "A clamped closed cubic B-spline in the tilt pose, its two ends one point and the curve G1 there, against a plane and a cylinder through that join and a plane clear of it (plan step-reader step 5): at the join Arris reports one hit, at the start parameter, not one at each end; held to the count of Open CASCADE's general curve-surface intersector, whose two parameters of the join name one point; written by generate.py",
+        "surfaces": surfaces,
+        "curves": {"loop": loop},
+        "samples": samples,
+        "pairs": pairs,
+    }
+
+
 def write(name, recipe):
     directory = HERE / name
     directory.mkdir(exist_ok=True)
@@ -1128,3 +1167,4 @@ if __name__ == "__main__":
     write("c3-nurbs-hits", c3_nurbs_hits())
     write("c3-nurbs-crossings", c3_nurbs_crossings())
     write("c4-nurbs-projections", c4_nurbs_projections())
+    write("c4-closed-curve-hits", c4_closed_curve_hits())

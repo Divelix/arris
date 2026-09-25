@@ -15,7 +15,7 @@
 //! surface's dimensions to the power of its degree.
 
 use arris_math::roots;
-use arris_math::{Interval, Tolerance};
+use arris_math::{Interval, Tolerance, is_negligible};
 
 use crate::implicit::Implicit;
 use crate::intersect_curve::{hit, points};
@@ -50,7 +50,11 @@ struct Stop {
 /// within `tol.linear` of the surface meets it there without touching it
 /// — that is a section edge ending on a face, which the pave model makes
 /// a vertex of, not a graze. A periodic curve's stops go round, and its
-/// hits come back in its own domain.
+/// hits come back in its own domain. So do a *closed* curve's that is not
+/// periodic — a clamped B-spline whose two ends are one point to
+/// rounding, as a file's closed curve is: its two ends are one parameter,
+/// the start, and a hit at the join is one hit there, not one at each
+/// end ([`closure`]).
 pub(crate) fn hits_by_distance(
     curve: &Curve,
     surface: &Surface,
@@ -59,7 +63,18 @@ pub(crate) fn hits_by_distance(
     tol: Tolerance,
 ) -> Result<CurveSurfaceIntersection, GeomError> {
     let domain = curve.domain();
-    let period = curve.period();
+    let period = closure(curve);
+    // The join of a closed curve is its start: the end is dropped, and
+    // the curve is read past it by wrapping, as a periodic one reads
+    // itself.
+    let closed = period.is_some() && curve.period().is_none();
+    let at = |t: f64| match period {
+        Some(period) if closed && t > domain.hi() => t - period,
+        _ => t,
+    };
+    if closed {
+        splits.retain(|&t| t < domain.hi());
+    }
     splits.retain(|t| t.is_finite());
     splits.sort_by(f64::total_cmp);
     splits.dedup();
@@ -70,9 +85,9 @@ pub(crate) fn hits_by_distance(
         return Ok(CurveSurfaceIntersection::Points(Vec::new()));
     }
 
-    let distance = |t: f64| implicit.distance(curve.eval(t).point);
+    let distance = |t: f64| implicit.distance(curve.eval(at(t)).point);
     let slope = |t: f64| {
-        let e = curve.eval(t);
+        let e = curve.eval(at(t));
         implicit
             .gradient(e.point)
             .dot(&implicit.frame.vec_to_local(e.d1))
@@ -162,8 +177,32 @@ pub(crate) fn hits_by_distance(
             if t >= domain.hi() {
                 t = (t - period).max(domain.lo());
             }
+            // A closed curve's end is its start: a crossing found a
+            // rounding short of it, at the scale of the parameters, is
+            // there.
+            let knots = domain.lo().abs().max(domain.hi().abs());
+            if closed && is_negligible(domain.hi() - t, knots) {
+                t = domain.lo();
+            }
         }
         hits.push(hit(curve, surface, t, false)?);
     }
     Ok(points(hits))
+}
+
+/// The length over which `curve` repeats: its period, or the length of
+/// its domain where it is *closed* without being periodic — bounded, and
+/// its two ends one point to rounding ([`is_negligible`] against their
+/// coordinates), which a clamped B-spline in a file is and no curve the
+/// kernel makes is (ROADMAP §C4).
+pub(crate) fn closure(curve: &Curve) -> Option<f64> {
+    curve.period().or_else(|| {
+        let domain = curve.domain();
+        if !domain.is_bounded() || domain.length() <= 0.0 {
+            return None;
+        }
+        let (a, b) = (curve.point(domain.lo()), curve.point(domain.hi()));
+        let scale = a.coords.norm().max(b.coords.norm());
+        is_negligible((a - b).norm(), scale).then(|| domain.length())
+    })
 }

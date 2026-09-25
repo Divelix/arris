@@ -221,7 +221,7 @@ after, because it is routine.
     pole;
   - a NURBS torus's section circles;
   - an oblique ellipse on a NURBS cylinder.
-- [ ] Step 5 **[2]** — A closed NURBS curve that is not periodic, met by a
+- [x] Step 5 **[2]** — A closed NURBS curve that is not periodic, met by a
   surface where its two ends join, is reported as one hit at its start
   parameter, not one at each end (ROADMAP §C4; data-model §Curves).
 

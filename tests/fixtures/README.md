@@ -354,6 +354,10 @@ oracle's sampled points on Arris's curves to 1e-9.
   stops short of: its distance was above the true minimum by up to 2.4e-4
   off the saddle's edge, the bump's corner and the fold's edge, and those
   are held to a grid instead.
+  `c4-closed-curve-hits` is a clamped closed cubic B-spline, its ends one
+  point, against a plane and a cylinder through that join and a plane
+  clear of it: the join is one hit, at the start parameter, as Open
+  CASCADE's general intersector counts it.
   An oracle parabola or hyperbola, sampled at its own
   parameters in `[−2, 2]` a branch per curve, is held against Arris's
   exact rational quadratic NURBS. An `elliptic_cylinder` is the section
