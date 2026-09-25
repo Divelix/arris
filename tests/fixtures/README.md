@@ -36,8 +36,9 @@ The corpus **runner** (`arris_debug::corpus::run(dir, variant)`, one
 test itself: it builds the recipe in Arris, runs the checker at `Full`
 (nothing violated, nothing undecided), compares counts — `solids` as the
 result's lumps, `arris_check::lumps` — and genus against
-`expected.json`, writes STEP under `target/inspect/` and has the oracle
-read it back (`compare.py`), measures it over the B-Rep
+`expected.json`, writes STEP under `target/inspect/`, parses it back as
+Part 21 (`arris_io::step::part21`, every instance the writer defined kept
+once) and has the oracle read it back (`compare.py`), measures it over the B-Rep
 (`ops::measure::mass_properties`) and holds its volume, area, centroid
 and inertia tensor to the oracle's within `volume_rel`, `area_rel`,
 `centroid_abs` and `inertia_rel`, tessellates the result at `mesh_chord` and

@@ -1189,6 +1189,23 @@ B-Rep).
   reprojects, and ignores plane pcurves anyway). Sheet, wire and general
   bodies are `Unsupported` until an operation produces them, and a solid
   whose shells do not nest into lumps is `StepError::Lumps`.
+- **Part 21** (`arris_io::step::part21::parse(&str) -> Result<Exchange,
+  Part21Error>`, plan `step-reader`): the exchange structure below any
+  schema, the first layer of the reader (ADR-0025 §3). It keeps the
+  header's entities (`FILE_DESCRIPTION`, `FILE_NAME`, `FILE_SCHEMA`
+  required) and every instance of every `DATA` section in a `BTreeMap` by
+  id, simple or complex (the partial entities in the order written), with
+  its parameters as written — integers, reals in every spelling the grammar
+  allows, strings with their encodings decoded, enumerations, binaries,
+  typed parameters, references, lists, `$` and `*` — resolving nothing.
+  The first place the text leaves the grammar is a `Part21Error` naming
+  its line, its column in characters and the instance it was in: a
+  duplicate id, a malformed token, an unterminated string or comment, a
+  missing header entity, and the edition-3 `ANCHOR`, `REFERENCE` and
+  `SIGNATURE` sections and value instances, which are not read. It never
+  panics, runs in time linear in the text, bounds nesting at 64, and the
+  corpus runner parses every file the writer makes before the oracle
+  reads it, each instance kept once.
 - **Native format** (`arris_io::native::{to_json, from_json, to_bytes,
   from_bytes}`): `serde` of the model under a version header, JSON for
   diffs and `postcard` bytes for storage; data-model §Native format.

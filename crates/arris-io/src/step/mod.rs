@@ -1,5 +1,6 @@
-//! The STEP AP214 Part 21 writer (`docs/ARCHITECTURE.md` §Formats and
-//! tools): the B-Rep entity subset with every pcurve written out, so a
+//! STEP AP214 Part 21: the exchange structure's parser ([`part21`]) and
+//! the writer (`docs/ARCHITECTURE.md` §Formats and tools). The writer
+//! emits the B-Rep entity subset with every pcurve written out, so a
 //! reader takes the model's own trimming instead of recomputing it. The
 //! Open CASCADE oracle reads the result (`tools/oracle/compare.py`).
 //!
@@ -56,6 +57,8 @@
 //!   CASCADE ignores pcurves on planes altogether, where every
 //!   left-handed conic lives (`docs/DATA-MODEL.md`
 //!   §Pcurves). The native format is the lossless one.
+
+pub mod part21;
 
 use core::fmt::Write as _;
 use std::collections::{BTreeMap, BTreeSet};

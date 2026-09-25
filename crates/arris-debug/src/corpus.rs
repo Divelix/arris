@@ -224,6 +224,15 @@ pub enum CorpusError {
         /// The cause.
         source: StepError,
     },
+    /// Arris's own STEP did not parse as Part 21, or parsed to another
+    /// number of instances than the writer defined.
+    #[error("{fixture}: its STEP does not parse back: {what}")]
+    Part21 {
+        /// The fixture.
+        fixture: String,
+        /// The parse error, or the counts that differ.
+        what: String,
+    },
     /// The oracle did not match Arris's STEP, or could not run.
     #[error(transparent)]
     Oracle(#[from] OracleError),
@@ -609,13 +618,17 @@ impl CorpusError {
             CorpusError::Mesh { .. } => Stage::Mesh,
             CorpusError::Probe { .. } => Stage::Probes,
             CorpusError::Provenance { .. } => Stage::Provenance,
-            CorpusError::Step { .. } | CorpusError::Oracle(_) => Stage::Step,
+            CorpusError::Step { .. } | CorpusError::Part21 { .. } | CorpusError::Oracle(_) => {
+                Stage::Step
+            }
             CorpusError::Dump { .. } | CorpusError::Io { .. } => Stage::Dump,
         }
     }
 }
 
-/// Runs every stage on `dir`'s recipe under `variant`. Errors: the first
+/// Runs every stage on `dir`'s recipe under `variant` — the STEP stage
+/// parses Arris's own file back through `arris_io::step::part21` before
+/// the oracle reads it. Errors: the first
 /// stage that fails, with what differed. Writes `target/inspect/<area>-
 /// <slug>-<variant>.step` for the oracle, and the dump file under
 /// [`BLESS_VAR`].
@@ -677,6 +690,22 @@ pub fn run(dir: &Path, variant: &str) -> Result<(), CorpusError> {
         fixture: name.clone(),
         source,
     })?;
+    // Every file the corpus writes parses, each instance the writer
+    // defined — one per line starting `#` — kept once.
+    let parsed = step::part21::parse(&text).map_err(|e| CorpusError::Part21 {
+        fixture: name.clone(),
+        what: e.to_string(),
+    })?;
+    let written = text.lines().filter(|l| l.starts_with('#')).count();
+    if parsed.instances.len() != written {
+        return Err(CorpusError::Part21 {
+            fixture: name.clone(),
+            what: format!(
+                "{} instances parsed of {written} written",
+                parsed.instances.len()
+            ),
+        });
+    }
     let tag = step_tag(&name, variant, dir);
     oracle::compare_dir(dir, &text, Some(variant), &tag)?;
 

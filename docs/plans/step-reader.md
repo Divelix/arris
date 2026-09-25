@@ -228,7 +228,7 @@ after, because it is routine.
   Test: `tests/fixtures/geom/c4-closed-curve-hits`, a clamped closed
   B-spline crossing a plane and a cylinder at its join, held to Open
   CASCADE's hit count.
-- [ ] Step 6 **[2]** — The Part 21 parser, `step::part21::parse(&str) ->
+- [x] Step 6 **[2]** — The Part 21 parser, `step::part21::parse(&str) ->
   Result<Exchange, Part21Error>`. It handles:
   - the header's three entities;
   - one or more `DATA` sections;
