@@ -82,6 +82,30 @@ Every geometry failure becomes a fixture (`.agents/rules/kernel.md`):
 `ARRIS_PROPTEST_SEED=…` that reproduces the run. Turn it into a fixture the
 same way; the seed goes into the fixture's commit body so the original
 case is reproducible even after the shrinker or the strategy changes.
+A nightly failure prints the night's `ARRIS_PROPTEST_SEED=…` in its job
+summary. Run the failing test locally at that seed and the job's
+`ARRIS_PROPTEST_CASES`.
+
+A **differential** failure (`crates/arris/tests/differential.rs`) prints
+its case already shrunk as a `fixture.json`, with the tolerances it was
+judged at. Commit that under `regression/<slug>/`, and write its
+`expected.json` with plain `expected.py`. When the draw keeps reaching the
+failure, add a named exclusion to `differential::EXCLUSIONS` that covers
+its symptom and cites the slug. The property tests hold the same list,
+for a panic (`exclusion_of_panic`) and for a typed fault
+(`exclusion_of_error`), so one fix lifts both.
+
+A **fuzz** failure (`fuzz/`, ADR-0024 §5) is a crash file under
+`fuzz/artifacts/<target>/`; the nightly uploads it as an artifact.
+`cargo run --manifest-path fuzz/Cargo.toml --example show -- <target>
+<file>` prints the operands it decodes to and the intersector's answer.
+`cargo +nightly fuzz tmin -s none <target> <file>` shrinks it. The
+operands then go into a test beside the intersector's own tests, as the
+first fuzz findings did (`Frame::new`'s, the knot rule's, the oblique
+elliptic section's), `#[ignore]`d until the fix lands, and once it
+passes they can join a `geometry` fixture under `geom/`, so the oracle
+holds them too. `crates/arris-geom/tests/oracle.rs` reads every
+geometry fixture, so there is no waiting area for a failing one.
 
 ## Limits
 

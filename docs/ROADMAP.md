@@ -453,21 +453,34 @@ Two lines of work that are not cycles. Neither changes a public type or a
 signature, so neither earns a minor version (`.agents/rules/git.md`
 §Tags); each stands beside whatever cycle is open (ADR-0020).
 
-**The measuring harness.** What it measures decides what comes after
-C4, so it exists before C4 closes: benchmarks over
-tessellation and the boolean corpus, so a robustness fix that costs 10×
-shows up as a number; the oracle cached by `recipe_hash`, so an unchanged
-recipe is not re-run on every test run — `oracle::scratch_fixture` runs it
-today whatever the recipe says; a property tier above CI's case count, run
-nightly; random *recipes* evaluated by both kernels — the recipe grammar
-already carries the same eleven operations on each side (`Step` in
-`arris-debug`, the `op` dispatch in `tools/oracle`), so the generator is
-a `proptest` strategy over `Step` beside the oracle's existing evaluator
-and needs no new interpreter on either side; `cargo-fuzz` targets over
-the intersectors and, once it exists, the STEP reader, seeded from the
-corpus. Its numbers — benchmark baselines, cases per night — live in
-this section once they exist. ADR-0024 fixes its shape, including the
-hook's case count: 256, with depth from a nightly tier on a rotating seed.
+**The measuring harness.** It measures what decides the cycle after C4
+(ADR-0024). The oracle answers from a cache keyed on every input it
+reads (`target/oracle-cache/`, bypassed by `ARRIS_ORACLE_CACHE=off` in CI
+and nightly): the corpus binary takes 10.3 s cold and 1.3 s warm, and a
+warm run starts no Python. Random recipes over the eleven operations
+both interpreters carry (`prop::recipe`) run through both kernels in the
+differential. At 1000 draws of the fixed seed, 762 reach a comparison and
+agree, 67 both refuse, 137 are refused by Open CASCADE, and 14 by Arris
+(all `Degenerate(Empty)`). 20 are under named exclusions, each waiting on
+a `regression/` fixture, and none fails. That is 0.26 s of wall clock per
+recipe. The hook keeps 256 cases and CI 1000, both on the fixed seed;
+depth comes from `nightly.yml`, which runs every property at 5000 cases
+on a seed drawn from the date, 99,600 CPU-seconds split over six jobs,
+plus the differential at 1000 recipes on the same seed. The corpus
+benchmark times 250 cases from 125 fixtures, build 1.60 s and mesh
+0.73 s on the reference machine, and each night compares against the
+last, flagging a case past 3×. Three fuzz targets over the intersectors
+(`fuzz/`, outside the workspace) are seeded from every geometry pair.
+Their first hour, on 24 cores after the three faults a triage run
+found were fixed, reached 25, 42 and 28 executions per second with no
+crash, slowed by sections against very thin elliptic cylinders. Each night runs 30
+minutes per target from the corpus the nights before grew; the first
+night found a fourth, two planes a hair from parallel meeting in a line
+with a NaN origin. A night takes about 2 h 30 min, its longest property
+job 2 h 23 min. A red night is a finding to triage, not a gate; CI's
+fixed seed is the gate (ADR-0024, amendment of 2026-09-25).
+The STEP reader's fuzz target lands with the Part 21 parser's plan, on
+this crate and seeded from the STEP files the corpus writes.
 
 **The first-party binding.** Code-first and agent-driven modelling is one
 of the consumers `SEED.md` §1 names, and a binding in this repository is

@@ -104,7 +104,7 @@ pub enum Outcome {
     Panic(String),
     /// Arris returns `OpError::Internal`: a kernel bug it caught and
     /// typed, named by [`refusal`] — `Internal(Split)`. Whatever the
-    /// oracle did, a fault is not a refusal (plans/measuring-harness step
+    /// oracle did, a fault is not a refusal (ADR-0024 step
     /// 5b).
     Internal(String),
     /// A failing outcome a named [`Exclusion`] covers: counted under its
@@ -254,7 +254,7 @@ fn counts_of(outcome: &Outcome, field: &str) -> Option<(usize, usize)> {
 }
 
 /// Every named exclusion, each citing the regression fixtures that pin
-/// its failure (plans/measuring-harness step 5b).
+/// its failure (ADR-0024).
 pub const EXCLUSIONS: &[Exclusion] = &[
     Exclusion {
         name: "hole-loop-outside-every-outer-loop",
@@ -384,7 +384,7 @@ pub fn refusal(e: &OpError) -> String {
 /// The named exclusion that covers a panic caught on the test side, if
 /// any: how a property test over the same operations holds the same
 /// [`EXCLUSIONS`] as the differential, so one fix lifts both
-/// (plans/measuring-harness step 6).
+/// (ADR-0024).
 ///
 /// ```
 /// use arris_debug::differential::exclusion_of_panic;
@@ -524,7 +524,7 @@ fn sort(name: &str, recipe: &Recipe, oracle: Result<&Fixture, &str>) -> Outcome 
 /// faces — and the oracle's shape's (`expected.own`). Each kernel
 /// vouches for its boundary only to within its own tolerance, and a
 /// section fitted in either one moves the mass properties by up to that
-/// (plans/measuring-harness step 5b). Counts, probes and the mesh are
+/// (ADR-0024). Counts, probes and the mesh are
 /// held as the fixture holds them. The fixture's own tolerances where
 /// the result does not resolve or the oracle recorded no `own`.
 pub fn held_to(fixture: &Fixture, chain: &corpus::Chain, expected: &Measured) -> Tolerances {

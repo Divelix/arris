@@ -203,7 +203,7 @@ fn chain() -> impl Strategy<Value = (Provenance, Provenance, Provenance)> {
 /// bracketing, where ADR-0009's nesting puts piece `i`'s outputs before
 /// piece `i + 1`'s. The fix is a representation question for ADR-0009
 /// (`then_nests_what_later_records_generate_from_pieces`,
-/// plans/measuring-harness step 6); it lifts this.
+/// ADR-0024); it lifts this.
 fn differ_only_in_generated_order(x: &Provenance, y: &Provenance) -> bool {
     let origins = |p: &Provenance| p.origins_recorded().collect::<BTreeSet<Origin>>();
     let sorted = |v: &[Shape]| v.iter().copied().collect::<BTreeSet<Shape>>();
@@ -223,7 +223,7 @@ fn differ_only_in_generated_order(x: &Provenance, y: &Provenance) -> bool {
 /// `b` generates f8 from the role and modifies f7 into f9, `c` generates
 /// f12 from f9: [f8, f12] one way, [f12, f8] the other.
 #[test]
-#[ignore = "then loses the nesting of what later records generate from pieces (docs/BACKLOG.md, plans/measuring-harness step 6 finding)"]
+#[ignore = "then loses the nesting of what later records generate from pieces (docs/BACKLOG.md, ADR-0024)"]
 fn then_nests_what_later_records_generate_from_pieces() {
     let mut a = Provenance::new();
     a.add_modified(face(3), face(6));

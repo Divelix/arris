@@ -47,7 +47,7 @@ pub fn close_to(a: f64, b: f64, floor: f64, rel: f64) -> bool {
 /// measured on, a union against the cut it is restored from 38 away
 /// from the origin and a fillet miter on a box 60 away, were mostly the
 /// gaps between fits integrated about the origin, which
-/// `mass_properties` no longer does (plans/measuring-harness step 5); a
+/// `mass_properties` no longer does (ADR-0024); a
 /// section on a cone, a sphere or a torus fitted twice still needs the
 /// bound.
 pub fn fitted_rel(m: &Model, p: &MassProperties) -> f64 {

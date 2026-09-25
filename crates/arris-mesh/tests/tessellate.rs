@@ -276,7 +276,7 @@ fn both_primitives_mesh() {
 /// out. `signed_volume` summed its triple products about the world origin,
 /// each of the order of the distance cubed, and lost 9e-9 of the volume to
 /// their cancellation; about the mesh's own box it holds to rounding
-/// (plans/measuring-harness step 6).
+/// (ADR-0024).
 #[test]
 fn a_small_cylinder_far_out_keeps_its_mesh_volume() {
     let (r, h, chord) = (0.1, 0.1, 0.1 * 0.1);

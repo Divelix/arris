@@ -465,6 +465,18 @@ a named exclusion in `differential::EXCLUSIONS` covers its symptom and
 cites the slug. The corpus lint then fails once the fixture leaves
 `regression/`, so the commit that fixes it also lifts the exclusion.
 
+The property tests over the same booleans hold that same list:
+`differential::exclusion_of_panic` covers the checker guard's panic, and
+`exclusion_of_error` covers a typed `OpError::Internal`. The shrunk case
+then waits as an ignored test beside its property, so the fix that lifts
+the exclusion lifts it everywhere.
+
+A fuzz finding (`fuzz/`, ADR-0024 §5) is an intersector's answer on two
+operands, not a recipe. Its operands become a test beside that
+intersector's own, ignored until the fix lands. Once it passes they can
+join a `geometry` fixture under `geom/`: every geometry fixture is held to
+the oracle, so none waits under `regression/`.
+
 ## Conventions the numbers assume
 
 Open CASCADE's, which Arris matches (`docs/DATA-MODEL.md`

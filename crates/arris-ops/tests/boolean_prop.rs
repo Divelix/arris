@@ -235,7 +235,7 @@ fn a_cylinder_tangent_to_a_box_face_leaves_the_box_and_shares_nothing() {
 /// (`a_touch_at_a_box_corner_keeps_its_ids`) — and an end of the touching
 /// ruling within that reach of the face's edge, where the cap's rim
 /// grazes the edge (`a_rim_grazing_the_face_edge_keeps_its_ids`). Lifted
-/// by their fix (plans/measuring-harness step 6).
+/// by their fix (ADR-0024).
 fn touch_at_the_face_rim(pair: &TangentPair) -> bool {
     let tol = arris_ops::arris_check::arris_topo::arris_math::Precision::DEFAULT
         .tolerance()
@@ -276,7 +276,7 @@ fn touch_at_the_face_rim(pair: &TangentPair) -> bool {
 /// on the face for. The cut is the box, with that edge's faces rebuilt
 /// under new ids.
 #[test]
-#[ignore = "a cap's rim grazing a box edge rebuilds it under new ids (plans/measuring-harness step 6 finding)"]
+#[ignore = "a cap's rim grazing a box edge rebuilds it under new ids (ADR-0024)"]
 fn a_rim_grazing_the_face_edge_keeps_its_ids() {
     let half_turn = Isometry::new(
         UnitQuaternion::new_unchecked(Quaternion::new(0.0, 0.0, 1.0, 0.0)),
@@ -310,8 +310,7 @@ fn a_rim_grazing_the_face_edge_keeps_its_ids() {
 /// within the two bodies' tolerances — an axis along a box edge, whose
 /// seam `Frame::from_z` puts on the side against the face. The cut fails
 /// with `Fault::Split`, a section edge ending at a node nothing else
-/// reaches (`regression/tangent-seam-on-face-cut`, plans/measuring-harness
-/// step 6); the fix lifts it.
+/// reaches (`regression/tangent-seam-on-face-cut`, ADR-0024); the fix lifts it.
 fn seam_on_the_touch(pair: &TangentPair) -> bool {
     let tol = arris_ops::arris_check::arris_topo::arris_math::Precision::DEFAULT
         .tolerance()
@@ -371,7 +370,7 @@ fn a_tangent_cylinder_leaves_the_box(pair: &TangentPair) -> Result<(), TestCaseE
 /// 5.05, so the corner is 1.9e-8 off the wall. The cut is the box, but
 /// with the corner's vertex, edges and faces rebuilt under new ids.
 #[test]
-#[ignore = "a touch at a box corner rebuilds it under new ids (plans/measuring-harness step 6 finding)"]
+#[ignore = "a touch at a box corner rebuilds it under new ids (ADR-0024)"]
 fn a_touch_at_a_box_corner_keeps_its_ids() {
     let half_turn = Isometry::new(
         UnitQuaternion::new_unchecked(Quaternion::new(0.0, 0.0, 1.0, 0.0)),
@@ -671,8 +670,7 @@ fn cut_then_fuse_of_an_oblique_cylinder_through_a_box() {
 /// section's pcurve on the cylinder is fitted once for the union and
 /// again for the cut it is restored from, and the gap each fit leaves was
 /// integrated about the origin, 38 away. `mass_properties` now takes its
-/// first pass about the body's own vertices (plans/measuring-harness
-/// step 5), and the two agree to [`REL`].
+/// first pass about the body's own vertices (ADR-0024), and the two agree to [`REL`].
 #[test]
 fn cut_then_fuse_of_a_cylinder_across_a_small_box() {
     let pose = Isometry::new(
@@ -1526,7 +1524,7 @@ prop_shards! {
 /// tool through a frustum or an elliptic prism reaches in eleven shards of
 /// `quadric_operands_obey_every_identity` at 5000 cases on the fixed seed
 /// (`a_thin_slab_through_a_frustum_passes_the_checker`,
-/// plans/measuring-harness step 6). One list, `differential::EXCLUSIONS`,
+/// ADR-0024). One list, `differential::EXCLUSIONS`,
 /// so the fix that lifts it there lifts it here; any other panic fails as
 /// before.
 fn under_exclusions(f: impl FnOnce() -> Result<(), TestCaseError>) -> Result<(), TestCaseError> {

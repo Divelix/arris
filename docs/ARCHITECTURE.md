@@ -24,7 +24,7 @@ re-exports the public API. Lower crates never name types from upper ones.
 | `arris-ops` | Primitives, extrude and revolve of a `Profile`, transform, booleans, the blends, each returning `Provenance`; the queries `measure` (mass properties) and `query` (projection onto a plane, a face's outward frame) | `arris-check`, `thiserror`, `rayon` (feature) | 2 — algorithms |
 | `arris-mesh` | `TriMesh`, `Polyline`, the constrained Delaunay triangulation in (u, v) (`cdt`, ADR-0003), tessellation of faces and edges with shared edge discretisation; re-exports `arris-math`'s `Aabb` and `Interval` | `arris-check`, `arris-topo`, `thiserror`, `rayon` (feature) | 2 — algorithms |
 | `arris-io` | STEP AP214 Part 21 writer (later reader), the native format (`native`), STL and OBJ mesh writers (`stl`, `obj`, ADR-0013); re-exports `arris-check` and `arris-mesh` | `arris-check`, `arris-mesh`, `thiserror`, `serde`, `serde_json`, `postcard` (the last three behind the `serde` feature) | 2 — algorithms |
-| `arris-debug` | Text dump, the hand-built sample bodies (`sample`), PNG render (own software rasteriser over `image`), Rerun stream (feature), the fixture loader and corpus lint, the corpus runner (`corpus`) and the oracle seam (`oracle`), the seeded property-test runner and strategies, the differential over both kernels (`differential`) | `arris-ops`, `arris-mesh`, `arris-io`, `arris-topo`, `arris-geom`, `arris-math`, `image`, `serde`, `serde_json`, `sha2`, `thiserror`, `proptest` (not on `wasm32`), `rerun` (feature) | 3 — dev-facing |
+| `arris-debug` | Text dump, the hand-built sample bodies (`sample`), PNG render (own software rasteriser over `image`), Rerun stream (feature), the fixture loader and corpus lint, the corpus runner (`corpus`) and the oracle seam (`oracle`), the seeded property-test runner and strategies (`prop`, `prop::recipe` among them), the differential over both kernels (`differential`), the benchmark timer (`bench`) | `arris-ops`, `arris-mesh`, `arris-io`, `arris-topo`, `arris-geom`, `arris-math`, `image`, `serde`, `serde_json`, `sha2`, `thiserror`, `proptest` (not on `wasm32`), `rerun` (feature) | 3 — dev-facing |
 | `arris` | Facade: re-exports | `math` through `io`; `debug` as a dev-dependency only | 4 |
 
 `math`, `geom` and `topo` are the representation: they change rarely and a
@@ -1244,6 +1244,43 @@ B-Rep).
   16-core machine — 6.3×, within a tenth of the floor that machine's total
   work over its cores allows. Not a benchmark harness: it times binaries,
   not operations.
+- **The corpus benchmark** (`crates/arris/benches/corpus.rs`, `harness =
+  false`, ADR-0024 §4): for every fixture under `boolean/`, `sweep/` and
+  `blend/` whose recipe builds, the build and the tessellation at its
+  `mesh_chord`, timed apart by `arris_debug::bench`. The timer takes a
+  warm-up and five timed runs, their median and median absolute
+  deviation, and writes a JSON `Report`. `--save` writes a report,
+  `--compare` prints each case's ratio against a saved one, flagging
+  those past `bench::RATIO_FLAG` (3×), and `--table` writes that
+  comparison as markdown. Time is never a gate. `tools/bench-compare.sh`
+  runs it against `target/bench/baseline.json` (`--bless` sets it) or a
+  report named, and the nightly runs the same script against the last
+  night's report. On the reference machine it is 250 cases from 125
+  fixtures: build 1.60 s, mesh 0.73 s.
+- **The fuzz targets** (`fuzz/`, ADR-0024 §5): a crate outside the
+  workspace (`exclude = ["fuzz"]`), unpublished, on nightly under
+  `cargo fuzz` with `libfuzzer-sys` and `arbitrary`, none of them
+  workspace dependencies. There are three targets: `intersect_surfaces`,
+  `intersect_curve_surface` and `intersect_curves`. Each decodes analytic
+  operands in a pose from bytes, including NURBS curves given by their
+  control points and the fitted curves of a section of two decoded
+  surfaces. A number is folded into its range, so a mutation still
+  decodes, and one in range decodes as itself, so `fuzz/seed.rs` writes
+  every `tests/fixtures/geom/` pair as a seed. Each target asserts no
+  panic, every hit on both operands within the tolerance (a surface
+  pair's curves inside the region asked for), and the same answer twice.
+  They run without ASan (`-s none`), which finds nothing in
+  `forbid(unsafe_code)` crates and costs twentyfold. `fuzz/show.rs`
+  decodes a crash.
+- **`nightly.yml`** (ADR-0024 §3), on a schedule and on
+  `workflow_dispatch`, with `ARRIS_ORACLE_CACHE=off` throughout. Its
+  `seed` job draws one seed per run, `sha256` of the UTC date, printed as
+  `ARRIS_PROPTEST_SEED=…`; a dispatch may replay a given one. On that
+  seed it runs every property at 5000 cases, five times CI's, in six
+  jobs split by nextest filterset along the suite's per-test timings. It also runs the differential at 1000 recipes with the
+  corpus's ignored tests, the corpus benchmark against the last night's
+  report, and each fuzz target for 30 minutes from a corpus kept in the
+  Actions cache. A failure is a red run and nothing else.
 - **The oracle** (`tools/oracle/`, Python 3.12, Open CASCADE through the
   `cadquery-ocp` wheels in a `uv` environment): `expected.py` builds each
   fixture's recipe in OCCT and writes `expected.json`; `compare.py` reads
@@ -1342,11 +1379,18 @@ B-Rep).
   `expected_batch`, judged on every core against `corpus::stages` with
   no dump and no STEP round trip, and sorted into `Agree`, `BothRefuse`,
   `ArrisRefuses` counted per refusal name (`differential::refusal`: a
-  `Degenerate`'s reason, an `Unsupported`'s kinds, an `Internal`'s
-  fault), `OracleRefuses`, and the three that fail the run —
-  `Disagree(stage)`, `CheckerViolation` (the checker at `Full`, an
-  input it rejects, or the debug build's guard caught as a panic on the
-  test side) and `Panic` — each failing case shrunk through its
+  `Degenerate`'s or an `Unsupported`'s), `OracleRefuses`, and the four
+  that fail the run — `Disagree(stage)` (measurements held to the
+  first-order bound of a boundary known to `t_arris + t_occ`, counts net
+  of vertices that only split an edge), `CheckerViolation` (the checker
+  at `Full`, an input it rejects, or the debug build's guard caught as a
+  panic on the test side), `Internal` (a caught kernel fault, named by
+  it) and `Panic` — unless a named exclusion
+  (`differential::EXCLUSIONS`, each citing the `regression/` fixtures it
+  waits on, which the corpus lint holds present) covers the symptom, when
+  it is counted `Excluded` under its name; the property tests over the
+  same booleans hold the same list (`exclusion_of_panic`,
+  `exclusion_of_error`); each failing case shrunk through its
   `ValueTree` for at most `ARRIS_DIFF_SHRINK` candidates, the oracle run
   per candidate through its cache, and printed as a `fixture.json`;
   `crates/arris/tests/differential.rs` runs it and prints the

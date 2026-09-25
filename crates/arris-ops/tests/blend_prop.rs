@@ -458,7 +458,7 @@ prop_shards! {
 /// was read off the directions from the ball's centre to its three touch
 /// points, and a body that far out with a ball that small puts them 2e-12
 /// off the faces' normals — past the angular tolerance, so a square
-/// corner was refused as `VertexBlend` (plans/measuring-harness step 6).
+/// corner was refused as `VertexBlend` (ADR-0024).
 #[test]
 fn a_small_fillet_corner_far_out_is_still_square() {
     use arris_ops::arris_check::arris_topo::arris_math::nalgebra::{Quaternion, Unit};

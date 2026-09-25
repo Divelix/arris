@@ -19,6 +19,9 @@ seeing geometry, live in `.agents/skills/` (same symlink arrangement).
 ```sh
 git config core.hooksPath .githooks   # fmt, clippy -D warnings, test, doc before every commit
 cargo install cargo-nextest --locked  # the hook runs the suite under nextest
+# Optional, only for the fuzz targets in fuzz/ (outside the workspace):
+rustup toolchain install nightly --profile minimal
+cargo install cargo-fuzz --locked
 ```
 
 ## Current state
@@ -34,8 +37,10 @@ elliptic profiles. ADR-0006 to 0017.
 **C3 done (2026-09-24): every quadric pair.** Every analytic face is a
 boolean operand in any pose — sections exact or traced and fitted to
 NURBS, "the same within a tolerance" an equivalence. ADR-0018 to 0022.
-**Next:** C4, the STEP reader and a real-part corpus, with the measuring
-harness and the first-party binding beside it (ADR-0020).
+**Beside C4 (2026-09-25): the measuring harness** — cached oracle,
+differential, nightly tier, benchmarks, fuzzing (ADR-0024).
+**Next:** C4, the STEP reader and a real-part corpus, with the
+first-party binding beside it (ADR-0020).
 
 ## Rules that are not derivable from the code
 

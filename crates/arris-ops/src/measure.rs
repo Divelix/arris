@@ -305,8 +305,8 @@ mod tests {
     /// oblique plane crossing every one of its rulings: `π r² t` exactly,
     /// `t` the axis's length below the plane. Its section is fitted on the
     /// cylinder side, so its faces close only to the fit; taken about the
-    /// origin, 110 away, the volume was 1e-9 off (plans/measuring-harness
-    /// step 5, the differential's case 172 of the fixed seed).
+    /// origin, 110 away, the volume was 1e-9 off (ADR-0024, the
+    /// differential's case 172 of the fixed seed).
     #[test]
     fn a_body_far_from_the_origin_measures_to_its_closed_form() {
         use core::f64::consts::PI;

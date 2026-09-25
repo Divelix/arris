@@ -213,3 +213,29 @@ things in §2.
   (`ARRIS_DIFF_CASES`), and the hook at its default of 32.
 
 The other decisions of §2 are unchanged.
+
+## Amendment (2026-09-25, plan `measuring-harness` retirement)
+
+§6 holds, and says what a red night is not: it opens nothing and posts
+nothing. What it is, the first three nights settled. Each drew a new
+seed and found two to five things the fixed seeds never reached: bounds
+that did not scale with magnitude, a boolean fault, a NaN line of two
+planes a hair from parallel, a fit that gives up at its span cap, and
+the first nightly fuzz crash. A night green end to end would mean the
+harness had stopped finding things, so it is not the proof that the
+harness works.
+
+- **The workflow is proven by a run whose every job completes within
+  its time limit**, with the property tier, the differential and the
+  benchmark green on the run's date seed. The fuzz jobs run their time;
+  a crash they find is a finding like any other.
+- **A red night is a finding, not a gate.** It is triaged the way any
+  finding is (`.agents/rules/kernel.md` §Testing): a fix with a test
+  that fails without it, or a shrunk fixture with a named exclusion that
+  cites it, plus a backlog line. The seed the job printed reproduces it.
+- **CI's fixed seed stays the gate.** A kernel fix made for a night's
+  finding is held to CI's own count before it counts as done. In the
+  first nights a knot rule green at the hook's 32 recipes turned two
+  agreeing recipes of CI's 1000 into faults, and one of them came back
+  from a later night's seed as a new finding. The fixed seed told the
+  two apart; a new seed could not have.
