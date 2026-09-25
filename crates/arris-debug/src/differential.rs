@@ -400,6 +400,28 @@ pub fn exclusion_of_panic(payload: &(dyn std::any::Any + Send)) -> Option<&'stat
     EXCLUSIONS.iter().find(|e| e.covers(&outcome))
 }
 
+/// The named exclusion that covers a typed kernel fault a property test
+/// met, if any: [`exclusion_of_panic`]'s twin for the fault that comes
+/// back as `OpError::Internal` rather than as the checker guard's panic,
+/// sorted by [`refusal`]'s name as the differential sorts it.
+///
+/// ```
+/// use arris_debug::differential::exclusion_of_error;
+/// use arris_geom::GeomError;
+/// use arris_math::Tolerance;
+/// use arris_ops::{Fault, OpError};
+///
+/// let fault = OpError::Internal(Fault::Geometry(GeomError::InvalidTolerance(Tolerance::new(0.0, 0.0))));
+/// assert_eq!(exclusion_of_error(&fault).unwrap().name, "geometry-fault");
+/// ```
+pub fn exclusion_of_error(e: &OpError) -> Option<&'static Exclusion> {
+    let OpError::Internal(_) = e else {
+        return None;
+    };
+    let outcome = Outcome::Internal(refusal(e));
+    EXCLUSIONS.iter().find(|x| x.covers(&outcome))
+}
+
 /// The outcome of a caught panic: the debug build's checker guard is a
 /// [`Outcome::CheckerViolation`], any other a [`Outcome::Panic`].
 fn panicked(payload: &(dyn std::any::Any + Send)) -> Outcome {

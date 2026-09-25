@@ -123,9 +123,21 @@ fn on_both(c: &Curve, a: &Surface, b: &Surface, slack: f64) -> Result<(), TestCa
                 slack + SECTION_FIT_FRACTION * tol().linear + 1e-11 * (1.0 + p.coords.norm())
             }
             Curve::Circle { .. } if tube_circle => tol().linear,
-            Curve::Line { .. } | Curve::Circle { .. } | Curve::Ellipse { .. } => {
-                EXACT + ROUNDING * p.coords.norm()
+            // A conic's point is its centre plus two terms of its radii,
+            // each rounded at its own magnitude: an ellipse 2.3e5 across
+            // and centred as far out rounds its points at that size, not
+            // at theirs (nightly seed 9492b872…, 5000 cases).
+            Curve::Circle { frame, radius } => {
+                EXACT + ROUNDING * (p.coords.norm() + frame.origin().coords.norm() + radius)
             }
+            Curve::Ellipse {
+                frame,
+                major_radius,
+                ..
+            } => EXACT + ROUNDING * (p.coords.norm() + frame.origin().coords.norm() + major_radius),
+            // A line of two planes is placed to its rounding over the
+            // sine between them ([`line_spread`]).
+            Curve::Line { .. } => EXACT + ROUNDING * line_spread(a, b) * p.coords.norm(),
         };
         let (da, db) = (implicit_distance(a, p), implicit_distance(b, p));
         prop_assert!(
@@ -136,9 +148,26 @@ fn on_both(c: &Curve, a: &Surface, b: &Surface, slack: f64) -> Result<(), TestCa
     Ok(())
 }
 
-/// The same point set, up to a line's orientation; a NURBS — fitted or a
-/// conic's branch — the same curve bit for bit.
-fn same_curve(a: &Curve, b: &Curve) -> bool {
+/// How much two lines computed from the same two surfaces may be placed
+/// apart relative to their rounding: `1 / sin θ` for two planes `θ`
+/// apart, whose line's position is conditioned so — two planes 1.5e-3
+/// of a radian apart place it 1e3 out, each origin to 2e-10 of the other
+/// (nightly seed 9492b872…, 5000 cases) — and `1` for every other pair.
+fn line_spread(a: &Surface, b: &Surface) -> f64 {
+    match (a, b) {
+        (Surface::Plane { frame: fa }, Surface::Plane { frame: fb }) => {
+            let sin = fa.z().cross(&fb.z()).norm();
+            if sin > 0.0 { 1.0 / sin } else { 1.0 }
+        }
+        _ => 1.0,
+    }
+}
+
+/// The same point set, up to a line's orientation — two lines placed as
+/// far apart as their origins' rounding times `spread` allows
+/// ([`line_spread`]); a NURBS — fitted or a conic's branch — the same
+/// curve bit for bit.
+fn same_curve(a: &Curve, b: &Curve, spread: f64) -> bool {
     let parallel = |x: &UnitVec3, y: &UnitVec3| x.cross(y).norm() <= EXACT;
     match (a, b) {
         (Curve::Nurbs(x), Curve::Nurbs(y)) => x == y,
@@ -148,7 +177,11 @@ fn same_curve(a: &Curve, b: &Curve) -> bool {
                 origin: o2,
                 direction: d2,
             },
-        ) => parallel(direction, d2) && (o2 - origin).cross(direction).norm() <= EXACT,
+        ) => {
+            parallel(direction, d2)
+                && (o2 - origin).cross(direction).norm()
+                    <= EXACT + ROUNDING * spread * (origin.coords.norm() + o2.coords.norm())
+        }
         (
             Curve::Circle { frame, radius },
             Curve::Circle {
@@ -427,7 +460,7 @@ fn common_properties_in(
         let found = ss
             .iter()
             .enumerate()
-            .position(|(i, s)| !taken[i] && same_curve(c, s));
+            .position(|(i, s)| !taken[i] && same_curve(c, s, line_spread(a, b)));
         prop_assert!(
             found.is_some(),
             "swap changed a curve: {:?} not in {:?}",

@@ -1408,6 +1408,16 @@ fn run_unless_beside(
             reason: Reason::BesideSingularity,
             ..
         }) => Ok(None),
+        // A fault one of the differential's named exclusions covers, as
+        // `under_exclusions` treats the checker guard's panic: the
+        // `Split` fault an elliptic prism cut and fused back by a pipe
+        // reached on a nightly seed
+        // (`an_elliptic_prism_cut_then_fused_back_by_a_pipe`).
+        Err(e) if arris_debug::differential::exclusion_of_error(&e).is_some() => {
+            Err(TestCaseError::reject(
+                arris_debug::differential::exclusion_of_error(&e).map_or("", |x| x.name),
+            ))
+        }
         result => clean(m, name, result, a, b).map(Some),
     }
 }
@@ -1567,6 +1577,46 @@ fn a_thin_slab_through_a_frustum_passes_the_checker() {
                     -0.1747667029906671,
                 ),
             ),
+        }),
+        pose: half_turn,
+    };
+    if let Err(e) = quadric_identities(&pair) {
+        panic!("{e}");
+    }
+}
+
+/// `quadric_operands_obey_every_identity` at 5000 cases on the nightly
+/// seed `9492b872…05f880c5`, shard 7 of 16, shrunk: an elliptic prism of
+/// semi-axes 4.6 and 2.4, 9.1 tall, and a pipe of radius 1.7 across it
+/// nearly along y, both turned half a turn about y. The cut and the five
+/// other booleans build; fusing the pipe back into the cut fails with
+/// `Fault::Split` — a cycle of a face's arrangement that does not turn
+/// once — which `differential::EXCLUSIONS` `split-fault` covers.
+#[test]
+#[ignore = "Fault::Split, a face arrangement that is not a subdivision (docs/BACKLOG.md, the differential's findings; differential::EXCLUSIONS split-fault)"]
+fn an_elliptic_prism_cut_then_fused_back_by_a_pipe() {
+    let half_turn = Isometry::new(
+        UnitQuaternion::new_unchecked(Quaternion::new(0.0, 0.0, 1.0, 0.0)),
+        Vec3::zeros(),
+    );
+    let pair = QuadricPair {
+        solid: QuadricSolid::EllipticPrism {
+            a: 4.618723547468061,
+            b: 2.4184486698938907,
+            height: 9.116543533344732,
+        },
+        tool: QuadricTool::Cylinder(Cylindrical {
+            axis: Axis {
+                origin: Point3::new(0.9003270109670206, -2.5373774203492996, 0.9200294783571933),
+                direction: UnitVec3::new_unchecked(Vec3::new(
+                    0.09653684119572423,
+                    0.995320198470987,
+                    -0.004282616913362748,
+                )),
+            },
+            radius: 1.6849079765193715,
+            height: 22.395176041983547,
+            pose: half_turn,
         }),
         pose: half_turn,
     };
