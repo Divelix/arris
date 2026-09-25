@@ -211,6 +211,19 @@ pub enum SweepPart {
     },
 }
 
+/// An instance of an exchange file an entity was read from: the file's
+/// `#id`, and which placement of it, since an assembly places one solid
+/// several times and each placement is a body of its own. Instances are
+/// numbered from `0` in the reader's deterministic order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct FileEntity {
+    /// The instance's `#id` in the file.
+    pub id: u64,
+    /// Which placement of it.
+    pub instance: u32,
+}
+
 /// What an entity is to the operation that made it from nothing:
 /// exhaustive over the operations that generate from no input body, one
 /// variant per operation kind.
@@ -225,6 +238,9 @@ pub enum Role {
     Extrude(SweepPart),
     /// An entity of `revolve`.
     Revolve(SweepPart),
+    /// An entity of a file a reader read: the file entity it stands for
+    /// (`docs/DATA-MODEL.md` §Provenance).
+    File(FileEntity),
 }
 
 impl fmt::Display for Role {
@@ -234,6 +250,7 @@ impl fmt::Display for Role {
             Role::Cylinder(part) => write!(f, "cylinder:{part:?}"),
             Role::Extrude(part) => write!(f, "extrude:{part:?}"),
             Role::Revolve(part) => write!(f, "revolve:{part:?}"),
+            Role::File(e) => write!(f, "file:#{}/{}", e.id, e.instance),
         }
     }
 }

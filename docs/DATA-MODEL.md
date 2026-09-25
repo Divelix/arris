@@ -1622,7 +1622,8 @@ nothing — so that every chain has a root (ADR-0002):
 ```rust
 pub enum Relation { Generated, Modified, Deleted }
 pub enum Origin   { Entity(Shape), Role(Role) }
-pub enum Role     { Box(BoxPart), Cylinder(CylinderPart), Extrude(SweepPart), Revolve(SweepPart) }   // exhaustive
+pub enum Role     { Box(BoxPart), Cylinder(CylinderPart), Extrude(SweepPart), Revolve(SweepPart), File(FileEntity) }   // exhaustive
+pub struct FileEntity { id: u64, instance: u32 }   // a file's #id, and which placement of it
 
 pub struct Provenance {
     generated: BTreeMap<Origin, Vec<Shape>>,   // origin → outputs generated from it, in split order
@@ -1661,7 +1662,15 @@ pub struct Provenance {
   it has a `StartVertex` only where such a face keeps it; a line
   segment along the axis sweeps no `Side` and has no `EndEdge`, its
   `StartEdge` being in a partial turn the edge both flat ends share and
-  nothing in a full turn.
+  nothing in a full turn. A solid a reader reads (ADR-0025) has every
+  entity `Generated` from its own file entity, `Role::File(FileEntity {
+  id, instance })` — the `#id` and which placement of it an assembly
+  makes: the body from its `MANIFOLD_SOLID_BREP` or `BREP_WITH_VOIDS`,
+  each shell from its `CLOSED_SHELL`, each face from its
+  `ADVANCED_FACE`, each edge from its `EDGE_CURVE` and each vertex from
+  its `VERTEX_POINT`. A degenerate edge the reader rebuilds, which the
+  file has no entity for, is `Generated` from its face's entity, and an
+  edge split at a seam from its `EDGE_CURVE`.
 - **Modified**: the output is a trimmed, split or re-tolerated piece of the
   input, same kind — the box's top face with a circle cut out of it, each
   half of a face split by an intersection curve (one input, several

@@ -318,7 +318,7 @@ after, because it is routine.
     each parameter bounded in closed form. Step 10 builds the ball from
     the solid's vertices and every edge curve's control hull, after the
     unbounded edges have resolved against the vertices alone.
-- [ ] Step 10 **[3]** — One solid's topology. A `MANIFOLD_SOLID_BREP` or
+- [x] Step 10 **[3]** — One solid's topology. A `MANIFOLD_SOLID_BREP` or
   `BREP_WITH_VOIDS` becomes a `Builder::assemble` `Assembly`:
   - vertices from `VERTEX_POINT`;
   - edges from `EDGE_CURVE`, with the range found by projecting the
@@ -340,6 +340,35 @@ after, because it is routine.
   fixture's counts, and a volume, area and centroid within its tolerances.
   The fixtures with a degenerate edge wait for step 11, each under an
   exclusion that names it.
+
+  Done: 171 fixture variants read back, held to the checker at `Full`
+  with nothing unchecked, the oracle's counts, and its volume, area and
+  centroid; 13 fixtures with a degenerate edge wait for step 11 under
+  `DEGENERATE_EDGES`, asserted to be exactly the corpus's. Findings:
+  - **One fixture waits for step 12, not 11.**
+    `boolean/seam-a-tolerance-from-crossing-fuse` carries tolerances a
+    boolean raised to `1.22e-7`; read at the default, its pcurves jump
+    by that at a vertex and L2 refuses it. It is listed under
+    `RAISED_TOLERANCES`, asserted refused, and step 12 lifts it.
+  - **A body of several lumps is several solids.** The writer writes a
+    `MANIFOLD_SOLID_BREP` per lump, so the reader returns a body per
+    solid; the test keeps their faces in one body to meet the fixture's
+    counts. Step 16's "one body per instance" is per solid, as here.
+  - **Pcurve placement is a walk, not a table.** Each use's pcurve is
+    moved by whole periods to start where the one before it ends, which
+    puts a seam's two uses a period apart; each loop is then moved so its
+    box's centre lies in the period starting at the widest loop's lower
+    bound, which puts a hole inside its outer loop.
+  - **`t₀ + p − t₀` can round past `p`**, which E1 refuses on a closed
+    edge starting just below `2π`; the end comes down by an ulp.
+  - **Three refusals were added**: `Topology` (what the builder
+    refuses), `Pcurve` (what `pcurve_on` refuses, naming the edge and
+    the face) and `Invalid` (the checker's report). A `VERTEX_LOOP` is
+    `Unsupported` until step 11 reads it.
+  - **A solid's units** come from the first representation, by id, that
+    lists it among its items; a solid no representation holds is
+    `Malformed`. Step 16 reaches solids through the product structure
+    instead.
 - [ ] Step 11 **[3]** — Degenerate edges rebuilt. A loop whose (u, v) walk
   jumps along a singular row — a sphere's pole, a cone's apex, a NURBS
   surface's collapsed row — gets the degenerate coedge the writer left
@@ -362,7 +391,9 @@ after, because it is routine.
   and 15 and on the files of the literature, the evidence cited in its
   comment.
 
-  Test: hand-perturbed files, with a vertex moved by δ below the cap and
+  Test: `RAISED_TOLERANCES` of step 10's read-back test is lifted
+  (`boolean/seam-a-tolerance-from-crossing-fuse` reads back); and
+  hand-perturbed files, with a vertex moved by δ below the cap and
   above it and an edge curve lifted off its face. Each reads to a
   checker-green solid whose tolerance is at least δ, or to the gap refusal
   naming the entity.

@@ -1,5 +1,6 @@
-//! STEP AP214 Part 21: the exchange structure's parser ([`part21`]) and
-//! the writer (`docs/ARCHITECTURE.md` §Formats and tools). The writer
+//! STEP AP214 Part 21: the exchange structure's parser ([`part21`]), the
+//! reader ([`read`], ADR-0025) and the writer (`docs/ARCHITECTURE.md`
+//! §Formats and tools). The writer
 //! emits the B-Rep entity subset with every pcurve written out, so a
 //! reader takes the model's own trimming instead of recomputing it. The
 //! Open CASCADE oracle reads the result (`tools/oracle/compare.py`).
@@ -61,7 +62,9 @@
 pub mod part21;
 mod reader;
 
-pub use reader::{LengthUnit, ReadOptions, Refusal, RefusalKind};
+pub use reader::{
+    LengthUnit, Read, ReadBody, ReadError, ReadOptions, ReadSolid, Refusal, RefusalKind, read,
+};
 
 use core::fmt::Write as _;
 use std::collections::{BTreeMap, BTreeSet};

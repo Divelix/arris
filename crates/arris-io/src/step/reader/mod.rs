@@ -1,22 +1,30 @@
 //! The STEP reader (ADR-0025): what a parsed exchange structure
 //! ([`super::part21`]) means, entity by entity. This module holds the
-//! reader's public vocabulary — the options a caller reads with, and the
-//! typed refusal each solid the reader cannot take comes back as — and its
-//! layers: [`entities`] resolves references and reads parameters by the
-//! schema's types, [`units`] reads a representation context's units and
-//! converts every length and angle to the caller's, and [`geometry`] maps
-//! each curve and surface onto its Arris variant or refuses it by name.
+//! reader's public vocabulary — [`read`], the options a caller reads
+//! with, what it returns, and the typed refusal each solid the reader
+//! cannot take comes back as — and its layers: [`entities`] resolves
+//! references and reads parameters by the schema's types, [`units`] reads
+//! a representation context's units and converts every length and angle
+//! to the caller's, [`geometry`] maps each curve and surface onto its
+//! Arris variant or refuses it by name, and [`topology`] reads one solid
+//! into a body.
 
-// Nothing outside the tests reaches the layers until `step::read` does
-// (plans/step-reader step 10), which lifts these allowances.
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) mod entities;
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) mod geometry;
-#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) mod topology;
 pub(crate) mod units;
 
 use core::fmt;
+use std::collections::BTreeMap;
+
+use arris_check::Report;
+use arris_check::arris_topo::provenance::FileEntity;
+use arris_check::arris_topo::{Body, Model, Provenance};
+
+use super::part21::{self, Param, Part21Error};
+use entities::Entities;
+use geometry::Geometry;
+use units::Units;
 
 /// How the reader reads a file: the unit the caller's model is in.
 ///
@@ -60,7 +68,6 @@ pub enum LengthUnit {
 }
 
 impl LengthUnit {
-    #[cfg_attr(not(test), allow(dead_code))]
     /// The unit as `mantissa · 10^exponent` metres, so that a ratio of two
     /// units divides the mantissas and adds the exponents: exact wherever
     /// the ratio is.
@@ -159,6 +166,40 @@ pub enum Refusal {
         /// What is wrong with it.
         what: String,
     },
+    /// The solid's faces, bounds and edges do not make closed shells a
+    /// solid can have: a loop that does not close, an edge not used
+    /// twice and in opposite directions, a shell in two pieces, two
+    /// shells sharing an edge — what the builder refuses
+    /// (`arris_topo::builder::BuildError`), said in its words.
+    #[error("#{entity}: {what}")]
+    Topology {
+        /// The solid.
+        entity: u64,
+        /// What does not close or pair up.
+        what: String,
+    },
+    /// An edge has no pcurve on a face it bounds: it is not on the face's
+    /// surface within the tolerance, it runs through a singular point of
+    /// it, or the fit does not reach the tolerance (`arris_geom::pcurve_on`).
+    #[error("#{edge} on face #{face}: {what}")]
+    Pcurve {
+        /// The `EDGE_CURVE`.
+        edge: u64,
+        /// The face.
+        face: u64,
+        /// Why.
+        what: String,
+    },
+    /// The body read fails the checker at `Level::Fast`, which the
+    /// reader runs in every build (ADR-0025 §5): the file's fault, not
+    /// the kernel's, so a refusal rather than a panic.
+    #[error("#{entity}: the solid read fails the checker:\n{report}")]
+    Invalid {
+        /// The solid.
+        entity: u64,
+        /// The checker's report.
+        report: Box<Report>,
+    },
     /// An instance is not what the schema says belongs where it is: a
     /// parameter of the wrong type or count, a reference to an entity
     /// the file does not define or of the wrong type, a unit nested past
@@ -193,6 +234,12 @@ pub enum RefusalKind {
     Unsupported,
     /// [`Refusal::Degenerate`].
     Degenerate,
+    /// [`Refusal::Topology`].
+    Topology,
+    /// [`Refusal::Pcurve`].
+    Pcurve,
+    /// [`Refusal::Invalid`].
+    Invalid,
 }
 
 impl Refusal {
@@ -216,6 +263,9 @@ impl Refusal {
             Refusal::SelfIntersectingTorus { .. } => RefusalKind::SelfIntersectingTorus,
             Refusal::Unsupported { .. } => RefusalKind::Unsupported,
             Refusal::Degenerate { .. } => RefusalKind::Degenerate,
+            Refusal::Topology { .. } => RefusalKind::Topology,
+            Refusal::Pcurve { .. } => RefusalKind::Pcurve,
+            Refusal::Invalid { .. } => RefusalKind::Invalid,
         }
     }
 
@@ -230,7 +280,10 @@ impl Refusal {
             | Refusal::DegenerateTorus { entity }
             | Refusal::SelfIntersectingTorus { entity, .. }
             | Refusal::Unsupported { entity, .. }
-            | Refusal::Degenerate { entity, .. } => *entity,
+            | Refusal::Degenerate { entity, .. }
+            | Refusal::Topology { entity, .. }
+            | Refusal::Invalid { entity, .. } => *entity,
+            Refusal::Pcurve { edge, .. } => *edge,
         }
     }
 }
@@ -247,6 +300,169 @@ impl fmt::Display for RefusalKind {
             RefusalKind::SelfIntersectingTorus => "self-intersecting torus",
             RefusalKind::Unsupported => "unsupported entity",
             RefusalKind::Degenerate => "degenerate geometry",
+            RefusalKind::Topology => "not a closed shell",
+            RefusalKind::Pcurve => "no pcurve",
+            RefusalKind::Invalid => "fails the checker",
         })
     }
+}
+
+/// Why [`read`] read nothing: the file is not a Part 21 exchange
+/// structure. Past parsing, nothing fails the whole file — each solid is
+/// its own result ([`ReadSolid`]).
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+pub enum ReadError {
+    /// The text does not parse, at the line and column named.
+    #[error(transparent)]
+    Parse(#[from] Part21Error),
+}
+
+/// What [`read`] returns: one result per solid of the file.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Read {
+    /// Every solid of the file, and every shape standing where a solid
+    /// would that the reader refuses — a faceted B-rep, a shell-based
+    /// surface model — ascending by the file entity.
+    pub solids: Vec<ReadSolid>,
+}
+
+/// One solid of a file, read or refused.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ReadSolid {
+    /// The solid's file entity, and which placement of it.
+    pub entity: FileEntity,
+    /// The length uncertainty the solid's representation context claims,
+    /// in the caller's unit: the file's claim, kept beside the result and
+    /// never an entity's tolerance (ADR-0025 §4). `None` where the
+    /// context claims none or could not be read.
+    pub uncertainty: Option<f64>,
+    /// The body, or why there is none.
+    pub result: Result<ReadBody, Refusal>,
+}
+
+/// A solid read into the model.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ReadBody {
+    /// The body: a `Solid` that passes the checker at `Level::Fast`.
+    pub body: Body,
+    /// Its record: the body, each shell, face, edge and vertex
+    /// `Generated` from the file entity it was read from
+    /// (`Role::File`), at the solid's placement.
+    pub provenance: Provenance,
+}
+
+/// The entity names of the solids the reader reads.
+const SOLIDS: [&str; 2] = ["MANIFOLD_SOLID_BREP", "BREP_WITH_VOIDS"];
+
+/// The entity names that stand where a solid would, which the reader
+/// counts and refuses (ADR-0025 §2).
+const REFUSED_SOLIDS: [&str; 3] = [
+    "FACETED_BREP",
+    "SHELL_BASED_SURFACE_MODEL",
+    "FACE_BASED_SURFACE_MODEL",
+];
+
+/// Reads every solid of the Part 21 file `text` into `model`, lengths in
+/// `options.length_unit` (ADR-0025).
+///
+/// Guarantees: every `Ok` body is a `Solid` that passes the checker at
+/// `Level::Fast`, in every build, with provenance naming the file entity
+/// each of its entities came from; a solid that cannot be read is a
+/// [`Refusal`] naming the file entity where it stopped, and leaves nothing
+/// in the model; one refused solid never hides another. Deterministic:
+/// the same text reads to the same entities with the same ids.
+///
+/// Errors: [`ReadError::Parse`] when the text is not a Part 21 exchange
+/// structure — the only failure of the whole file.
+///
+/// ```
+/// use arris_io::step::{self, ReadOptions};
+/// use arris_io::arris_check::{check, Level};
+/// use arris_io::arris_check::arris_topo::Model;
+/// use arris_debug::sample;
+///
+/// let mut m = Model::default();
+/// let body = sample::cylinder(&mut m, 4.0, 12.0)?;
+/// let text = step::write(&m, &[body])?;
+///
+/// let mut back = Model::default();
+/// let read = step::read(&mut back, &text, &ReadOptions::default())?;
+/// assert_eq!(read.solids.len(), 1);
+/// let solid = read.solids[0].result.as_ref().unwrap();
+/// assert!(check(&back, solid.body, Level::Full).is_ok());
+/// assert_eq!(back.faces(solid.body)?.len(), 3);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+pub fn read(model: &mut Model, text: &str, options: &ReadOptions) -> Result<Read, ReadError> {
+    let exchange = part21::parse(text)?;
+    let entities = Entities::new(&exchange.instances);
+    // The context of each item a representation holds: the first
+    // representation by id that holds it.
+    let mut context_of: BTreeMap<u64, u64> = BTreeMap::new();
+    for instance in exchange.instances.values() {
+        for record in instance.records() {
+            if !record.name.ends_with("REPRESENTATION") {
+                continue;
+            }
+            if let [_, Param::List(items), Param::Ref(context), ..] = &record.params[..] {
+                for item in items {
+                    if let Param::Ref(item) = item {
+                        context_of.entry(*item).or_insert(*context);
+                    }
+                }
+            }
+        }
+    }
+    let mut units: BTreeMap<u64, Result<Units, Refusal>> = BTreeMap::new();
+    let mut solids = Vec::new();
+    for (&id, instance) in &exchange.instances {
+        let names = instance.records();
+        let solid = names.iter().any(|r| SOLIDS.contains(&r.name.as_str()));
+        let refused = names
+            .iter()
+            .any(|r| REFUSED_SOLIDS.contains(&r.name.as_str()));
+        if !solid && !refused {
+            continue;
+        }
+        let entity = FileEntity { id, instance: 0 };
+        let context = context_of.get(&id).copied();
+        let context_units = context.map(|c| {
+            units
+                .entry(c)
+                .or_insert_with(|| Units::of_context(&entities, c, options.length_unit))
+                .clone()
+        });
+        let uncertainty = match &context_units {
+            Some(Ok(u)) => u.uncertainty,
+            _ => None,
+        };
+        let result = if refused {
+            Err(Refusal::Unsupported {
+                entity: id,
+                name: entities::describe(instance),
+            })
+        } else {
+            match context_units {
+                None => Err(entities::malformed(
+                    id,
+                    "no representation holds the solid, so it has no units",
+                )),
+                Some(Err(r)) => Err(r),
+                Some(Ok(units)) => {
+                    Geometry { entities, units }
+                        .solid(model, id, 0)
+                        .map(|s| ReadBody {
+                            body: s.body,
+                            provenance: s.provenance,
+                        })
+                }
+            }
+        };
+        solids.push(ReadSolid {
+            entity,
+            uncertainty,
+            result,
+        });
+    }
+    Ok(Read { solids })
 }
