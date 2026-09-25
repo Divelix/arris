@@ -1087,9 +1087,9 @@ the backlog). The constructors validate and return
 `GeomError::Degenerate` naming the fault: a knot value's multiplicity is
 at most `p + 1`, and at most `p` strictly inside the domain
 `[knots[p], knots[n]]`, which is non-empty and whose last span is not,
-and two knots that differ do so by more than `RELATIVE_ROUNDING` of the
-larger of their magnitude and one, since every derivative divides by that
-span. A knot vector need not be clamped. A curve or a surface direction is
+and a span that is not empty is at least `f64::MIN_POSITIVE`, since every
+derivative divides by it. Two knots a rounding apart at an ordinary scale
+are valid; the kernel's own splits and fits make them. A knot vector need not be clamped. A curve or a surface direction is
 **periodic** exactly when its structure wraps: the knots repeat `n − p`
 places on shifted by the domain's length and the last `p` control points
 (rows, for a surface) repeat the first `p`, both to rounding; `period()`

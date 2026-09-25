@@ -22,12 +22,12 @@ pub(crate) type Row = [f64; MAX_DEGREE + 1];
 /// in `1..=MAX_DEGREE`; there are at least `degree + 1` control points
 /// and exactly `n + degree + 1` finite, non-decreasing knots; the domain
 /// `[knots[degree], knots[n]]` has positive length and its last span is
-/// not empty (so evaluation at the domain's end divides by nothing); two
-/// knots that differ differ by more than rounding
-/// ([`arris_math::RELATIVE_ROUNDING`] of the larger of their magnitude
-/// and one, the scale the kernel's parameters are resolved at), since a
-/// span that short is divided by in every derivative and its reciprocal
-/// is past `f64` — a curve over `[0, 5e-315]` evaluated to NaN; no knot
+/// not empty (so evaluation at the domain's end divides by nothing); a
+/// span that is not empty is at least `f64::MIN_POSITIVE`, a normal
+/// number, since every derivative divides by it and a subnormal one's
+/// reciprocal is past `f64` — a curve over `[0, 5e-315]` evaluated to
+/// NaN. Two knots a rounding apart at an ordinary scale stay valid: the
+/// kernel's own splits and fits make them; no knot
 /// value has multiplicity above `degree + 1`, and none strictly inside
 /// the domain has multiplicity above `degree` (a higher one would break
 /// the curve).
@@ -59,11 +59,12 @@ pub(crate) fn validate(degree: usize, knots: &[f64], n: usize) -> Result<(), Str
             knots[i + 1]
         ));
     }
-    if let Some(i) = knots.windows(2).position(|w| {
-        w[1] > w[0] && arris_math::is_negligible(w[1] - w[0], w[0].abs().max(w[1].abs()).max(1.0))
-    }) {
+    if let Some(i) = knots
+        .windows(2)
+        .position(|w| w[1] > w[0] && w[1] - w[0] < f64::MIN_POSITIVE)
+    {
         return Err(format!(
-            "knots {i} and {} differ only by rounding: {} and {}",
+            "knots {i} and {} are a subnormal span apart: {} and {}",
             i + 1,
             knots[i],
             knots[i + 1]
@@ -218,14 +219,13 @@ mod tests {
         assert!(
             validate(2, &subnormal, 3)
                 .unwrap_err()
-                .contains("differ only by rounding")
+                .contains("subnormal span")
         );
+        // A rounding apart at an ordinary scale is a knot vector: the
+        // kernel's splits and fits make such (the differential at 1000
+        // draws of the fixed seed, where refusing it cost two results).
         let rounding = [1.0, 1.0, 1.0, 1.0 + f64::EPSILON, 2.0, 2.0, 2.0];
-        assert!(
-            validate(2, &rounding, 4)
-                .unwrap_err()
-                .contains("knots 2 and 3 differ only by rounding")
-        );
+        assert_eq!(validate(2, &rounding, 4), Ok(()));
         let short = [0.0, 0.0, 0.0, 1e-9, 1e-9, 1e-9];
         assert_eq!(validate(2, &short, 3), Ok(()));
     }

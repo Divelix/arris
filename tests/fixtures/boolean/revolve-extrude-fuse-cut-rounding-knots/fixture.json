@@ -1,5 +1,5 @@
 {
-  "description": "A revolved sketch (a cone among its faces) and a posed extrusion with an arc (a cylinder), drawn by the differential on the nightly seed e4bc2ddfd7fb7c8f9b1d17e4273031e2c91939b36926b8afe47e795d160e75dc (case 757, shrunk in 64 candidates): the result fails the checker's S5, a cone face against a cylinder face it cannot decide. The desired result passes the checker and matches the oracle.",
+  "description": "A revolved sketch (a cone among its faces) fused with a posed extrusion and cut by a second one, drawn by the differential on the nightly seed e4bc2ddfd7fb7c8f9b1d17e4273031e2c91939b36926b8afe47e795d160e75dc (case 757, shrunk in 64 candidates). Its section curves carry knots a rounding apart; a knot rule that refused them failed the checker's S5 on a cone face against a cylinder face, so the fixture holds the kernel to building its own curves.",
   "params": {},
   "variants": {},
   "steps": [

@@ -639,13 +639,13 @@ fn regression_revolve_cylinder_extrude_fuse_misses_a_shell() {
 }
 
 /// A revolved sketch fused with an extrusion and cut by a second one,
-/// drawn by the differential on the first nightly's date seed
-/// (`e4bc2ddf…`, case 757) and shrunk: the checker cannot decide a cone
-/// face against a cylinder face of the result (S5).
+/// drawn by the differential on a nightly seed (`e4bc2ddf…`, case 757)
+/// and shrunk: its section curves carry knots a rounding apart, which a
+/// knot rule refusing them turned into the checker's S5 on a cone face
+/// against a cylinder face.
 #[test]
-#[ignore = "the checker's S5 undecided on a cone against a cylinder (docs/BACKLOG.md, the nightly's findings; differential::EXCLUSIONS cone-cylinder-undecided)"]
-fn regression_revolve_extrude_cone_cylinder_undecided() {
-    run("regression/revolve-extrude-cone-cylinder-undecided");
+fn boolean_revolve_extrude_fuse_cut_rounding_knots() {
+    run("boolean/revolve-extrude-fuse-cut-rounding-knots");
 }
 
 /// A full revolve less an elliptic extrusion (the differential's draw, shrunk; plans/measuring-harness step
