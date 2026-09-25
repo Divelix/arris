@@ -58,7 +58,8 @@ pub use nurbs::{
     fit_curve_periodic, fit_curve2,
 };
 pub use pcurve::{
-    PCURVE_FIT_DEGREE, PCURVE_SAMPLES, PCURVE_SINGULAR_BAND, pcurve_on, project_to_plane,
+    PCURVE_FIT_DEGREE, PCURVE_SAMPLES, PCURVE_SINGULAR_BAND, pcurve_ending_on, pcurve_on,
+    project_to_plane,
 };
 pub use profile::{Profile, ProfileEdge, ProfileError, ProfileLoop, ProfileSegment};
 pub use project::{CurveProjection, SurfaceProjection};

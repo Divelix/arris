@@ -46,6 +46,24 @@ pub use tolerance::Tolerance;
 /// evaluated in `f64`, is `6e-17`, not `0`.
 pub const RELATIVE_ROUNDING: f64 = 8.0 * f64::EPSILON;
 
+/// The widest gap a file's entities may leave that a read closes by a
+/// tolerance, as a fraction of the part's size — the diameter of the ball
+/// holding its vertices and edges (ADR-0025 §4). A vertex or an edge whose
+/// measured gap is above it, or above `Precision::max_tolerance`, is
+/// refused as a gap: closing it would be sewing, which is healing, and a
+/// solid grown to cover it would be a wrong one.
+///
+/// Evidence: an exact writer leaves gaps at the rounding of its decimal
+/// digits, around `1e-15` of the part (Arris's own files); a kernel's
+/// raised tolerances reach a few `1e-7` on a part of unit size (the
+/// corpus's `boolean/seam-a-tolerance-from-crossing-fuse`, `1.2e-7` on a
+/// part of size 7). Healing tools commonly default their sewing
+/// tolerance to `1e-6`–`1e-3` of the model's size, so `1e-4` admits every
+/// file an exporting kernel called valid by its own tolerances and
+/// refuses the gaps a healer would have to sew. A tolerance policy, not a
+/// rounding slack; `real-part-corpus` revisits it against real parts.
+pub const READ_GAP_FRACTION: f64 = 1e-4;
+
 /// `|x| ≤ RELATIVE_ROUNDING · |scale|`: `x` is zero to rounding at
 /// `scale`. A zero `scale` makes only an exact zero negligible.
 ///

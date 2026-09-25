@@ -409,7 +409,7 @@ after, because it is routine.
   - **New public items**: `Surface::singularities` and `Singularity` in
     `arris-geom`, moved out of `pcurve_on`'s private helper, and
     `Refusal::OpenLoop` with its `RefusalKind`.
-- [ ] Step 12 **[2]** — Per-entity tolerances from measured gaps
+- [x] Step 12 **[2]** — Per-entity tolerances from measured gaps
   (ADR-0025 §4).
   - A vertex takes its distance to each edge's curve end.
   - An edge takes its curve's distance from each face's surface at E4's
@@ -428,6 +428,29 @@ after, because it is routine.
   above it and an edge curve lifted off its face. Each reads to a
   checker-green solid whose tolerance is at least δ, or to the gap refusal
   naming the entity.
+
+  Done: `boolean/seam-a-tolerance-from-crossing-fuse` reads back, held
+  to its own tolerance (ADR-0023's first-order bound, now
+  `corpus::within_own_tolerance` in `arris-debug`, which step 13 uses
+  too); every other fixture is still held to the fixture's. A vertex
+  moved and a circle lifted by a tenth of the cap read checker-green at
+  `Full` carrying δ to 2δ; by ten caps they are `Refusal::Gap`.
+  Findings, recorded in ADR-0025's amendment:
+  - **The floor is `default_tolerance`**, not `min_tolerance`: nothing in
+    the kernel delivers less than the default, the pcurve fits included.
+  - **Raising a tolerance is not enough.** Exact pcurves of curves ending
+    a tolerance apart jump in (u, v) past L2's band. The reader ends them
+    on one point, only where L2 would refuse the junction (moving them
+    at half the band, as the boolean does, moved `pipe-elbow-fuse-band-
+    ends`'s volume by 5e-9), through the boolean's helper, moved to
+    `arris-geom` as `pcurve_ending_on`: a new public function.
+  - **A walk that finds ends apart past the cap reports a gap.** Step
+    11's open-loop test (a seam line 8 off its vertices) is a gap now;
+    `OpenLoop` stays for a junction that meets in 3D but not on the face.
+  - **The cap is provisional**: `READ_GAP_FRACTION = 1e-4`, from the
+    corpus's own raised tolerances and the healing tools' defaults.
+    Steps 14 and 15 measure the gaps on Open CASCADE's files and revise
+    its comment, or its value, with them.
 - [ ] Step 13 **[2]** — The write → read round trip as a property over
   `prop::body`'s shapes in random poses, sharded (`prop_shards!`). It
   asserts:

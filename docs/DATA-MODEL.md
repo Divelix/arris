@@ -1517,6 +1517,20 @@ may carry different tolerances.
   within that tolerance, so its edge's tube holds the true section and
   the edge carries its faces' tolerance as an edge on a closed-form curve
   does.
+- **Read from a file**, tolerances are measured, never taken from the
+  file's global uncertainty (ADR-0025 §4). The STEP reader rebuilds every
+  pcurve, fitting one at the gap where an edge curve lies off its face's
+  surface, and where two pcurves of a loop end apart in (u, v) past L2's
+  band it ends them on one point (`pcurve_ending_on`) — the seam's end
+  where one is a seam, else the vertex's own (u, v), as a boolean ends a
+  section edge. Each edge then carries the largest distance of its
+  pcurves' images from its curve at the checker's samples (and a closed
+  edge its curve's own gap), each vertex the largest distance from its
+  point to the curves' ends and the pcurves' images there and the span of
+  a degenerate edge's image, each face the default; every value is
+  floored at `default_tolerance` and raised to keep the ordering. A gap
+  past `READ_GAP_FRACTION` of the part's size, or past `max_tolerance`,
+  is refused (`Refusal::Gap`): closing it is sewing.
 - **`Precision`** is the model-wide configuration set at `Model::new`:
   `default_tolerance` (what primitives get), `min_tolerance` (the floor no
   entity goes below), `max_tolerance` (an operation that would exceed it

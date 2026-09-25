@@ -896,6 +896,88 @@ pub fn measure_stage(
     Ok(Target { measured, by })
 }
 
+/// How many chords [`within_own_tolerance`] measures an edge's length
+/// over: a first-order bound needs the length to a few per cent, which a
+/// polyline of this many chords gives on any curve the corpus has.
+const OWN_TOLERANCE_CHORDS: usize = 64;
+
+/// `tolerances` widened to what the body itself declares (ADR-0023): a
+/// reader may move any point of the boundary by up to its largest vertex
+/// tolerance `t` and hand back the same shape, so a round trip of it is
+/// held to the first-order change such a move makes and no closer — over
+/// a boundary of area `A` and volume `V`, edges of total length `L`, and
+/// the corners of its box within `R` of the centroid, `A·t` of volume,
+/// `L·t` of area, `A·t·R / V` of centroid and `A·t·R²` of each inertia
+/// component, as the oracle's `within_own_tolerance` widens its own. A
+/// tolerance of the fixture's that is wider stays. Errors: what the
+/// model or `mass_properties` refuses, said in words.
+///
+/// ```
+/// use arris_debug::corpus::within_own_tolerance;
+/// use arris_debug::fixtures::Tolerances;
+/// use arris_debug::sample;
+/// use arris_io::arris_check::arris_topo::Model;
+///
+/// let mut m = Model::default();
+/// let body = sample::cylinder(&mut m, 4.0, 12.0)?;
+/// let own = within_own_tolerance(&Tolerances::default(), &m, body)?;
+/// assert!(own.volume_rel >= Tolerances::default().volume_rel);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+pub fn within_own_tolerance(
+    tolerances: &Tolerances,
+    m: &Model,
+    body: Body,
+) -> Result<Tolerances, String> {
+    let closure = m.closure(body).map_err(|e| e.to_string())?;
+    let mut t: f64 = 0.0;
+    let mut corners: Vec<Point3> = Vec::new();
+    for &v in &closure.vertices {
+        let v = m.vertex(v).map_err(|e| e.to_string())?;
+        t = t.max(v.tolerance());
+        corners.push(v.point());
+    }
+    let mut length = 0.0;
+    for &e in &closure.edges {
+        let e = m.edge(e).map_err(|e| e.to_string())?;
+        let Some((curve, range)) = e.curve() else {
+            continue;
+        };
+        let curve = m.curve(curve).map_err(|e| e.to_string())?;
+        let points: Vec<Point3> = (0..=OWN_TOLERANCE_CHORDS)
+            .map(|i| curve.point(range.lerp(i as f64 / OWN_TOLERANCE_CHORDS as f64)))
+            .collect();
+        length += points.windows(2).map(|w| (w[1] - w[0]).norm()).sum::<f64>();
+        if let Some(b) = curve.bounds(range) {
+            corners.push(Point3::new(b.min[0], b.min[1], b.min[2]));
+            corners.push(Point3::new(b.max[0], b.max[1], b.max[2]));
+        }
+    }
+    let mass = mass_properties(m, body).map_err(|e| e.to_string())?;
+    let (lo, hi) = corners.iter().fold(
+        (Vec3::repeat(f64::INFINITY), Vec3::repeat(f64::NEG_INFINITY)),
+        |(lo, hi), p| (lo.inf(&p.coords), hi.sup(&p.coords)),
+    );
+    let mut reach: f64 = 0.0;
+    for x in [lo.x, hi.x] {
+        for y in [lo.y, hi.y] {
+            for z in [lo.z, hi.z] {
+                reach = reach.max((Point3::new(x, y, z) - mass.centroid).norm());
+            }
+        }
+    }
+    let (volume, area) = (mass.volume.abs(), mass.area);
+    let scale = mass.inertia.iter().fold(0.0, |a: f64, x| a.max(x.abs()));
+    let scale = if scale > 0.0 { scale } else { 1.0 };
+    Ok(Tolerances {
+        volume_rel: tolerances.volume_rel.max(area * t / volume),
+        area_rel: tolerances.area_rel.max(length * t / area),
+        centroid_abs: tolerances.centroid_abs.max(area * t * reach / volume),
+        inertia_rel: tolerances.inertia_rel.max(area * t * reach * reach / scale),
+        ..*tolerances
+    })
+}
+
 /// The mesh at the fixture's `mesh_chord`: closed, positive, with the
 /// corner block's ADR-0012 invariants on every face-local vertex (so the
 /// whole corpus covers them rather than one focused test), and its

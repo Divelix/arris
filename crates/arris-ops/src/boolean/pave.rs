@@ -12,10 +12,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use arris_check::arris_topo::arris_geom::region2::{MAX_SEGMENTS_PER_PIECE, Side};
 use arris_check::arris_topo::arris_geom::{
-    Curve, Curve2, CurveIntersection, CurveSurfaceIntersection, GeomError, MeetKind, NurbsCurve2,
-    PCURVE_FIT_DEGREE, PCURVE_SINGULAR_BAND, Surface, SurfaceIntersection, conic_crossings,
-    curves_coincide, fit_curve2, intersect_curve_surface, intersect_curves, intersect_surfaces,
-    pcurve_on,
+    Curve, Curve2, CurveIntersection, CurveSurfaceIntersection, GeomError, MeetKind,
+    PCURVE_SINGULAR_BAND, Surface, SurfaceIntersection, conic_crossings, curves_coincide,
+    intersect_curve_surface, intersect_curves, intersect_surfaces, pcurve_ending_on, pcurve_on,
 };
 use arris_check::arris_topo::arris_math::{
     Aabb, Interval, Point2, Point3, Precision, RELATIVE_ROUNDING, Tolerance, Vec2, period_end,
@@ -428,63 +427,6 @@ fn samples(range: Interval, n: usize) -> Vec<f64> {
     (0..n)
         .map(|i| range.lerp(i as f64 / (n - 1) as f64))
         .collect()
-}
-
-/// `pc` over `range`, same-parameter, with its start moved to `ends[0]`
-/// and its end to `ends[1]` where given: a clamped B-spline over `range`
-/// whose end control points are moved, so the curve changes only over
-/// its first and last spans and by no more than the move. A pcurve that
-/// is one already is used as it is, a line becomes the degree-1 spline
-/// through its ends, and any other — a circle or an ellipse on a plane,
-/// a spline over a wider or periodic domain — is fitted over `range`
-/// first, at `tolerance` on `surface` as [`pcurve_on`] fits.
-fn ending_on(
-    pc: &Curve2,
-    range: Interval,
-    ends: [Option<Point2>; 2],
-    surface: &Surface,
-    tolerance: f64,
-) -> Result<Curve2, GeomError> {
-    let clamped = |n: &NurbsCurve2| {
-        let (k, p) = (n.knots(), n.degree());
-        n.period().is_none()
-            && n.domain() == range
-            && k[..=p].iter().all(|&x| x == k[0])
-            && k[k.len() - p - 1..].iter().all(|&x| x == k[k.len() - 1])
-    };
-    let spline = match pc {
-        Curve2::Nurbs(n) if clamped(n) => n.clone(),
-        Curve2::Line { .. } => NurbsCurve2::new(
-            1,
-            vec![range.lo(), range.lo(), range.hi(), range.hi()],
-            vec![pc.point(range.lo()), pc.point(range.hi())],
-            vec![1.0; 2],
-        )?,
-        Curve2::Circle { .. } | Curve2::Ellipse { .. } | Curve2::Nurbs(_) => {
-            let on = |q: Point2| surface.point(q.x, q.y);
-            fit_curve2(
-                |t| pc.point(t),
-                range,
-                PCURVE_FIT_DEGREE,
-                |t, q| (on(q) - on(pc.point(t))).norm(),
-                tolerance,
-            )?
-        }
-    };
-    let mut points = spline.control_points().to_vec();
-    if let (Some(p), Some(first)) = (ends[0], points.first_mut()) {
-        *first = p;
-    }
-    if let (Some(p), Some(last)) = (ends[1], points.last_mut()) {
-        *last = p;
-    }
-    NurbsCurve2::new(
-        spline.degree(),
-        spline.knots().to_vec(),
-        points,
-        spline.weights().to_vec(),
-    )
-    .map(Curve2::Nurbs)
 }
 
 impl<'m> Build<'m> {
@@ -2138,7 +2080,7 @@ impl<'m> Build<'m> {
         if start.is_none() && end.is_none() {
             return Ok((pc, residual));
         }
-        let pc = ending_on(&pc, range, [start, end], f.surface, base)
+        let pc = pcurve_ending_on(&pc, range, [start, end], f.surface, base)
             .map_err(|e| geometry(e, other.shape(), f.shape()))?;
         // The move is the residual's largest term, at an end, and the
         // tolerance it sets is exactly that: rounding at the positions'
@@ -2734,10 +2676,8 @@ fn g_face_of<'b, 'm>(build: &'b Build<'m>, gid: EdgeId) -> &'b FaceInfo<'m> {
 
 #[cfg(test)]
 mod tests {
-    use super::{BTreeMap, Candidate, Curve2, Surface, VertexId, components, ending_on};
-    use arris_check::arris_topo::arris_math::{
-        Frame, Frame2, Interval, Point2, Point3, UnitVec2, Vec2,
-    };
+    use super::{BTreeMap, Candidate, VertexId, components};
+    use arris_check::arris_topo::arris_math::Point3;
 
     fn at(x: f64, y: f64, tolerance: f64, existing: &[u32]) -> Candidate {
         Candidate {
@@ -2806,42 +2746,5 @@ mod tests {
             at(5.0 + 1.9e-7, 0.0, 1e-7, &[]),
         ];
         assert_eq!(components(&nodes), vec![0, 1, 1, 0]);
-    }
-
-    /// A pcurve ended on a (u, v) a tolerance away moves its end there
-    /// exactly and elsewhere by no more than the move, same-parameter
-    /// throughout: a line becomes the spline through its new ends, and a
-    /// circle, fitted over the range first, changes only over its end
-    /// spans, its middle where it was to the fit's rounding.
-    #[test]
-    fn a_pcurve_is_ended_on_a_vertex_by_its_end_control_points() {
-        let plane = Surface::Plane {
-            frame: Frame::world(),
-        };
-        let range = Interval::new(0.0, 2.0).unwrap();
-        let line = Curve2::Line {
-            origin: Point2::new(1.0, 1.0),
-            direction: UnitVec2::new_normalize(Vec2::new(1.0, 0.0)),
-        };
-        let to = Point2::new(3.0, 1.0 + 1.2e-7);
-        let moved = ending_on(&line, range, [None, Some(to)], &plane, 1e-7).unwrap();
-        assert_eq!(moved.point(0.0), line.point(0.0));
-        assert_eq!(moved.point(2.0), to);
-        assert!((moved.point(1.0) - Point2::new(2.0, 1.0 + 0.6e-7)).norm() < 1e-15);
-
-        let circle = Curve2::Circle {
-            frame: Frame2::identity(),
-            radius: 1.0,
-        };
-        let from = circle.point(0.0) + Vec2::new(0.0, -1.2e-7);
-        let moved = ending_on(&circle, range, [Some(from), None], &plane, 1e-7).unwrap();
-        assert_eq!(moved.point(0.0), from);
-        assert!((moved.point(2.0) - circle.point(2.0)).norm() < 1e-15);
-        for i in 0..=100 {
-            let t = range.lerp(f64::from(i) / 100.0);
-            let off = (moved.point(t) - circle.point(t)).norm();
-            assert!(off <= 1.2e-7 + 1e-7, "{off} at {t}");
-        }
-        assert!((moved.point(1.0) - circle.point(1.0)).norm() <= 1e-7);
     }
 }

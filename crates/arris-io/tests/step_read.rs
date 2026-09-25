@@ -17,14 +17,6 @@ use arris_io::arris_check::arris_topo::{
 use arris_io::arris_check::{Level, check};
 use arris_io::step::{self, ReadBody, ReadOptions};
 
-/// The fixtures whose result carries a tolerance an operation raised past
-/// the model's default — a vertex merged from points a tolerance apart —
-/// which the reader does not measure until step 12: until then every
-/// entity it reads has the default, and the checker refuses the gap.
-/// Each is asserted to be refused, so the list is lifted when step 12
-/// lands.
-const RAISED_TOLERANCES: &[&str] = &["boolean/seam-a-tolerance-from-crossing-fuse"];
-
 /// The number of degenerate edges of the body.
 fn degenerate_edges(m: &Model, body: Body) -> Result<usize, String> {
     let closure = m.closure(body).map_err(|e| e.to_string())?;
@@ -52,6 +44,7 @@ fn read_back(fixture: &Fixture, variant: &str) -> Result<Option<usize>, String> 
     }
     let chain = corpus::chain(&fixture.dir, variant).map_err(|e| e.to_string())?;
     let body = chain.result().ok_or("no result")?;
+    let original = body;
     let degenerate = degenerate_edges(&chain.model, body)?;
     let text = step::write(&chain.model, &[body]).map_err(|e| e.to_string())?;
     let mut model = Model::new(chain.model.precision()).map_err(|e| e.to_string())?;
@@ -118,7 +111,24 @@ fn read_back(fixture: &Fixture, variant: &str) -> Result<Option<usize>, String> 
     }
     let (_, report) = corpus::check_stage(fixture, &read_chain).map_err(|e| e.to_string())?;
     corpus::counts_stage(fixture, &read_chain, &report, expected).map_err(|e| e.to_string())?;
-    corpus::measure_stage(fixture, &read_chain, expected).map_err(|e| e.to_string())?;
+    // A result an operation left with tolerances raised past the model's
+    // default is read back to them (ADR-0025 §4), and a round trip of it
+    // is held to its own tolerance (ADR-0023); every other to the
+    // fixture's.
+    let default = chain.model.precision().default_tolerance;
+    let raised = (chain
+        .model
+        .closure(original)
+        .map_err(|e| e.to_string())?
+        .vertices)
+        .iter()
+        .any(|&v| chain.model.vertex(v).is_ok_and(|v| v.tolerance() > default));
+    let mut held = fixture.clone();
+    if raised {
+        held.recipe.tolerances =
+            corpus::within_own_tolerance(&fixture.recipe.tolerances, &chain.model, original)?;
+    }
+    corpus::measure_stage(&held, &read_chain, expected).map_err(|e| e.to_string())?;
     let rebuilt = degenerate_edges(&read_chain.model, body)?;
     if rebuilt != degenerate {
         return Err(format!(
@@ -164,7 +174,6 @@ fn area(area: &str) {
     let mut failures = Vec::new();
     let mut degenerate = 0;
     let mut read = 0;
-    let mut raised = 0;
     let root = fixtures::corpus_root().join(area);
     for dir in fixtures::corpus() {
         if !dir.starts_with(&root) {
@@ -174,16 +183,6 @@ fn area(area: &str) {
         for variant in fixture.recipe.variant_names() {
             match read_back(&fixture, &variant) {
                 Ok(None) => {}
-                Err(e) if RAISED_TOLERANCES.contains(&fixture.name.as_str()) => {
-                    assert!(e.contains("fails the checker"), "{}: {e}", fixture.name);
-                    raised += 1;
-                }
-                Ok(Some(_)) if RAISED_TOLERANCES.contains(&fixture.name.as_str()) => {
-                    panic!(
-                        "{} [{variant}] reads back: lift it from RAISED_TOLERANCES",
-                        fixture.name
-                    )
-                }
                 Ok(Some(n)) => {
                     read += 1;
                     degenerate += usize::from(n > 0);
@@ -193,10 +192,7 @@ fn area(area: &str) {
         }
     }
     assert!(read > 0, "nothing read in {area}");
-    eprintln!(
-        "{area}: {read} read back, {degenerate} of them with a degenerate edge, \
-         {raised} with a raised tolerance"
-    );
+    eprintln!("{area}: {read} read back, {degenerate} of them with a degenerate edge");
     assert!(
         failures.is_empty(),
         "{} of {} read back wrong:\n{}",
@@ -334,12 +330,12 @@ fn a_parse_error_fails_the_file() {
     assert!(matches!(err, step::ReadError::Parse(_)), "{err}");
 }
 
-/// A bound whose (u, v) walk jumps where its edges meet in 3D — the
-/// cylinder's seam line moved to the far side of the wall, so the
-/// circles reach its vertex at `u = 0` and the seam leaves it at `u = π`
-/// — is an open loop, named by the face, the bound and the vertex.
+/// A bound whose edges end apart in 3D — the cylinder's seam line
+/// moved to the far side of the wall, so the circles reach their vertex
+/// at `u = 0` and the seam, 8 away, leaves from `u = π` — is a gap past
+/// the cap (ADR-0025 §4), named by the vertex where the walk finds it.
 #[test]
-fn a_jump_off_a_singular_row_is_an_open_loop() {
+fn a_seam_moved_off_its_vertices_is_a_gap() {
     let text = cylinder_step();
     let seam_point = "#62 = CARTESIAN_POINT('',(4.,0.,0.));";
     assert!(text.contains(seam_point));
@@ -349,14 +345,14 @@ fn a_jump_off_a_singular_row_is_an_open_loop() {
     let refusal = read.solids[0].result.as_ref().unwrap_err();
     assert_eq!(
         refusal,
-        &step::Refusal::OpenLoop {
-            face: 24,
-            bound: 30,
-            vertex: 32
+        &step::Refusal::Gap {
+            entity: 32,
+            gap: 8.0,
+            cap: cylinder_cap()
         },
         "{refusal}"
     );
-    assert_eq!(refusal.kind(), step::RefusalKind::OpenLoop);
+    assert_eq!(refusal.kind(), step::RefusalKind::Gap);
 }
 
 /// The header, the context and the circle of radius 4 about z at z = 0
@@ -479,4 +475,106 @@ END-ISO-10303-21;
     let volume = 2.0 / 3.0 * std::f64::consts::PI * 64.0;
     assert!((props.volume - volume).abs() < 1e-9 * volume, "{props:?}");
     assert!((props.centroid.z - 1.5).abs() < 1e-9, "{props:?}");
+}
+
+/// The cylinder's file with `from` replaced by `to`, read: the solid's
+/// result and the model.
+fn perturbed(from: &str, to: &str) -> (Model, Result<ReadBody, step::Refusal>) {
+    let text = cylinder_step();
+    assert!(text.contains(from), "{from}");
+    let mut m = Model::default();
+    let read = step::read(&mut m, &text.replace(from, to), &ReadOptions::default()).unwrap();
+    let result = read.solids[0].result.clone();
+    (m, result)
+}
+
+/// The largest vertex and edge tolerance of the body.
+fn largest_tolerances(m: &Model, body: Body) -> (f64, f64) {
+    let closure = m.closure(body).unwrap();
+    let v = (closure.vertices.iter())
+        .map(|&v| m.vertex(v).unwrap().tolerance())
+        .fold(0.0, f64::max);
+    let e = (closure.edges.iter())
+        .map(|&e| m.edge(e).unwrap().tolerance())
+        .fold(0.0, f64::max);
+    (v, e)
+}
+
+/// The cylinder's gap cap: `READ_GAP_FRACTION` of the diameter of the
+/// ball holding its box, `[−4, 4]² × [0, 12]`.
+fn cylinder_cap() -> f64 {
+    let diameter = (8.0f64 * 8.0 + 8.0 * 8.0 + 12.0 * 12.0).sqrt();
+    arris_io::arris_check::arris_topo::arris_math::READ_GAP_FRACTION * diameter
+}
+
+/// A vertex moved by δ off the curves that meet it (ADR-0025 §4): below
+/// the cap the solid reads to a body the checker passes at `Full`, the
+/// vertex and the edges it bounds carrying at least δ; above it, the gap
+/// is refused by name.
+#[test]
+fn a_vertex_moved_off_its_edges_carries_the_gap() {
+    let from = "#60 = CARTESIAN_POINT('',(4.,0.,12.));";
+    let delta = 0.1 * cylinder_cap();
+    let (m, result) = perturbed(
+        from,
+        &format!("#60 = CARTESIAN_POINT('',(4.,0.,{}));", 12.0 + delta),
+    );
+    let back = result.unwrap_or_else(|r| panic!("{r}"));
+    let report = check(&m, back.body, Level::Full);
+    assert!(report.is_ok() && report.unchecked().is_empty(), "{report}");
+    let (vertex, edge) = largest_tolerances(&m, back.body);
+    assert!(vertex >= delta && edge <= vertex, "{vertex} {edge} {delta}");
+    assert!(vertex <= 2.0 * delta, "{vertex} for {delta}");
+
+    let delta = 10.0 * cylinder_cap();
+    let (_, result) = perturbed(
+        from,
+        &format!("#60 = CARTESIAN_POINT('',(4.,0.,{}));", 12.0 + delta),
+    );
+    let refusal = result.unwrap_err();
+    assert_eq!(refusal.kind(), step::RefusalKind::Gap, "{refusal}");
+    let step::Refusal::Gap { gap, cap, .. } = refusal else {
+        unreachable!()
+    };
+    assert!(
+        gap > cap && gap >= delta * (1.0 - 1e-9),
+        "{gap} {cap} {delta}"
+    );
+}
+
+/// An edge curve lifted by δ off one of its faces — the top circle moved
+/// up its axis, off the top plane and its vertex — is fitted on the face
+/// at the gap: below the cap a checker-green body whose edge carries at
+/// least δ, above it the edge refused as a gap.
+#[test]
+fn an_edge_lifted_off_its_face_carries_the_gap() {
+    let from = "#82 = CARTESIAN_POINT('',(0.,0.,12.));";
+    let delta = 0.1 * cylinder_cap();
+    let (m, result) = perturbed(
+        from,
+        &format!("#82 = CARTESIAN_POINT('',(0.,0.,{}));", 12.0 + delta),
+    );
+    let back = result.unwrap_or_else(|r| panic!("{r}"));
+    let report = check(&m, back.body, Level::Full);
+    assert!(report.is_ok() && report.unchecked().is_empty(), "{report}");
+    let (vertex, edge) = largest_tolerances(&m, back.body);
+    assert!(edge >= delta && vertex >= edge, "{vertex} {edge} {delta}");
+    assert!(edge <= 2.0 * delta, "{edge} for {delta}");
+
+    let delta = 10.0 * cylinder_cap();
+    let (_, result) = perturbed(
+        from,
+        &format!("#82 = CARTESIAN_POINT('',(0.,0.,{}));", 12.0 + delta),
+    );
+    let refusal = result.unwrap_err();
+    // The circle's vertex is where its uses meet the seam, and the walk
+    // finds the gap there first.
+    let step::Refusal::Gap { entity, gap, cap } = refusal else {
+        panic!("{refusal}")
+    };
+    assert_eq!(entity, 59);
+    assert!(
+        gap > cap && gap >= delta * (1.0 - 1e-9),
+        "{gap} {cap} {delta}"
+    );
 }

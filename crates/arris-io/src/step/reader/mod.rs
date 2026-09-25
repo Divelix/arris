@@ -206,6 +206,21 @@ pub enum Refusal {
         /// The `VERTEX_POINT` where the walk jumps.
         vertex: u64,
     },
+    /// A vertex or an edge is farther from where the entities it meets
+    /// put it than the gap a read closes by a tolerance: the part's size
+    /// times `arris_math::READ_GAP_FRACTION`, and never more than the
+    /// model's `max_tolerance` (ADR-0025 §4). Closing it would be sewing,
+    /// which is healing.
+    #[error("#{entity}: a gap of {gap} past the cap of {cap}")]
+    Gap {
+        /// The `VERTEX_POINT` or `EDGE_CURVE` — or, for an edge the file
+        /// left out, its face.
+        entity: u64,
+        /// The gap measured, in the caller's unit.
+        gap: f64,
+        /// The cap it is past.
+        cap: f64,
+    },
     /// The body read fails the checker at `Level::Fast`, which the
     /// reader runs in every build (ADR-0025 §5): the file's fault, not
     /// the kernel's, so a refusal rather than a panic.
@@ -256,6 +271,8 @@ pub enum RefusalKind {
     Pcurve,
     /// [`Refusal::OpenLoop`].
     OpenLoop,
+    /// [`Refusal::Gap`].
+    Gap,
     /// [`Refusal::Invalid`].
     Invalid,
 }
@@ -284,6 +301,7 @@ impl Refusal {
             Refusal::Topology { .. } => RefusalKind::Topology,
             Refusal::Pcurve { .. } => RefusalKind::Pcurve,
             Refusal::OpenLoop { .. } => RefusalKind::OpenLoop,
+            Refusal::Gap { .. } => RefusalKind::Gap,
             Refusal::Invalid { .. } => RefusalKind::Invalid,
         }
     }
@@ -301,6 +319,7 @@ impl Refusal {
             | Refusal::Unsupported { entity, .. }
             | Refusal::Degenerate { entity, .. }
             | Refusal::Topology { entity, .. }
+            | Refusal::Gap { entity, .. }
             | Refusal::Invalid { entity, .. } => *entity,
             Refusal::Pcurve { edge, .. } => *edge,
             Refusal::OpenLoop { face, .. } => *face,
@@ -323,6 +342,7 @@ impl fmt::Display for RefusalKind {
             RefusalKind::Topology => "not a closed shell",
             RefusalKind::Pcurve => "no pcurve",
             RefusalKind::OpenLoop => "open loop",
+            RefusalKind::Gap => "gap past the cap",
             RefusalKind::Invalid => "fails the checker",
         })
     }

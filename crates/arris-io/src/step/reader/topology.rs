@@ -38,18 +38,32 @@
 //!   one degenerate coedge, a whole turn along its row. A jump in (u, v)
 //!   anywhere else is [`Refusal::OpenLoop`].
 //!
-//! Every entity is given the model's default tolerance; per-entity
-//! tolerances from measured gaps are a later step's. The body is checked
-//! at `Level::Fast` in every build (ADR-0025 §5), and a violation is the
-//! file's: [`Refusal::Invalid`].
+//! - **Gaps** are measured, never assumed (ADR-0025 §4). An edge curve
+//!   off a face's surface has its pcurve fitted at the gap, and two
+//!   pcurves ending apart in (u, v) at a vertex — two curves ending apart
+//!   in 3D — are ended on one point, the seam's end where one of them is
+//!   a seam, else the vertex's own (u, v), as a boolean ends a section edge on its
+//!   vertex. Each edge then takes the largest distance of its pcurves'
+//!   images from its curve at the checker's samples, a closed edge also
+//!   its curve's own gap; each vertex the largest distance from its point
+//!   to each edge curve's end and each pcurve's image there, and the span
+//!   of a degenerate edge's image; each face the model's default. Every
+//!   value is floored at the default and raised to keep vertex ≥ edge ≥
+//!   face. A gap past the cap — [`READ_GAP_FRACTION`] of the part's size,
+//!   at most the model's `max_tolerance` — is [`Refusal::Gap`].
+//!
+//! The body is checked at `Level::Fast` in every build (ADR-0025 §5), and
+//! a violation is the file's: [`Refusal::Invalid`].
 
 use std::collections::BTreeMap;
 
 use arris_check::arris_topo::arris_geom::{
-    Curve, Curve2, PCURVE_SINGULAR_BAND, Singularity, Surface, pcurve_on,
+    Curve, Curve2, GeomError, PCURVE_SINGULAR_BAND, Singularity, Surface, pcurve_ending_on,
+    pcurve_on,
 };
 use arris_check::arris_topo::arris_math::{
-    Aabb, Frame, Interval, Point2, Point3, Tolerance, UnitVec2, UnitVec3, Vec2,
+    Aabb, Frame, Interval, Point2, Point3, Precision, READ_GAP_FRACTION, RELATIVE_ROUNDING,
+    Tolerance, UnitVec2, UnitVec3, Vec2,
 };
 use arris_check::arris_topo::builder::{
     Assembly, Builder, EdgeKey, EdgeSpec, FaceSpec, UseSpec, VertexKey, VertexSpec,
@@ -57,6 +71,7 @@ use arris_check::arris_topo::builder::{
 use arris_check::arris_topo::entity::{BodyKind, EdgeGeometry};
 use arris_check::arris_topo::provenance::{FileEntity, Role};
 use arris_check::arris_topo::{Body, CurveId, Model, Orientation, Provenance, Shape, SurfaceId};
+use arris_check::domain::bands;
 use arris_check::{Level, check};
 
 use super::Refusal;
@@ -446,11 +461,15 @@ impl Geometry<'_> {
             points.iter().map(|&p| Aabb::of_point(p)).chain(boxes),
             tolerance,
         );
+        let cap = (READ_GAP_FRACTION * 2.0 * part.radius)
+            .min(precision.max_tolerance)
+            .max(tolerance);
 
         let mut surfaces: BTreeMap<u64, (Surface, SurfaceId)> = BTreeMap::new();
         // The edges the file left out, and the face each is rebuilt on.
         let mut rebuilt: Vec<Rebuilt> = Vec::new();
         let mut rebuilt_faces: Vec<u64> = Vec::new();
+        let mut gaps = Gaps::new(points.len());
         let mut shells = Vec::with_capacity(file.shells.len());
         for shell in &file.shells {
             let mut faces = Vec::with_capacity(shell.faces.len());
@@ -477,8 +496,9 @@ impl Geometry<'_> {
                     singular: &singular,
                     points: &points,
                     band: PCURVE_SINGULAR_BAND * tol.linear,
-                    tolerance,
+                    cap,
                     parametric: precision.parametric_tolerance,
+                    fit: tolerance,
                     flipped,
                 };
                 // A VERTEX_LOOP is joined to the face's one other bound by
@@ -514,12 +534,10 @@ impl Geometry<'_> {
                         let pcurve = match pcurves.get(&s.edge) {
                             Some(p) => p.clone(),
                             None => {
-                                let p = pcurve_on(&edge.geometry, edge.range, &surface, tol)
-                                    .map_err(|e| Refusal::Pcurve {
-                                        edge: file.edges[s.edge].id,
-                                        face: face.id,
-                                        what: e.to_string(),
-                                    })?;
+                                let id = file.edges[s.edge].id;
+                                let p =
+                                    fitted(&edge.geometry, edge.range, &surface, precision, cap)
+                                        .map_err(|fault| fault.refusal(id, face.id, cap))?;
                                 pcurves.insert(s.edge, p.clone());
                                 p
                             }
@@ -552,13 +570,26 @@ impl Geometry<'_> {
                         }
                         None => None,
                     };
-                    let uses = at
-                        .walk(uses, &mut rebuilt)
-                        .map_err(|vertex| Refusal::OpenLoop {
+                    let mut uses = at.walk(uses, &mut rebuilt).map_err(|jump| match jump {
+                        Jump::Open(vertex) => Refusal::OpenLoop {
                             face: face.id,
                             bound: bound.id,
                             vertex: file.vertices[vertex],
-                        })?;
+                        },
+                        Jump::Gap(vertex, gap) => Refusal::Gap {
+                            entity: file.vertices[vertex],
+                            gap,
+                            cap,
+                        },
+                    })?;
+                    at.meet(&mut uses).map_err(|(edge, e)| Refusal::Pcurve {
+                        edge: match edge {
+                            EdgeRef::File(i) => file.edges[i].id,
+                            EdgeRef::Rebuilt(_) => face.id,
+                        },
+                        face: face.id,
+                        what: e.to_string(),
+                    })?;
                     if let (Some(i), Some((vertex_bound, _))) = (seam, joined) {
                         if seam_crosses(&uses, i, surface.period(), precision.check_samples) {
                             return Err(Refusal::Unsupported {
@@ -572,6 +603,9 @@ impl Geometry<'_> {
                 }
                 place_loops(&mut loops, surface.period());
                 rebuilt_faces.resize(rebuilt.len(), face.id);
+                for uses in &loops {
+                    gaps.measure_uses(&surface, uses, &points, &edges, &rebuilt, model, precision);
+                }
                 let loops = loops
                     .into_iter()
                     .map(|uses| {
@@ -601,28 +635,42 @@ impl Geometry<'_> {
             shells.push(faces);
         }
 
+        gaps.measure_edges(&points, &edges, &rebuilt, model);
+        let (vertex_tolerances, edge_tolerances) = gaps
+            .tolerances(&edges, &rebuilt, tolerance, cap)
+            .map_err(|(entity, gap)| Refusal::Gap {
+                entity: match entity {
+                    Entity::Vertex(v) => file.vertices[v],
+                    Entity::Edge(k) if k < file.edges.len() => file.edges[k].id,
+                    Entity::Edge(k) => rebuilt_faces[k - file.edges.len()],
+                },
+                gap,
+                cap,
+            })?;
         let assembly = Assembly {
-            vertices: points
-                .iter()
-                .map(|&point| VertexSpec::New { point, tolerance })
+            vertices: (points.iter().zip(&vertex_tolerances))
+                .map(|(&point, &tolerance)| VertexSpec::New { point, tolerance })
                 .collect(),
             edges: edges
                 .iter()
-                .map(|e| EdgeSpec::New {
-                    geometry: EdgeGeometry::Curve {
-                        curve: e.curve,
-                        range: e.range,
-                    },
-                    start: VertexKey::New(e.start),
-                    end: VertexKey::New(e.end),
+                .map(|e| {
+                    (
+                        EdgeGeometry::Curve {
+                            curve: e.curve,
+                            range: e.range,
+                        },
+                        e.start,
+                        e.end,
+                    )
+                })
+                .chain(rebuilt.iter().map(|r| (r.geometry, r.start, r.end)))
+                .zip(&edge_tolerances)
+                .map(|((geometry, start, end), &tolerance)| EdgeSpec::New {
+                    geometry,
+                    start: VertexKey::New(start),
+                    end: VertexKey::New(end),
                     tolerance,
                 })
-                .chain(rebuilt.iter().map(|r| EdgeSpec::New {
-                    geometry: r.geometry,
-                    start: VertexKey::New(r.start),
-                    end: VertexKey::New(r.end),
-                    tolerance,
-                }))
                 .collect(),
             shells,
         };
@@ -868,11 +916,14 @@ struct Junctions<'a> {
     /// judged to be there.
     band: f64,
     /// How far the image of a jump in (u, v) may stray from its vertex
-    /// before the loop is open there.
-    tolerance: f64,
+    /// before the loop is open there: the gap cap.
+    cap: f64,
     /// The model's parametric tolerance: two values along a singular row
     /// nearer than it are one.
     parametric: f64,
+    /// The tolerance a pcurve ended on a junction is fitted to, where it
+    /// has to be fitted first.
+    fit: f64,
     /// The face's effective normal is its surface's turned, so a walk in
     /// effective order keeps the face on its right in (u, v).
     flipped: bool,
@@ -903,7 +954,7 @@ impl Junctions<'_> {
     /// at a singular point, where there is one, so it closes where it
     /// needs no move. Errors: the index of the vertex where the walk
     /// jumps in (u, v) and not along a singular row.
-    fn walk(&self, mut uses: Vec<Use>, rebuilt: &mut Vec<Rebuilt>) -> Result<Vec<Use>, usize> {
+    fn walk(&self, mut uses: Vec<Use>, rebuilt: &mut Vec<Rebuilt>) -> Result<Vec<Use>, Jump> {
         if let Some(first) = (uses.iter()).position(|u| self.singular_at(u.vertices[0]).is_none()) {
             uses.rotate_left(first);
         }
@@ -939,7 +990,7 @@ impl Junctions<'_> {
         next: &Use,
         movable: bool,
         rebuilt: &mut Vec<Rebuilt>,
-    ) -> Result<(Vec2, Option<Use>), usize> {
+    ) -> Result<(Vec2, Option<Use>), Jump> {
         let period = self.surface.period();
         let vertex = prev.vertices[1];
         let (_, end) = prev.ends();
@@ -948,7 +999,11 @@ impl Junctions<'_> {
         let Some(row) = self.singular_at(vertex) else {
             let by = whole_periods(-d, period);
             if self.jumps(end, d + by) {
-                return Err(vertex);
+                let gap = self.gap(end, d + by);
+                if gap > self.cap {
+                    return Err(Jump::Gap(vertex, gap));
+                }
+                return Err(Jump::Open(vertex));
             }
             return Ok((if movable { by } else { Vec2::zeros() }, None));
         };
@@ -957,7 +1012,7 @@ impl Junctions<'_> {
             .iter()
             .map(|m| m[fixed] - row.value)
             .find(|&x| x != 0.0)
-            .ok_or(vertex)?
+            .ok_or(Jump::Open(vertex))?
             .signum();
         let sense = self.sense(free, side);
         // Where the two uses meet the row at one value of it, the walk
@@ -983,16 +1038,17 @@ impl Junctions<'_> {
             None => sense * d[free],
         };
         if !movable && by != Vec2::zeros() {
-            return Err(vertex);
+            return Err(Jump::Open(vertex));
         }
         if run == 0.0 {
             return Ok((by, None));
         }
         let along = d + by;
         if run < 0.0 || sense * along[free] <= 0.0 {
-            return Err(vertex);
+            return Err(Jump::Open(vertex));
         }
-        Ok((by, Some(self.degenerate(vertex, end, along, rebuilt)?)))
+        let degenerate = self.degenerate(vertex, end, along, rebuilt);
+        Ok((by, Some(degenerate.map_err(Jump::Open)?)))
     }
 
     /// `true` when the walk turns from `prev` into `next` towards the
@@ -1031,6 +1087,25 @@ impl Junctions<'_> {
         })
     }
 
+    /// The vertex's own (u, v) on the surface: its point's projection,
+    /// in the translate nearest `near`. `None` where it does not project.
+    fn own_uv(&self, vertex: usize, near: Point2) -> Option<Point2> {
+        let p = *self.points.get(vertex)?;
+        let uv = self.surface.project(p).ok()?.uv;
+        Some(uv + whole_periods(near - uv, self.surface.period()))
+    }
+
+    /// How far apart in 3D the two ends of the step `gap` from `at` in
+    /// (u, v) are.
+    fn gap(&self, at: Point2, gap: Vec2) -> f64 {
+        let to = at + gap;
+        let (a, b) = (
+            self.surface.point(at.x, at.y),
+            self.surface.point(to.x, to.y),
+        );
+        (a - b).norm()
+    }
+
     /// `true` when the step `gap` from `at` in (u, v) is a jump: the
     /// surface half way along it is farther than the tolerance from where
     /// it starts, so two edges that meet in 3D do not meet on the face.
@@ -1043,8 +1118,336 @@ impl Junctions<'_> {
             self.surface.point(at.x, at.y),
             self.surface.point(mid.x, mid.y),
         );
-        (a - b).norm() > self.tolerance || (a - b).norm().is_nan()
+        (a - b).norm() > self.cap || (a - b).norm().is_nan()
     }
+
+    /// The loop's pcurves ended on one point at every junction where they
+    /// end apart in (u, v) by more than the band L2 holds a junction to —
+    /// two curves ending apart in 3D on a vertex; a file whose pcurves
+    /// meet within it is read as it is: the seam's end where one of the two is a
+    /// seam of the loop, whose two uses must stay a period apart (E7),
+    /// else the vertex's own (u, v) — its point's projection — as a boolean
+    /// ends a section edge on its vertex, or half way where it does not
+    /// project. Each use moved keeps its image within the move of
+    /// where it was ([`pcurve_ending_on`]); the gap it opens is measured
+    /// afterwards with the rest. Errors: the edge whose pcurve could not
+    /// be ended, and why.
+    fn meet(&self, uses: &mut [Use]) -> Result<(), (EdgeRef, GeomError)> {
+        let n = uses.len();
+        let seam = |u: &Use| match u.edge {
+            EdgeRef::File(i) => {
+                (uses.iter())
+                    .filter(|w| matches!(w.edge, EdgeRef::File(j) if j == i))
+                    .count()
+                    > 1
+            }
+            EdgeRef::Rebuilt(_) => false,
+        };
+        let period = self.surface.period();
+        // Per use, where its start and end (in the walk's direction) go.
+        let mut moves: Vec<[Option<Point2>; 2]> = vec![[None; 2]; n];
+        for i in 0..n {
+            let j = (i + 1) % n;
+            let (prev, next) = (&uses[i], &uses[j]);
+            let (_, end) = prev.ends();
+            let (start, _) = next.ends();
+            let d = start - end;
+            let wrap = whole_periods(-d, period);
+            let gap = d + wrap;
+            let band = bands(self.surface, end, self.parametric);
+            if gap.x.abs() <= band[0] && gap.y.abs() <= band[1] {
+                continue;
+            }
+            let (ends_prev, ends_next) = match (seam(prev), seam(next)) {
+                (true, true) => continue,
+                (true, false) => (None, Some(end - wrap)),
+                (false, true) => (Some(start + wrap), None),
+                (false, false) => {
+                    let at = self
+                        .own_uv(prev.vertices[1], end)
+                        .unwrap_or(end + 0.5 * gap);
+                    (Some(at), Some(at - wrap))
+                }
+            };
+            if ends_prev.is_some() {
+                moves[i][1] = ends_prev;
+            }
+            if ends_next.is_some() {
+                moves[j][0] = ends_next;
+            }
+        }
+        for (u, [start, end]) in uses.iter_mut().zip(moves) {
+            if start.is_none() && end.is_none() {
+                continue;
+            }
+            let ends = match u.orientation {
+                Orientation::Forward => [start, end],
+                Orientation::Reversed => [end, start],
+            };
+            u.pcurve = pcurve_ending_on(&u.pcurve, u.range, ends, self.surface, self.fit)
+                .map_err(|e| (u.edge, e))?;
+        }
+        Ok(())
+    }
+}
+
+/// How much the tolerance a pcurve is fitted to grows each time its
+/// curve is found farther from the surface than it, or, once it has been,
+/// its fit misses: from the model's default to the cap in a handful of
+/// fits. A search step, not a tolerance — the pcurve's own deviation is
+/// measured afterwards and is what its edge carries.
+const GAP_GROWTH: f64 = 2.0;
+
+/// Why an edge has no pcurve on a face.
+enum PcurveFault {
+    /// The curve is farther from the surface than the cap: the distance,
+    /// or the tolerance a fit would need.
+    Gap(f64),
+    /// What [`pcurve_on`] refuses at a tolerance the gap does not explain.
+    Geom(GeomError),
+}
+
+impl PcurveFault {
+    fn refusal(self, edge: u64, face: u64, cap: f64) -> Refusal {
+        match self {
+            PcurveFault::Gap(gap) => Refusal::Gap {
+                entity: edge,
+                gap,
+                cap,
+            },
+            PcurveFault::Geom(e) => Refusal::Pcurve {
+                edge,
+                face,
+                what: e.to_string(),
+            },
+        }
+    }
+}
+
+/// The pcurve of `curve` over `range` on `surface`, fitted at the model's
+/// default tolerance, or — where the curve lies farther from the surface
+/// than that — at the gap it lies at, grown by [`GAP_GROWTH`] up to the
+/// cap.
+fn fitted(
+    curve: &Curve,
+    range: Interval,
+    surface: &Surface,
+    precision: Precision,
+    cap: f64,
+) -> Result<Curve2, PcurveFault> {
+    let mut linear = precision.default_tolerance;
+    let mut off = false;
+    loop {
+        let tol = Tolerance::new(linear, precision.angular_tolerance);
+        let needed = match pcurve_on(curve, range, surface, tol) {
+            Ok(p) => return Ok(p),
+            Err(GeomError::NotOnSurface { distance, .. }) => {
+                off = true;
+                if distance > cap {
+                    return Err(PcurveFault::Gap(distance));
+                }
+                GAP_GROWTH * linear.max(distance)
+            }
+            Err(GeomError::Fit(_)) if off => GAP_GROWTH * linear,
+            Err(e) => return Err(PcurveFault::Geom(e)),
+        };
+        if linear >= cap {
+            return Err(PcurveFault::Gap(needed));
+        }
+        linear = needed.min(cap);
+    }
+}
+
+/// A vertex or an edge of the solid, by its index: an edge past the
+/// file's is one the reader rebuilt.
+#[derive(Clone, Copy)]
+enum Entity {
+    Vertex(usize),
+    Edge(usize),
+}
+
+/// The gaps measured on the solid's vertices and edges, which their
+/// tolerances are set from (ADR-0025 §4).
+struct Gaps {
+    vertex: Vec<f64>,
+    /// By edge index: the file's edges, then the rebuilt ones.
+    edge: Vec<f64>,
+}
+
+/// `n` parameters over `range`, both ends included — the checker's own
+/// samples, so a gap is measured where the checker will look.
+fn samples(range: Interval, n: usize) -> Vec<f64> {
+    if n <= 1 {
+        return vec![range.midpoint()];
+    }
+    (0..n)
+        .map(|i| range.lerp(i as f64 / (n - 1) as f64))
+        .collect()
+}
+
+/// A distance between `a` and `b`, raised by the rounding at their own
+/// scale: what keeps an entity within its tolerance when the body is
+/// moved, which rounds every point it compares.
+fn distance(a: Point3, b: Point3) -> f64 {
+    (a - b).norm() + RELATIVE_ROUNDING * a.coords.norm().max(b.coords.norm())
+}
+
+impl Gaps {
+    fn new(vertices: usize) -> Gaps {
+        Gaps {
+            vertex: vec![0.0; vertices],
+            edge: Vec::new(),
+        }
+    }
+
+    fn raise_vertex(&mut self, v: usize, gap: f64) {
+        if let Some(g) = self.vertex.get_mut(v) {
+            *g = g.max(gap);
+        }
+    }
+
+    fn raise_edge(&mut self, k: usize, gap: f64) {
+        if self.edge.len() <= k {
+            self.edge.resize(k + 1, 0.0);
+        }
+        self.edge[k] = self.edge[k].max(gap);
+    }
+
+    /// The gaps one loop's uses leave on the face's surface: each use's
+    /// pcurve image from its curve at the checker's samples (E4), from
+    /// its vertices at its ends (V3), and a degenerate use's image's span
+    /// (E6).
+    #[allow(clippy::too_many_arguments)]
+    fn measure_uses(
+        &mut self,
+        surface: &Surface,
+        uses: &[Use],
+        points: &[Point3],
+        edges: &[Edge],
+        rebuilt: &[Rebuilt],
+        model: &Model,
+        precision: Precision,
+    ) {
+        for u in uses {
+            let (key, curve) = match u.edge {
+                EdgeRef::File(i) => (i, edges.get(i).map(|e| &e.geometry)),
+                EdgeRef::Rebuilt(i) => (
+                    edges.len() + i,
+                    match rebuilt.get(i).map(|r| r.geometry) {
+                        Some(EdgeGeometry::Curve { curve, .. }) => model.curve(curve).ok(),
+                        _ => None,
+                    },
+                ),
+            };
+            let image = |t: f64| {
+                let q = u.pcurve.point(t);
+                surface.point(q.x, q.y)
+            };
+            let [first, last] = match u.orientation {
+                Orientation::Forward => u.vertices,
+                Orientation::Reversed => [u.vertices[1], u.vertices[0]],
+            };
+            for (v, t) in [(first, u.range.lo()), (last, u.range.hi())] {
+                if let Some(&p) = points.get(v) {
+                    self.raise_vertex(v, distance(image(t), p));
+                }
+            }
+            let ts = samples(u.range, precision.check_samples);
+            match curve {
+                Some(c) => {
+                    let worst = (ts.iter())
+                        .map(|&t| distance(image(t), c.point(t)))
+                        .fold(0.0, f64::max);
+                    self.raise_edge(key, worst);
+                }
+                None => {
+                    let images: Vec<Point3> = ts.iter().map(|&t| image(t)).collect();
+                    let mut extent: f64 = 0.0;
+                    for (i, &p) in images.iter().enumerate() {
+                        for &q in &images[i + 1..] {
+                            extent = extent.max(distance(p, q));
+                        }
+                    }
+                    self.raise_vertex(first, extent);
+                }
+            }
+        }
+    }
+
+    /// The gaps each edge curve leaves at its ends: from its vertices
+    /// (V2), and, on a closed edge, from itself (E2).
+    fn measure_edges(
+        &mut self,
+        points: &[Point3],
+        edges: &[Edge],
+        rebuilt: &[Rebuilt],
+        model: &Model,
+    ) {
+        let curves = (edges.iter())
+            .map(|e| (Some(&e.geometry), e.range, e.start, e.end))
+            .chain(rebuilt.iter().map(|r| match r.geometry {
+                EdgeGeometry::Curve { curve, range } => {
+                    (model.curve(curve).ok(), range, r.start, r.end)
+                }
+                EdgeGeometry::Degenerate { range } => (None, range, r.start, r.end),
+            }));
+        for (k, (curve, range, start, end)) in curves.enumerate() {
+            let Some(c) = curve else { continue };
+            let (a, b) = (c.point(range.lo()), c.point(range.hi()));
+            for (v, at) in [(start, a), (end, b)] {
+                if let Some(&p) = points.get(v) {
+                    self.raise_vertex(v, distance(at, p));
+                }
+            }
+            if start == end {
+                self.raise_edge(k, distance(a, b));
+            }
+        }
+    }
+
+    /// The vertices' and edges' tolerances: each its gap floored at
+    /// `floor`, each vertex raised to the edges it bounds. Errors: the
+    /// first edge, then the first vertex, whose gap is past `cap`, with
+    /// the gap.
+    fn tolerances(
+        &self,
+        edges: &[Edge],
+        rebuilt: &[Rebuilt],
+        floor: f64,
+        cap: f64,
+    ) -> Result<(Vec<f64>, Vec<f64>), (Entity, f64)> {
+        let ends: Vec<(usize, usize)> = (edges.iter().map(|e| (e.start, e.end)))
+            .chain(rebuilt.iter().map(|r| (r.start, r.end)))
+            .collect();
+        let gap = |k: usize| self.edge.get(k).copied().unwrap_or(0.0);
+        if let Some(k) = (0..ends.len()).find(|&k| gap(k) > cap) {
+            return Err((Entity::Edge(k), gap(k)));
+        }
+        if let Some(v) = (0..self.vertex.len()).find(|&v| self.vertex[v] > cap) {
+            return Err((Entity::Vertex(v), self.vertex[v]));
+        }
+        let edge: Vec<f64> = (0..ends.len()).map(|k| floor.max(gap(k))).collect();
+        let mut vertex: Vec<f64> = self.vertex.iter().map(|&g| floor.max(g)).collect();
+        for (&(start, end), &t) in ends.iter().zip(&edge) {
+            for v in [start, end] {
+                if let Some(x) = vertex.get_mut(v) {
+                    *x = x.max(t);
+                }
+            }
+        }
+        Ok((vertex, edge))
+    }
+}
+
+/// Why a loop's walk in (u, v) breaks at a junction, naming the vertex
+/// there.
+enum Jump {
+    /// The two uses meet in 3D but not on the face, and not along a
+    /// singular row: [`Refusal::OpenLoop`].
+    Open(usize),
+    /// The two uses end farther apart in 3D than the cap:
+    /// [`Refusal::Gap`], with the distance.
+    Gap(usize, f64),
 }
 
 /// The seam from a vertex of a face's bound to the singular point a

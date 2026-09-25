@@ -250,3 +250,31 @@ files that are wrong.
   A file's fault would return an invalid `Ok` body in release.
 - **Reading the file's pcurves.** They are optional, approximate or absent,
   so a second path would be needed anyway, and the two would disagree.
+
+## Amendment (2026-09-26, plan `step-reader` step 12)
+
+- **The floor is `default_tolerance`, not `min_tolerance`.** §4 said the
+  values are "floored at the model's minimum tolerance". Every algorithm
+  of the kernel works at `default_tolerance` — the pcurves the reader
+  rebuilds are fitted to it, a boolean's sections and a checker's S5
+  band are sized by the faces' tolerances — so an entity read with a
+  measured gap of `1e-15` would claim more than any fit on it delivers,
+  and a later operation would be asked to hold it. The default is what a
+  primitive gets, Open CASCADE's `Precision::Confusion`, below which the
+  oracle merges points too. A face takes the default; an edge and a
+  vertex take their gap where it is above it.
+- **A gap past the cap found by the loop's walk is a gap, not an open
+  loop.** Two uses whose ends are farther apart in 3D than the cap are
+  `Refusal::Gap` naming the vertex; `OpenLoop` is kept for uses that meet
+  in 3D but not on the face, off a singular row. A seam line moved off
+  its vertices is the first, where step 11 reported the second.
+- **Pcurves ending apart are ended on one point.** Two exact pcurves of
+  curves ending a tolerance apart meet in (u, v) no closer than the
+  curves do, which L2 refuses past its band. The reader ends them where a
+  boolean ends a section edge: on the seam's end when one of the two is a
+  seam (whose uses must stay a period apart), else on the vertex's own
+  (u, v). The move is measured into the edge's tolerance. The boolean's
+  helper moved to `arris-geom` as `pcurve_ending_on` so both use one.
+- **The cap's constant** is `arris_math::READ_GAP_FRACTION`, `1e-4` of the
+  diameter of the ball holding the part's vertices and edges, at most
+  `max_tolerance`; its comment carries the evidence.
