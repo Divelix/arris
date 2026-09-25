@@ -260,7 +260,7 @@ after, because it is routine.
   forks, 298 million inputs, no crash. `arris-io` without its `serde`
   feature, as the fuzz crate takes it, left `Arena::push_slot` dead;
   it is gated on the feature now.
-- [ ] Step 8 **[2]** — Units and the representation context.
+- [x] Step 8 **[2]** — Units and the representation context.
   - The length unit comes from `SI_UNIT` with its prefix, or from a
     `CONVERSION_BASED_UNIT` (inch, foot), and converts to
     `ReadOptions::length_unit`.
@@ -275,6 +275,14 @@ after, because it is routine.
   Test: hand-written one-block files in millimetres, metres and inches,
   and a cone with its semi-angle in degrees, each read to the same
   geometry.
+
+  Done: `Refusal` and `RefusalKind` arrive here rather than at step 9,
+  with the two refusals units need (`NoLengthUnit`, `Malformed`); step 9
+  adds the geometry's. A unit is `mantissa · 10^exponent` of its SI base,
+  so a ratio is exact where it is representable (mm → mm is `1`, inch →
+  mm `25.4`). A context with no plane-angle unit is in radians. The
+  layers (`step/reader/`) are `allow(dead_code)` outside tests until
+  step 10's `read` reaches them, which lifts it.
 - [ ] Step 9 **[2]** — The geometry mapping. Every curve and surface of
   ADR-0025 §1 maps to its variant, through step 2's forms where it is not
   analytic. That covers:

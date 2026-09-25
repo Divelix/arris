@@ -59,6 +59,9 @@
 //!   §Pcurves). The native format is the lossless one.
 
 pub mod part21;
+mod reader;
+
+pub use reader::{LengthUnit, ReadOptions, Refusal, RefusalKind};
 
 use core::fmt::Write as _;
 use std::collections::{BTreeMap, BTreeSet};
