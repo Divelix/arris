@@ -483,8 +483,10 @@ night found a fourth, two planes a hair from parallel meeting in a line
 with a NaN origin. A night takes about 2 h 30 min, its longest property
 job 2 h 23 min. A red night is a finding to triage, not a gate; CI's
 fixed seed is the gate (ADR-0024, amendment of 2026-09-25).
-The STEP reader's fuzz target lands with the Part 21 parser's plan, on
-this crate and seeded from the STEP files the corpus writes.
+A fourth, `step_read`, runs the Part 21 parser on the STEP file of
+every solid fixture: its first minutes found a page directive that
+swallowed a line break, and its first hour after the fix, on 24 cores,
+ran 298 million inputs with no crash.
 
 **The first-party binding.** Code-first and agent-driven modelling is one
 of the consumers `SEED.md` §1 names, and a binding in this repository is

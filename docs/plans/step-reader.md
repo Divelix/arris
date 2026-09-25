@@ -248,11 +248,18 @@ after, because it is routine.
   - a unit test per production;
   - every STEP file the corpus writes parses;
   - a hand-written file per error, each naming its line.
-- [ ] Step 7 **[1]** — The fuzz target `fuzz/fuzz_targets/step_read.rs`,
+- [x] Step 7 **[1]** — The fuzz target `fuzz/fuzz_targets/step_read.rs`,
   calling `part21::parse` for now. It is seeded by `fuzz/seed.rs` from
   every STEP file the corpus writes. The nightly job runs it for 30
   minutes. Proof: one local hour without a crash, or each crash fixed with
   a test that fails without the fix.
+
+  Done: a crash in the first three minutes — `\P` then a line break
+  was taken as a page directive, so the break went uncounted — fixed
+  with a unit test that fails without the fix; then one hour on 24
+  forks, 298 million inputs, no crash. `arris-io` without its `serde`
+  feature, as the fuzz crate takes it, left `Arena::push_slot` dead;
+  it is gated on the feature now.
 - [ ] Step 8 **[2]** — Units and the representation context.
   - The length unit comes from `SI_UNIT` with its prefix, or from a
     `CONVERSION_BASED_UNIT` (inch, foot), and converts to

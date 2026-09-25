@@ -552,8 +552,14 @@ impl<'a> Parser<'a> {
                         let c = c.ok_or_else(|| bad(self, "`\\S\\` without a character"))?;
                         out.push(char::from(c + 0x80));
                         self.pos += 4;
-                    } else if rest.len() >= 4 && rest[1] == b'P' && rest[3] == b'\\' {
-                        // A page directive: the page is not kept.
+                    } else if rest.len() >= 4
+                        && rest[1] == b'P'
+                        && rest[2].is_ascii_uppercase()
+                        && rest[3] == b'\\'
+                    {
+                        // A page directive, `\PA\` to `\PI\`: the page is
+                        // not kept. Its letter is checked, so a line break
+                        // is never skipped as one.
                         self.pos += 4;
                     } else if rest.starts_with(b"\\X2\\") || rest.starts_with(b"\\X4\\") {
                         let width = if rest[2] == b'2' { 4 } else { 8 };
@@ -998,6 +1004,11 @@ mod tests {
     #[test]
     fn a_bad_directive_or_an_open_string_names_where_it_starts() {
         let e = error_of(&file("#1=A('abc\\X2\\00E);"));
+        assert!(matches!(e.kind, Part21ErrorKind::Malformed(_)), "{e}");
+        assert_eq!((e.line, e.column, e.instance), (8, 6, Some(1)));
+        // A page directive's letter is a letter, never a line break the
+        // line count would miss (the fuzz target's first finding).
+        let e = error_of(&file("#1=A('\\P\n\\',x);"));
         assert!(matches!(e.kind, Part21ErrorKind::Malformed(_)), "{e}");
         assert_eq!((e.line, e.column, e.instance), (8, 6, Some(1)));
         let e = error_of(&file("#1=A('abc);\n#2=B();"));

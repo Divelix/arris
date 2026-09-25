@@ -1277,8 +1277,8 @@ B-Rep).
 - **The fuzz targets** (`fuzz/`, ADR-0024 §5): a crate outside the
   workspace (`exclude = ["fuzz"]`), unpublished, on nightly under
   `cargo fuzz` with `libfuzzer-sys` and `arbitrary`, none of them
-  workspace dependencies. There are three targets: `intersect_surfaces`,
-  `intersect_curve_surface` and `intersect_curves`. Each decodes analytic
+  workspace dependencies. There are four targets. `intersect_surfaces`,
+  `intersect_curve_surface` and `intersect_curves` each decode analytic
   operands in a pose from bytes, including NURBS curves given by their
   control points and the fitted curves of a section of two decoded
   surfaces. A number is folded into its range, so a mutation still
@@ -1286,8 +1286,12 @@ B-Rep).
   every `tests/fixtures/geom/` pair as a seed. Each target asserts no
   panic, every hit on both operands within the tolerance (a surface
   pair's curves inside the region asked for), and the same answer twice.
-  They run without ASan (`-s none`), which finds nothing in
-  `forbid(unsafe_code)` crates and costs twentyfold. `fuzz/show.rs`
+  `step_read` runs the Part 21 parser on any text, seeded from the STEP
+  file of every solid fixture's result, and asserts no panic, the same
+  answer twice and an error placed inside the text; it moves to
+  `step::read` once the reader exists. They run without ASan
+  (`-s none`), which finds nothing in `forbid(unsafe_code)` crates and
+  costs twentyfold. `fuzz/show.rs`
   decodes a crash.
 - **`nightly.yml`** (ADR-0024 §3), on a schedule and on
   `workflow_dispatch`, with `ARRIS_ORACLE_CACHE=off` throughout. Its

@@ -55,6 +55,7 @@ dependencies = [
  "arbitrary",
  "arris-debug",
  "arris-geom",
+ "arris-io",
  "arris-math",
  "libfuzzer-sys",
 ]

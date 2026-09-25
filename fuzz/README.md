@@ -1,6 +1,6 @@
-# Fuzz targets over the intersectors
+# Fuzz targets over the intersectors and the STEP reader
 
-ADR-0024 §5. The crate sits outside the workspace (`exclude = ["fuzz"]`).
+ADR-0024 §5, ADR-0025. The crate sits outside the workspace (`exclude = ["fuzz"]`).
 It builds on the nightly toolchain under `cargo fuzz` and is never
 published. Setup, once:
 
@@ -14,13 +14,14 @@ cargo install cargo-fuzz --locked
 | `intersect_surfaces` | two analytic surfaces in any pose, in a cube about the origin | no panic; every curve and point of the answer on both surfaces within the tolerance; the same answer twice |
 | `intersect_curve_surface` | a line, a conic, a NURBS curve or a fitted section, against an analytic surface | no panic; every hit on both; a bounded `Coincident` curve on the surface all along; the same answer twice |
 | `intersect_curves` | two of those curves | no panic; every hit on both; a bounded `Coincident` curve on the other where its projection is exact; the same answer twice |
+| `step_read` | any text, bytes that are not UTF-8 replaced | no panic in `step::part21::parse`; the same answer twice; an error's line and column inside the text. It moves to `step::read` once the reader exists (plans/step-reader step 17) |
 
-The byte layout, the folding of a number into its range and what makes an
+The intersector targets' byte layout, the folding of a number into its range and what makes an
 input skipped rather than a finding are documented in `src/lib.rs`. The
 tolerance is the kernel's default.
 
 ```sh
-cargo run --manifest-path fuzz/Cargo.toml --example seed    # the seed corpus, from tests/fixtures/geom/
+cargo run --manifest-path fuzz/Cargo.toml --example seed    # the seed corpus: tests/fixtures/geom/ pairs, every solid fixture's STEP
 cd fuzz
 cargo +nightly fuzz run -s none intersect_surfaces -- -max_total_time=60
 cargo run --example show -- intersect_surfaces artifacts/intersect_surfaces/crash-…
@@ -30,6 +31,9 @@ The targets run with `-s none`, without AddressSanitizer. The kernel
 crates are `forbid(unsafe_code)`, so ASan has nothing of theirs to find,
 and it costs about twentyfold in executions per second. Debug assertions
 stay on.
+
+A `step_read` input is a text file already: a crash is read as it is,
+and shrunk to a parser unit test in `crates/arris-io/src/step/part21.rs`.
 
 `show` prints what an input decodes to and what the intersector answers.
 It is the first look at a crash before the crash is shrunk

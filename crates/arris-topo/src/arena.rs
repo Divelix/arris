@@ -208,6 +208,7 @@ impl<T: Clone> Arena<T> {
     /// Appends a slot as it was stored — its generation and, for a live
     /// slot, its value — so a model read back from the native format has
     /// the same slots, freed ones included, and mints the same next id.
+    #[cfg(feature = "serde")]
     pub(crate) fn push_slot(&mut self, generation: u32, value: Option<T>) -> u32 {
         let index = u32::try_from(self.len).expect("the arena holds at most u32::MAX slots");
         if self.len % CHUNK_SIZE == 0 {

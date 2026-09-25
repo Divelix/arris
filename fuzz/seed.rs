@@ -18,9 +18,11 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use arris_debug::fixtures::geom::{build_curve, build_surface, load};
-use arris_debug::fixtures::{Kind, corpus, kind_of, name_of};
+use arris_debug::corpus::chain;
+use arris_debug::fixtures::{self, Kind, corpus, kind_of, name_of};
 use arris_fuzz::{Encoder, tolerance};
 use arris_geom::intersect_surfaces;
+use arris_io::step;
 use arris_math::Aabb;
 
 const HALF_EXTENT: f64 = 100.0;
@@ -35,13 +37,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let surfaces_dir = root.join("intersect_surfaces");
     let curve_surface_dir = root.join("intersect_curve_surface");
     let curves_dir = root.join("intersect_curves");
+    let step_dir = root.join("step_read");
     let within = Aabb {
         min: [-HALF_EXTENT; 3],
         max: [HALF_EXTENT; 3],
     };
     let mut counts = BTreeMap::<&str, usize>::new();
     for dir in corpus() {
-        if kind_of(&dir)? != Kind::Geometry {
+        if kind_of(&dir)? == Kind::Solid {
+            // A result Arris refuses by design, or one still failing
+            // under `regression/`, has no file to seed from.
+            let slug = name_of(&dir).replace('/', "-");
+            for variant in fixtures::load(&dir)?.expected.results.keys() {
+                let Ok(built) = chain(&dir, variant) else {
+                    continue;
+                };
+                let Some(body) = built.result() else {
+                    continue;
+                };
+                let Ok(text) = step::write(&built.model, &[body]) else {
+                    continue;
+                };
+                write(&step_dir, &format!("{slug}-{variant}.step"), text.into_bytes())?;
+                *counts.entry("step_read").or_default() += 1;
+            }
             continue;
         }
         let fixture = load(&dir)?;

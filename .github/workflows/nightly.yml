@@ -161,21 +161,22 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
-  # The fuzz targets over the intersectors (ADR-0024 §5), on the nightly
-  # toolchain outside the workspace: each target for thirty minutes on the
-  # runner's four cores, from the corpus the earlier nights grew — kept in
-  # the Actions cache, minimised before it is saved — and the seeds from
-  # every geometry fixture's pairs. A crash (a panic, a hit off an operand,
-  # two answers to one input) fails the job, and its input is uploaded for
-  # `fuzz/show.rs` and `cargo fuzz tmin`. Its depth comes from the nights
-  # adding up, as the property tier's does.
+  # The fuzz targets over the intersectors (ADR-0024 §5) and the STEP
+  # reader (ADR-0025), on the nightly toolchain outside the workspace:
+  # each target for thirty minutes on the runner's four cores, from the
+  # corpus the earlier nights grew — kept in the Actions cache, minimised
+  # before it is saved — and the seeds from every geometry fixture's
+  # pairs and every solid fixture's STEP file. A crash (a panic, a hit off
+  # an operand, two answers to one input) fails the job, and its input is
+  # uploaded for `fuzz/show.rs` and `cargo fuzz tmin`. Its depth comes
+  # from the nights adding up, as the property tier's does.
   fuzz:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
-        target: [intersect_surfaces, intersect_curve_surface, intersect_curves]
+        target: [intersect_surfaces, intersect_curve_surface, intersect_curves, step_read]
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@nightly
@@ -188,7 +189,8 @@ jobs:
           path: fuzz/corpus/${{ matrix.target }}
           key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
           restore-keys: fuzz-corpus-${{ matrix.target }}-
-      - run: cargo run --manifest-path fuzz/Cargo.toml --example seed
+      # In release: the STEP seeds build every solid fixture.
+      - run: cargo run --release --manifest-path fuzz/Cargo.toml --example seed
       - run: cargo fuzz build -s none ${{ matrix.target }}
         working-directory: fuzz
       - run: cargo fuzz run -s none ${{ matrix.target }} -- -max_total_time=1800 -fork=4
