@@ -408,7 +408,10 @@ cycle after C3 because nothing can be measured until it exists, so this
 choice rests on no numbers. An accepted ADR that cites `C4` means the
 NURBS cycle, read through ADR-0020's table, not this one.*
 
-**Status: opened 2026-09-24.**
+**Status: opened 2026-09-24. Two plans (ADR-0025): `step-reader` builds
+the reader and the refusal type the histogram counts, then
+`real-part-corpus` builds the corpus, the battery of operations run on
+every part read, and the histogram.**
 
 - A Part 21 parser: the exchange structure, references, the schema
   header, string and number encodings, and a typed error carrying the
@@ -440,7 +443,8 @@ writer does not write today.
 **Accept:** write → read round trip as a property, over the corpus's
 shapes in random poses, to the entities' own tolerances; Open CASCADE's
 STEP of every corpus fixture read back to the same counts, volume, area
-and centroid the fixture asserts; a public corpus of real parts read
+and centroid the fixture asserts, `step_differs` fixtures skipped
+(ADR-0023); a public corpus of real parts read
 either to checker-green — mass properties within the fixture's tolerance
 of the oracle's — or to a typed refusal, with no panic and no wrong
 solid; and the refusal histogram over that corpus printed.

@@ -35,3 +35,4 @@ here; the first ADR is the first decision taken *after* the seed.
 | [0022](0022-the-same-within-a-tolerance-is-an-equivalence.md) | The same within a tolerance is an equivalence, decided once per level: points by closure, fits held to the branch, curves by their surfaces, the pinch refused | accepted |
 | [0023](0023-the-oracle-round-trip-is-held-to-the-shape-own-tolerance.md) | The oracle's own STEP round trip is held to the shape's own tolerance, and a fixture may declare it lossy (`step_differs`) | accepted |
 | [0024](0024-the-measuring-harness.md) | The measuring harness: a cached oracle, a differential over recipes, three property tiers, an in-house timer and fuzzing outside the workspace | accepted |
+| [0025](0025-the-step-reader-converts-refuses-and-flattens.md) | The STEP reader: what it converts, what it refuses by name, and what it flattens | accepted |
