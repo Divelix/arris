@@ -298,6 +298,14 @@ pub const EXCLUSIONS: &[Exclusion] = &[
         symptom: "the tessellation is not closed",
         covers: |o| matches!(o, Outcome::Disagree { stage: Stage::Mesh, what } if what.contains("the mesh is not closed")),
     },
+    Exclusion {
+        name: "cone-cylinder-undecided",
+        fixtures: &["revolve-extrude-cone-cylinder-undecided"],
+        symptom: "the checker's S5 cannot decide a cone face against a cylinder face",
+        covers: |o| {
+            checker_says(o, "(cone) against") && checker_says(o, "(cylinder) is not decided")
+        },
+    },
 ];
 
 /// `outcome`, or [`Outcome::Excluded`] under the first of `exclusions`

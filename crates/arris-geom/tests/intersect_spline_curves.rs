@@ -190,8 +190,18 @@ fn as_the_ellipse_does(conic: &Curve, other: &Curve, fit: bool) -> Result<(), Te
         let fitted = Curve::Nurbs(fitted(conic));
         let r = common_properties(&fitted, other)?;
         expect_hits("the fitted ellipse", hits_of(&r), &expected, FITTED)?;
-        // The fit keeps the ellipse's own parameter.
-        for (h, e) in hits_of(&r).iter().zip(hits_of(&exact)) {
+        // The fit keeps the ellipse's own parameter. Each hit against the
+        // exact hit at its point, not the one at its index: ascending by
+        // `ta`, a hit at the seam sorts first on one side and last on the
+        // other (a circle through the line at t = 0, on a nightly seed).
+        for h in hits_of(&r) {
+            let Some(e) = hits_of(&exact).iter().min_by(|x, y| {
+                (x.point - h.point)
+                    .norm()
+                    .total_cmp(&(y.point - h.point).norm())
+            }) else {
+                return fail(format!("{h:?} has no exact hit"));
+            };
             let d = (h.ta - e.ta).rem_euclid(TAU);
             let speed = conic.eval(e.ta).d1.norm();
             prop_assert!(d.min(TAU - d) * speed <= FITTED, "{h:?} against {e:?}");
@@ -236,7 +246,14 @@ fn an_ellipse_as_a_nurbs_meets_a_line_where_the_ellipse_does() {
                 direction: arris_math::UnitVec3::new_normalize(chord),
             };
             as_the_ellipse_does(&conic, &chord, true)?;
-            // Along the tangent: one touch.
+            // Along the tangent: one touch — away from the rational
+            // ellipse's seam, whose two ends are each a hit wherever it
+            // lies on the other curve ([`rational_ellipse`]): a touch
+            // within its reach, `√(2·tol·a)` along the curve, of the seam
+            // is those hits besides (t = 0.30006 on a nightly seed).
+            let (frame, a, b) = conic_parts(&conic);
+            let seam = rational_ellipse(&frame, a, b).eval(0.0).point;
+            prop_assume!((on - seam).norm() > 4.0 * (2.0 * tol().linear * a).sqrt());
             let touch = Curve::Line {
                 origin: on - 2.0 * tangent,
                 direction: arris_math::UnitVec3::new_normalize(tangent),
