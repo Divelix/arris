@@ -11,7 +11,9 @@ intersections of named analytic surfaces and curves, for
                    "<name>": {"type": "elliptic_cylinder", "origin", "z", "x", "major_radius", "minor_radius"},
                    "<name>": {"type": "cone",     "origin", "z", "x", "radius", "half_angle_deg"},
                    "<name>": {"type": "sphere",   "origin", "z", "x", "radius"},
-                   "<name>": {"type": "torus",    "origin", "z", "x", "major_radius", "minor_radius"}},
+                   "<name>": {"type": "torus",    "origin", "z", "x", "major_radius", "minor_radius"},
+                   "<name>": {"type": "nurbs",    "degree": [p, q], "knots": [[...], [...]],
+                              "control_points": [[[x, y, z], ...], ...], "weights": [[w, ...], ...]}},
       "curves":   {"<name>": {"type": "line",     "origin", "direction"},
                    "<name>": {"type": "circle",   "origin", "z", "x", "radius"},
                    "<name>": {"type": "ellipse",  "origin", "z", "x", "major_radius", "minor_radius"},
@@ -54,6 +56,13 @@ goes through `GeomAPI_IntCS` below, which has no `coincident`: it reports
 a conic lying on one of those two as a cloud of hundreds of points, so a
 fixture asks it only where the two cross or touch.
 
+A `nurbs` surface is a `Geom_BSplineSurface` of the recipe's degrees and
+knots (flat, as a curve's: each written as often as it repeats),
+control net (a row per control point of `u`) and weights, so both
+parameters are the recipe's. It is evaluated at parameters and points are
+projected onto it, by `GeomAPI_ProjectPointOnSurf`, whose lowest distance
+is the nearest point; it is not paired.
+
 A `nurbs` curve is a `Geom_BSplineCurve` of the recipe's degree, knots
 (flat: each written as often as it repeats), Cartesian control points and
 weights, so its parameter is the recipe's. Against a surface it goes
@@ -79,6 +88,7 @@ from typing import Any
 
 from OCP.Geom import (
     Geom_BSplineCurve,
+    Geom_BSplineSurface,
     Geom_Circle,
     Geom_ConicalSurface,
     Geom_CylindricalSurface,
@@ -92,7 +102,7 @@ from OCP.Geom import (
     Geom_SurfaceOfLinearExtrusion,
     Geom_ToroidalSurface,
 )
-from OCP.collections import Array1_double, Array1_gp_Pnt, Array1_int
+from OCP.collections import Array1_double, Array1_gp_Pnt, Array1_int, Array2_double, Array2_gp_Pnt
 from OCP.GeomAPI import (
     GeomAPI_ExtremaCurveCurve,
     GeomAPI_IntCS,
@@ -107,7 +117,7 @@ from OCP.Precision import Precision
 from . import OracleError
 from .recipe import number, resolve_params, vector
 
-SURFACE_TYPES = ("plane", "cylinder", "elliptic_cylinder", "cone", "sphere", "torus")
+SURFACE_TYPES = ("plane", "cylinder", "elliptic_cylinder", "cone", "sphere", "torus", "nurbs")
 CURVE_TYPES = ("line", "circle", "ellipse", "nurbs")
 
 # How far either side of its origin a line is searched for its extrema
@@ -177,6 +187,8 @@ def _positive(spec: dict, key: str, params: dict[str, float], what: str) -> floa
 def build_surface(name: str, spec: dict, params: dict[str, float]):
     """The `Geom_Surface` of a surface spec."""
     kind = spec.get("type")
+    if kind == "nurbs":
+        return _bspline_surface(name, spec, params)
     ax = _ax3(spec, params, name)
     if kind == "plane":
         return Geom_Plane(ax)
@@ -261,6 +273,51 @@ def _bspline(name: str, spec: dict, params: dict[str, float]):
         knots.SetValue(i + 1, k)
         mults.SetValue(i + 1, m)
     return Geom_BSplineCurve(poles, wts, knots, mults, degree)
+
+
+def _fold_knots(flat: list[float]) -> tuple[list[float], list[int]]:
+    """Flat knots as distinct values and multiplicities."""
+    values: list[float] = []
+    counts: list[int] = []
+    for k in flat:
+        if values and values[-1] == k:
+            counts[-1] += 1
+        else:
+            values.append(k)
+            counts.append(1)
+    return values, counts
+
+
+def _bspline_surface(name: str, spec: dict, params: dict[str, float]):
+    """The `Geom_BSplineSurface` of a `nurbs` surface spec."""
+    degree = spec["degree"]
+    net = [[vector(p, params) for p in row] for row in spec["control_points"]]
+    wts = [[number(w, params) for w in row] for row in spec["weights"]]
+    flats = [[number(k, params) for k in ks] for ks in spec["knots"]]
+    if not (isinstance(degree, list) and len(degree) == 2 and all(isinstance(d, int) and d >= 1 for d in degree)):
+        raise OracleError(f"{name}: degree must be two positive integers")
+    n, m = len(net), len(net[0]) if net else 0
+    if any(len(row) != m for row in net) or [len(r) for r in wts] != [m] * n:
+        raise OracleError(f"{name}: the control net and the weights must both be {n} x {m}")
+    if [len(k) for k in flats] != [n + degree[0] + 1, m + degree[1] + 1]:
+        raise OracleError(f"{name}: {len(flats[0])} and {len(flats[1])} knots for a {n} x {m} net of degrees {degree}")
+    if any(b < a for ks in flats for a, b in zip(ks, ks[1:])) or any(not w > 0.0 for row in wts for w in row):
+        raise OracleError(f"{name}: knots must not decrease and weights must be positive")
+    poles = Array2_gp_Pnt(1, n, 1, m)
+    weights = Array2_double(1, n, 1, m)
+    for i in range(n):
+        for j in range(m):
+            poles.SetValue(i + 1, j + 1, _pnt(net[i][j]))
+            weights.SetValue(i + 1, j + 1, wts[i][j])
+    folded = [_fold_knots(ks) for ks in flats]
+    arrays = []
+    for values, counts in folded:
+        k, c = Array1_double(1, len(values)), Array1_int(1, len(values))
+        for i, (v, mult) in enumerate(zip(values, counts)):
+            k.SetValue(i + 1, v)
+            c.SetValue(i + 1, mult)
+        arrays.append((k, c))
+    return Geom_BSplineSurface(poles, weights, arrays[0][0], arrays[1][0], arrays[0][1], arrays[1][1], degree[0], degree[1])
 
 
 def _xyz(p) -> list[float]:

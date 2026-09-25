@@ -69,6 +69,10 @@ pub enum AmbiguousLocus {
     /// on an elliptic cylinder, the strip that segment sweeps along the
     /// axis: two points, mirror images across the axis, are equally near.
     MajorAxis,
+    /// The medial axis of a NURBS surface: two or more *distinct* points
+    /// of it are as near as each other to rounding, so no parameter is
+    /// the nearest without a guess.
+    MedialAxis,
 }
 
 impl fmt::Display for AmbiguousLocus {
@@ -79,6 +83,7 @@ impl fmt::Display for AmbiguousLocus {
             AmbiguousLocus::CentreCircle => "the centre circle",
             AmbiguousLocus::ApexPlane => "the plane through the apex",
             AmbiguousLocus::MajorAxis => "the major axis inside the evolute",
+            AmbiguousLocus::MedialAxis => "the surface's medial axis",
         })
     }
 }

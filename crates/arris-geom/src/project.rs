@@ -65,8 +65,10 @@ impl Surface {
     /// point on a sphere's axis off its centre
     /// projects to the pole, whose `u` is `0` by convention: the point is
     /// unique, only the degenerate parameter is not.
-    /// [`GeomError::Unsupported`] for a NURBS surface, which has no closed
-    /// form (cycle 1 does not project onto one).
+    /// A NURBS surface has no closed form: it is projected by
+    /// [`crate::NurbsSurface::project`], the global nearest over its
+    /// Bézier patches, ambiguous with [`AmbiguousLocus::MedialAxis`] where
+    /// two distinct points of it are as near as each other.
     ///
     /// ```
     /// use arris_geom::Surface;
@@ -82,10 +84,20 @@ impl Surface {
     /// ```
     pub fn project(&self, p: Point3) -> Result<SurfaceProjection, GeomError> {
         let Some(frame) = self.frame() else {
-            return Err(GeomError::Unsupported {
-                a: GeomKind::Point,
-                b: GeomKind::Surface(self.kind()),
-            });
+            return match self {
+                Surface::Nurbs(s) => s.project(p),
+                // An analytic surface has a frame and did not get here;
+                // the arm keeps the match exhaustive without a wildcard.
+                Surface::Plane { .. }
+                | Surface::Cylinder { .. }
+                | Surface::EllipticCylinder { .. }
+                | Surface::Cone { .. }
+                | Surface::Sphere { .. }
+                | Surface::Torus { .. } => Err(GeomError::Unsupported {
+                    a: GeomKind::Point,
+                    b: GeomKind::Surface(self.kind()),
+                }),
+            };
         };
         let q = frame.to_local(p);
         let noise = local_noise_scale(frame, p);

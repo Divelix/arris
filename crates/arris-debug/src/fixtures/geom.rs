@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use arris_geom::profile::{Profile, ProfileLoop, ProfileSegment};
-use arris_geom::{Curve, GeomError, NurbsCurve, Surface};
+use arris_geom::{Curve, GeomError, NurbsCurve, NurbsSurface, Surface};
 use arris_math::{Frame, FrameError, Point2, Point3, Precision, UnitVec3, Vec2, Vec3};
 use serde::{Deserialize, Serialize};
 
@@ -96,6 +96,21 @@ pub enum SurfaceSpec {
         major_radius: Num,
         /// `r`.
         minor_radius: Num,
+    },
+    /// [`Surface::Nurbs`], as [`NurbsSurface::new`] takes it: the oracle's
+    /// `Geom_BSplineSurface` over the same knots, each written as often as
+    /// it repeats, so the two share both parameters. It is evaluated and
+    /// projected onto, never paired.
+    Nurbs {
+        /// `[p, q]`.
+        degree: [usize; 2],
+        /// The knots of `u` and of `v`.
+        knots: [Vec<Num>; 2],
+        /// The control net, Cartesian: one row per control point of `u`,
+        /// each with a point per control point of `v`.
+        control_points: Vec<Vec<[Num; 3]>>,
+        /// The weights, in the net's shape.
+        weights: Vec<Vec<Num>>,
     },
 }
 
@@ -455,6 +470,41 @@ pub fn build_surface(
             major_radius: num(name, major_radius, params)?,
             minor_radius: num(name, minor_radius, params)?,
         },
+        SurfaceSpec::Nurbs {
+            degree,
+            knots,
+            control_points,
+            weights,
+        } => {
+            let geometry = |source| BuildError::Geometry {
+                name: name.to_string(),
+                source,
+            };
+            let numbers = |of: &[Num]| {
+                of.iter()
+                    .map(|n| num(name, n, params))
+                    .collect::<Result<Vec<f64>, _>>()
+            };
+            let mut points = Vec::new();
+            for row in control_points {
+                for p in row {
+                    points.push(Point3::from(vec3(name, p, params)?));
+                }
+            }
+            let mut flat_weights = Vec::new();
+            for row in weights {
+                flat_weights.extend(numbers(row)?);
+            }
+            Surface::Nurbs(
+                NurbsSurface::new(
+                    *degree,
+                    [numbers(&knots[0])?, numbers(&knots[1])?],
+                    points,
+                    flat_weights,
+                )
+                .map_err(geometry)?,
+            )
+        }
     })
 }
 

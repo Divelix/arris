@@ -626,8 +626,8 @@ fn turn_diff(a: f64, b: f64, c: &Curve) -> f64 {
 fn every_geometry_fixture_matches_the_oracle() {
     let fixtures = geometry_fixtures();
     assert!(
-        fixtures.len() >= 10,
-        "expected geom/analytic-eval, geom/c1-intersections, geom/c2-cylinder-pairs, geom/c2-quadric-pairs, geom/c3-cylinder-pairs, geom/c3-quadric-pairs, geom/c3-torus-pairs, geom/c3-conic-hits, geom/c3-nurbs-hits and geom/c3-nurbs-crossings"
+        fixtures.len() >= 11,
+        "expected geom/analytic-eval, geom/c1-intersections, geom/c2-cylinder-pairs, geom/c2-quadric-pairs, geom/c3-cylinder-pairs, geom/c3-quadric-pairs, geom/c3-torus-pairs, geom/c3-conic-hits, geom/c3-nurbs-hits, geom/c3-nurbs-crossings and geom/c4-nurbs-projections"
     );
     let mut errors = Vec::new();
     for f in &fixtures {

@@ -15,8 +15,10 @@ with it, in that pose) and
 has no exact section of, and coplanar conic pairs with an ellipse among
 them, in that pose),
 `c3-nurbs-hits` (NURBS curves against every analytic surface the grammar
-has, in that pose) and `c3-nurbs-crossings` (the same curves against
-lines, circles and ellipses, in that pose). Plain Python, no Open CASCADE: the coordinates
+has, in that pose), `c3-nurbs-crossings` (the same curves against
+lines, circles and ellipses, in that pose) and `c4-nurbs-projections`
+(points projected onto free-form NURBS surfaces with no closed form, in
+that pose). Plain Python, no Open CASCADE: the coordinates
 are the closed forms of `docs/DATA-MODEL.md` §Geometry written out in
 world space at full precision, so both sides read identical numbers.
 Rerun after editing, then `tools/oracle/expected.py` on each directory.
@@ -1027,6 +1029,86 @@ def c3_nurbs_crossings():
     }
 
 
+# --- c4-nurbs-projections ------------------------------------------------------------
+
+
+def c4_nurbs_projections():
+    """Free-form surfaces, none with a twin in the analytic kinds, and the
+    points the nearest of which is asked: a saddle whose two directions
+    curve opposite ways; a rational bump of several spans in both
+    directions; and a surface folded back on itself, so that a line
+    through the fold meets it three times and a point in the pocket has
+    a local minimum on each layer. Each is projected from a point near
+    it, off its edge, above and below, and in the fold; the parameters
+    are the oracle's (`Geom_BSplineSurface` over the same knots)."""
+    f = POSES["tilt"]
+
+    def net(rows):
+        return [[f.to_world(p) for p in row] for row in rows]
+
+    # A bicubic Bezier patch on a 4 x 4 grid, z = (x^2 - y^2) / 4 at the
+    # nodes: control values, not the surface's own, so it is free-form.
+    grid = [-3.0, -1.0, 1.0, 3.0]
+    saddle = {
+        "type": "nurbs",
+        "degree": [3, 3],
+        "knots": [[0.0] * 4 + [1.0] * 4, [0.0] * 4 + [1.0] * 4],
+        "control_points": net([[[x, y, (x * x - y * y) / 4.0] for y in grid] for x in grid]),
+        "weights": [[1.0] * 4 for _ in grid],
+    }
+    # A rational surface of degrees (2, 3): a hill whose centre control
+    # point is pulled hard, over two spans in u and two in v.
+    xs = [-3.0, -1.0, 1.0, 3.0]
+    ys = [-3.0, -1.5, 0.0, 1.5, 3.0]
+    height = [[0.2, 0.4, 0.5, 0.4, 0.2], [0.5, 1.6, 2.4, 1.6, 0.5], [0.5, 1.6, 2.4, 1.6, 0.5], [0.2, 0.4, 0.5, 0.4, 0.2]]
+    pull = [[1.0, 1.0, 1.0, 1.0, 1.0], [1.0, 1.4, 2.5, 1.4, 1.0], [1.0, 1.4, 2.5, 1.4, 1.0], [1.0, 1.0, 1.0, 1.0, 1.0]]
+    bump = {
+        "type": "nurbs",
+        "degree": [2, 3],
+        "knots": [[0.0] * 3 + [1.0] + [2.0] * 3, [0.0] * 4 + [1.0] + [2.0] * 4],
+        "control_points": net([[[x, y, height[i][j]] for j, y in enumerate(ys)] for i, x in enumerate(xs)]),
+        "weights": pull,
+    }
+    # A cubic profile in (x, z) that goes right, back and right again — a
+    # Z — swept along y by a quadratic that bulges in the middle.
+    profile = [[-4.0, 0.0], [-1.0, 1.0], [3.0, 2.0], [-3.0, 3.0], [1.0, 4.0], [4.0, 5.0]]
+    across = [(-3.0, 0.0), (0.0, 1.5), (3.0, 0.0)]
+    fold = {
+        "type": "nurbs",
+        "degree": [3, 2],
+        "knots": [[0.0] * 4 + [1.0, 2.0] + [3.0] * 4, [0.0] * 3 + [1.0] * 3],
+        "control_points": net([[[x, y, z + bulge] for y, bulge in across] for x, z in profile]),
+        "weights": [[1.0] * 3 for _ in profile],
+    }
+    surfaces = {"saddle": saddle, "bump": bump, "fold": fold}
+    at = lambda points: [f.to_world(p) for p in points]
+    samples = [
+        {
+            "of": "saddle",
+            "params": [[0.0, 0.0], [0.5, 0.5], [0.9, 0.2], [1.0, 1.0]],
+            "points": at([[0.0, 0.0, 1.2], [1.5, -1.0, 2.0], [5.0, 0.0, 0.5], [0.3, 0.2, 0.05]]),
+        },
+        {
+            "of": "bump",
+            "params": [[0.0, 0.0], [0.7, 1.3], [1.5, 0.4], [2.0, 2.0]],
+            "points": at([[0.4, 0.3, 3.0], [2.6, 1.1, 0.7], [-1.0, 2.0, 1.0], [-0.9, -0.6, 2.61], [0.3, 0.2, 40.0]]),
+        },
+        {
+            "of": "fold",
+            "params": [[0.0, 0.0], [1.0, 0.5], [1.7, 0.25], [3.0, 1.0]],
+            "points": at([[0.7, 0.4, 2.2], [-2.0, 0.5, 4.1], [2.2, -1.0, 1.5], [0.0, 2.9, 3.0], [-0.6, -0.4, 1.9]]),
+        },
+    ]
+    return {
+        "kind": "geometry",
+        "description": "Points projected onto free-form NURBS surfaces with no analytic twin, in the tilt pose (ADR-0025 §1, plan step-reader step 3): a bicubic saddle, a rational bump of degrees (2, 3) over two spans each way, and a cubic-by-quadratic surface folded back on itself so a point in the pocket has a local minimum on each layer — each evaluated and projected from points near it, one off an edge, one far above and one inside the fold, held to GeomAPI_ProjectPointOnSurf's lowest distance. No query sits on a mirror plane of a symmetric surface, where two points tie and Arris reports the tie rather than choosing (tests/nurbs_project.rs), and none has its nearest point on a boundary that Open CASCADE's projection misses: it stopped short of the true minimum, by up to 2.4e-4 in distance, for a point off the saddle's edge, off the bump's corner and off the fold's edge, so those are held to a grid there instead; written by generate.py",
+        "surfaces": surfaces,
+        "curves": {},
+        "samples": samples,
+        "pairs": [],
+    }
+
+
 def write(name, recipe):
     directory = HERE / name
     directory.mkdir(exist_ok=True)
@@ -1045,3 +1127,4 @@ if __name__ == "__main__":
     write("c3-conic-hits", c3_conic_hits())
     write("c3-nurbs-hits", c3_nurbs_hits())
     write("c3-nurbs-crossings", c3_nurbs_crossings())
+    write("c4-nurbs-projections", c4_nurbs_projections())

@@ -504,13 +504,11 @@ fn every_cycle_one_query_on_a_nurbs_is_unsupported_by_name() {
         let line_on_plane = intersect_curve_surface(&line, &p, tol).unwrap();
         let has_points = matches!(line_on_plane, CurveSurfaceIntersection::Points(_));
         prop_assert!(has_points, "{line_on_plane:?}");
-        prop_assert_eq!(
-            surface.project(Point3::origin()).unwrap_err(),
-            GeomError::Unsupported {
-                a: GeomKind::Point,
-                b: GeomKind::Surface(SurfaceKind::Nurbs),
-            }
-        );
+        // A projection is a search since ADR-0025: answered, or a tie
+        // named, never `Unsupported`.
+        let projected = surface.project(Point3::origin());
+        let answered = matches!(projected, Ok(_) | Err(GeomError::Ambiguous { .. }));
+        prop_assert!(answered, "{projected:?}");
         // The NURBS surface's domain and period come through the enum.
         let [du, dv] = surface.domain();
         prop_assert!(du.is_bounded() && dv.is_bounded());

@@ -125,6 +125,12 @@ A fuzz target over the parser and the reader runs each night.
   - `Surface::project` onto `Nurbs` (step 3) and `pcurve_on` onto `Nurbs`
     (step 4). Both are `GeomError::Unsupported` today, by cycle-1 design.
     Data-model §Surfaces and §Pcurves change where they say so.
+  - `NurbsSurface::project`, which `Surface::project` calls, and
+    `AmbiguousLocus::MedialAxis` (step 3): a new variant of a public,
+    exhaustive enum, so a breaking change, named in the commit. It is the
+    locus of a tie between distinct points of a NURBS surface. The tie is
+    decided to rounding like every other locus, not by a tolerance:
+    `project` takes none.
 - **A closed NURBS curve that is not periodic**, met by a surface at its
   closure, is one hit (step 5). Data-model §Curves says it is two today.
 - **`arris-math`: the named constant for the gap cap** (step 12),
@@ -135,8 +141,9 @@ A fuzz target over the parser and the reader runs each night.
     cached under ADR-0024's key.
   - `expected.py` records the converted shape's counts beside the
     original's, because conversion can add seams (step 15).
-  - The geometry fixture kind gains a `nurbs` surface type and a
-    `project` query run through `GeomAPI_ProjectPointOnSurf` (step 3).
+  - The geometry fixture kind gains a `nurbs` surface type
+    (`SurfaceSpec::Nurbs` in `arris-debug`, unpublished) and its `samples`
+    project onto it through `GeomAPI_ProjectPointOnSurf` (step 3).
 - **The corpus runner gains a read-back stage**
   (`corpus::read_back_stage`, steps 14 and 15). `step_differs` fixtures
   skip it (ADR-0023). A fixture that fails it is a stage failure like any
@@ -175,7 +182,7 @@ after, because it is routine.
   evaluates onto its analytic twin within rounding at every sampled
   (u, v). A full-turn revolution closes on itself, and a sphere's twin
   collapses its pole rows to one point.
-- [ ] Step 3 **[3]** — `Surface::project` onto a NURBS surface. It finds
+- [x] Step 3 **[3]** — `Surface::project` onto a NURBS surface. It finds
   the global nearest point, not a local one: Bézier patches are bounded by
   their control hulls and pruned against the best distance found so far,
   and each surviving candidate is refined by Newton. Two candidates that

@@ -131,6 +131,26 @@ never resolved by a silent choice of parameter. A point on a sphere's axis
 off its centre projects to the pole with `u = 0`: the point is unique,
 only the degenerate parameter is not. An elliptic cylinder projects
 through its section's quartic (`Curve::project`'s), `v` being the height.
+A **`Nurbs`** projects by search, not by closed form (ADR-0025 §1;
+`NurbsSurface::project`), and the search is *global*: the surface is cut
+into its Bézier patches, each bounded from below by its control hull
+(the larger of the distance to the hull's box and two support bounds), and
+a best-first search halves the patches whose bound is within the best
+distance found and hands each small survivor to a projected Newton
+iteration confined to its knot span, so a minimum on a kink between spans
+is a minimum of each. What comes out is every local minimum as near as the
+nearest to rounding, and two *distinct* points among them are
+`GeomError::Ambiguous` at `AmbiguousLocus::MedialAxis` — the surface's
+medial axis, the analogue of a quadric's axis — as is a query with more
+patches as near as the best one than the search's budget allows (a
+continuum: a sphere's centre). Two parameters that name one point are
+reported as the lower: a point on the seam of a closed direction at the
+start of its knots, one on a collapsed row (a pole) at the row's own `v`
+with `u` at the start of its knots, as the sphere's closed form does, and
+a periodic parameter inside its domain. A minimum is located to the square
+root of rounding in its parameters and to rounding in its distance. A
+parameter within the rounding of the point's coordinates of an end of the
+domain is that end.
 
 `Surface::chord_steps(chord, bounds)` gives the largest parameter steps
 `[hu, hv]` for which a triangle whose corners lie on the surface within
@@ -147,8 +167,7 @@ and a face's interior grid by.
 `SurfaceKind` is the fieldless twin of the enum, used in errors and
 dispatch tables. `Surface::frame()` is the placing frame of an analytic
 variant and `None` for `Nurbs`, which is placed by its control points;
-`project` onto a `Nurbs` is `GeomError::Unsupported` (there is
-no closed form, and no operation asks for it yet). `Surface::to_nurbs(bounds)`
+`project` onto a `Nurbs` is a search (below). `Surface::to_nurbs(bounds)`
 is the part of any analytic surface over a parameter rectangle as an exact
 `NurbsSurface` (§NURBS, exact forms). `Surface` and `Curve`
 are `Clone`, not `Copy`: the NURBS variants own their knots and control

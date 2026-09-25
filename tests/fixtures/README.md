@@ -293,7 +293,8 @@ oracle's sampled points on Arris's curves to 1e-9.
 | `line` | `origin`, `direction` |
 | `circle` | `origin`, `z`, `x`, `radius` |
 | `ellipse` | `origin`, `z`, `x` (the major axis), `major_radius`, `minor_radius` |
-| `nurbs` | `degree`, `knots` (flat: each as often as it repeats), `control_points` (Cartesian), `weights` |
+| `nurbs` (curve) | `degree`, `knots` (flat: each as often as it repeats), `control_points` (Cartesian), `weights` |
+| `nurbs` (surface) | `degree` (`[p, q]`), `knots` (`[u, v]`, flat), `control_points` (a row per control point of `u`, each row a point per control point of `v`, Cartesian), `weights` (the same shape). Evaluated and projected onto (`GeomAPI_ProjectPointOnSurf`); never paired |
 
 - A frame is `origin`, `z`, `x` as `Frame::new` and `gp_Ax3` build it: `x`
   made perpendicular to `z`, both normalised, `y = z × x`. Numbers may be
@@ -343,7 +344,16 @@ oracle's sampled points on Arris's curves to 1e-9.
   knot, each against a plane, a cylinder, a cone, a sphere and a torus)
   and `c3-nurbs-crossings` (the same three against lines, circles and
   ellipses: through them across their planes, a chord, a tangent and a
-  concentric circle in the ellipse's plane, a line beside them).
+  concentric circle in the ellipse's plane, a line beside them) and
+  `c4-nurbs-projections` (points projected onto three free-form NURBS
+  surfaces: a bicubic saddle, a rational bump of degrees (2, 3), and a
+  surface folded back on itself so a point in the pocket has a local
+  minimum on each layer). A point whose nearest point is not unique is
+  left out of it (Arris reports the tie, `tests/nurbs_project.rs`), and
+  so is one whose nearest point is on a boundary Open CASCADE's projection
+  stops short of: its distance was above the true minimum by up to 2.4e-4
+  off the saddle's edge, the bump's corner and the fold's edge, and those
+  are held to a grid instead.
   An oracle parabola or hyperbola, sampled at its own
   parameters in `[−2, 2]` a branch per curve, is held against Arris's
   exact rational quadratic NURBS. An `elliptic_cylinder` is the section
