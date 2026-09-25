@@ -121,6 +121,14 @@ impl<'a> Args<'a> {
         number(self.param(i)?).ok_or_else(|| self.wrong(i, "a number"))
     }
 
+    /// Parameter `i` as an integer.
+    pub(crate) fn integer(&self, i: usize) -> Result<i64, Refusal> {
+        match self.param(i)? {
+            Param::Integer(n) => Ok(*n),
+            _ => Err(self.wrong(i, "an integer")),
+        }
+    }
+
     /// Parameter `i` as a reference.
     pub(crate) fn reference(&self, i: usize) -> Result<u64, Refusal> {
         match self.param(i)? {
@@ -178,6 +186,17 @@ impl<'a> Args<'a> {
         self.list(i)?
             .iter()
             .map(|p| number(p).ok_or_else(|| self.wrong(i, "a list of numbers")))
+            .collect()
+    }
+
+    /// Parameter `i` as a list of integers.
+    pub(crate) fn integers(&self, i: usize) -> Result<Vec<i64>, Refusal> {
+        self.list(i)?
+            .iter()
+            .map(|p| match p {
+                Param::Integer(n) => Ok(*n),
+                _ => Err(self.wrong(i, "a list of integers")),
+            })
             .collect()
     }
 

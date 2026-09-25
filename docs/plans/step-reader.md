@@ -283,7 +283,7 @@ after, because it is routine.
   mm `25.4`). A context with no plane-angle unit is in radians. The
   layers (`step/reader/`) are `allow(dead_code)` outside tests until
   step 10's `read` reaches them, which lifts it.
-- [ ] Step 9 **[2]** — The geometry mapping. Every curve and surface of
+- [x] Step 9 **[2]** — The geometry mapping. Every curve and surface of
   ADR-0025 §1 maps to its variant, through step 2's forms where it is not
   analytic. That covers:
   - every B-spline subtype (`UNIFORM`, `QUASI_UNIFORM`, `BEZIER`,
@@ -299,6 +299,25 @@ after, because it is routine.
   - one hand-written instance per conversion, held pointwise to its
     source's definition;
   - one per refusal.
+
+  Done, with three findings step 10 builds on:
+  - **A normal's sense survives beside the variant.** A variant's
+    normal is fixed by its form (a cylinder's points out), the file's is
+    its parametrisation's `∂u × ∂v`, so every surface comes back with
+    `reversed`, and step 10 turns `same_sense` by it. A `TRIMMED_CURVE`
+    of sense `.F.` comes back as its basis `reversed`, which step 10
+    composes with `EDGE_CURVE`'s `same_sense`.
+  - **A turned line or circle that crosses its axis covers its plane or
+    sphere twice, with opposite normals.** The half the file means is
+    taken from a `TRIMMED_CURVE`'s parameters where it gives them (the
+    one place a trim is read, and where the angle unit reaches one),
+    else from where the curve starts.
+  - **Some exact forms are bounded only once the part is known**: a
+    parabola, a hyperbola, a surface swept from either, a line turned
+    skew to its axis. They resolve against a ball holding the part,
+    each parameter bounded in closed form. Step 10 builds the ball from
+    the solid's vertices and every edge curve's control hull, after the
+    unbounded edges have resolved against the vertices alone.
 - [ ] Step 10 **[3]** — One solid's topology. A `MANIFOLD_SOLID_BREP` or
   `BREP_WITH_VOIDS` becomes a `Builder::assemble` `Assembly`:
   - vertices from `VERTEX_POINT`;
