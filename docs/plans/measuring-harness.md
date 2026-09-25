@@ -221,7 +221,7 @@ bound has to be established here.
   machine busy for hours; nextest's per-test durations stand in for its
   per-binary column. Eight failures, in the order each property's first
   one hid the next — see *Found while executing*.
-- [ ] Step 7 **[1]** — **The nightly workflow** (`nightly.yml`, on a
+- [x] Step 7 **[1]** — **The nightly workflow** (`nightly.yml`, on a
   schedule and on `workflow_dispatch`).
   - Seed: `sha256(date)`, printed as `ARRIS_PROPTEST_SEED=…`.
   - Case count: the largest multiple of CI's that keeps each job under the
@@ -230,14 +230,27 @@ bound has to be established here.
   - Also run: the corpus's ignored tests, as in `ci.yml`; the differential
     at `ARRIS_DIFF_CASES=1000` on the same seed; and
     `ARRIS_ORACLE_CACHE=off` throughout.
-  - Proof: one `workflow_dispatch` run is green. The human pushes and
-    triggers it, and its duration goes in the roadmap line at retirement.
+  - Proof, amended at retirement with the human: one `workflow_dispatch`
+    run whose every job completes within its time limit, with every
+    property job, the differential and the benchmark green on its date
+    seed. A red night is not a gate but a finding, triaged the way any
+    finding is: a fix, or a fixture with a named exclusion and a backlog
+    line. The first proof, one run green end to end, asked a harness built
+    to find a new failure on each new seed to find none. Three runs found
+    2–5 findings each, and each was triaged within hours.
 
   *Landed, box open:* the workflow is committed at 5000 cases in six
   matrix jobs, estimated from step 6's timings at 2 h 20 min at most on a
   4-core runner; the six filtersets partition the suite's 1238 tests
-  exactly (`cargo nextest list`). The box is ticked by the human's green
-  `workflow_dispatch` run, which no local check stands in for.
+  exactly (`cargo nextest list`).
+
+  *Proven by run 36091499165* (seed `sha256("2026-09-25")`), 2 h 29 min
+  wall clock. All six property jobs are green, the longest 2 h 23 min;
+  the differential takes 29 min, the bench 1 min 21 s and each fuzz
+  target 26–40 min. `fuzz (intersect_surfaces)` is red on a new finding
+  (two cones on parallel axes, a section point 0.37 off one), which is a
+  backlog line. The two runs before it found the findings in commits
+  db3a0d0, 15449a4 and 363f852.
 - [x] Step 8 **[2]** — **Benchmarks.**
   - `arris_debug::bench`: a warm-up, a fixed iteration count, the median
     and median absolute deviation, and a JSON report. It is unit-tested on
@@ -343,9 +356,10 @@ Every check below has to pass:
   named exclusion, and every exclusion's regression fixture present.
 - A warm run of `cargo nextest run -p arris --test corpus` reports
   `oracle::spawns() == 0`. Its cold and warm wall clock are recorded.
-- One nightly workflow run is green end to end: the property tier at its
-  count on a date seed, the differential at 1000, the benchmarks and every
-  fuzz target.
+- One nightly workflow run completes every job, with the property tier at
+  its count on a date seed, the differential at 1000 and the benchmarks
+  green, and every fuzz target running its time; each red job's finding
+  triaged (step 7's amended proof).
 - `cargo bench -p arris --bench corpus -- --compare` runs against a saved
   report and prints a ratio for every case.
 - The corpus lint passes with the exclusion rule.
