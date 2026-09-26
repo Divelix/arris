@@ -215,3 +215,25 @@ listed in carries no meaning.
   accepted ADRs that may never be edited, and `Cn → 0.n.0` would then be
   wrong for every cycle after the renumber. Names cost one translation
   table, once.
+
+## Amendment (2026-09-26, closing C4)
+
+§2 ranks a consumer first only "while there is a consumer waiting on a
+swap". C4 closed with a second consumer on record: a plugin-based CAD
+seeded on Arris, whose asks (`docs/ideas/plugin-cad-consumer-asks.md`)
+are not regressions of a swap but API it cannot start without. Consumer
+roles, body bytes, cancellation and mirror block its first cycle, and
+STEP product structure its second. The histogram ranks the blend network
+first (17 of 38 parts), and that consumer is blocked on none of it.
+
+**A consumer blocked on missing API ranks first too, as a consumer
+waiting on a swap does.** The reason is §2's own: a blocked consumer is
+a concrete user, and the histogram is a population estimate. The same
+limits apply to both. The ranking covers only what blocks that
+consumer's next cycle, not everything it will ever want. The asks it
+ranks for later (the query and sweep cycles) are recorded as input and
+not applied. And the histogram keeps its weight for the cycle after.
+
+So C5 is the consumer's API (A1–A4 and A11 of that idea), and the blend
+network, first by the histogram, stays a named cycle next in line
+(§3: it takes its number when it opens).

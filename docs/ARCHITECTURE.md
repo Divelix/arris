@@ -1504,7 +1504,7 @@ B-Rep).
   no dump and no STEP round trip, and sorted into `Agree`, `BothRefuse`,
   `ArrisRefuses` counted per refusal name (`differential::refusal`: a
   `Degenerate`'s or an `Unsupported`'s), `OracleRefuses`, and the four
-  that fail the run — `Disagree(stage)` (measurements held to the
+  that fail the run — `Disagree { stage }` (measurements held to the
   first-order bound of a boundary known to `t_arris + t_occ`, counts net
   of vertices that only split an edge), `CheckerViolation` (the checker
   at `Full`, an input it rejects, or the debug build's guard caught as a
@@ -1540,7 +1540,7 @@ B-Rep).
   owes (`entities_of`, `recorded_parts`, data-model §Provenance), and
   central differences against a curve's or surface's own analytic
   derivatives (`central_differences_curve`, `central_differences_surface`)
-  — now imported once by `ops`, `geom` and `mesh`'s tests instead of held
+  — now imported once by `ops`, `geom`, `mesh` and `io`'s tests instead of held
   per file).
 
 ## How a consumer's kernel facade maps on

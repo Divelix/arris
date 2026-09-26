@@ -7,6 +7,10 @@ ideas keep one line below with the reason, so the same idea is not
 re-brainstormed.
 
 - A typed lineage value (`Provenance::lineage(output)`, a tree down to `Role`s), if a second consumer asks for one rather than walking the record itself (ADR-0009 alternative)
+- Two tolerance fractions are named constants in `arris-geom` (`SECTION_FIT_FRACTION`, `PCURVE_SINGULAR_BAND`), where `.agents/rules/kernel.md` and DATA-MODEL §Tolerances ask for `arris-math`: move them, or let the rule name the crate whose algorithm owns the constant (C4 close drift review)
+- `region2` as public API over `Curve2`, with exact predicates, so a consumer's sketcher shades exactly the regions `extrude` accepts; weigh against the backlog's narrowing of `pub` internals (plugin-cad-consumer-asks A5)
+- Multi-tool `cut` and `fuse`: N tools in one general fuse, so a pattern of 100 holes is one decomposition rather than 100 chained booleans (plugin-cad-consumer-asks A8)
+- Per-face incremental tessellation: an edge's discretisation a pure function of the edge and the chord, and `tessellate_faces` over a subset, so a consumer caching meshes per kept face stays watertight (ADR-0010; plugin-cad-consumer-asks A9)
 - `cargo-semver-checks` in CI once the first non-placeholder version is published
 - A `no_std`-friendly `arris-math`, if an embedded or wasm consumer ever wants it
 - NURBS degree elevation as a primitive edit (data-model §NURBS names it; no C1 step needs it — knot insertion is enough for M1's fitting)

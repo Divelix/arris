@@ -20,8 +20,9 @@ operation contract are in [architecture](ARCHITECTURE.md).
   orthonormal `UnitVec3` and `z = x × y`, built only through validating
   constructors (`Frame::new(origin, z, x_hint)`, `Frame::from_z`, which
   picks `x` by the rule of Open CASCADE's `gp_Ax3(P, N)` so an axis-built
-  cylinder seams where the oracle's does, `Frame::from_rotation`). Both
-  scale a direction by its largest coordinate before normalising it, so
+  cylinder seams where the oracle's does, `Frame::from_rotation`, and
+  `Frame::from_orthonormal`, which the native format reads a frame back
+  through). The first two scale a direction by its largest coordinate before normalising it, so
   an axis given at `1e-154` is as unit as one given at `1`, and
   `Frame::new` refuses a hint that is along `z` to rounding, whose
   residue has no direction. Every
@@ -177,7 +178,7 @@ and a face's interior grid by.
 `SurfaceKind` is the fieldless twin of the enum, used in errors and
 dispatch tables. `Surface::frame()` is the placing frame of an analytic
 variant and `None` for `Nurbs`, which is placed by its control points;
-`project` onto a `Nurbs` is a search (below). `Surface::to_nurbs(bounds)`
+`project` onto a `Nurbs` is a search (above). `Surface::to_nurbs(bounds)`
 is the part of any analytic surface over a parameter rectangle as an exact
 `NurbsSurface` (§NURBS, exact forms). `Surface` and `Curve`
 are `Clone`, not `Copy`: the NURBS variants own their knots and control
@@ -924,7 +925,8 @@ segment, `gaps()` between consecutive pieces (L2), and
 `self_intersections()` / `intersections(&other)` over
 `segments_intersect`, exact through `orient2d` with touching counted
 (L5, S5). `Curve2::speed_bounds(range)` bounds `|du/dt|` and `|dv/dt|`
-over a range, exact for a line and a conic and sampled for a NURBS.
+over a range, exact for a line, the radius (the major radius) for a
+conic, and sampled for a NURBS.
 
 `region2::point_side(polygons, p, boundary_tolerance) -> Side::{Inside,
 Outside, Boundary}` is where a (u, v) point lies with respect to the
@@ -1626,7 +1628,7 @@ reference tree) mapped onto this representation.
 | S3 | A shell is connected through its edges | Fast |
 | S4 | A shell of a `Solid` is closed: no non-degenerate edge with one coedge (S2's exemption) | Fast |
 | S5 | The faces of a shell intersect only along their shared edges and vertices: their surfaces' intersection is empty, or every point of it that is interior to both faces is within the tolerance of an edge or vertex they share; two coincident surfaces must not carry faces whose interiors overlap. Surfaces meeting in isolated points (the points of a `Meets`: a touch, or a crossing through an apex) are held to the same rule point by point, and every curve is held to it whether it crosses or touches — a point inside both faces that is not within tolerance of a vertex both faces reach, or of an edge they share, is a violation; the vertex clause covers two cones closing on one apex, or a blend sphere touching a plane at the corner of its contact lines, which share a vertex but no edge. A pair whose boxes — each face's edges' curve boxes and its surface's box over its loops, grown by the tolerances — are apart shares no point and is decided without an intersector; every pair of analytic surfaces is decided in every pose, over its exact conics, over the curves a ruled pair's tracer fits in the overlap of the two faces' boxes (ADR-0018) — two blend cylinders on skew axes, a corner's sphere against a blend cylinder off its centre, two cylinders a boolean left meeting in a loop — or over the section a torus's tracer walks in its own parameter plane and fits whole, that overlap ignored (ADR-0019): a pin through the tube of a ring, a bend of pipe tangent to the straight one it runs into along a tube circle, a torus and a torus interlocked. What the intersector does not decide — a `Nurbs` in the pair, and the two tracers' refusals, poses of measure zero (`SectionFault`) — is **unchecked**: listed by `Report::unchecked`, never passed and never a violation | Full |
-| B1 | A `Solid` body has at least one shell, and its shells nest into lumps (ADR-0006): every shell enclosing positive volume is an outer shell and every one enclosing negative volume — its effective normals turned into the void — a void, a shell enclosing none being neither; no face of one shell meets a face of another, by S5's test with nothing shared; and, one shell lying inside another when a vertex of it does by the parity of a ray cast against the other's faces alone, each void's innermost container is an outer shell and each outer shell's is none or a void. `arris_check::lumps` returns the lumps this proves — each outer shell with the voids whose innermost container it is. A face pair of two shells S5's test leaves undecided — a `Nurbs` in the pair, a tracer's refusal — or a shell no ray could be classified against, is **unchecked**; every pair of analytic surfaces is decided as S5 decides it, a ruled pair's traced section over the overlap of the two faces' boxes and a torus's over the whole torus. A ray meets every analytic surface by closed form, and one whose hit lands at a cone's apex or a sphere's pole lands on that face's degenerate edge, a boundary, and is abandoned for the next direction — so a solid of plane, cylinder, cone, sphere and torus faces is decided in every pose (ADR-0008, ADR-0019) | Full |
+| B1 | A `Solid` body has at least one shell, and its shells nest into lumps (ADR-0006): every shell enclosing positive volume is an outer shell and every one enclosing negative volume — its effective normals turned into the void — a void, a shell enclosing none being neither; no face of one shell meets a face of another, by S5's test with nothing shared; and, one shell lying inside another when a vertex of it does by the parity of a ray cast against the other's faces alone, each void's innermost container is an outer shell and each outer shell's is none or a void. `arris_check::lumps` returns the lumps this proves — each outer shell with the voids whose innermost container it is. A face pair of two shells S5's test leaves undecided — a `Nurbs` in the pair, a tracer's refusal — or a shell no ray could be classified against, is **unchecked**; every pair of analytic surfaces is decided as S5 decides it, a ruled pair's traced section over the overlap of the two faces' boxes and a torus's over the whole torus. A ray meets every analytic surface by closed form, and one whose hit lands at a cone's apex or a sphere's pole lands on that face's degenerate edge, a boundary, and is abandoned for the next direction — so a solid of analytic faces — plane, circular or elliptic cylinder, cone, sphere and torus — is decided in every pose (ADR-0008, ADR-0019) | Full |
 | B2 | A `Solid` body encloses positive volume: `∬ p · (r_u × r_v) / 3` over each face's region in (u, v), summed with the sign of each face use. The value is reported with the violation | Full |
 | B3 | A `Wire` body has no shells; `free_edges` form chains (each vertex used by at most two free edges) — `General` bodies exempt | Fast |
 
@@ -1706,11 +1708,14 @@ pub struct Provenance {
   makes: the body from its `MANIFOLD_SOLID_BREP` or `BREP_WITH_VOIDS`,
   each shell from its `CLOSED_SHELL`, each face from its
   `ADVANCED_FACE`, each edge from its `EDGE_CURVE` and each vertex from
-  its `VERTEX_POINT`. An edge the reader rebuilds, which the file has
-  no entity for — a degenerate edge the writer left out, or the seam
-  joining a `VERTEX_LOOP` to its face's other bound — is `Generated`
-  from its face's entity, and an edge split at a seam from its
-  `EDGE_CURVE`.
+  its `VERTEX_POINT`. A vertex the reader makes is `Generated` from what
+  made it: one where an edge is split — at a pole, an apex or a seam's
+  end — from that edge's `EDGE_CURVE`, and the singular point a wrapping
+  loop is joined to from its face's `ADVANCED_FACE`. An edge the reader
+  rebuilds, which the file has no entity for — a degenerate edge the
+  writer left out, or the seam joining a `VERTEX_LOOP` to its face's
+  other bound — is `Generated` from its face's entity, and an edge split
+  at a pole, an apex or a seam from its `EDGE_CURVE`.
 - **Modified**: the output is a trimmed, split or re-tolerated piece of the
   input, same kind — the box's top face with a circle cut out of it, each
   half of a face split by an intersection curve (one input, several
@@ -1806,8 +1811,11 @@ is `Generated`); one the second generates from stays and gains the
 children; an input modified into pieces that are all gone is deleted;
 intermediate entities appear nowhere. Composition is associative over
 well-formed chains — an output is a new entity, and a record names only
-what exists when it runs — and the tests check it at a thousand random
-chains. `Provenance::mapped(&IdMap)` translates a record through the id
+what exists when it runs — up to one order: what later records generate
+from an earlier record's pieces comes out as the same sets in a
+different order under each bracketing (`docs/BACKLOG.md`). The property
+tests check associativity on random chains with that one difference
+excluded by name. `Provenance::mapped(&IdMap)` translates a record through the id
 map `import` returns, leaving ids the map does not hold (origins in
 bodies that were not imported) as they are.
 
@@ -1827,9 +1835,11 @@ of one origin's outputs, which is what `Split(k)` in such a name means.
 `generated_from` and `modified_from` list an origin's outputs in the
 order the operation added them, deduplicated, and every operation adds
 pieces in split order; `PartialEq` compares that order; `mapped` keeps
-it; `then` nests it — the outputs standing for piece `i` (what the next
-operation generated from it, then its pieces, then the piece itself when
-it stays) before those of piece `i + 1`. **A face's pieces ascend by
+it; `then` nests what it modifies — piece `i`'s pieces before piece
+`i + 1`'s — but the outputs later records generate from a piece lose
+the piece they came through, so their order depends on the bracketing
+(`then_nests_what_later_records_generate_from_pieces`, ignored,
+`docs/BACKLOG.md`). **A face's pieces ascend by
 their boundary key**: the sorted, deduplicated origins of the piece's
 boundary edges as the record names them — an operand edge for a piece of
 one, both faces of the pair for a section edge — compared

@@ -9,8 +9,8 @@ Spine: **C1** M0 → M1 → M2 → M3 → M4 → M5 (the vertical slice, done), 
 **C2** (the application gate, done 2026-09-19), then **C3** (every quadric
 pair — closure: what Arris builds, Arris takes as an operand; done
 2026-09-24), then **C4** (the reader: the STEP reader and a real-part
-corpus), and after it the cycle that corpus's refusal histogram and the
-first consumer's side-by-side regressions pick. An unopened cycle carries
+corpus; done 2026-09-26), then **C5** (the consumer's API: what a
+plugin-based CAD cannot start without, ADR-0020's amendment). An unopened cycle carries
 a name, not a number: it takes its number when `/close-cycle` opens its
 section (ADR-0020).
 
@@ -89,6 +89,36 @@ solid is held to Open CASCADE's healed reading of the same file and has
 a dump. A part waiting on a kernel bug names its `regression/` fixture
 and is not read until that fixture moves. The format is
 `tests/fixtures/README.md` §Part fixtures.
+
+The committed tier's refusal histogram (`cargo run -p arris-debug
+--example real_parts -- --committed`), which a docs test holds to its
+fixtures:
+
+<!-- histogram: committed -->
+11 parts, 16 solids: 9 read, 7 refused. 54 battery stages: 37 agree, 3 both refuse, 0 Open CASCADE refuses, 14 Arris refuses.
+
+| Cycle | Parts blocked | read | measure | write_read | box_cut | drill_x | drill_y | drill_z | fillet |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| blend network | 6 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 6 |
+| healing | 3 | 3 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| NURBS | 2 | 0 | 0 | 0 | 2 | 0 | 0 | 0 | 0 |
+| itself: supplemental geometry | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| sweep | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+
+| Refusal | Stage | Count | Blocks |
+|---|---|---:|---|
+| unsupported entity | read | 3 | healing |
+| Unsupported(circle curve × plane surface) | fillet | 3 | blend network |
+| gap past the cap | read | 2 | healing |
+| Unsupported(plane surface × NURBS surface) | box_cut | 2 | NURBS |
+| Unsupported(plane surface × NURBS surface) | drill_x | 2 | NURBS |
+| Unsupported(plane surface × NURBS surface) | drill_y | 2 | NURBS |
+| Unsupported(plane surface × NURBS surface) | drill_z | 2 | NURBS |
+| unsupported entity | read | 2 | itself: supplemental geometry |
+| Degenerate(TangentChain) | fillet | 1 | blend network |
+| Unsupported(cylinder surface × cone surface) | fillet | 1 | blend network |
+| Unsupported(cylinder surface × cylinder surface) | fillet | 1 | blend network |
+<!-- /histogram -->
 
 ---
 
@@ -410,126 +440,35 @@ passing every corpus stage against Open CASCADE;
 *Goal: Arris reads a part it did not design, and every refusal it returns
 over a public corpus of real parts is counted. That count, beside the
 first consumer's side-by-side regressions, is what picks the cycle after
-this one (ADR-0020). Until it exists the kernel's refusals are unranked:
-every fixture in the corpus is a recipe written out of the operations
-Arris has. The first consumer wants the cycle for its own reason — its
-roadmap imports vendor parts (ADR-0017).*
+this one (ADR-0020). Chosen by rule, not measured into: nothing could be
+measured until the reader existed. An accepted ADR that cites `C4` means
+the NURBS cycle, read through ADR-0020's table, not this one.*
 
-*Chosen by rule, not measured into: ADR-0020 names the reader as the
-cycle after C3 because nothing can be measured until it exists, so this
-choice rests on no numbers. An accepted ADR that cites `C4` means the
-NURBS cycle, read through ADR-0020's table, not this one.*
+**Status: done 2026-09-26, tag `c4`, released as `v0.3.0`.** Retired the
+unranked refusal: `arris_io::step::read` returns a checker-green body or
+a counted `Refusal` per solid and placement; Open CASCADE's STEP of
+every corpus fixture, and its B-spline conversion, read back to the
+oracle's measures (168 corpus tests each, three files refused by name as
+describing no solid, one variant Open CASCADE cannot convert); and 38 NIST
+parts, 70 solids, read to 29 bodies within the oracle's measures and 41
+refusals by kind, with no panic, each body read put through the battery. Six
+fetched parts wait on kernel bugs under `regression/`. ADR-0023 to
+ADR-0026.
 
-**Status: opened 2026-09-24. Two plans (ADR-0025). The reader's half is
-done (2026-09-26): `arris_io::step::read` maps the B-Rep subset onto
-Arris's own variants, flattens assemblies, rebuilds every pcurve and the
-degenerate edges a file leaves out, measures each entity's tolerance and
-returns a checker-green body or a counted `Refusal` per solid. Open
-CASCADE's STEP of every corpus fixture reads back to the oracle's counts,
-volume, area and centroid (168 corpus tests, three files refused by name
-as describing no solid), and so does its B-spline conversion of every
-fixture (168; one variant Open CASCADE cannot convert); Arris's own STEP
-round-trips as a property at 256, 1000 and 5000 cases; the reader's fuzz
-target ran 11.4 million inputs without a crash, after the parser's hour
-of 298 million. The real-part corpus is done (2026-09-26, ADR-0026):
-eleven NIST parts committed as `part` fixtures and 27 more fetched by
-`tools/real-parts.sh`, 70 solids, 29 read checker-green within the
-oracle's measures and 41 refused by kind, and every read solid put
-through the battery. Nothing panics over either tier, and no solid is
-wrong except in six fetched parts, each waiting on its kernel bug under
-`regression/`. The histogram below is what `/close-cycle` reads.**
-
-**The refusal histogram** (ADR-0026 §5), *cycle → parts blocked*, each
-part counted once per cycle at the first stage that cycle blocks it. A
-stage both kernels refuse blocks nothing. Over both tiers, NIST's
-committed eleven and its fetched 27 (`tools/real-parts.sh`'s `both.md` on
-the pinned inputs, 2026-09-26): the blend network blocks 17 parts, all at
-the fillet, and healing 14, all at the read. Six fetched parts wait on
-kernel bugs under `regression/` (`tools/real-parts.waits`), and their
-other stages count as they are.
-
-<!-- histogram: both -->
-38 parts, 70 solids: 29 read, 41 refused. 143 battery stages: 107 agree, 7 both refuse, 0 Open CASCADE refuses, 29 Arris refuses.
-
-| Cycle | Parts blocked | read | measure | write_read | box_cut | drill_x | drill_y | drill_z | fillet |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| blend network | 17 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 17 |
-| healing | 14 | 14 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| NURBS | 3 | 0 | 0 | 0 | 3 | 0 | 0 | 0 | 0 |
-| itself: faceted | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| itself: supplemental geometry | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| itself: unparsed | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| sweep | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-
-| Refusal | Stage | Count | Blocks |
-|---|---|---:|---|
-| unsupported entity | read | 29 | healing |
-| Unsupported(circle curve × plane surface) | fillet | 9 | blend network |
-| gap past the cap | read | 7 | healing |
-| Degenerate(TangentChain) | fillet | 5 | blend network |
-| Unsupported(plane surface × NURBS surface) | box_cut | 3 | NURBS |
-| Unsupported(plane surface × NURBS surface) | drill_x | 3 | NURBS |
-| Unsupported(plane surface × NURBS surface) | drill_y | 3 | NURBS |
-| Unsupported(plane surface × NURBS surface) | drill_z | 3 | NURBS |
-| unsupported entity | read | 2 | itself: faceted |
-| unsupported entity | read | 2 | itself: supplemental geometry |
-| Unsupported(cylinder surface × cone surface) | fillet | 1 | blend network |
-| Unsupported(cylinder surface × cylinder surface) | fillet | 1 | blend network |
-| Unsupported(plane surface × cone surface) | fillet | 1 | blend network |
-| unparsed | read | 1 | itself: unparsed |
-<!-- /histogram -->
-
-The committed tier alone (`cargo run -p arris-debug --example real_parts
--- --committed`), which a docs test holds to its fixtures:
-
-<!-- histogram: committed -->
-11 parts, 16 solids: 9 read, 7 refused. 54 battery stages: 37 agree, 3 both refuse, 0 Open CASCADE refuses, 14 Arris refuses.
-
-| Cycle | Parts blocked | read | measure | write_read | box_cut | drill_x | drill_y | drill_z | fillet |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| blend network | 6 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 6 |
-| healing | 3 | 3 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| NURBS | 2 | 0 | 0 | 0 | 2 | 0 | 0 | 0 | 0 |
-| itself: supplemental geometry | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| sweep | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-
-| Refusal | Stage | Count | Blocks |
-|---|---|---:|---|
-| unsupported entity | read | 3 | healing |
-| Unsupported(circle curve × plane surface) | fillet | 3 | blend network |
-| gap past the cap | read | 2 | healing |
-| Unsupported(plane surface × NURBS surface) | box_cut | 2 | NURBS |
-| Unsupported(plane surface × NURBS surface) | drill_x | 2 | NURBS |
-| Unsupported(plane surface × NURBS surface) | drill_y | 2 | NURBS |
-| Unsupported(plane surface × NURBS surface) | drill_z | 2 | NURBS |
-| unsupported entity | read | 2 | itself: supplemental geometry |
-| Degenerate(TangentChain) | fillet | 1 | blend network |
-| Unsupported(cylinder surface × cone surface) | fillet | 1 | blend network |
-| Unsupported(cylinder surface × cylinder surface) | fillet | 1 | blend network |
-<!-- /histogram -->
-
-- A Part 21 parser: the exchange structure, references, the schema
-  header, string and number encodings, and a typed error carrying the
-  entity id for everything malformed.
-- The AP203/214/242 B-Rep subset onto Arris's own geometry: the analytic
-  surfaces and curves as themselves, B-spline surfaces and curves as
-  `Nurbs`, the topology through the Euler operators like every other
-  builder, provenance `Generated` from the file's entity.
-- Pcurves rebuilt rather than read — a file's are optional, approximate,
-  or absent. Closed form on the analytic surfaces (data-model §Pcurves),
-  which pulled `project` onto a NURBS surface forward from the NURBS
-  cycle. What the writer
-  drops is rebuilt the same way, from the 3D curve and the surface's
-  singularity: a left-handed pcurve conic (`AXIS2_PLACEMENT_2D` is
-  direct) and a degenerate edge's coedge.
-- A closed NURBS curve that is not periodic, met by a surface at its
-  seam, reported as one hit rather than one at each end (data-model
-  §Curves) — no curve the kernel makes is one, a file's may be.
-- Each entity's tolerance assigned from its own measured gaps, not from
-  the file's global value, so the per-entity model the kernel is built on
-  survives the import.
-- A typed refusal for everything outside the subset, named specifically
-  enough to count in the histogram.
+- A Part 21 parser with a typed error carrying the entity id; the
+  AP203/214/242 B-Rep subset onto Arris's own geometry, B-splines as
+  `Nurbs`, provenance `Generated` from the file's entity (`Role::File`);
+  assemblies flattened, AP242's saved views ignored (ADR-0025, ADR-0026).
+- Pcurves and degenerate edges rebuilt rather than read, closed form on
+  the analytic surfaces and fitted on a NURBS one, held inside its knot
+  domain; each entity's tolerance measured from its own gaps, a gap past
+  `READ_GAP_FRACTION` refused.
+- A typed refusal for everything outside the subset, `RefusalKind::ALL`
+  counted by the histogram.
+- The real-part corpus (ADR-0026): the `part` fixture kind under `real/`
+  (§Fixtures), the battery, `tools/real-parts.sh` over the fetched tier
+  in the nightly, and the table mapping every refusal to the cycle it
+  blocks, as exhaustive matches.
 
 **Out:** sewing and repair, and open shells — healing is its own cycle;
 booleans on NURBS faces (the NURBS cycle's); IGES; writing anything the
@@ -543,6 +482,61 @@ and centroid the fixture asserts, `step_differs` fixtures skipped
 either to checker-green — mass properties within the fixture's tolerance
 of the oracle's — or to a typed refusal, with no panic and no wrong
 solid; and the refusal histogram over that corpus printed.
+
+---
+
+## C5 — the consumer's API
+
+*Goal: a plugin-based CAD can start on Arris. A plugin's feature names
+what it builds; a body and its provenance cross a process boundary and
+survive in a user's file; an edit can stop an operation that is running,
+on wasm too; a part can be mirrored; and an assembly keeps its products,
+instances and names through STEP. Each is public API the consumer
+designs its document model around, so it has to exist before that
+consumer's first cycle rather than be found as its regressions later.*
+
+*Chosen by ADR-0020's amendment of 2026-09-26: a consumer blocked on
+missing API ranks first, as a consumer waiting on a swap does. The asks
+are `docs/ideas/plugin-cad-consumer-asks.md`'s A1–A4 and A11. The
+histogram's first line, the blend network (17 of 38 parts), is next in
+line (§Named cycles).*
+
+**Status: opened 2026-09-26.**
+
+- **Consumer roles (A1)**: `Role::Consumer { namespace, key }`, taken by
+  `Builder` and by every operation that creates from nothing, so a
+  plugin's feature roots its provenance chains at a key of its own. The
+  kernel carries the key opaquely; the words stay the consumer's
+  (ADR-0009).
+- **Body bytes (A2)**: one body's closure and its `Provenance`, written
+  and imported into another model, with a compatibility policy — read
+  the previous version and migrate it — where the whole-model native
+  format refuses another version. Its own ADR.
+- **Cancellation (A3)**: an interrupt token the consumer sets, checked at
+  loop boundaries, returning `OpError::Interrupted` and rolled back by the
+  transaction; no clock and no thread, so wasm has it. A deterministic
+  step budget if the ADR finds one cheap. Its own ADR.
+- **Mirror (A11)**: `ops::mirror` in a plane, orientation flipped,
+  provenance one to one.
+- **STEP product structure (A4)**: the reader returns products,
+  instances, placements, names and colours beside the flattened bodies;
+  the writer writes instances, names and colours. An amendment of
+  ADR-0025 §Instances.
+
+**Out:** the rest of that idea — `region2` as public API, multi-tool
+booleans and per-face tessellation are backlog lines for when the
+consumer reaches them; the query and sweep cycles are its ranking input,
+recorded and not applied. The first-party binding stands beside this
+cycle, its body-bytes interop waiting on A2.
+
+**Accept:** a body built under a consumer role, written as body bytes
+and imported into a fresh model, is checker-green with the same counts,
+measures and provenance, and the previous version's bytes read and
+migrate; every operation interrupted at random points returns
+`Interrupted` and leaves the model as it was, as a property; a mirrored
+corpus fixture matches the oracle's mirror; an assembly's product tree
+reads from Open CASCADE's XCAF STEP with the names and placements it
+wrote, and Arris's own written assembly reads back to the same tree.
 
 ---
 
@@ -567,8 +561,9 @@ recipe. The hook keeps 256 cases and CI 1000, both on the fixed seed;
 depth comes from `nightly.yml`, which runs every property at 5000 cases
 on a seed drawn from the date, 99,600 CPU-seconds split over six jobs,
 plus the differential at 1000 recipes on the same seed. The corpus
-benchmark times 250 cases from 125 fixtures, build 1.60 s and mesh
-0.73 s on the reference machine, and each night compares against the
+benchmark times 294 cases on the reference machine: 260 from 130
+fixtures, build 5.15 s and mesh 3.16 s, and 34 from 17 real parts' files,
+read 20.99 s (docs/ARCHITECTURE.md §Formats and tools). Each night compares against the
 last, flagging a case past 3×. Three fuzz targets over the intersectors
 (`fuzz/`, outside the workspace) are seeded from every geometry pair.
 Their first hour, on 24 cores after the three faults a triage run
@@ -598,8 +593,8 @@ crates.io are its own idea and its own ADR.
 
 ## Named cycles, unordered
 
-None is scheduled, and the order below carries no meaning. The cycle
-after the reader is picked from two numbers: the refusal histogram over
+None is scheduled, and the order below carries no meaning; an entry
+says so where a ranking has already put it next. The next cycle is picked from two numbers: the refusal histogram over
 the real-part corpus, and the first consumer's side-by-side run of its
 suite against both backends (ADR-0017). Where they disagree, the
 consumer's regressions rank first while there is a consumer waiting on a
@@ -607,11 +602,30 @@ swap, and the histogram after (ADR-0020). Each cycle earns its own
 section, with an acceptance corpus and a number, when `/close-cycle`
 opens it.
 
+- **The blend-network cycle** — first by C4's refusal histogram, next in
+  line after C5. Tangent edge chains blended as one (5
+  `Degenerate(TangentChain)` fillet refusals); blends on the face pairs
+  outside ADR-0007's table (a circular edge where the table asks a line,
+  circle × plane, 9; plane × cone, cylinder × cone, cylinder × cylinder;
+  then sphere, torus and elliptic cylinder); the corners refused as
+  `VertexBlend`; the remaining chamfer modes; variable radius and blends
+  over blends. The histogram over both tiers it was ranked on
+  (2026-09-26, `tools/real-parts.sh`'s `both.md`: 38 parts, 70 solids,
+  29 read and 41 refused; 143 battery stages, 107 agree, 7 both refuse,
+  29 Arris refuses):
+
+  | Cycle | Parts blocked | read | measure | write_read | box_cut | drill_x | drill_y | drill_z | fillet |
+  |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+  | blend network | 17 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 17 |
+  | healing | 14 | 14 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+  | NURBS | 3 | 0 | 0 | 0 | 3 | 0 | 0 | 0 | 0 |
+  | itself: faceted | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+  | itself: supplemental geometry | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+  | itself: unparsed | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+  | sweep | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+
 - **The NURBS cycle** — NURBS–NURBS surface intersection (a marcher with
   explicit seam handling); NURBS operands in booleans.
-- **The blend-network cycle** — edge chains, vertex blends, variable
-  radius, blends over blends; blends on the quadric face pairs outside
-  ADR-0007's table.
 - **The sweep cycle** — sweep along a path, loft, shell, offset.
 - **The healing cycle** — healing; sheet and wire bodies in every
   operation.

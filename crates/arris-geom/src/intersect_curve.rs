@@ -156,7 +156,8 @@ pub enum CurveSurfaceIntersection {
 /// one crossing, by bracketed Newton on the distance. An open curve that
 /// only *ends* within `tol.linear` of the surface is a hit at that end
 /// and not `tangent`: a section edge ending on a face, not a graze. A
-/// closed curve that is not periodic has its two ends for two such hits.
+/// closed curve that is not periodic reads its two ends as one parameter,
+/// the start, so a hit at the join is one hit there.
 /// Any curve against a **NURBS surface** is `Unsupported`, the one arm
 /// of the table without a form.
 ///
