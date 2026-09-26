@@ -1,6 +1,6 @@
 {
   "kind": "part",
-  "description": "NIST's CTC-04, its AP203-with-PMI edition's solid alone: it reads checker-green and within Open CASCADE's measures, but its battery's drill along the second principal axis returns a kernel fault, OpError::Internal(Fault::Geometry), where Open CASCADE builds the drilled part. The desired class is agree. Shrunk from the fetched tier (plan real-part-corpus step 9)",
+  "description": "NIST's CTC-04, its AP203-with-PMI edition's solid alone: it reads checker-green and within Open CASCADE's measures, but its battery's drill along the second principal axis returns a kernel fault, OpError::Internal(Fault::Geometry), where Open CASCADE builds the drilled part. The desired class is agree. Shrunk from the fetched tier (ADR-0026, amendment of step 9)",
   "file": "nist_ctc_04_asme1_ap203-649.stp",
   "source": "https://www.nist.gov/document/nist-pmi-step-files — NIST-PMI-STEP-Files.zip (sha256 8fa78429e6d8d9b0d7681d223b6aa9ec98c3772185c55b1a0e3679b21c181911), AP203 with PMI/nist_ctc_04_asme1_ap203.stp: the solid #649 alone, excerpted by tools/oracle/excerpt.py",
   "licence": "NIST: \"The test cases, CAD models, and STEP files can be used without any restrictions.\"",

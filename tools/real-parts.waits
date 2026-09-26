@@ -1,4 +1,4 @@
-# The fetched tier's exclusions (plan real-part-corpus step 9): a part
+# The fetched tier's exclusions (ADR-0026, amendment of step 9): a part
 # whose survey meets a kernel bug waits on the regression/ fixture the bug
 # was shrunk to, `<part> <regression/slug>` per line. tools/real-parts.sh
 # fails on a failure no line excludes, on a wait whose fixture has left

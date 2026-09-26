@@ -392,7 +392,7 @@ part to an oracle.
   without it. The check is 0.1% to 13% of a read, 0.074 s of 20.99 s.
   FTC-07's 19.5 s is its fits, not its checker. Parts shrunk to a whole
   NIST file are skipped as timed already.
-- [ ] Step 11 **[1]** — The histogram recorded.
+- [x] Step 11 **[1]** — The histogram recorded.
   - The committed and fetched tiers' histograms are printed and written
     into `docs/ROADMAP.md` §C4's status line. This is the table
     `/close-cycle` reads to pick the next cycle beside the first
@@ -402,6 +402,16 @@ part to an oracle.
   Test: the numbers in the roadmap are exactly the example's output on
   the pinned inputs, and a docs test checks that the roadmap's table and
   the committed tier's printed histogram agree.
+
+  Found: the roadmap records two tables, both verbatim. One is over both
+  tiers, the summary's new `both.md`: 38 parts, 70 solids (29 read, 41
+  refused), 143 battery stages. The other is the committed tier alone,
+  which `docs_refs.rs` holds to its fixtures. The blend network blocks 17
+  parts, all at the fillet. Healing blocks 14, all at the read: surface
+  models in 11 and gaps in 7. NURBS blocks 3, at the box cut. Faceted,
+  supplemental geometry and unparsed block 1 each. Sweep blocks none.
+  The backlog's refusal-family lines are ranked by those counts, with
+  lines added for gaps, NURBS operands and the unparsed file.
 
 ## Acceptance
 

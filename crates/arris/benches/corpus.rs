@@ -6,7 +6,7 @@
 //! read of its file, and the checker at `Fast` alone on every solid the
 //! read returns (ADR-0025 §5): the reader runs that check on each solid in
 //! every build, so the read less the check is what the reader costs
-//! without it (plan real-part-corpus step 10). A part whose file another
+//! without it (ADR-0025 §Consequences). A part whose file another
 //! part already timed is skipped by name.
 //!
 //! ```sh

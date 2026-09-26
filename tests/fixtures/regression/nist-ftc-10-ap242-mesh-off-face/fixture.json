@@ -1,6 +1,6 @@
 {
   "kind": "part",
-  "description": "NIST's FTC-10, its AP242 e2 edition's solid alone: it reads checker-green, but its mesh at chord 0.001 puts a point of face f95 1.4e-4 from where its (u, v) evaluates, past the 4.6e-6 of the face and its boundary. Shrunk from the fetched tier (plan real-part-corpus step 9)",
+  "description": "NIST's FTC-10, its AP242 e2 edition's solid alone: it reads checker-green, but its mesh at chord 0.001 puts a point of face f95 1.4e-4 from where its (u, v) evaluates, past the 4.6e-6 of the face and its boundary. Shrunk from the fetched tier (ADR-0026, amendment of step 9)",
   "file": "nist_ftc_10_asme1_ap242-e2-13886.stp",
   "source": "https://www.nist.gov/document/nist-pmi-step-files — NIST-PMI-STEP-Files.zip (sha256 8fa78429e6d8d9b0d7681d223b6aa9ec98c3772185c55b1a0e3679b21c181911), nist_ftc_10_asme1_ap242-e2.stp: the solid #13886 alone, excerpted by tools/oracle/excerpt.py",
   "licence": "NIST: \"The test cases, CAD models, and STEP files can be used without any restrictions.\"",

@@ -1343,7 +1343,7 @@ B-Rep).
   fixtures (build 5.15 s, mesh 3.16 s), and 34 from 17 parts' files (read
   20.99 s).
 - **The reader's cost** in a release build (the benchmark's read cases,
-  plan `real-part-corpus` step 10). The committed tier's files read in
+  ADR-0025 §Consequences). The committed tier's files read in
   0.6 ms to 0.18 s each, 14 of 16 solid instances read. Two files are
   slower: CTC-05 in 0.97 s, the fits of a solid refused for a gap, and
   FTC-07 in 19.5 s, its fitted pcurves on B-spline faces. The checker at

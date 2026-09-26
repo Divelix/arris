@@ -10,7 +10,9 @@
 //!   under a timeout.
 //! - `real_parts --summary <manifest> <reports-dir> <waits> <out-dir>`
 //!   reads every report the manifest's files should have, writes
-//!   `histogram.md` and `failures.md` into `<out-dir>`, and exits 1 if a
+//!   `histogram.md` and `failures.md` into `<out-dir>`, and `both.md`,
+//!   the histogram over the committed tier and these together, and exits
+//!   1 if a
 //!   failure is not excluded by a `waits` line naming a fixture still
 //!   under `regression/`.
 
@@ -63,13 +65,18 @@ fn main() -> Result<(), Error> {
 }
 
 fn committed() -> Result<(), Error> {
+    print!("{}", committed_tier()?.markdown());
+    Ok(())
+}
+
+/// The committed tier, counted from its fixtures.
+fn committed_tier() -> Result<Histogram, Error> {
     let mut histogram = Histogram::new();
     for name in COMMITTED_TIER {
         let fixture = part::load(&fixtures::corpus_root().join(name))?;
         histogram.add_part(&fixture)?;
     }
-    print!("{}", histogram.markdown());
-    Ok(())
+    Ok(histogram)
 }
 
 /// The part names a manifest lists: each `<sha256>  <path>` line's file
@@ -122,6 +129,7 @@ fn summary(manifest: &Path, reports: &Path, waits_file: &Path, out: &Path) -> Re
             && root.join(slug).join("fixture.json").is_file()
     };
     let mut histogram = Histogram::new();
+    let mut both = committed_tier()?;
     let mut failures = String::from("# Failures\n\n");
     let mut open = 0;
     for name in &parts {
@@ -139,6 +147,7 @@ fn summary(manifest: &Path, reports: &Path, waits_file: &Path, out: &Path) -> Re
         };
         if let Some(report) = &report {
             histogram.add_report(report);
+            both.add_report(report);
         }
         let excluded_by = waits.get(name).cloned().unwrap_or_default();
         for slug in &excluded_by {
@@ -177,6 +186,7 @@ fn summary(manifest: &Path, reports: &Path, waits_file: &Path, out: &Path) -> Re
     }
     std::fs::create_dir_all(out)?;
     std::fs::write(out.join("histogram.md"), histogram.markdown())?;
+    std::fs::write(out.join("both.md"), both.markdown())?;
     std::fs::write(out.join("failures.md"), &failures)?;
     print!("{}", histogram.markdown());
     println!(

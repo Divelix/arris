@@ -422,6 +422,75 @@ target ran 11.4 million inputs without a crash, after the parser's hour
 of 298 million. Open: `real-part-corpus` — the corpus of real parts, the
 battery of operations run on every part read, and the histogram.**
 
+**The refusal histogram** (ADR-0026 §5), *cycle → parts blocked*, each
+part counted once per cycle at the first stage that cycle blocks it. A
+stage both kernels refuse blocks nothing. Over both tiers, NIST's
+committed eleven and its fetched 27 (`tools/real-parts.sh`'s `both.md` on
+the pinned inputs, 2026-09-26): the blend network blocks 17 parts, all at
+the fillet, and healing 14, all at the read. Six fetched parts wait on
+kernel bugs under `regression/` (`tools/real-parts.waits`), and their
+other stages count as they are.
+
+<!-- histogram: both -->
+38 parts, 70 solids: 29 read, 41 refused. 143 battery stages: 107 agree, 7 both refuse, 0 Open CASCADE refuses, 29 Arris refuses.
+
+| Cycle | Parts blocked | read | measure | write_read | box_cut | drill_x | drill_y | drill_z | fillet |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| blend network | 17 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 17 |
+| healing | 14 | 14 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| NURBS | 3 | 0 | 0 | 0 | 3 | 0 | 0 | 0 | 0 |
+| itself: faceted | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| itself: supplemental geometry | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| itself: unparsed | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| sweep | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+
+| Refusal | Stage | Count | Blocks |
+|---|---|---:|---|
+| unsupported entity | read | 29 | healing |
+| Unsupported(circle curve × plane surface) | fillet | 9 | blend network |
+| gap past the cap | read | 7 | healing |
+| Degenerate(TangentChain) | fillet | 5 | blend network |
+| Unsupported(plane surface × NURBS surface) | box_cut | 3 | NURBS |
+| Unsupported(plane surface × NURBS surface) | drill_x | 3 | NURBS |
+| Unsupported(plane surface × NURBS surface) | drill_y | 3 | NURBS |
+| Unsupported(plane surface × NURBS surface) | drill_z | 3 | NURBS |
+| unsupported entity | read | 2 | itself: faceted |
+| unsupported entity | read | 2 | itself: supplemental geometry |
+| Unsupported(cylinder surface × cone surface) | fillet | 1 | blend network |
+| Unsupported(cylinder surface × cylinder surface) | fillet | 1 | blend network |
+| Unsupported(plane surface × cone surface) | fillet | 1 | blend network |
+| unparsed | read | 1 | itself: unparsed |
+<!-- /histogram -->
+
+The committed tier alone (`cargo run -p arris-debug --example real_parts
+-- --committed`), which a docs test holds to its fixtures:
+
+<!-- histogram: committed -->
+11 parts, 16 solids: 9 read, 7 refused. 54 battery stages: 37 agree, 3 both refuse, 0 Open CASCADE refuses, 14 Arris refuses.
+
+| Cycle | Parts blocked | read | measure | write_read | box_cut | drill_x | drill_y | drill_z | fillet |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| blend network | 6 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 6 |
+| healing | 3 | 3 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| NURBS | 2 | 0 | 0 | 0 | 2 | 0 | 0 | 0 | 0 |
+| itself: supplemental geometry | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| sweep | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+
+| Refusal | Stage | Count | Blocks |
+|---|---|---:|---|
+| unsupported entity | read | 3 | healing |
+| Unsupported(circle curve × plane surface) | fillet | 3 | blend network |
+| gap past the cap | read | 2 | healing |
+| Unsupported(plane surface × NURBS surface) | box_cut | 2 | NURBS |
+| Unsupported(plane surface × NURBS surface) | drill_x | 2 | NURBS |
+| Unsupported(plane surface × NURBS surface) | drill_y | 2 | NURBS |
+| Unsupported(plane surface × NURBS surface) | drill_z | 2 | NURBS |
+| unsupported entity | read | 2 | itself: supplemental geometry |
+| Degenerate(TangentChain) | fillet | 1 | blend network |
+| Unsupported(cylinder surface × cone surface) | fillet | 1 | blend network |
+| Unsupported(cylinder surface × cylinder surface) | fillet | 1 | blend network |
+<!-- /histogram -->
+
 - A Part 21 parser: the exchange structure, references, the schema
   header, string and number encodings, and a typed error carrying the
   entity id for everything malformed.

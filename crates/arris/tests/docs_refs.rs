@@ -4,7 +4,9 @@
 //! `Cargo.toml` after that outlives the file it points at. This proves the
 //! lint catches that the way `corpus_lint.rs` proves its own rules: against
 //! a scratch tree with a citation deliberately left dangling, not just by
-//! running clean against the real one.
+//! running clean against the real one. Beside it, the refusal histogram
+//! `docs/ROADMAP.md` records for the committed tier is held to the one
+//! its fixtures print.
 
 use std::path::{Path, PathBuf};
 
@@ -122,4 +124,36 @@ fn a_citation_of_a_retired_plan_is_caught() {
     assert!(!problems[0].contains("still-open"), "{problems:?}");
 
     std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// The committed tier's refusal histogram in `docs/ROADMAP.md` §C4 is the
+/// one its fixtures print today (ADR-0026 §5): a fixture whose outcome or
+/// cycle moves fails here until the roadmap's table is printed again.
+#[test]
+fn the_roadmap_holds_the_committed_tier_histogram() {
+    use arris_debug::histogram::{COMMITTED_TIER, Histogram};
+    let mut histogram = Histogram::new();
+    for name in COMMITTED_TIER {
+        let fixture = arris_debug::part::load(&arris_debug::fixtures::corpus_root().join(name))
+            .unwrap_or_else(|e| panic!("{name}: {e}"));
+        histogram
+            .add_part(&fixture)
+            .unwrap_or_else(|e| panic!("{e}"));
+    }
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let roadmap = std::fs::read_to_string(root.join("docs/ROADMAP.md")).unwrap();
+    let open = "<!-- histogram: committed -->\n";
+    let start = roadmap
+        .find(open)
+        .expect("the committed tier's histogram block")
+        + open.len();
+    let end = start
+        + roadmap[start..]
+            .find("<!-- /histogram -->")
+            .expect("the block's end");
+    assert_eq!(
+        &roadmap[start..end],
+        histogram.markdown(),
+        "print it again: cargo run -p arris-debug --example real_parts -- --committed"
+    );
 }

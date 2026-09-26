@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# The fetched tier of the real-part corpus (ADR-0026 §2, plan
-# real-part-corpus step 9): what the nightly's `real-parts` job runs, and
+# The fetched tier of the real-part corpus (ADR-0026 §2 and its amendment
+# of step 9): what the nightly's `real-parts` job runs, and
 # the same thing locally.
 #
 #   tools/real-parts.sh [--jobs N] [--timeout SECONDS]

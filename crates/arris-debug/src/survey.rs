@@ -1,5 +1,5 @@
-//! A part the corpus does not hold, surveyed (ADR-0026 §2, plan
-//! `real-part-corpus` step 9): the fetched tier's unit of work, run by
+//! A part the corpus does not hold, surveyed (ADR-0026 §2 and its
+//! amendment of step 9): the fetched tier's unit of work, run by
 //! `tools/real-parts.sh` through the `real_parts` example, one process per
 //! file so that a read that never ends is the script's timeout and not the
 //! run's.
