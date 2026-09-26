@@ -417,6 +417,25 @@ is a reader bug under §4, not a timing to accommodate.
   the test profile and FTC-08 6 s, against step 4's 2.7 s for the whole
   set. Under nextest each runs beside the property shards of 40–60 s, so
   the hook's wall time does not move, and the step 4 settlement stands.
+- **A band is joined by a seam, splitting an edge where it must.** A face
+  whose two loops each wrap one period of its surface — a cylinder's side
+  bounded by its two circles, as ISO 10303-42 allows — is one loop in
+  Arris: the two joined by a rebuilt seam along the surface's isocurve
+  (a ruling, a meridian, a torus's circle), walked out and back, as a
+  `VERTEX_LOOP` is joined to its apex. Where no vertex of the one loop
+  faces one of the other — CTC-03's circles start a quarter turn apart —
+  the other loop's edge is split where the first vertex faces it, and
+  every use of that edge on every face with it, each use keeping its
+  pcurve over its part of the range. A NURBS surface's band is refused,
+  since its isocurve has no exact form, as is an edge a second band
+  would split again. CTC-03 and FTC-11 read. FTC-10 then meets eight
+  cones bounded by their base circle alone, their apex implicit: the
+  next cause, shrunk to `regression/cone-face-without-its-apex`.
+- **The seam-crossing test moves each chord whole.** It moved each end of
+  a sampled chord to its own period, so a loop passing the seam's far
+  side made a chord across the whole domain, which crossed the seam
+  (FTC-10). A crossing within the parametric band of the seam's ends is
+  the loop meeting it at its vertex, and is not one either.
 - **The oracle measures a part's spline-bounded solid by Gauss–Kronrod.**
   Healing gives every seamless face a B-spline seam pcurve, so every NIST
   reading is spline-bounded, and the plain adaptive integration it took

@@ -1,6 +1,6 @@
 {
   "kind": "part",
-  "description": "NIST MBE PMI combined test case 03, the AP203 geometry-only edition (ADR-0026 §1): 15 cylinder faces, each bounded by two circles and no seam, fail the reader's checker",
+  "description": "NIST MBE PMI combined test case 03, the AP203 geometry-only edition (ADR-0026 §1): its solid reads whole, 15 cylinder faces each bounded by two circles and no seam joined by a seam, splitting a circle where their vertices face no ruling (real/seamless-cylinder-band)",
   "file": "nist_ctc_03_asme1_rc.stp",
   "source": "https://www.nist.gov/document/nist-pmi-step-files — NIST-PMI-STEP-Files.zip (sha256 8fa78429e6d8d9b0d7681d223b6aa9ec98c3772185c55b1a0e3679b21c181911), AP203 geometry only/nist_ctc_03_asme1_rc.stp",
   "licence": "NIST: \"The test cases, CAD models, and STEP files can be used without any restrictions.\"",
@@ -11,8 +11,5 @@
       "instance": 0,
       "outcome": "read"
     }
-  ],
-  "waits_on": [
-    "regression/seamless-cylinder-band"
   ]
 }

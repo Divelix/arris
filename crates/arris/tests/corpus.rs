@@ -1515,6 +1515,14 @@ fn real_axis_placement_along_x_without_reference() {
     run_part("real/axis-placement-along-x-without-reference");
 }
 
+/// A cylinder whose side face is bounded by its two circles and no seam,
+/// as NIST's CTC-03, FTC-10 and FTC-11 write it: the reader joins the two
+/// loops by a seam along a ruling (ADR-0026's amendment of step 5).
+#[test]
+fn real_seamless_cylinder_band() {
+    run_part("real/seamless-cylinder-band");
+}
+
 /// NIST's FTC-09, AP203 geometry only: one solid of 158 faces, read whole.
 #[test]
 fn real_nist_ftc_09() {
@@ -1540,7 +1548,7 @@ fn real_nist_ctc_02() {
     run_part("real/nist-ctc-02");
 }
 
-/// NIST's CTC-03: waits on regression/seamless-cylinder-band.
+/// NIST's CTC-03: one solid read whole, its seamless bands joined.
 #[test]
 fn real_nist_ctc_03() {
     run_part("real/nist-ctc-03");
@@ -1576,22 +1584,22 @@ fn real_nist_ftc_08() {
     run_part("real/nist-ftc-08");
 }
 
-/// NIST's FTC-10: waits on regression/seamless-cylinder-band.
+/// NIST's FTC-10: waits on regression/cone-face-without-its-apex.
 #[test]
 fn real_nist_ftc_10() {
     run_part("real/nist-ftc-10");
 }
 
-/// NIST's FTC-11: waits on regression/seamless-cylinder-band.
+/// NIST's FTC-11: one solid read whole, its seamless bands joined.
 #[test]
 fn real_nist_ftc_11() {
     run_part("real/nist-ftc-11");
 }
 
 #[test]
-#[ignore = "the reader leaves a cylinder face bounded by two circles without its seam, and its checker refuses the body (ADR-0026 §4)"]
-fn regression_seamless_cylinder_band() {
-    run_part("regression/seamless-cylinder-band");
+#[ignore = "the reader leaves a cone face bounded by its base circle alone without a seam to its apex, and its checker refuses the body (ADR-0026 §4)"]
+fn regression_cone_face_without_its_apex() {
+    run_part("regression/cone-face-without-its-apex");
 }
 
 #[test]

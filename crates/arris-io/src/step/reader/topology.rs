@@ -61,6 +61,7 @@
 //! a violation is the file's: [`Refusal::Invalid`].
 
 use std::collections::BTreeMap;
+use std::f64::consts::TAU;
 
 use arris_check::arris_topo::arris_geom::{
     Curve, Curve2, GeomError, PCURVE_SAMPLES, PCURVE_SINGULAR_BAND, Singularity, Surface,
@@ -68,7 +69,7 @@ use arris_check::arris_topo::arris_geom::{
 };
 use arris_check::arris_topo::arris_math::{
     Aabb, Frame, Interval, Point2, Point3, Precision, READ_GAP_FRACTION, RELATIVE_ROUNDING,
-    Tolerance, UnitVec2, UnitVec3, Vec2,
+    Tolerance, UnitVec2, UnitVec3, Vec2, Vec3,
 };
 use arris_check::arris_topo::builder::{
     Assembly, Builder, EdgeKey, EdgeSpec, FaceSpec, UseSpec, VertexKey, VertexSpec,
@@ -420,7 +421,7 @@ impl Geometry<'_> {
         let tolerance = precision.default_tolerance;
         let file_entity = |id: u64| Role::File(FileEntity { id, instance });
 
-        let points = file
+        let mut points = file
             .vertices
             .iter()
             .map(|&v| {
@@ -474,8 +475,12 @@ impl Geometry<'_> {
         // The edges the file left out, and the face each is rebuilt on.
         let mut rebuilt: Vec<Rebuilt> = Vec::new();
         let mut rebuilt_faces: Vec<u64> = Vec::new();
-        let mut gaps = Gaps::new(points.len());
-        let mut shells = Vec::with_capacity(file.shells.len());
+        // The file entity each vertex and edge stands for: a vertex or an
+        // edge a band's seam splits off stands for the edge it splits.
+        let mut vertex_ids: Vec<u64> = file.vertices.clone();
+        let mut edge_ids: Vec<u64> = file.edges.iter().map(|e| e.id).collect();
+        let mut splits: Vec<Split> = Vec::new();
+        let mut walked = Vec::with_capacity(file.shells.len());
         for shell in &file.shells {
             let mut faces = Vec::with_capacity(shell.faces.len());
             for face in &shell.faces {
@@ -496,17 +501,7 @@ impl Geometry<'_> {
                 let flipped = face.surface.reversed ^ !face.same_sense ^ face.turned;
                 let mut pcurves: BTreeMap<usize, Curve2> = BTreeMap::new();
                 let singular = surface.singularities();
-                let at = Junctions {
-                    surface: &surface,
-                    singular: &singular,
-                    points: &points,
-                    band: PCURVE_SINGULAR_BAND * tol.linear,
-                    cap,
-                    parametric: precision.parametric_tolerance,
-                    angular: precision.angular_tolerance,
-                    fit: tolerance,
-                    flipped,
-                };
+                let at = junctions(&surface, &singular, &points, cap, precision, flipped);
                 // A VERTEX_LOOP is joined to the face's one other bound by
                 // a seam, which Arris's face needs and the file left out.
                 let vertex_bounds: Vec<(u64, usize)> = (face.bounds.iter())
@@ -580,24 +575,30 @@ impl Geometry<'_> {
                         Jump::Open(vertex) => Refusal::OpenLoop {
                             face: face.id,
                             bound: bound.id,
-                            vertex: file.vertices[vertex],
+                            vertex: vertex_ids[vertex],
                         },
                         Jump::Gap(vertex, gap) => Refusal::Gap {
-                            entity: file.vertices[vertex],
+                            entity: vertex_ids[vertex],
                             gap,
                             cap,
                         },
                     })?;
                     at.meet(&mut uses).map_err(|(edge, e)| Refusal::Pcurve {
                         edge: match edge {
-                            EdgeRef::File(i) => file.edges[i].id,
+                            EdgeRef::File(i) => edge_ids[i],
                             EdgeRef::Rebuilt(_) => face.id,
                         },
                         face: face.id,
                         what: e.to_string(),
                     })?;
                     if let (Some(i), Some((vertex_bound, _))) = (seam, joined) {
-                        if seam_crosses(&uses, i, surface.period(), precision.check_samples) {
+                        if seam_crosses(
+                            &uses,
+                            i,
+                            &surface,
+                            precision.parametric_tolerance,
+                            precision.check_samples,
+                        ) {
                             return Err(Refusal::Unsupported {
                                 entity: vertex_bound,
                                 name: "a VERTEX_LOOP whose seam to its face's bound crosses it"
@@ -607,8 +608,87 @@ impl Geometry<'_> {
                     }
                     loops.push(uses);
                 }
-                place_loops(&mut loops, surface.period(), surface.domain());
+                if joined.is_none() {
+                    let unsupported = |name: &str| Refusal::Unsupported {
+                        entity: face.id,
+                        name: name.into(),
+                    };
+                    let samples = precision.check_samples;
+                    let cut = band(&at, &edges, model, &mut loops, &mut rebuilt, tol, samples)
+                        .map_err(unsupported)?;
+                    if let Some(cut) = cut {
+                        // The seam's far end is a vertex on the other
+                        // loop's edge, which is split there.
+                        if cut.edge >= file.edges.len() || splits.iter().any(|s| s.edge == cut.edge)
+                        {
+                            return Err(unsupported(
+                                "a band whose seam would split an edge a second time",
+                            ));
+                        }
+                        let old = &edges[cut.edge];
+                        let split = Split {
+                            edge: cut.edge,
+                            t: cut.t,
+                            vertex: points.len(),
+                            new: edges.len(),
+                        };
+                        let range = Interval::new(cut.t, old.range.hi())
+                            .map_err(|_| unsupported("a band's seam at its edge's end"))?;
+                        points.push(cut.point);
+                        vertex_ids.push(edge_ids[cut.edge]);
+                        edges.push(Edge {
+                            geometry: old.geometry.clone(),
+                            curve: old.curve,
+                            range,
+                            start: split.vertex,
+                            end: old.end,
+                            along: old.along,
+                        });
+                        edge_ids.push(edge_ids[cut.edge]);
+                        for uses in &mut loops {
+                            split.apply(uses);
+                        }
+                        splits.push(split);
+                        let at = junctions(&surface, &singular, &points, cap, precision, flipped);
+                        if band(&at, &edges, model, &mut loops, &mut rebuilt, tol, samples)
+                            .map_err(unsupported)?
+                            .is_some()
+                        {
+                            return Err(unsupported(
+                                "a band whose split edge still leaves no seam",
+                            ));
+                        }
+                    }
+                }
                 rebuilt_faces.resize(rebuilt.len(), face.id);
+                faces.push((surface, surface_id, flipped, loops));
+            }
+            walked.push(faces);
+        }
+
+        // Every other use of a split edge is split with it, and the edge
+        // ends at the new vertex.
+        for split in &splits {
+            for (_, _, _, loops) in walked.iter_mut().flatten() {
+                for uses in loops.iter_mut() {
+                    split.apply(uses);
+                }
+            }
+            let edge = &mut edges[split.edge];
+            edge.range =
+                Interval::new(edge.range.lo(), split.t).map_err(|e| Refusal::Degenerate {
+                    entity: edge_ids[split.edge],
+                    what: e.to_string(),
+                })?;
+            edge.end = split.vertex;
+        }
+
+        let mut gaps = Gaps::new(points.len());
+        let mut shells = Vec::with_capacity(walked.len());
+        for faces in walked {
+            let mut specs = Vec::with_capacity(faces.len());
+            for (surface, surface_id, flipped, mut loops) in faces {
+                place_loops(&mut loops, surface.period(), surface.domain());
                 for uses in &loops {
                     gaps.measure_uses(&surface, uses, &points, &edges, &rebuilt, model, precision);
                 }
@@ -619,7 +699,7 @@ impl Geometry<'_> {
                             .map(|u| UseSpec {
                                 edge: EdgeKey::New(match u.edge {
                                     EdgeRef::File(i) => i,
-                                    EdgeRef::Rebuilt(i) => file.edges.len() + i,
+                                    EdgeRef::Rebuilt(i) => edges.len() + i,
                                 }),
                                 orientation: u.orientation,
                                 pcurve: model.add_curve2(u.pcurve),
@@ -627,7 +707,7 @@ impl Geometry<'_> {
                             .collect()
                     })
                     .collect();
-                faces.push(FaceSpec::New {
+                specs.push(FaceSpec::New {
                     surface: surface_id,
                     orientation: if flipped {
                         Orientation::Reversed
@@ -638,7 +718,7 @@ impl Geometry<'_> {
                     tolerance,
                 });
             }
-            shells.push(faces);
+            shells.push(specs);
         }
 
         gaps.measure_edges(&points, &edges, &rebuilt, model);
@@ -646,9 +726,9 @@ impl Geometry<'_> {
             .tolerances(&edges, &rebuilt, tolerance, cap)
             .map_err(|(entity, gap)| Refusal::Gap {
                 entity: match entity {
-                    Entity::Vertex(v) => file.vertices[v],
-                    Entity::Edge(k) if k < file.edges.len() => file.edges[k].id,
-                    Entity::Edge(k) => rebuilt_faces[k - file.edges.len()],
+                    Entity::Vertex(v) => vertex_ids[v],
+                    Entity::Edge(k) if k < edges.len() => edge_ids[k],
+                    Entity::Edge(k) => rebuilt_faces[k - edges.len()],
                 },
                 gap,
                 cap,
@@ -696,13 +776,13 @@ impl Geometry<'_> {
         }
 
         let mut provenance = Provenance::new();
-        for (&v, slot) in file.vertices.iter().zip(&slots.vertices) {
+        for (&v, slot) in vertex_ids.iter().zip(&slots.vertices) {
             if let Some(&id) = built.vertices.get(slot) {
                 provenance.add_generated(file_entity(v), Shape::new(id, Orientation::Forward));
             }
         }
         // A rebuilt edge is generated from its face's entity.
-        let edge_entities = file.edges.iter().map(|e| e.id).chain(rebuilt_faces);
+        let edge_entities = edge_ids.into_iter().chain(rebuilt_faces);
         for (e, slot) in edge_entities.zip(&slots.edges) {
             if let Some(&id) = built.edges.get(slot) {
                 provenance.add_generated(file_entity(e), Shape::new(id, Orientation::Forward));
@@ -749,7 +829,9 @@ enum EdgeRef {
 }
 
 /// An edge the file left out: a degenerate edge at a singular point, or
-/// the seam a `VERTEX_LOOP` needs to join its face's other loop.
+/// the seam a `VERTEX_LOOP` needs to join its face's other loop, or a
+/// band's two loops.
+#[derive(Clone)]
 struct Rebuilt {
     geometry: EdgeGeometry,
     start: usize,
@@ -757,6 +839,7 @@ struct Rebuilt {
 }
 
 /// One use of a loop, with its pcurve moved to where the loop needs it.
+#[derive(Clone)]
 struct Use {
     edge: EdgeRef,
     orientation: Orientation,
@@ -1644,10 +1727,331 @@ fn seam_to(
     })
 }
 
+/// The index a band's seam walks under while its arc is tried, before it
+/// is entered in `rebuilt`: no rebuilt edge has it.
+const TRIED_SEAM: usize = usize::MAX;
+
+/// A face whose two loops each wrap once around the same period of its
+/// surface — a cylinder's side bounded by its two circles, as ISO
+/// 10303-42 allows and the file writes it — made one loop, as Arris's
+/// face needs: the two joined by a seam along the surface's isocurve
+/// through a vertex of each, walked out along it and back (docs/
+/// DATA-MODEL.md §Invariants, L4). The seam is a ruling on a cylinder or
+/// a cone, a meridian on a sphere, and a circle on a torus, whichever of
+/// its two arcs crosses neither loop. A face with other than two wrapping
+/// loops is left as it is. Errors: why there is no such seam — a NURBS
+/// surface's isocurve, which Arris has no exact form of, or loops whose
+/// vertices lie on no one isocurve, where a seam would need an edge
+/// split.
+fn band(
+    at: &Junctions<'_>,
+    edges: &[Edge],
+    model: &mut Model,
+    loops: &mut Vec<Vec<Use>>,
+    rebuilt: &mut Vec<Rebuilt>,
+    tol: Tolerance,
+    check_samples: usize,
+) -> Result<Option<Cut>, &'static str> {
+    let period = at.surface.period();
+    let wraps = |uses: &[Use]| -> Option<usize> {
+        let (first, last) = (uses.first()?, uses.last()?);
+        let turns = whole_periods(last.ends().1 - first.ends().0, period);
+        (0..2).find(|&k| turns[k] != 0.0)
+    };
+    let wrapping: Vec<(usize, usize)> = (loops.iter().enumerate())
+        .filter_map(|(i, l)| Some((i, wraps(l)?)))
+        .collect();
+    let [(i, k), (j, other)] = wrapping[..] else {
+        return Ok(None);
+    };
+    if k != other {
+        return Err("a face of two loops wrapping different periods of its surface");
+    }
+    for a in 0..loops[i].len() {
+        for b in 0..loops[j].len() {
+            let (va, vb) = (loops[i][a].vertices[0], loops[j][b].vertices[0]);
+            let (Some(&pa), Some(&pb)) = (at.points.get(va), at.points.get(vb)) else {
+                continue;
+            };
+            for (curve, range) in isocurves(at.surface, k, pa, pb, tol)? {
+                let Ok(pcurve) = pcurve_on(&curve, range, at.surface, tol) else {
+                    continue;
+                };
+                let (mut first, mut second) = (loops[i].clone(), loops[j].clone());
+                first.rotate_left(a);
+                second.rotate_left(b);
+                let seam = |orientation, vertices| Use {
+                    edge: EdgeRef::Rebuilt(TRIED_SEAM),
+                    orientation,
+                    pcurve: pcurve.clone(),
+                    range,
+                    vertices,
+                };
+                first.push(seam(Orientation::Forward, [va, vb]));
+                first.extend(second);
+                first.push(seam(Orientation::Reversed, [vb, va]));
+                let mut tried = rebuilt.clone();
+                let Ok(mut uses) = at.walk(first, &mut tried) else {
+                    continue;
+                };
+                if at.meet(&mut uses).is_err()
+                    || seam_crosses(&uses, TRIED_SEAM, at.surface, at.parametric, check_samples)
+                {
+                    continue;
+                }
+                tried.push(Rebuilt {
+                    geometry: EdgeGeometry::Curve {
+                        curve: model.add_curve(curve),
+                        range,
+                    },
+                    start: va,
+                    end: vb,
+                });
+                let index = tried.len() - 1;
+                for u in &mut uses {
+                    if matches!(u.edge, EdgeRef::Rebuilt(TRIED_SEAM)) {
+                        u.edge = EdgeRef::Rebuilt(index);
+                    }
+                }
+                *rebuilt = tried;
+                let (lo, hi) = (i.min(j), i.max(j));
+                loops.remove(hi);
+                loops[lo] = uses;
+                return Ok(None);
+            }
+        }
+    }
+    // No vertex of the one loop faces one of the other: the other's edge
+    // is to be cut where the first vertex of the one faces it.
+    let from = (loops[i].first())
+        .and_then(|u| at.points.get(u.vertices[0]))
+        .and_then(|&p| at.surface.project(p).ok())
+        .ok_or("a band whose loop has no vertex")?;
+    let (target, turn) = (from.uv[k], period[k].unwrap_or(TAU));
+    // How far the use's periodic parameter is from the target, wrapped to
+    // half a period either side.
+    let off = |u: &Use, t: f64| {
+        let d = u.pcurve.point(t)[k] - target;
+        d - turn * (d / turn).round()
+    };
+    for u in &loops[j] {
+        let EdgeRef::File(edge) = u.edge else {
+            continue;
+        };
+        let ts = samples(u.range, PCURVE_SAMPLES + 1);
+        for w in ts.windows(2) {
+            let (mut a, mut b) = (w[0], w[1]);
+            let (fa, fb) = (off(u, a), off(u, b));
+            // A sign change, not the wrap of the offset at half a turn.
+            if fa * fb > 0.0 || (fa - fb).abs() > 0.25 * turn {
+                continue;
+            }
+            for _ in 0..ROOT_STEPS {
+                let m = 0.5 * (a + b);
+                if off(u, a) * off(u, m) <= 0.0 {
+                    b = m;
+                } else {
+                    a = m;
+                }
+            }
+            let t = 0.5 * (a + b);
+            if t <= u.range.lo() || t >= u.range.hi() {
+                continue;
+            }
+            let point = edges
+                .get(edge)
+                .ok_or("a band's edge the solid does not list")?
+                .geometry
+                .point(t);
+            return Ok(Some(Cut { edge, t, point }));
+        }
+    }
+    Err("a band whose two loops have no vertices on one isocurve of its surface")
+}
+
+/// Bisections of [`band`]'s search for where a loop faces a vertex of
+/// the other: sixty-four halve a sampling interval past the spacing of
+/// `f64` parameters. An iteration count, not a tolerance.
+const ROOT_STEPS: usize = 64;
+
+/// Where a band's seam cuts the other loop: the file edge, at its
+/// parameter `t`, where its curve is at `point`.
+struct Cut {
+    edge: usize,
+    t: f64,
+    point: Point3,
+}
+
+/// A file edge split at `t` by a band's seam: the part before `t` keeps
+/// the edge's index and ends at `vertex`, the part after is edge `new`,
+/// from `vertex` on.
+struct Split {
+    edge: usize,
+    t: f64,
+    vertex: usize,
+    new: usize,
+}
+
+impl Split {
+    /// Each use of the edge whose range holds `t` inside it made two, in
+    /// the walk's order, on the one pcurve: the edge's parameter is the
+    /// pcurve's, so each part is the use over its part of the range.
+    fn apply(&self, uses: &mut Vec<Use>) {
+        let mut out = Vec::with_capacity(uses.len() + 1);
+        for u in uses.drain(..) {
+            let inside = matches!(u.edge, EdgeRef::File(e) if e == self.edge)
+                && u.range.lo() < self.t
+                && self.t < u.range.hi();
+            let (Ok(before), Ok(after), true) = (
+                Interval::new(u.range.lo(), self.t),
+                Interval::new(self.t, u.range.hi()),
+                inside,
+            ) else {
+                out.push(u);
+                continue;
+            };
+            let [first, last] = u.vertices;
+            let part = |edge, range, vertices| Use {
+                edge: EdgeRef::File(edge),
+                orientation: u.orientation,
+                pcurve: u.pcurve.clone(),
+                range,
+                vertices,
+            };
+            let (a, b) = (
+                part(self.edge, before, [first, self.vertex]),
+                part(self.new, after, [self.vertex, last]),
+            );
+            match u.orientation {
+                Orientation::Forward => out.extend([a, b]),
+                Orientation::Reversed => out.extend([
+                    part(self.new, after, [first, self.vertex]),
+                    part(self.edge, before, [self.vertex, last]),
+                ]),
+            }
+        }
+        *uses = out;
+    }
+}
+
+/// The judge of a face's junctions (see [`Junctions`]'s fields).
+fn junctions<'a>(
+    surface: &'a Surface,
+    singular: &'a [Singularity],
+    points: &'a [Point3],
+    cap: f64,
+    precision: Precision,
+    flipped: bool,
+) -> Junctions<'a> {
+    Junctions {
+        surface,
+        singular,
+        points,
+        band: PCURVE_SINGULAR_BAND * precision.default_tolerance,
+        cap,
+        parametric: precision.parametric_tolerance,
+        angular: precision.angular_tolerance,
+        fit: precision.default_tolerance,
+        flipped,
+    }
+}
+
+/// The pieces of the isocurve of `surface` along which the parameter `k`
+/// stays at `a`'s value, from `a` to `b`, the shorter arc first where
+/// there are two; none where `b` is not on it. Errors: a surface whose
+/// isocurve Arris has no exact form of.
+fn isocurves(
+    surface: &Surface,
+    k: usize,
+    a: Point3,
+    b: Point3,
+    tol: Tolerance,
+) -> Result<Vec<(Curve, Interval)>, &'static str> {
+    let (Ok(pa), Ok(pb)) = (surface.project(a), surface.project(b)) else {
+        return Ok(Vec::new());
+    };
+    let mut across = pb.uv;
+    across[k] = pa.uv[k];
+    if (surface.point(across.x, across.y) - pb.point).norm() > tol.linear {
+        return Ok(Vec::new());
+    }
+    let line = || -> Vec<(Curve, Interval)> {
+        let length = (b - a).norm();
+        match (UnitVec3::try_new(b - a, 0.0), Interval::new(0.0, length)) {
+            (Some(direction), Ok(range)) => vec![(
+                Curve::Line {
+                    origin: a,
+                    direction,
+                },
+                range,
+            )],
+            _ => Vec::new(),
+        }
+    };
+    // The two arcs from `a` to `b` of the circle about `centre` in the
+    // plane normal to `normal`, the shorter first.
+    let arcs = |centre: Point3, normal: Vec3| -> Vec<(Curve, Interval)> {
+        let radius = (a - centre).norm();
+        let mut out = Vec::new();
+        for n in [normal, -normal] {
+            let Ok(frame) = Frame::new(centre, n, a - centre) else {
+                continue;
+            };
+            let d = b - centre;
+            let angle = d.dot(&frame.y()).atan2(d.dot(&frame.x()));
+            let angle = if angle > 0.0 { angle } else { angle + TAU };
+            if let Ok(range) = Interval::new(0.0, angle) {
+                out.push((Curve::Circle { frame, radius }, range));
+            }
+        }
+        out.sort_by(|x, y| x.1.hi().total_cmp(&y.1.hi()));
+        out
+    };
+    Ok(match *surface {
+        Surface::Cylinder { .. } | Surface::EllipticCylinder { .. } | Surface::Cone { .. } => {
+            line()
+        }
+        Surface::Sphere { ref frame, .. } => arcs(
+            frame.origin(),
+            (a - frame.origin()).cross(&(b - frame.origin())),
+        ),
+        Surface::Torus {
+            ref frame,
+            major_radius,
+            minor_radius,
+        } => {
+            let (u, v) = (pa.uv.x, pa.uv.y);
+            let radial = u.cos() * frame.x().into_inner() + u.sin() * frame.y().into_inner();
+            let axis = frame.z().into_inner();
+            if k == 0 {
+                arcs(frame.origin() + major_radius * radial, axis.cross(&radial))
+            } else {
+                arcs(frame.origin() + minor_radius * v.sin() * axis, axis)
+            }
+        }
+        Surface::Nurbs(_) => {
+            return Err("a band on a NURBS surface, whose seam has no exact curve");
+        }
+        Surface::Plane { .. } => Vec::new(),
+    })
+}
+
 /// `true` when a bound's use crosses the seam `seam` of the walk `uses`
 /// anywhere but at its ends, judged on `samples` chords of each use's
-/// pcurve, each moved by whole periods to the copy nearest the seam.
-fn seam_crosses(uses: &[Use], seam: usize, period: [Option<f64>; 2], samples: usize) -> bool {
+/// pcurve, each moved whole by the periods that bring its start nearest
+/// the seam — its two ends moved apart would make a chord across the
+/// domain of one that passes the seam's far side. A
+/// crossing within the surface's parametric band (`bands`) of an end of
+/// the seam is the loop meeting it at its vertex, where rounding decides
+/// the side.
+fn seam_crosses(
+    uses: &[Use],
+    seam: usize,
+    surface: &Surface,
+    parametric: f64,
+    samples: usize,
+) -> bool {
+    let period = surface.period();
     let Some(s) = uses.iter().find(|u| {
         matches!(u.edge, EdgeRef::Rebuilt(i) if i == seam)
             && matches!(u.orientation, Orientation::Forward)
@@ -1656,18 +2060,28 @@ fn seam_crosses(uses: &[Use], seam: usize, period: [Option<f64>; 2], samples: us
     };
     let (a, b) = s.ends();
     let side = |p: Point2, q: Point2, r: Point2| (q - p).perp(&(r - p));
+    let near = |p: Point2, end: Point2| {
+        let band = bands(surface, end, parametric);
+        (p.x - end.x).abs() <= band[0] && (p.y - end.y).abs() <= band[1]
+    };
     let proper = |c: Point2, d: Point2| {
-        side(a, b, c) * side(a, b, d) < 0.0 && side(c, d, a) * side(c, d, b) < 0.0
+        let (sa, sb) = (side(c, d, a), side(c, d, b));
+        if !(side(a, b, c) * side(a, b, d) < 0.0 && sa * sb < 0.0) {
+            return false;
+        }
+        let x = a + (sa / (sa - sb)) * (b - a);
+        !near(x, a) && !near(x, b)
     };
     let n = samples.max(1);
     uses.iter()
         .filter(|u| matches!(u.edge, EdgeRef::File(_)))
         .any(|u| {
-            let at = |k: usize| {
-                let p = u.pcurve.point(u.range.lerp(k as f64 / n as f64));
-                p + whole_periods(a - p, period)
-            };
-            (0..n).any(|k| proper(at(k), at(k + 1)))
+            let at = |k: usize| u.pcurve.point(u.range.lerp(k as f64 / n as f64));
+            (0..n).any(|k| {
+                let (c, d) = (at(k), at(k + 1));
+                let by = whole_periods(a - c, period);
+                proper(c + by, d + by)
+            })
         })
 }
 
