@@ -1,0 +1,15 @@
+{
+  "kind": "part",
+  "description": "a cylinder r 4, h 12 on the −x axis, its seam written, whose two circles are placed on the axis (−1, −6.12323399574e−17, −0) with no reference direction, as NIST's CTC-04 and FTC-08 write them: ISO 10303-42's first_proj_axis supplies world Y as the reference direction, the axis lying along world X to rounding, and the reader takes it so. Shrunk from those parts (ADR-0026 §4)",
+  "file": "along-x.stp",
+  "source": "written by hand for this fixture, shrunk from NIST parts (ADR-0026 §4)",
+  "licence": "the project's own",
+  "sha256": "e1e03bc80124e4b9ffe126d2c9b9087028e856eae98e7433a6c6b6df09b02457",
+  "solids": [
+    {
+      "id": 22,
+      "instance": 0,
+      "outcome": "read"
+    }
+  ]
+}

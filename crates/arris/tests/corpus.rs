@@ -1506,6 +1506,15 @@ fn tempdir(tag: &str) -> std::path::PathBuf {
     dir
 }
 
+/// A cylinder whose circles are placed on the axis `(-1, -6.1e-17, 0)`
+/// with no reference direction, as NIST's CTC-04 and FTC-08 write them:
+/// ISO 10303-42's reference direction is world `Y` for an axis along `X`
+/// to rounding (ADR-0026 §4).
+#[test]
+fn real_axis_placement_along_x_without_reference() {
+    run_part("real/axis-placement-along-x-without-reference");
+}
+
 /// NIST's FTC-09, AP203 geometry only: one solid of 158 faces, read whole.
 #[test]
 fn real_nist_ftc_09() {
@@ -1537,7 +1546,7 @@ fn real_nist_ctc_03() {
     run_part("real/nist-ctc-03");
 }
 
-/// NIST's CTC-04: waits on regression/axis-placement-along-x-without-reference.
+/// NIST's CTC-04: one solid read whole, its three surface bodies refused as surfaces.
 #[test]
 fn real_nist_ctc_04() {
     run_part("real/nist-ctc-04");
@@ -1561,7 +1570,7 @@ fn real_nist_ftc_07() {
     run_part("real/nist-ftc-07");
 }
 
-/// NIST's FTC-08: waits on regression/axis-placement-along-x-without-reference.
+/// NIST's FTC-08: one solid read whole.
 #[test]
 fn real_nist_ftc_08() {
     run_part("real/nist-ftc-08");
@@ -1583,12 +1592,6 @@ fn real_nist_ftc_11() {
 #[ignore = "the reader leaves a cylinder face bounded by two circles without its seam, and its checker refuses the body (ADR-0026 §4)"]
 fn regression_seamless_cylinder_band() {
     run_part("regression/seamless-cylinder-band");
-}
-
-#[test]
-#[ignore = "the reader refuses a placement on the x axis with no reference direction, which ISO 10303-42 supplies (ADR-0026 §4)"]
-fn regression_axis_placement_along_x_without_reference() {
-    run_part("regression/axis-placement-along-x-without-reference");
 }
 
 #[test]

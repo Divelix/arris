@@ -1,6 +1,6 @@
 {
   "kind": "part",
-  "description": "NIST MBE PMI combined test case 04, the AP203 geometry-only edition (ADR-0026 §1): circle #7320's placement #7319 has an axis along -x and no reference direction, which the reader refuses where ISO 10303-42 supplies one",
+  "description": "NIST MBE PMI combined test case 04, the AP203 geometry-only edition (ADR-0026 §1): its solid reads whole, circle #7320's placement #7319 on an axis along -x with no reference direction taken as ISO 10303-42 supplies one (real/axis-placement-along-x-without-reference)",
   "file": "nist_ctc_04_asme1_rd.stp",
   "source": "https://www.nist.gov/document/nist-pmi-step-files — NIST-PMI-STEP-Files.zip (sha256 8fa78429e6d8d9b0d7681d223b6aa9ec98c3772185c55b1a0e3679b21c181911), AP203 geometry only/nist_ctc_04_asme1_rd.stp",
   "licence": "NIST: \"The test cases, CAD models, and STEP files can be used without any restrictions.\"",
@@ -41,8 +41,5 @@
         }
       }
     }
-  ],
-  "waits_on": [
-    "regression/axis-placement-along-x-without-reference"
   ]
 }

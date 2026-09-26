@@ -224,7 +224,7 @@ part to an oracle.
   Step 4 shrank the committed tier's to five `regression/` part fixtures,
   one box each:
   - [ ] `seamless-cylinder-band` (CTC-03, FTC-10, FTC-11);
-  - [ ] `axis-placement-along-x-without-reference` (CTC-04, FTC-08);
+  - [x] `axis-placement-along-x-without-reference` (CTC-04, FTC-08);
   - [ ] `pcurve-fit-reported-as-gap` (CTC-01, FTC-07);
   - [ ] `edge-through-sphere-pole` (FTC-06; new at step 4, a half sphere
     bounded by one meridian circle through both poles);

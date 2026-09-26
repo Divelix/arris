@@ -15,7 +15,7 @@
 //! result in the caller's unit; it is never an entity's tolerance
 //! (ADR-0025 §4).
 
-use arris_check::arris_topo::arris_math::{Frame, Isometry, Point3, Vec3};
+use arris_check::arris_topo::arris_math::{Frame, FrameError, Isometry, Point3, Vec3};
 
 use super::entities::{Args, Entities, describe, malformed, number};
 use super::{LengthUnit, Refusal};
@@ -196,8 +196,12 @@ impl Units {
     /// axis `Z` (world `Z` when unset) and its reference direction's
     /// component perpendicular to it `X`. An unset reference direction is
     /// world `X`, or world `Y` when the axis lies along world `X` — ISO
-    /// 10303-42's `build_axes`, which takes world `Y` for world `X`. Errors: a zero axis or a reference direction along
-    /// the axis, as [`Refusal::Malformed`] naming the placement.
+    /// 10303-42's `first_proj_axis`, which takes world `Y` for world `X`.
+    /// "Along" is to rounding, the test [`Frame::new`] makes of any hint:
+    /// an exporter writes the axis `(-1, -6.1e-17, 0)` for `-X`, and the
+    /// perpendicular part of world `X` is then rounding, not a direction.
+    /// Errors: a zero axis or a written reference direction along the
+    /// axis, as [`Refusal::Malformed`] naming the placement.
     pub(crate) fn placement(
         &self,
         entities: &Entities<'_>,
@@ -210,12 +214,14 @@ impl Units {
             Some(axis) => self.direction(entities, id, axis)?,
             None => Vec3::z(),
         };
-        let x = match args.optional_reference(3)? {
-            Some(reference) => self.direction(entities, id, reference)?,
-            None if z.y == 0.0 && z.z == 0.0 => Vec3::y(),
-            None => Vec3::x(),
+        let frame = match args.optional_reference(3)? {
+            Some(reference) => Frame::new(origin, z, self.direction(entities, id, reference)?),
+            None => match Frame::new(origin, z, Vec3::x()) {
+                Err(FrameError::DegenerateHint) => Frame::new(origin, z, Vec3::y()),
+                built => built,
+            },
         };
-        Frame::new(origin, z, x).map_err(|e| args.malformed(format!("no frame: {e}")))
+        frame.map_err(|e| args.malformed(format!("no frame: {e}")))
     }
 }
 
@@ -589,7 +595,7 @@ END-ISO-10303-21;
 
     #[test]
     fn placements_default_their_axes_as_the_standard_builds_them() {
-        let text = "ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION((''),'2;1');\nFILE_NAME('','',(''),(''),'','','');\nFILE_SCHEMA(('X'));\nENDSEC;\nDATA;\n#1=CARTESIAN_POINT('',(1.,2.,3.));\n#2=AXIS2_PLACEMENT_3D('',#1,$,$);\n#3=DIRECTION('',(2.,0.,0.));\n#4=AXIS2_PLACEMENT_3D('',#1,#3,$);\n#5=AXIS2_PLACEMENT_3D('',#1,#3,#3);\n#6=CARTESIAN_POINT('',(1.,2.));\n#7=AXIS2_PLACEMENT_3D('',#6,$,$);\nENDSEC;\nEND-ISO-10303-21;\n";
+        let text = "ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION((''),'2;1');\nFILE_NAME('','',(''),(''),'','','');\nFILE_SCHEMA(('X'));\nENDSEC;\nDATA;\n#1=CARTESIAN_POINT('',(1.,2.,3.));\n#2=AXIS2_PLACEMENT_3D('',#1,$,$);\n#3=DIRECTION('',(2.,0.,0.));\n#4=AXIS2_PLACEMENT_3D('',#1,#3,$);\n#5=AXIS2_PLACEMENT_3D('',#1,#3,#3);\n#6=CARTESIAN_POINT('',(1.,2.));\n#7=AXIS2_PLACEMENT_3D('',#6,$,$);\n#8=DIRECTION('',(-1.,-6.12323399574E-17,-0.));\n#9=AXIS2_PLACEMENT_3D('',#1,#8,$);\nENDSEC;\nEND-ISO-10303-21;\n";
         let x = part21::parse(text).unwrap();
         let e = Entities::new(&x.instances);
         let units = Units {
@@ -608,6 +614,13 @@ END-ISO-10303-21;
         assert_eq!(
             (f.z().into_inner(), f.x().into_inner()),
             (Vec3::x(), Vec3::y())
+        );
+        // An axis along -X to rounding, as NIST's CTC-04 writes it.
+        let f = units.placement(&e, 9, 9).unwrap();
+        assert!(
+            (f.x().into_inner() - Vec3::y()).norm() < 1e-15,
+            "{:?}",
+            f.x()
         );
         assert!(matches!(
             units.placement(&e, 5, 5),

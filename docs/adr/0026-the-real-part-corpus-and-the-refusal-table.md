@@ -405,3 +405,15 @@ is a reader bug under §4, not a timing to accommodate.
   runner held every corner to the face's tolerance, which only a kernel
   built model satisfied. It now holds each to the largest tolerance of
   the face and the edges and vertices bounding it (ADR-0012's amendment).
+- **An unset reference direction along the axis is to rounding.** CTC-04
+  and FTC-08 place circles on the axis `(-1, -6.1e-17, 0)` with no
+  reference direction. ISO 10303-42's `first_proj_axis` swaps world `X`
+  for world `Y` when the axis is world `X`, and the reader now makes that
+  swap wherever world `X`'s part perpendicular to the axis is rounding —
+  the test `Frame::new` makes of any hint. A written reference direction
+  along the axis is still `Malformed`. Both parts read, within the
+  oracle's measures, and their shrunk fixture moves to `real/`.
+- **The `real_` tests stay in the hook at 17 s.** CTC-04 takes 17 s in
+  the test profile and FTC-08 6 s, against step 4's 2.7 s for the whole
+  set. Under nextest each runs beside the property shards of 40–60 s, so
+  the hook's wall time does not move, and the step 4 settlement stands.
