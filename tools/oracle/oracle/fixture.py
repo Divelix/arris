@@ -101,7 +101,7 @@ def compute_part(fixture: dict) -> list[dict]:
     if digest != fixture["sha256"]:
         raise OracleError(f"{path} hashes to {digest}, not the fixture's {fixture['sha256']}")
     tol = {**DEFAULT_TOLERANCES, **fixture.get("tolerances", {})}
-    healed = [(label, measure(shape, [], tol["probe"])) for label, shape in step.solids(path)]
+    healed = [(label, measure(shape, [], tol["probe"], read=True)) for label, shape in step.solids(path)]
     try:
         unhealed = [(label, shape) for label, shape in step.solids(path, heal=False)]
     except Exception:  # OracleError, or Open CASCADE's own on a file it cannot take unhealed

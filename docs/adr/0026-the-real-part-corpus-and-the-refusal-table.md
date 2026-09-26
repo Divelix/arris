@@ -417,3 +417,12 @@ is a reader bug under §4, not a timing to accommodate.
   the test profile and FTC-08 6 s, against step 4's 2.7 s for the whole
   set. Under nextest each runs beside the property shards of 40–60 s, so
   the hook's wall time does not move, and the step 4 settlement stands.
+- **The oracle measures a part's spline-bounded solid by Gauss–Kronrod.**
+  Healing gives every seamless face a B-spline seam pcurve, so every NIST
+  reading is spline-bounded, and the plain adaptive integration it took
+  split FTC-11's Ixx and Iyy by 3.3 in 1.6e6 and made Ixy −1.1, where the
+  part is a solid of revolution. Its fixed-order and Gauss–Kronrod
+  integrations both keep the symmetry to 1e-13 and agree with Arris
+  there. A part now takes Gauss–Kronrod, as an extrusion's result does.
+  Every other part's numbers moved by 1e-12 at most, and are regenerated
+  with it. A recipe's result keeps its integration and its numbers.

@@ -324,13 +324,29 @@ def inertia(props: GProp_GProps) -> list[list[float]]:
     return [[m.Value(i, j) for j in range(1, 4)] for i in range(1, 4)]
 
 
-def measure(shape: TopoDS_Shape, probes: list[dict], probe_tolerance: float, manifold: bool = True) -> dict:
+def measure(
+    shape: TopoDS_Shape,
+    probes: list[dict],
+    probe_tolerance: float,
+    manifold: bool = True,
+    read: bool = False,
+) -> dict:
     """Everything expected.json records for one result. `manifold` false
     admits an odd Euler characteristic — solids of a compound sharing an
     edge or a vertex, what a recipe expecting `non-manifold` builds, or a
     tangent contact carried as an edge of four faces, what one expecting
     `tangent-contact` may build — and records no genus for it; otherwise
-    an odd one is an error."""
+    an odd one is an error.
+
+    `read` true is a solid read from a part's file (ADR-0026). Where it is
+    spline-bounded — as healing leaves every seamless face, its added
+    seams' pcurves B-splines — its volume properties are taken by the
+    Gauss–Kronrod overload, as an extrusion's are: the plain adaptive one
+    is 1e-6 off in the inertia tensor of NIST's FTC-11, a solid of
+    revolution whose Ixx and Iyy it splits by 3.3 in 1.6e6 and whose Ixy
+    it makes −1.1, where the fixed-order and Gauss–Kronrod integrations
+    both keep the symmetry to 1e-13. A recipe's spline-bounded result
+    keeps the plain adaptive integration and its committed numbers."""
     vertices, edges, loops = _count_boundary(shape)
     counts = {
         "vertices": vertices,
@@ -346,7 +362,7 @@ def measure(shape: TopoDS_Shape, probes: list[dict], probe_tolerance: float, man
         return out
 
     vp = GProp_GProps()
-    if _has_extrusion(shape):
+    if _has_extrusion(shape) or (read and _spline_bounded(shape)):
         BRepGProp.VolumePropertiesGK_s(shape, vp, SPLINE_EPS, False, True, True, True)
     elif _spline_bounded(shape):
         BRepGProp.VolumeProperties_s(shape, vp, SPLINE_EPS)

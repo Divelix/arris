@@ -66,7 +66,10 @@ cache; `ci.yml` sets it, so CI always runs the oracle.
   a quadric section walked or fitted, or under an exact conic on a cone,
   a sphere or a torus — over which the fixed order is 1e-6 off, and
   `VolumePropertiesGK` for a shape with a surface-of-extrusion face,
-  whose area is the Green integral of its basis arc length instead),
+  whose area is the Green integral of its basis arc length instead, and
+  for a part's spline-bounded solid, over which the plain adaptive one is
+  1e-6 off in the inertia tensor — NIST's FTC-11, a solid of revolution
+  whose symmetry it breaks),
   counts by unique
   sub-shape (a seam edge once, an edge `BRep_Tool::Degenerated` names not
   at all), loops, shells, solids — of the boundary only: an edge oriented
