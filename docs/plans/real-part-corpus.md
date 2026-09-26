@@ -299,7 +299,7 @@ part to an oracle.
   so the two hashes parted on the first operand near 1e-5; and FTC-07's
   round trip costs 39 s in the test profile, its read 26 s, the slowest
   test of the hook.
-- [ ] Step 7 **[3]** — The battery's kernel faults fixed, one commit per
+- [x] Step 7 **[3]** — The battery's kernel faults fixed, one commit per
   root cause, each moving its `regression/` fixture into its area and
   recording the class its stages then have:
   - [x] `nurbs-box-cavity-cut` (FTC-07, FTC-10): a boolean classifies
@@ -309,11 +309,21 @@ part to an oracle.
     a classification that avoids or answers NURBS faces would instead
     record the oracle's solid. Fixed as the refusal: the eight cuts and
     drills of FTC-07 and FTC-10 record `arris-refuses`, plane × NURBS.
-  - [ ] `nist-ctc-04-face-arrangement-turn`: CTC-04's plane f393, bounded
+  - [x] `nist-ctc-04-face-arrangement-turn`: CTC-04's plane f393, bounded
     by B-spline edges and four circles, fails to split (`Fault::Split`,
     `Turn`) with no section on it.
-  - [ ] `nist-ftc-06-face-arrangement-turn`: FTC-06's plane f0, whose loop
+  - [x] `nist-ftc-06-face-arrangement-turn`: FTC-06's plane f0, whose loop
     runs two arcs of one circle end to end among small blends, the same.
+
+  Found: the last two are one cause, fixed in one commit. Each face has
+  cusps, where a curve leaves a line tangent to it, and the turn there was
+  ±π by rounding. `boolean/spandrel-cavity-cut` is the shrunk case. Their
+  eight stages agree. Moved to `boolean/`, the two NIST recipes needed the
+  battery's holding: measures within the result's own tolerance and a
+  healed part's counts under `counts_differ`. They also needed no
+  B-spline read-back, which took 300 s and 520 s (ADR-0026, amendment of
+  step 7; a backlog line). `real_nist_ctc_04` now runs its battery, at
+  98 s in the test profile.
 
   Test: no battery stage waits; step 6's test green.
 - [ ] Step 8 **[1]** — `arris_debug::histogram`: ADR-0026's table as

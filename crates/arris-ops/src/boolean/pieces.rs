@@ -599,14 +599,33 @@ impl<'m> Arrangement<'m> {
             total += rotation(&walks[k], self.chord)
                 .ok_or_else(|| self.fault(SplitFault::Turn { face: self.face }))?;
             let g = cycle[(k + 1) % cycle.len()];
-            let arrive = wrap_angle(self.halves[h].back.angle + PI);
-            total += turn(arrive, self.halves[g].start.angle);
+            total += self.corner(h, g);
         }
         let turns = (total / TAU).round();
         if turns == 1.0 || turns == -1.0 {
             Ok(turns as i64)
         } else {
             Err(self.fault(SplitFault::Turn { face: self.face }))
+        }
+    }
+
+    /// The turn at the node from half-edge `h` into `g`, in `[−π, π]`.
+    /// At a cusp — `g` leaving back the way `h` arrived, within the
+    /// angular tolerance, as where a curve leaves a line tangent to it —
+    /// the angle alone cannot say which way the walk turned, and rounding
+    /// would pick. The node's order has already decided it by curvature
+    /// ([`Arrangement::sorted`]): the walk turns left, `+π`, round a
+    /// spike between the two when `g` bends to the right of `h` walked
+    /// back, and right, `−π`, otherwise.
+    fn corner(&self, h: usize, g: usize) -> f64 {
+        let (back, start) = (self.halves[h].back, self.halves[g].start);
+        let t = turn(wrap_angle(back.angle + PI), start.angle);
+        if PI - t.abs() > self.angular {
+            t
+        } else if start.curvature < back.curvature {
+            PI
+        } else {
+            -PI
         }
     }
 

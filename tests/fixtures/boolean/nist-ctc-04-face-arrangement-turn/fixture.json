@@ -1,5 +1,5 @@
 {
-  "description": "NIST's CTC-04 (real/nist-ctc-04, its file read in place) cut by a box 0.02 across at the oracle's centroid: every face of both operands is split before any is classified, and the split of the part's f393, a plane bounded by B-spline edges and pierced by four circles, which no section crosses, fails with Fault::Split, a cycle of its arrangement that does not turn once. The part itself reads checker-green at Full. Shrunk from the battery of real/nist-ctc-04, whose every cut and drill meets it; the file is not shrunk further (ADR-0026 \u00a74)",
+  "description": "NIST's CTC-04 (real/nist-ctc-04, its file read in place) cut by a box 0.02 across at the oracle's centroid: every face of both operands is split before any is classified, and the part's f393, a plane bounded by B-spline edges and pierced by four circles, which no section crosses, has two cusps where a B-spline edge leaves a line tangent to it: each is a turn of +π round its spike, and the loop turns once. The part itself reads checker-green at Full. Shrunk from the battery of real/nist-ctc-04, whose every cut and drill met it; the file is not shrunk further (ADR-0026 §4)",
   "steps": [
     {
       "op": "step",

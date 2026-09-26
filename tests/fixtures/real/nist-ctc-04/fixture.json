@@ -11,18 +11,10 @@
       "instance": 0,
       "outcome": "read",
       "battery": {
-        "box_cut": {
-          "waits-on": "regression/nist-ctc-04-face-arrangement-turn"
-        },
-        "drill_x": {
-          "waits-on": "regression/nist-ctc-04-face-arrangement-turn"
-        },
-        "drill_y": {
-          "waits-on": "regression/nist-ctc-04-face-arrangement-turn"
-        },
-        "drill_z": {
-          "waits-on": "regression/nist-ctc-04-face-arrangement-turn"
-        },
+        "box_cut": "agree",
+        "drill_x": "agree",
+        "drill_y": "agree",
+        "drill_z": "agree",
         "fillet": {
           "arris-refuses": "Degenerate(TangentChain)"
         },

@@ -481,7 +481,11 @@ curvature, a tie of both `Reason::TangentContact` — whose regions are
 walked by taking the next half-edge clockwise from the direction one
 arrived from; a cycle turning once counter-clockwise bounds a piece, one
 turning clockwise is a hole, assigned by winding to the innermost piece
-around it. Each piece is classified at `region2::interior_point`
+around it. A cusp, where the walk leaves back the way it arrived within
+the angular tolerance, as a blend leaving a line tangent to it does, turns
+by ±π as the node's order decided it by curvature: `+π` round a spike when
+the leaving curve bends right of the arriving one walked back, never by
+rounding. Each piece is classified at `region2::interior_point`
 carried to 3D by `classify_point` against the other operand, and the
 table decides. A ray has no closed form against a NURBS face, so a piece
 whose ray reaches one is `OpError::Unsupported` naming the piece's face

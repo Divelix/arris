@@ -798,8 +798,12 @@ pub fn run(dir: &Path, variant: &str) -> Result<(), CorpusError> {
         let occt = oracle::occt_step(dir, Some(variant), false, &format!("occt-{tag}"))?;
         read_back_stage(&fixture, variant, &occt, expected)?;
         // And converted to B-splines first: free-form faces with seams
-        // and poles, held to the converted shape's own counts.
-        if expected.nurbs_fails.is_none() {
+        // and poles, held to the converted shape's own counts — but not
+        // for a result on a file's solid, which the reader has already
+        // read, and whose conversion is a whole real part in B-splines:
+        // minutes of reading that measure the reader on a file of that
+        // size, not the operation (ADR-0026, amendment of step 7).
+        if expected.nurbs_fails.is_none() && !reads_a_file(&fixture) {
             let occt = oracle::occt_step(dir, Some(variant), true, &format!("occt-nurbs-{tag}"))?;
             read_back_nurbs_stage(&fixture, variant, &occt, expected)?;
         }
@@ -1208,10 +1212,17 @@ pub struct Target {
     pub by: &'static str,
 }
 
+/// `true` when the recipe starts from a file's solid, a `step` operand.
+fn reads_a_file(fixture: &Fixture) -> bool {
+    (fixture.recipe.steps.iter()).any(|s| matches!(s, Step::Read { .. }))
+}
+
 /// `measure` over the B-Rep against what the oracle measured of the same
 /// recipe — or, where the recipe says the oracle is wrong, its closed
 /// forms (ADR-0015): volume, area, centroid and the inertia tensor, each
-/// within the fixture's tolerance for it. Returns the [`Target`] held to.
+/// within the fixture's tolerance for it — widened to the result's own
+/// ([`within_own_tolerance`]) where the recipe reads a file's solid, a
+/// `step` operand. Returns the [`Target`] held to.
 /// Errors: [`CorpusError::Measure`] naming the quantity.
 pub fn measure_stage(
     fixture: &Fixture,
@@ -1220,17 +1231,20 @@ pub fn measure_stage(
 ) -> Result<Target, CorpusError> {
     let body = result_of(fixture, chain)?;
     let (measured, by) = measure_target(fixture, &chain.params, expected)?;
-    compare_mass(
-        &chain.model,
-        body,
-        &measured,
-        by,
-        &fixture.recipe.tolerances,
-    )
-    .map_err(|what| CorpusError::Measure {
+    let fail = |what| CorpusError::Measure {
         fixture: fixture.name.clone(),
         what,
-    })?;
+    };
+    // A recipe on a file's solid holds its result as the part's own
+    // reading and battery hold it: within the tolerances the file gave
+    // the body, which a kernel-built primitive's defaults do not size
+    // (ADR-0023, ADR-0026 §6).
+    let tolerances = if reads_a_file(fixture) {
+        within_own_tolerance(&fixture.recipe.tolerances, &chain.model, body).map_err(fail)?
+    } else {
+        fixture.recipe.tolerances
+    };
+    compare_mass(&chain.model, body, &measured, by, &tolerances).map_err(fail)?;
     Ok(Target { measured, by })
 }
 

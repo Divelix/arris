@@ -162,7 +162,15 @@ of the step that made the fixture pass, and a later change to it is a
   (`CorpusError::Refused`); a file that is missing, does not match its
   hash, or has no such solid is `CorpusError::StepFile`.
   `boolean/step-operand-cut` cuts Arris's own STEP of
-  `boolean/through-hole`'s result.
+  `boolean/through-hole`'s result. The runner holds a recipe with a
+  `step` operand as a part's reading and battery hold it. Its measures
+  are within the fixture's tolerances widened to the result's own
+  (`corpus::within_own_tolerance`, ADR-0023), since a real part carries
+  the file's tolerances, which a primitive's defaults do not size. The
+  B-spline read-back (`read_back_nurbs_stage`) is skipped: the
+  conversion of a whole real part costs minutes to read, which
+  measures the reader on a file of that size and not the operation
+  (ADR-0026, amendment of step 7).
 - **An ellipse** (ADR-0014) is its centre, `major` — from the centre to a
   major vertex, so its length is the major radius and its direction the
   axis — and `minor_radius`; an `ellipse_to` segment runs from the

@@ -1,0 +1,27 @@
+{
+  "description": "a square [0,10]² less the quarter disc r 10 about (0, 10), extruded 10, cut by the box [8.5,0.5,4]–[9.5,1.5,6] inside it: the arc leaves the bottom edge at (0, 0) and meets the right edge at (10, 10) tangent to each, so every cap's loop turns back on itself there, a cusp. The cap's arrangement must turn once counter-clockwise: each cusp is a turn of +π round the spike, which the angle alone leaves to rounding. Shrunk from the battery of real/nist-ctc-04 and real/nist-ftc-06, whose plane faces bounded by blends tangent to a line have such cusps (ADR-0026 §4)",
+  "steps": [
+    {
+      "name": "spandrel",
+      "op": "profile",
+      "plane": {"origin": [0, 0, 0], "x": [1, 0, 0], "y": [0, 1, 0]},
+      "outer": {"start": [0, 0], "segments": [{"line_to": [10, 0]}, {"line_to": [10, 10]}, {"arc_to": [0, 0], "via": [8, 4]}]}
+    },
+    {"name": "part", "op": "extrude", "profile": "spandrel", "direction": [0, 0, 1], "length": 10},
+    {"name": "cavity", "op": "box", "min": [8.5, 0.5, 4], "max": [9.5, 1.5, 6]},
+    {"name": "result", "op": "cut", "target": "part", "tool": "cavity"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [9, 3, 2], "expect": "in"},
+    {"label": "in_cavity", "point": [9, 1, 5], "expect": "out"},
+    {"label": "in_the_disc", "point": [2, 5, 5], "expect": "out"},
+    {"label": "on_cusp", "point": [0, 0, 5], "expect": "on"}
+  ],
+  "analytic": {
+    "volume": "(100 - 25 * pi) * 10 - 2",
+    "area": "410",
+    "counts": {"vertices": 14, "edges": 21, "faces": 11, "loops": 11, "shells": 2},
+    "genus": 0
+  }
+}

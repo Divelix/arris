@@ -506,3 +506,35 @@ is a reader bug under §4, not a timing to accommodate.
   is one touch, S5 decides it, and FTC-07 reads whole, in 35 s in the test
   profile with the checker at `Full`. Every part of the committed tier
   runs, and none waits.
+
+## Amendment (2026-09-26, plan `real-part-corpus` step 7)
+
+- **A boolean that meets a NURBS face in classifying a piece refuses the
+  pair.** Every cut and drill of FTC-07 and FTC-10 returned
+  `Internal(Classify)`: a piece is classified by a ray, and a line has no
+  closed form against a NURBS surface. It is now `Unsupported`, naming
+  the piece's face and the other operand's first NURBS face, the one the
+  ray meets. That is §5's NURBS cycle, and the eight stages record
+  `arris-refuses`.
+- **A cusp in a face's loop turns by +π or −π as the curvature says.**
+  CTC-04's plane f393 and FTC-06's f0 are bounded by B-spline edges and
+  blends that leave a line tangent to it: two cusps in one, ten in the
+  other. The turn at a cusp is ±π, and `turn` picked the sign by
+  rounding, so the loop summed to 0 or −4 turns and every face of the
+  part failed to split. The split now signs it by the curvature the
+  node's order already used. A square less a quarter disc, extruded and
+  cut (`boolean/spandrel-cavity-cut`), is the shrunk case: both cusps
+  rounded to −π, and its cap read as a hole. All eight cuts and drills of
+  both parts now agree with Open CASCADE.
+- **A recipe on a real part is held as its battery holds it.** The two
+  NIST fixtures, moved to `boolean/`, met the corpus's defaults: CTC-04's
+  centroid was 1.5e-7 off at 360 mm from the origin, against the
+  `centroid_abs` of 1e-7 sized for primitives, and FTC-06's counts were
+  those of Open CASCADE's healed reading (§3). A recipe with a `step`
+  operand now has its measures widened to the result's own tolerance, as
+  the part's reading and battery have them. A healed part's counts go in
+  `counts_differ` with the reason. The runner also skips the B-spline
+  read-back for such a recipe: reading Open CASCADE's conversion of the
+  cut part took 300 s for FTC-06 and 520 s for CTC-04, which is the
+  reader's cost on a large all-B-spline file (the fetched tier's slow
+  reads, step 9). That cost is a backlog line.

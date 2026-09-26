@@ -1,0 +1,44 @@
+{
+  "description": "NIST's FTC-06 (real/nist-ftc-06, its file read in place) cut by a box 0.02 across at the oracle's centroid: every face of both operands is split before any is classified, and the part's f0, a plane whose outer loop runs two arcs of one r 22.225 circle end to end among r 3.175 blends, which no section crosses, has ten cusps where a blend leaves a line tangent to it: each is a turn of +π round its spike, and the loop turns once. The part itself reads checker-green at Full. Shrunk from the battery of real/nist-ftc-06, whose every cut and drill met it; the file is not shrunk further (ADR-0026 §4)",
+  "steps": [
+    {
+      "op": "step",
+      "name": "part",
+      "file": "../../real/nist-ftc-06/nist_ftc_06_asme1_rd.stp",
+      "sha256": "5e30f0903f9470c14a98e70395ca005fe90bcd3fb704c381a80a69958838f169",
+      "id": 101
+    },
+    {
+      "name": "speck",
+      "op": "box",
+      "min": [
+        -0.009915516262577384,
+        28.99883827676971,
+        -109.61007270395713
+      ],
+      "max": [
+        0.010084483737422616,
+        29.018838276769714,
+        -109.59007270395712
+      ]
+    },
+    {
+      "name": "result",
+      "op": "cut",
+      "target": "part",
+      "tool": "speck"
+    }
+  ],
+  "result": "result",
+  "analytic": {
+    "counts": {
+      "vertices": 254,
+      "edges": 381,
+      "faces": 150,
+      "loops": 189,
+      "shells": 2
+    },
+    "counts_differ": "Open CASCADE heals FTC-06 as it reads it (occt_heals, ADR-0026 §3), 227/310/144/223 in the file become 250/373/144/183, so its counts are not the file's; Arris's are its own reading of the file, 246/369/144/183 (real/nist-ftc-06), and the speck's cavity, 8/12/6/6 in a second shell",
+    "genus": 10
+  }
+}
