@@ -4,7 +4,10 @@
   --workspace --all-targets -- -D warnings`, `cargo test --workspace` and
   `cargo doc --workspace --no-deps` with `-D warnings` pass on every commit.
   The `.githooks/pre-commit` hook enforces it; never bypass it with
-  `--no-verify`.
+  `--no-verify`. It sizes the gate to what is staged: prose alone runs the
+  tests that read docs, a version bump alone runs `cargo check`, and
+  anything else runs all of it. A commit that could change what the suite
+  tests always gets the whole suite.
 - Commit **directly to `main`**. A plan step is the unit of work and the unit
   of commit: finish the step, run the checks, tick the box, commit.
 - Branch only when a plan is experimental enough that throwing it away is a

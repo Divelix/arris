@@ -2,6 +2,16 @@
 # main is always green: fmt, clippy -D warnings, tests, rustdoc — before every
 # commit. Shared by every agent and the human via
 # `git config core.hooksPath .githooks` (AGENTS.md, "Setup").
+#
+# The gate is sized to what the commit stages, so a commit that cannot change
+# what the suite tests does not pay for the suite:
+# - prose only (`*.md`, `.agents/`): the tests that read docs — the plan
+#   citations and the roadmap's histogram (`docs_refs`), the invariants
+#   table (`doc_drift`);
+# - a version bump only (`Cargo.toml`, `Cargo.lock`, every changed line a
+#   `version` set to the workspace's new version): `cargo check`, which
+#   fails on a pin the bump missed;
+# - anything else, a dependency update among it: the whole gate.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 [ -f Cargo.toml ] || exit 0
@@ -12,6 +22,41 @@ command -v cargo-nextest >/dev/null || {
   echo "test binaries overlap instead of running one after another." >&2
   exit 1
 }
+
+staged=$(git diff --cached --name-only --diff-filter=ACMRD)
+[ -n "$staged" ] || exit 0
+
+# Every staged path is prose.
+prose_only() {
+  ! grep -qvE '(\.md$|^\.agents/)' <<<"$staged"
+}
+
+# Every staged path is a manifest, and every changed line in it sets a
+# version to the workspace's new one.
+version_bump_only() {
+  ! grep -qvxE 'Cargo\.(toml|lock)' <<<"$staged" || return 1
+  local version changed
+  version=$(git show :Cargo.toml | sed -n 's/^version = "\(.*\)"$/\1/p' | head -1)
+  [ -n "$version" ] || return 1
+  changed=$(git diff --cached -U0 -- Cargo.toml Cargo.lock | grep -E '^[+-][^+-]' || true)
+  [ -n "$changed" ] || return 1
+  # Removed lines set some version; added lines set exactly the new one.
+  ! grep -E '^-' <<<"$changed" | grep -qvE '\bversion = "=?[^"]*"' &&
+    ! grep -E '^\+' <<<"$changed" | grep -qvE "\bversion = \"=?${version//./\\.}\""
+}
+
+if prose_only; then
+  echo "pre-commit: prose only — the docs tests"
+  cargo nextest run -p arris --test docs_refs -p arris-check --test doc_drift \
+    --cargo-quiet --status-level fail
+  exit 0
+fi
+
+if version_bump_only; then
+  echo "pre-commit: a version bump only — cargo check"
+  cargo check --workspace --all-targets --quiet
+  exit 0
+fi
 
 echo "pre-commit: layer rule" && tools/check-layers.sh
 echo "pre-commit: cargo fmt --check" && cargo fmt --all -- --check
