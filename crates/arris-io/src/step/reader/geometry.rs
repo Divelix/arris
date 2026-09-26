@@ -1317,6 +1317,7 @@ mod tests {
                     length: 1.0,
                     angle: 1.0,
                     uncertainty: None,
+                    motion: None,
                 },
             }
         }

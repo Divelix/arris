@@ -2,26 +2,28 @@
 //! ([`super::part21`]) means, entity by entity. This module holds the
 //! reader's public vocabulary — [`read`], the options a caller reads
 //! with, what it returns, and the typed refusal each solid the reader
-//! cannot take comes back as — and its layers: [`entities`] resolves
+//! cannot take comes back as — and its layers: [`assembly`] flattens the
+//! product structure to every placement of every solid, [`entities`] resolves
 //! references and reads parameters by the schema's types, [`units`] reads
 //! a representation context's units and converts every length and angle
 //! to the caller's, [`geometry`] maps each curve and surface onto its
 //! Arris variant or refuses it by name, and [`topology`] reads one solid
 //! into a body.
 
+pub(crate) mod assembly;
 pub(crate) mod entities;
 pub(crate) mod geometry;
 pub(crate) mod topology;
 pub(crate) mod units;
 
 use core::fmt;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use arris_check::Report;
 use arris_check::arris_topo::provenance::FileEntity;
 use arris_check::arris_topo::{Body, Model, Provenance};
 
-use super::part21::{self, Param, Part21Error};
+use super::part21::{self, Part21Error};
 use entities::Entities;
 use geometry::Geometry;
 use units::Units;
@@ -361,9 +363,12 @@ pub enum ReadError {
 /// What [`read`] returns: one result per solid of the file.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Read {
-    /// Every solid of the file, and every shape standing where a solid
-    /// would that the reader refuses — a faceted B-rep, a shell-based
-    /// surface model — ascending by the file entity.
+    /// Every solid of the file at every placement an assembly puts it —
+    /// the product structure flattened, one body per instance (ADR-0025
+    /// §5) — and every shape standing where a solid would that the reader
+    /// refuses — a faceted B-rep, a shell-based surface model — ascending
+    /// by the file entity, then by the placement (its paths from the
+    /// root assembly in order, [`FileEntity::instance`]).
     pub solids: Vec<ReadSolid>,
 }
 
@@ -437,73 +442,72 @@ const REFUSED_SOLIDS: [&str; 3] = [
 pub fn read(model: &mut Model, text: &str, options: &ReadOptions) -> Result<Read, ReadError> {
     let exchange = part21::parse(text)?;
     let entities = Entities::new(&exchange.instances);
-    // The context of each item a representation holds: the first
-    // representation by id that holds it.
-    let mut context_of: BTreeMap<u64, u64> = BTreeMap::new();
-    for instance in exchange.instances.values() {
-        for record in instance.records() {
-            if !record.name.ends_with("REPRESENTATION") {
-                continue;
-            }
-            if let [_, Param::List(items), Param::Ref(context), ..] = &record.params[..] {
-                for item in items {
-                    if let Param::Ref(item) = item {
-                        context_of.entry(*item).or_insert(*context);
-                    }
-                }
-            }
+    // The solids, and what stands where a solid would and is refused.
+    let mut solids: BTreeSet<u64> = BTreeSet::new();
+    let mut refused: BTreeSet<u64> = BTreeSet::new();
+    for (&id, instance) in &exchange.instances {
+        let names = instance.records();
+        if names.iter().any(|r| SOLIDS.contains(&r.name.as_str())) {
+            solids.insert(id);
+        } else if names
+            .iter()
+            .any(|r| REFUSED_SOLIDS.contains(&r.name.as_str()))
+        {
+            solids.insert(id);
+            refused.insert(id);
         }
     }
     let mut units: BTreeMap<u64, Result<Units, Refusal>> = BTreeMap::new();
-    let mut solids = Vec::new();
-    for (&id, instance) in &exchange.instances {
-        let names = instance.records();
-        let solid = names.iter().any(|r| SOLIDS.contains(&r.name.as_str()));
-        let refused = names
-            .iter()
-            .any(|r| REFUSED_SOLIDS.contains(&r.name.as_str()));
-        if !solid && !refused {
-            continue;
-        }
-        let entity = FileEntity { id, instance: 0 };
-        let context = context_of.get(&id).copied();
-        let context_units = context.map(|c| {
-            units
-                .entry(c)
-                .or_insert_with(|| Units::of_context(&entities, c, options.length_unit))
-                .clone()
-        });
+    let mut units_of = |context: u64| {
+        units
+            .entry(context)
+            .or_insert_with(|| Units::of_context(&entities, context, options.length_unit))
+            .clone()
+    };
+    let placed = assembly::placements(&exchange.instances, &entities, &solids, &mut units_of);
+    let mut out = Vec::with_capacity(placed.len());
+    for p in placed {
+        let entity = FileEntity {
+            id: p.solid,
+            instance: p.instance,
+        };
+        let context_units = p.context.map(&mut units_of);
         let uncertainty = match &context_units {
             Some(Ok(u)) => u.uncertainty,
             _ => None,
         };
-        let result = if refused {
+        let result = if refused.contains(&p.solid) {
             Err(Refusal::Unsupported {
-                entity: id,
-                name: entities::describe(instance),
+                entity: p.solid,
+                name: exchange
+                    .instances
+                    .get(&p.solid)
+                    .map_or_else(String::new, entities::describe),
             })
         } else {
-            match context_units {
-                None => Err(entities::malformed(
-                    id,
+            match (context_units, p.motion) {
+                (None, _) => Err(entities::malformed(
+                    p.solid,
                     "no representation holds the solid, so it has no units",
                 )),
-                Some(Err(r)) => Err(r),
-                Some(Ok(units)) => {
-                    Geometry { entities, units }
-                        .solid(model, id, 0)
-                        .map(|s| ReadBody {
-                            body: s.body,
-                            provenance: s.provenance,
-                        })
+                (Some(Err(r)), _) | (Some(Ok(_)), Err(r)) => Err(r),
+                (Some(Ok(units)), Ok(motion)) => Geometry {
+                    entities,
+                    units: units.placed(motion),
                 }
+                .solid(model, p.solid, p.instance)
+                .map(|s| ReadBody {
+                    body: s.body,
+                    provenance: s.provenance,
+                }),
             }
         };
-        solids.push(ReadSolid {
+        out.push(ReadSolid {
             entity,
             uncertainty,
             result,
         });
     }
+    let solids = out;
     Ok(Read { solids })
 }

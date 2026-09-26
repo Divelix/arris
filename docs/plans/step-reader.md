@@ -566,7 +566,7 @@ after, because it is routine.
   - **The cap moved to `2e-4`**: the converted band variant of
     `seam-beside-crossing-fuse` measures `1.13e-4` of its part, the
     tolerance Open CASCADE's own shape carries there.
-- [ ] Step 16 **[2]** — Assemblies and several solids (ADR-0025 §3 and §5).
+- [x] Step 16 **[2]** — Assemblies and several solids (ADR-0025 §3 and §5).
   - The product structure is flattened (`SHAPE_DEFINITION_REPRESENTATION`,
     `NEXT_ASSEMBLY_USAGE_OCCURRENCE`,
     `CONTEXT_DEPENDENT_SHAPE_REPRESENTATION`,
@@ -582,6 +582,23 @@ after, because it is routine.
   - a file with one solid spoiled by a hand-inserted `OFFSET_SURFACE`
     reads to the others plus that refusal;
   - two reads of one file give identical dumps.
+
+  Done: `step/reader/assembly.rs`. Representations joined with no
+  transformation are one node; a relationship with an
+  `ITEM_DEFINED_TRANSFORMATION`, and a `MAPPED_ITEM`, is a placement
+  from its child to its parent, the displacement taking the first axis
+  (in its own representation's units) onto the second; every path from
+  a root to a solid is an instance, numbered in the order of its
+  placements' ids. The motion rides the units: `Units::placed` moves
+  every point and direction after the conversion, so the geometry is
+  read in place and the pcurves rebuilt there. Open CASCADE's XCAF
+  assembly of the box and the through-hole block, the block placed
+  twice (`tools/oracle/occt_assembly.py`), reads to three clean bodies at
+  its volumes and centroids to `1e-12`; a two-solid file with an
+  `OFFSET_SURFACE` put under the cylinder's wall reads to the block and
+  that refusal. A `CARTESIAN_TRANSFORMATION_OPERATOR_3D` placement is
+  refused as `Unsupported` for every solid below it: no file in the
+  corpus writes one, and a scaled operator is no rigid motion.
 - [ ] Step 17 **[1]** — Closing the surface.
   - `arris` re-exports `step::read`, and the facade table gets its row.
   - The fuzz target moves from `part21::parse` to `step::read` and is

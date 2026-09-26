@@ -412,6 +412,104 @@ pub fn occt_step(
     Ok(text)
 }
 
+/// One placed instance of [`occt_assembly`]'s assembly, as Open CASCADE
+/// measures the placed shape.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize)]
+pub struct AssemblyInstance {
+    /// Its volume.
+    pub volume: f64,
+    /// Its centroid.
+    pub centroid: [f64; 3],
+}
+
+/// An Open CASCADE XCAF assembly of the results of the fixtures in `a`
+/// and `b` — `a` placed once, `b` twice, each by a turn and a shift —
+/// written by `STEPCAFControl_Writer` with its product structure
+/// (`tools/oracle/occt_assembly.py`): the STEP text, and each placed
+/// instance's volume and centroid in placement order, which Arris's
+/// reader of the file is held to (ADR-0025 §5). Kept in [`cache`] under
+/// both `fixture.json`s; the file is also left at
+/// `target/inspect/<tag>.step`.
+///
+/// Errors: [`OracleError::Write`]; [`OracleError::Environment`] when `uv`
+/// could not run, the environment is missing, or a recipe did not build.
+///
+/// ```no_run
+/// use arris_debug::{fixtures, oracle};
+///
+/// let root = fixtures::corpus_root();
+/// let (text, placed) =
+///     oracle::occt_assembly(&root.join("primitive/box"), &root.join("primitive/cylinder"), "asm")
+///         .unwrap();
+/// assert_eq!(placed.len(), 3);
+/// assert!(text.contains("NEXT_ASSEMBLY_USAGE_OCCURRENCE"));
+/// ```
+pub fn occt_assembly(
+    a: &Path,
+    b: &Path,
+    tag: &str,
+) -> Result<(String, Vec<AssemblyInstance>), OracleError> {
+    #[derive(serde::Serialize, serde::Deserialize)]
+    struct Kept {
+        step: String,
+        instances: Vec<[f64; 4]>,
+    }
+    let scratch = scratch_dir();
+    let file = scratch.join(format!("{tag}.step"));
+    let specs = [a, b].map(|d| std::fs::read(d.join("fixture.json")).ok());
+    let slot = cache::slot(
+        "occt_assembly.py",
+        &[specs[0].as_deref(), specs[1].as_deref()],
+        None,
+    );
+    let unpack = |kept: Kept| {
+        let placed = kept
+            .instances
+            .iter()
+            .map(|&[volume, x, y, z]| AssemblyInstance {
+                volume,
+                centroid: [x, y, z],
+            })
+            .collect();
+        (kept.step, placed)
+    };
+    std::fs::create_dir_all(&scratch).map_err(|e| OracleError::Write {
+        path: scratch.clone(),
+        message: e.to_string(),
+    })?;
+    if let Some(bytes) = slot.as_ref().and_then(|(d, k)| cache::load(d, k)) {
+        if let Ok(kept) = serde_json::from_slice::<Kept>(&bytes) {
+            std::fs::write(&file, &kept.step).map_err(|e| OracleError::Write {
+                path: file.clone(),
+                message: e.to_string(),
+            })?;
+            return Ok(unpack(kept));
+        }
+    }
+    let output = spawn(uv("occt_assembly.py").arg(a).arg(b).arg(&file))?;
+    if !output.status.success() {
+        return Err(environment(&output));
+    }
+    let placed: Vec<AssemblyInstance> =
+        serde_json::from_slice(&output.stdout).map_err(|e| OracleError::Environment {
+            message: format!("occt_assembly.py's output did not parse as JSON: {e}"),
+        })?;
+    let step = std::fs::read_to_string(&file).map_err(|e| OracleError::Environment {
+        message: format!("occt_assembly.py wrote no file {}: {e}", file.display()),
+    })?;
+    let kept = Kept {
+        step,
+        instances: placed
+            .iter()
+            .map(|p| [p.volume, p.centroid[0], p.centroid[1], p.centroid[2]])
+            .collect(),
+    };
+    if let Ok(bytes) = serde_json::to_vec(&kept) {
+        keep(slot, &bytes);
+    }
+    Ok(unpack(kept))
+}
+
 /// Open CASCADE's `RWStl` reading of an STL file: how many facets it saw,
 /// their total area and their signed volume by the divergence theorem —
 /// the same formula `arris_mesh::TriMesh::signed_volume` and `area` use —

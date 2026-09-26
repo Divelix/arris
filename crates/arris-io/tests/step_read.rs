@@ -578,3 +578,137 @@ fn an_edge_lifted_off_its_face_carries_the_gap() {
         "{gap} {cap} {delta}"
     );
 }
+
+/// An Open CASCADE XCAF assembly of a box and a through-hole block, the
+/// block placed twice (ADR-0025 §5): three bodies, each checker-clean at
+/// `Full`, at the oracle's volume and centroid of its placed shape, and
+/// named by its solid and which placement of it — the block's two in the
+/// order of their paths.
+#[test]
+fn an_assembly_reads_to_a_body_per_placed_solid() {
+    let root = fixtures::corpus_root();
+    let (text, placed) = arris_debug::oracle::occt_assembly(
+        &root.join("primitive/box"),
+        &root.join("boolean/through-hole"),
+        "occt-assembly-box-through-hole",
+    )
+    .unwrap();
+    let mut m = Model::default();
+    let read = step::read(&mut m, &text, &ReadOptions::default()).unwrap();
+    assert_eq!(read.solids.len(), 3);
+    let instances: Vec<(u64, u32)> = read
+        .solids
+        .iter()
+        .map(|s| (s.entity.id, s.entity.instance))
+        .collect();
+    assert_eq!(instances[0].1, 0);
+    assert_eq!(instances[1], (instances[2].0, 0));
+    assert_eq!(instances[2].1, 1);
+    // Placement order is the box, then the block twice: the file's
+    // solids ascend the same way, the block's paths in NAUO order.
+    for (solid, oracle) in read.solids.iter().zip(&placed) {
+        let back = solid.result.as_ref().unwrap_or_else(|r| panic!("{r}"));
+        let report = check(&m, back.body, Level::Full);
+        assert!(report.is_ok() && report.unchecked().is_empty(), "{report}");
+        let mass = arris_ops::measure::mass_properties(&m, back.body).unwrap();
+        assert!(
+            (mass.volume - oracle.volume).abs() <= 1e-9 * oracle.volume,
+            "{:?}: volume {} vs {}",
+            solid.entity,
+            mass.volume,
+            oracle.volume
+        );
+        let c = oracle.centroid;
+        let apart = (mass.centroid
+            - arris_io::arris_check::arris_topo::arris_math::Point3::new(c[0], c[1], c[2]))
+        .norm();
+        assert!(
+            apart <= 1e-7,
+            "{:?}: centroid {} vs {c:?}",
+            solid.entity,
+            mass.centroid
+        );
+        provenance_names_the_placement(&m, back, solid.entity).unwrap();
+    }
+    // Two reads of one file are the same entities with the same ids.
+    let dumps: Vec<String> = (0..2)
+        .map(|_| {
+            let mut m = Model::default();
+            let read = step::read(&mut m, &text, &ReadOptions::default()).unwrap();
+            read.solids
+                .iter()
+                .map(|s| arris_debug::dump_text(&m, s.result.as_ref().unwrap().body).unwrap())
+                .collect()
+        })
+        .collect();
+    assert_eq!(dumps[0], dumps[1]);
+}
+
+/// Every entity of a body read at a placement is generated from a file
+/// entity at that placement.
+fn provenance_names_the_placement(
+    model: &Model,
+    back: &ReadBody,
+    solid: FileEntity,
+) -> Result<(), String> {
+    let closure = model.closure(back.body).map_err(|e| e.to_string())?;
+    let shapes: Vec<Shape> = (closure.vertices.iter())
+        .map(|&v| Shape::from(Vertex::forward(v)))
+        .chain(closure.faces.iter().map(|&f| Face::forward(f).into()))
+        .collect();
+    for s in shapes {
+        match back.provenance.origins(s)[..] {
+            [(Relation::Generated, Origin::Role(Role::File(FileEntity { instance, .. })))]
+                if instance == solid.instance => {}
+            ref other => return Err(format!("{s} comes from {other:?}")),
+        }
+    }
+    Ok(())
+}
+
+/// A file of two solids, one spoiled by an `OFFSET_SURFACE` put under
+/// one of its faces: the other reads, and the spoiled one is refused by
+/// name — one refused solid never hides another (ADR-0025 §3).
+#[test]
+fn a_refused_solid_does_not_hide_the_others() {
+    let mut m = Model::default();
+    let block = arris_debug::sample::cuboid(
+        &mut m,
+        arris_io::arris_check::arris_topo::arris_math::Point3::new(10.0, 0.0, 0.0),
+        arris_io::arris_check::arris_topo::arris_math::Point3::new(12.0, 3.0, 4.0),
+    )
+    .unwrap();
+    let cylinder = arris_debug::sample::cylinder(&mut m, 4.0, 12.0).unwrap();
+    let text = step::write(&m, &[block, cylinder]).unwrap();
+    let wall = text
+        .lines()
+        .find(|l| l.contains("CYLINDRICAL_SURFACE("))
+        .and_then(|l| l.split(" = ").next())
+        .unwrap()
+        .to_string();
+    let face = text
+        .lines()
+        .find(|l| l.contains("ADVANCED_FACE(") && l.contains(&format!(",{wall},")))
+        .unwrap();
+    let spoiled = text
+        .replace(face, &face.replace(&format!(",{wall},"), ",#999999,"))
+        .replace(
+            "ENDSEC;\nEND-ISO-10303-21;",
+            &format!("#999999 = OFFSET_SURFACE('',{wall},0.5,.F.);\nENDSEC;\nEND-ISO-10303-21;"),
+        );
+    let mut back = Model::default();
+    let read = step::read(&mut back, &spoiled, &ReadOptions::default()).unwrap();
+    assert_eq!(read.solids.len(), 2);
+    let results: Vec<_> = read.solids.iter().map(|s| s.result.as_ref()).collect();
+    let refused: Vec<_> = results.iter().filter_map(|r| r.err()).collect();
+    assert_eq!(refused.len(), 1, "{refused:?}");
+    assert_eq!(
+        refused[0].kind(),
+        step::RefusalKind::Offset,
+        "{}",
+        refused[0]
+    );
+    assert_eq!(refused[0].entity(), 999999);
+    let read_ok = results.iter().find_map(|r| r.ok()).unwrap();
+    assert_eq!(back.faces(read_ok.body).unwrap().len(), 6);
+}

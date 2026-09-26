@@ -15,7 +15,7 @@
 //! result in the caller's unit; it is never an entity's tolerance
 //! (ADR-0025 §4).
 
-use arris_check::arris_topo::arris_math::{Frame, Point3, Vec3};
+use arris_check::arris_topo::arris_math::{Frame, Isometry, Point3, Vec3};
 
 use super::entities::{Args, Entities, describe, malformed, number};
 use super::{LengthUnit, Refusal};
@@ -73,6 +73,10 @@ pub(crate) struct Units {
     /// The smallest length uncertainty the context claims, in the
     /// caller's unit.
     pub(crate) uncertainty: Option<f64>,
+    /// The placement an assembly puts the representation at, applied to
+    /// every point and direction after the conversion: `None` for a solid
+    /// read where it stands (ADR-0025 §5).
+    pub(crate) motion: Option<Isometry>,
 }
 
 impl Units {
@@ -125,7 +129,14 @@ impl Units {
             length,
             angle,
             uncertainty,
+            motion: None,
         })
+    }
+
+    /// These units with every point and direction moved by `motion`
+    /// after the conversion.
+    pub(crate) fn placed(self, motion: Option<Isometry>) -> Units {
+        Units { motion, ..self }
     }
 
     /// A length in the file's unit, in the caller's.
@@ -148,7 +159,10 @@ impl Units {
         let args = entities.record(from, id, "CARTESIAN_POINT")?;
         let xs = args.reals(1)?;
         match xs[..] {
-            [x, y, z] => Ok(Point3::new(self.length(x), self.length(y), self.length(z))),
+            [x, y, z] => {
+                let p = Point3::new(self.length(x), self.length(y), self.length(z));
+                Ok(self.motion.map_or(p, |m| m.apply(p)))
+            }
             _ => Err(args.malformed(format!(
                 "a point of {} coordinates in a 3D context",
                 xs.len()
@@ -167,7 +181,10 @@ impl Units {
         let args = entities.record(from, id, "DIRECTION")?;
         let xs = args.reals(1)?;
         match xs[..] {
-            [x, y, z] => Ok(Vec3::new(x, y, z)),
+            [x, y, z] => {
+                let v = Vec3::new(x, y, z);
+                Ok(self.motion.map_or(v, |m| m.apply_vec(v)))
+            }
             _ => Err(args.malformed(format!(
                 "a direction of {} ratios in a 3D context",
                 xs.len()
@@ -579,6 +596,7 @@ END-ISO-10303-21;
             length: 10.0,
             angle: 1.0,
             uncertainty: None,
+            motion: None,
         };
         let f = units.placement(&e, 2, 2).unwrap();
         assert_eq!(f.origin(), Point3::new(10.0, 20.0, 30.0));
