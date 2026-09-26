@@ -279,6 +279,55 @@ pub enum RefusalKind {
     Invalid,
 }
 
+impl RefusalKind {
+    /// Every kind, in declaration order: what a refusal histogram
+    /// iterates so that a kind no file met still has its row.
+    ///
+    /// ```
+    /// use arris_io::step::RefusalKind;
+    ///
+    /// assert!(RefusalKind::ALL.contains(&RefusalKind::Offset));
+    /// assert!(RefusalKind::ALL.windows(2).all(|w| w[0] < w[1]));
+    /// ```
+    pub const ALL: [RefusalKind; 14] = [
+        RefusalKind::NoLengthUnit,
+        RefusalKind::Malformed,
+        RefusalKind::Offset,
+        RefusalKind::Composite,
+        RefusalKind::CurveBounded,
+        RefusalKind::DegenerateTorus,
+        RefusalKind::SelfIntersectingTorus,
+        RefusalKind::Unsupported,
+        RefusalKind::Degenerate,
+        RefusalKind::Topology,
+        RefusalKind::Pcurve,
+        RefusalKind::OpenLoop,
+        RefusalKind::Gap,
+        RefusalKind::Invalid,
+    ];
+
+    /// Its place in [`RefusalKind::ALL`]: an exhaustive match, so a kind
+    /// added without its row fails to compile here.
+    pub fn index(self) -> usize {
+        match self {
+            RefusalKind::NoLengthUnit => 0,
+            RefusalKind::Malformed => 1,
+            RefusalKind::Offset => 2,
+            RefusalKind::Composite => 3,
+            RefusalKind::CurveBounded => 4,
+            RefusalKind::DegenerateTorus => 5,
+            RefusalKind::SelfIntersectingTorus => 6,
+            RefusalKind::Unsupported => 7,
+            RefusalKind::Degenerate => 8,
+            RefusalKind::Topology => 9,
+            RefusalKind::Pcurve => 10,
+            RefusalKind::OpenLoop => 11,
+            RefusalKind::Gap => 12,
+            RefusalKind::Invalid => 13,
+        }
+    }
+}
+
 impl Refusal {
     /// Which refusal this is.
     ///
@@ -510,4 +559,16 @@ pub fn read(model: &mut Model, text: &str, options: &ReadOptions) -> Result<Read
     }
     let solids = out;
     Ok(Read { solids })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::RefusalKind;
+
+    #[test]
+    fn every_kind_is_in_all_at_its_index() {
+        for (i, kind) in RefusalKind::ALL.iter().enumerate() {
+            assert_eq!(kind.index(), i, "{kind}");
+        }
+    }
 }

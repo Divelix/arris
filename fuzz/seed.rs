@@ -4,7 +4,9 @@
 //! pair to `corpus/intersect_curves/`, and every curve a surface pair's
 //! section returns against both of its surfaces, as a section input, to
 //! `corpus/intersect_curve_surface/` — the fitted curves the fixtures
-//! only reach through a boolean.
+//! only reach through a boolean — and every solid fixture's STEP to
+//! `corpus/step_read/`: Arris's own, and Open CASCADE's where the
+//! oracle's environment is there.
 //!
 //! ```sh
 //! cargo run --manifest-path fuzz/Cargo.toml --example seed
@@ -19,6 +21,7 @@ use std::path::{Path, PathBuf};
 
 use arris_debug::fixtures::geom::{build_curve, build_surface, load};
 use arris_debug::corpus::chain;
+use arris_debug::oracle;
 use arris_debug::fixtures::{self, Kind, corpus, kind_of, name_of};
 use arris_fuzz::{Encoder, tolerance};
 use arris_geom::intersect_surfaces;
@@ -60,6 +63,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 };
                 write(&step_dir, &format!("{slug}-{variant}.step"), text.into_bytes())?;
                 *counts.entry("step_read").or_default() += 1;
+                // Open CASCADE's own file of the recipe, where the
+                // oracle's environment is there: a seed with another
+                // writer's habits. Not its B-spline conversion: those
+                // take tens of seconds each with debug assertions on,
+                // the checker after every operation, and the corpus
+                // runner reads every one of them already.
+                let tag = format!("seed-occt-{slug}-{variant}");
+                if let Ok(text) = oracle::occt_step(&dir, Some(variant), false, &tag) {
+                    write(&step_dir, &format!("{tag}.step"), text.into_bytes())?;
+                    *counts.entry("step_read").or_default() += 1;
+                }
             }
             continue;
         }

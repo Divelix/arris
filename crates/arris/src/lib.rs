@@ -16,7 +16,14 @@
 //!     arris::ops::primitive_cylinder(&mut m, Axis::z_at(Point3::origin()), 4.0, 12.0).unwrap();
 //! assert!(check(&m, cylinder, Level::Full).is_ok());
 //! assert_eq!(provenance.outputs().len(), 10);
-//! assert!(arris::io::step::write(&m, &[cylinder]).unwrap().starts_with("ISO-10303-21;"));
+//! let text = arris::io::step::write(&m, &[cylinder]).unwrap();
+//! assert!(text.starts_with("ISO-10303-21;"));
+//!
+//! // And back: every solid of a file, each its own result.
+//! let mut back = Model::default();
+//! let read = arris::io::step::read(&mut back, &text, &Default::default()).unwrap();
+//! let body = read.solids[0].result.as_ref().unwrap().body;
+//! assert!(check(&back, body, Level::Full).is_ok());
 //! ```
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]

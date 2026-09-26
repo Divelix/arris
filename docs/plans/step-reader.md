@@ -599,7 +599,7 @@ after, because it is routine.
   that refusal. A `CARTESIAN_TRANSFORMATION_OPERATOR_3D` placement is
   refused as `Unsupported` for every solid below it: no file in the
   corpus writes one, and a scaled operator is no rigid motion.
-- [ ] Step 17 **[1]** — Closing the surface.
+- [x] Step 17 **[1]** — Closing the surface.
   - `arris` re-exports `step::read`, and the facade table gets its row.
   - The fuzz target moves from `part21::parse` to `step::read` and is
     re-seeded.
@@ -607,6 +607,22 @@ after, because it is routine.
     check).
   - A rustdoc example on `step::read`.
   - `RefusalKind::ALL`, so the next plan's histogram iterates every kind.
+
+  Done: the facade reaches `step::read` through `arris::io` and its
+  doctest reads a file back; ARCHITECTURE's facade table gains the STEP
+  import row. `RefusalKind::ALL` with `RefusalKind::index`, an exhaustive
+  match, so a kind added without its row fails to compile.
+  `arris_debug::step_file::inspect` and `cargo run -p arris-debug
+  --example inspect_step -- <file>` dump, check at `Full` and render
+  every solid of a file, and the `inspect` skill says so. The fuzz
+  target reads with `step::read` into two fresh models and compares; it
+  is seeded with Arris's and Open CASCADE's STEP of every solid fixture,
+  not Open CASCADE's B-spline conversions, which take tens of seconds
+  each with debug assertions on (two of them timed a first run out
+  before it fuzzed at all) and which the corpus runner reads already.
+  Fifteen minutes on sixteen forks over the new seeds: 11.4 million
+  inputs, no crash, timeout or out-of-memory. The acceptance's nightly
+  30 minutes is still the nightly job's.
 
 ## Acceptance
 
