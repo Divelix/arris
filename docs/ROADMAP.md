@@ -408,10 +408,19 @@ cycle after C3 because nothing can be measured until it exists, so this
 choice rests on no numbers. An accepted ADR that cites `C4` means the
 NURBS cycle, read through ADR-0020's table, not this one.*
 
-**Status: opened 2026-09-24. Two plans (ADR-0025): `step-reader` builds
-the reader and the refusal type the histogram counts, then
-`real-part-corpus` builds the corpus, the battery of operations run on
-every part read, and the histogram.**
+**Status: opened 2026-09-24. Two plans (ADR-0025). The reader's half is
+done (2026-09-26): `arris_io::step::read` maps the B-Rep subset onto
+Arris's own variants, flattens assemblies, rebuilds every pcurve and the
+degenerate edges a file leaves out, measures each entity's tolerance and
+returns a checker-green body or a counted `Refusal` per solid. Open
+CASCADE's STEP of every corpus fixture reads back to the oracle's counts,
+volume, area and centroid (168 corpus tests, three files refused by name
+as describing no solid), and so does its B-spline conversion of every
+fixture (168; one variant Open CASCADE cannot convert); Arris's own STEP
+round-trips as a property at 256, 1000 and 5000 cases; the reader's fuzz
+target ran 11.4 million inputs without a crash, after the parser's hour
+of 298 million. Open: `real-part-corpus` — the corpus of real parts, the
+battery of operations run on every part read, and the histogram.**
 
 - A Part 21 parser: the exchange structure, references, the schema
   header, string and number encodings, and a typed error carrying the
@@ -422,8 +431,8 @@ every part read, and the histogram.**
   builder, provenance `Generated` from the file's entity.
 - Pcurves rebuilt rather than read — a file's are optional, approximate,
   or absent. Closed form on the analytic surfaces (data-model §Pcurves),
-  which pulls `project` onto a NURBS surface forward: it is
-  `GeomError::Unsupported` today, by cycle-1 design. What the writer
+  which pulled `project` onto a NURBS surface forward from the NURBS
+  cycle. What the writer
   drops is rebuilt the same way, from the 3D curve and the surface's
   singularity: a left-handed pcurve conic (`AXIS2_PLACEMENT_2D` is
   direct) and a degenerate edge's coedge.
@@ -483,10 +492,12 @@ night found a fourth, two planes a hair from parallel meeting in a line
 with a NaN origin. A night takes about 2 h 30 min, its longest property
 job 2 h 23 min. A red night is a finding to triage, not a gate; CI's
 fixed seed is the gate (ADR-0024, amendment of 2026-09-25).
-A fourth, `step_read`, runs the Part 21 parser on the STEP file of
-every solid fixture: its first minutes found a page directive that
-swallowed a line break, and its first hour after the fix, on 24 cores,
-ran 298 million inputs with no crash.
+A fourth, `step_read`, runs the STEP reader on Arris's and Open
+CASCADE's STEP of every solid fixture: over the parser alone its first
+minutes found a page directive that swallowed a line break, and its
+first hour after the fix, on 24 cores, ran 298 million inputs with no
+crash; over the whole reader, fifteen minutes on sixteen cores ran 11.4
+million with none.
 
 **The first-party binding.** Code-first and agent-driven modelling is one
 of the consumers `SEED.md` §1 names, and a binding in this repository is

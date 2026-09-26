@@ -23,7 +23,7 @@ re-exports the public API. Lower crates never name types from upper ones.
 | `arris-check` | The invariant checker: `check(&Model, Body, Level) -> Report` and the `Violation` list of data-model §Invariants; the shared face domain (`domain::FaceDomain`), point classifier (`classify::Classifier`, `classify_point`) and region flux (`flux::face_flux`) every `Full` row, the boolean and tessellation read a face through; re-exports `arris-topo` | `arris-topo`, `serde` (feature, forwarded to `arris-topo`) | 1 |
 | `arris-ops` | Primitives, extrude and revolve of a `Profile`, transform, booleans, the blends, each returning `Provenance`; the queries `measure` (mass properties) and `query` (projection onto a plane, a face's outward frame) | `arris-check`, `thiserror`, `rayon` (feature) | 2 — algorithms |
 | `arris-mesh` | `TriMesh`, `Polyline`, the constrained Delaunay triangulation in (u, v) (`cdt`, ADR-0003), tessellation of faces and edges with shared edge discretisation; re-exports `arris-math`'s `Aabb` and `Interval` | `arris-check`, `arris-topo`, `thiserror`, `rayon` (feature) | 2 — algorithms |
-| `arris-io` | STEP AP214 Part 21 writer (later reader), the native format (`native`), STL and OBJ mesh writers (`stl`, `obj`, ADR-0013); re-exports `arris-check` and `arris-mesh` | `arris-check`, `arris-mesh`, `thiserror`, `serde`, `serde_json`, `postcard` (the last three behind the `serde` feature) | 2 — algorithms |
+| `arris-io` | STEP AP214 Part 21 writer and reader (`step::write`, `step::read`, ADR-0025) over the Part 21 parser (`step::part21`), the native format (`native`), STL and OBJ mesh writers (`stl`, `obj`, ADR-0013); re-exports `arris-check` and `arris-mesh` | `arris-check`, `arris-mesh`, `thiserror`, `serde`, `serde_json`, `postcard` (the last three behind the `serde` feature) | 2 — algorithms |
 | `arris-debug` | Text dump, the hand-built sample bodies (`sample`), PNG render (own software rasteriser over `image`), Rerun stream (feature), the fixture loader and corpus lint, the corpus runner (`corpus`) and the oracle seam (`oracle`), the seeded property-test runner and strategies (`prop`, `prop::recipe` among them), the differential over both kernels (`differential`), the benchmark timer (`bench`) | `arris-ops`, `arris-mesh`, `arris-io`, `arris-topo`, `arris-geom`, `arris-math`, `image`, `serde`, `serde_json`, `sha2`, `thiserror`, `proptest` (not on `wasm32`), `rerun` (feature) | 3 — dev-facing |
 | `arris` | Facade: re-exports | `math` through `io`; `debug` as a dev-dependency only | 4 |
 
@@ -814,6 +814,19 @@ involved, so the message a consumer shows — or the agent reads — says
 | `NotFound` | an id does not resolve in this model (wrong model, or compacted away) | the `AnyId` that failed to resolve itself, never an entity that merely holds it |
 | `Internal` | a kernel bug the operation caught: the checker rejected its own output, the builder refused a step of its fixed sequence, a frame could not be placed from inputs it had validated, a point it had to classify could not be, a geometry query failed on validated input for a reason other than a missing closed form, a section edge crossed a seam the seam's own hit should have paved, a piece of a coincident face pair's edge matched no piece of the edge it lies along, the (u, v) arrangement of a face was not the subdivision the pave model promised (`SplitFault`: a dangling section edge, a cycle not turning once, a hole inside no piece, a piece with no interior point, a pave at an edge's end), the shells a boolean kept did not nest into lumps, an operation's own fixed sequence broke an invariant it should have kept — an internal lookup by index or key, never a model id, found nothing (`Fault::Invariant { what }`), a sweep's own later step needed an entity its earlier step did not make for a segment (`Fault::Unmade { segment }`), a surface had no normal at a point on a face an operation needed one at, every partial derivative degenerate where the checker's own tolerances should have ruled that out (`Fault::NoNormal { face }`), or a profile edge's curve was not one of the kinds `Profile::edges` makes (`Fault::ProfileCurve(GeomError)`) | a `Fault` — the `Report`, the `BuildError`, the `FrameError`, the `ClassifyError`, the `GeomError`, the two faces of the seam crossing, the edge and face of the unmatched common block, the `SplitFault` naming the face, the `LumpError`, or one of the four bookkeeping variants above |
 
+The STEP reader's failures are its own and never an `OpError`: a file
+that is not Part 21 is `ReadError::Parse(Part21Error)`, naming the line,
+the column and the instance, and fails the whole file; past parsing,
+every solid is `Ok` or a `Refusal` naming the `#id` where it stopped —
+the geometry outside the subset (`Offset`, `Composite`, `CurveBounded`,
+`DegenerateTorus`, `SelfIntersectingTorus`, `Unsupported`, `Degenerate`),
+the file's units (`NoLengthUnit`) or references (`Malformed`), its
+topology (`Topology`, `Pcurve`, `OpenLoop`), a gap past the cap (`Gap`)
+or a body the checker rejects (`Invalid`, carrying the `Report`).
+`Refusal::kind` is the fieldless `RefusalKind` a histogram counts, and
+`RefusalKind::ALL` lists every kind, held to the enum by an exhaustive
+`index`.
+
 `Internal(Fault::Checker)` is returned only in release builds with
 `paranoid` on, since a debug build panics on the same report (below);
 every other fault is returned as `Internal` in any build. A degenerate *result* that the
@@ -1190,7 +1203,7 @@ B-Rep).
   bodies are `Unsupported` until an operation produces them, and a solid
   whose shells do not nest into lumps is `StepError::Lumps`.
 - **Part 21** (`arris_io::step::part21::parse(&str) -> Result<Exchange,
-  Part21Error>`, plan `step-reader`): the exchange structure below any
+  Part21Error>`): the exchange structure below any
   schema, the first layer of the reader (ADR-0025 §3). It keeps the
   header's entities (`FILE_DESCRIPTION`, `FILE_NAME`, `FILE_SCHEMA`
   required) and every instance of every `DATA` section in a `BTreeMap` by
@@ -1206,6 +1219,49 @@ B-Rep).
   panics, runs in time linear in the text, bounds nesting at 64, and the
   corpus runner parses every file the writer makes before the oracle
   reads it, each instance kept once.
+- **The STEP reader** (`arris_io::step::read(&mut Model, &str,
+  &ReadOptions) -> Result<Read, ReadError>`, ADR-0025): the AP203/214/242
+  B-Rep subset onto the variants Arris has, never a new one. Layered under
+  `step/reader/`: `assembly` flattens the product structure
+  (`SHAPE_DEFINITION_REPRESENTATION`, `NEXT_ASSEMBLY_USAGE_OCCURRENCE`,
+  `CONTEXT_DEPENDENT_SHAPE_REPRESENTATION`, a relationship with an
+  `ITEM_DEFINED_TRANSFORMATION`, `MAPPED_ITEM`) to every path from a root
+  to a solid, each path one *instance* with its placements composed and
+  numbered in the order of their ids; `units` reads each representation
+  context's length unit (`SI_UNIT` with its prefix, or a
+  `CONVERSION_BASED_UNIT`) and plane-angle unit and converts to
+  `ReadOptions::length_unit` — millimetres by default, the unit the writer
+  declares — as an exact ratio where one is representable, the placement's
+  motion riding the conversion so geometry is read in place; the file's
+  `UNCERTAINTY_MEASURE_WITH_UNIT` is kept beside the result
+  (`ReadSolid::uncertainty`), never used as a tolerance; `geometry` maps
+  each curve and surface exactly (ADR-0025 §1): the analytic ones as
+  themselves, a `SURFACE_OF_LINEAR_EXTRUSION` or `SURFACE_OF_REVOLUTION`
+  that is a plane or a quadric as that quadric, every B-spline subtype, a
+  parabola, a hyperbola, a polyline and every other swept surface as an
+  exact `Nurbs` (data-model §NURBS), a trimmed curve or surface as its
+  basis, and a normal's sense kept beside the variant as a `reversed`
+  flag the topology turns `same_sense` by; `topology` reads one
+  `MANIFOLD_SOLID_BREP` or `BREP_WITH_VOIDS` through
+  `Builder::assemble`, edge ranges found by projecting the vertices onto
+  the curve, an edge used twice in a loop a seam, every pcurve rebuilt
+  by `pcurve_on` and never read, each loop's pcurves walked to be
+  continuous and placed in the surface's own period, a degenerate edge
+  the file left out rebuilt along the singular row a loop's walk jumps
+  on (`Surface::singularities`), a `VERTEX_LOOP` joined to its face's
+  other bound by the exact iso-line, and each entity's tolerance measured
+  from its own gaps and capped at `READ_GAP_FRACTION` of the part's size
+  (data-model §Tolerances). The body is checked at `Level::Fast` in
+  every build, since a violation there is the file's and not the
+  kernel's. Every solid comes back as a `ReadSolid` carrying its
+  `FileEntity` and either a `ReadBody` — the body and its provenance, each
+  entity `Generated` from its file entity (`Role::File`, data-model
+  §Provenance) — or a `Refusal`; a refused solid leaves nothing in the
+  model and hides no other, and only a `Part21Error` fails the file
+  (§Errors). Deterministic: the same text reads to the same ids. What
+  it does not read: product names, colours, layers, PMI, and the
+  edition-3 sections; a faceted B-rep or a shell-based surface model
+  stands where a solid would and is counted as refused.
 - **Native format** (`arris_io::native::{to_json, from_json, to_bytes,
   from_bytes}`): `serde` of the model under a version header, JSON for
   diffs and `postcard` bytes for storage; data-model §Native format.
@@ -1286,10 +1342,10 @@ B-Rep).
   every `tests/fixtures/geom/` pair as a seed. Each target asserts no
   panic, every hit on both operands within the tolerance (a surface
   pair's curves inside the region asked for), and the same answer twice.
-  `step_read` runs the Part 21 parser on any text, seeded from the STEP
-  file of every solid fixture's result, and asserts no panic, the same
-  answer twice and an error placed inside the text; it moves to
-  `step::read` once the reader exists. They run without ASan
+  `step_read` runs `step::read` on any text into two fresh models,
+  seeded from Arris's and Open CASCADE's STEP of every solid fixture's
+  result, and asserts no panic, the same answer twice and a parse error
+  placed inside the text. They run without ASan
   (`-s none`), which finds nothing in `forbid(unsafe_code)` crates and
   costs twentyfold. `fuzz/show.rs`
   decodes a crash.
@@ -1447,8 +1503,8 @@ the backend behind it, on its own schedule (ADR-0017). Its surface maps onto
 Arris method for method, and nothing in the facade needs Arris types above
 it. What a method covers is a separate question, answered case by case: a
 blend between faces outside ADR-0007's table is refused where the old
-backend may build it, and the STEP reader is the cycle after C3
-(`docs/ROADMAP.md`, ADR-0020). The consumer's run of its suite on both
+backend may build it, and the STEP reader refuses by name what it does
+not map (ADR-0025 §2). The consumer's run of its suite on both
 backends is what measures this — and, beside the real-part corpus's
 refusal histogram, what picks the cycle after the reader's.
 

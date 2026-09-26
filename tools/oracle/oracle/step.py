@@ -45,7 +45,7 @@ def read(path: Path) -> TopoDS_Shape:
 def nurbs(shape: TopoDS_Shape) -> TopoDS_Shape:
     """`shape` with every surface and curve converted to B-splines by
     `BRepBuilderAPI_NurbsConvert`: the free-form faces with seams and poles
-    the STEP reader is held to (plans/step-reader step 15)."""
+    the STEP reader is held to (ADR-0025)."""
     converter = BRepBuilderAPI_NurbsConvert(shape, True)
     if not converter.IsDone():
         raise OracleError("BRepBuilderAPI_NurbsConvert failed")

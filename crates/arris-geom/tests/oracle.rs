@@ -1099,7 +1099,7 @@ fn the_c3_nurbs_hits_cross_as_built() {
 
 /// A closed B-spline that is not periodic, met at its join: one hit there,
 /// at the start parameter, as the oracle's general intersector counts it,
-/// and the pairs' counts as it counts them (plan step-reader step 5).
+/// and the pairs' counts as it counts them (ADR-0025).
 #[test]
 fn a_closed_curve_meets_a_surface_at_its_join_once() {
     let f = geometry_fixtures()

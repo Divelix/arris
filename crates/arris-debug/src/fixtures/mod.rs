@@ -771,7 +771,7 @@ pub struct Measured {
     /// The counts of the result converted to B-splines by
     /// `BRepBuilderAPI_NurbsConvert`, which may gain seams: what Arris's
     /// reader of Open CASCADE's STEP of the converted result is held to
-    /// (ADR-0025, plans/step-reader step 15). Absent for a degenerate
+    /// (ADR-0025). Absent for a degenerate
     /// result and one the oracle builds as a non-manifold compound.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub nurbs_counts: Option<Counts>,

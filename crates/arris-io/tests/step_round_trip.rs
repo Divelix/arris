@@ -1,5 +1,5 @@
-//! The STEP write → read round trip as a property (ADR-0025,
-//! plans/step-reader step 13): a frustum, a ball, a ring or an elliptic
+//! The STEP write → read round trip as a property (ADR-0025):
+//! a frustum, a ball, a ring or an elliptic
 //! prism from `prop::body` in a random pose, alone or cut, fused or
 //! intersected with a box or a cylinder through it — so the files carry
 //! fitted section curves, raised tolerances, seams, poles and apexes —

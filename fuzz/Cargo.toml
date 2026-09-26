@@ -1,5 +1,5 @@
 # The fuzz targets over the intersectors (ADR-0024 §5) and the STEP
-# reader (ADR-0025, plans/step-reader step 7). Outside the
+# reader (ADR-0025). Outside the
 # workspace: it builds on the nightly toolchain under `cargo fuzz`, its
 # dependencies are none of the workspace's, and it is never published.
 # `docs/ARCHITECTURE.md` §Formats and tools; `fuzz/README.md` for use.

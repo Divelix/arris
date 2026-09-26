@@ -1179,7 +1179,7 @@ and last control points coincide — and not periodic: a periodic rational
 circle needs its knots doubled at each arc end, and a domain that starts
 on a doubled knot ends on one, which the constructor refuses. That is
 also what a closed B-spline in a file is, and why the seam handling of
-`pcurve_on` onto a NURBS surface (plan `step-reader` step 4) treats a
+`pcurve_on` onto a NURBS surface treats a
 closed direction that is not periodic: `NurbsSurface::closure()` is the
 domain's length there, evaluation wraps a parameter outside the domain
 by it, and `Surface::period()` reports it, so a seam on a closed

@@ -62,7 +62,7 @@ def compute_expected(fixture: dict, own: bool = False) -> dict:
         if not results[variant]["degenerate"] and manifold:
             # The counts of the result converted to B-splines, which may
             # gain seams: what Arris's reader of Open CASCADE's STEP of it
-            # is held to (plans/step-reader step 15). A conversion Open
+            # is held to (ADR-0025). A conversion Open
             # CASCADE itself fails is recorded instead, and that read-back
             # skipped.
             try:

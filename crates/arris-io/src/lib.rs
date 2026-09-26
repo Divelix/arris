@@ -1,11 +1,12 @@
-//! Formats of the Arris kernel: the STEP AP214 Part 21 writer (later reader),
-//! the native format (`serde` of the model), and the mesh formats STL and
-//! OBJ (ADR-0013).
+//! Formats of the Arris kernel: the STEP AP214 Part 21 writer and reader
+//! (ADR-0025), the native format (`serde` of the model), and the mesh
+//! formats STL and OBJ (ADR-0013).
 //!
 //! Guarantees: the native format round-trips a model to an identical text
-//! dump; STEP carries the B-Rep entity subset with pcurves written out, so a
-//! reader does not recompute them (`docs/ARCHITECTURE.md` §Formats and
-//! tools). The `serde` feature (on by default) enables the native format.
+//! dump; STEP carries the B-Rep entity subset with pcurves written out, and
+//! reads back every solid of that subset as a body the checker passes or a
+//! typed refusal naming the file entity (`docs/ARCHITECTURE.md` §Formats
+//! and tools). The `serde` feature (on by default) enables the native format.
 //! Depends on `arris-check` and `arris-mesh` and below, both re-exported
 //! here so a crate above reaches the checker, the representation and the
 //! mesh types through this one; never on `arris-ops`.

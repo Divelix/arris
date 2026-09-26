@@ -807,7 +807,7 @@ pub fn read_back_stage(
 /// B-splines by `BRepBuilderAPI_NurbsConvert` (`occt_step.py --nurbs`):
 /// every face a NURBS surface, every edge a NURBS curve — the proof on
 /// files of the projection, the pcurves and the rebuilt poles onto NURBS
-/// (plans/step-reader step 15). Held as the plain file is, but to the
+/// (ADR-0025). Held as the plain file is, but to the
 /// converted shape's own counts (`nurbs_counts` in `expected.json`, since
 /// conversion can add seams), and with the rows the checker cannot
 /// decide on a NURBS face left unchecked: S5's and B1's face pairs with

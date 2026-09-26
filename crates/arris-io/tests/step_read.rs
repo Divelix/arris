@@ -1,5 +1,4 @@
-//! The STEP reader on Arris's own files (ADR-0025, plans/step-reader
-//! steps 10 and 11): the STEP of every corpus fixture reads back to one
+//! The STEP reader on Arris's own files (ADR-0025): the STEP of every corpus fixture reads back to one
 //! solid with the fixture's counts, its degenerate edges — which the
 //! writer leaves out — rebuilt, and a volume, area and centroid within
 //! its tolerances, its provenance naming the file entity of every entity.

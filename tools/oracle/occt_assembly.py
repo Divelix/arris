@@ -5,8 +5,7 @@ placed once and the second placed twice, write it with
 `STEPCAFControl_Writer` — product structure, `NEXT_ASSEMBLY_USAGE_OCCURRENCE`
 and `CONTEXT_DEPENDENT_SHAPE_REPRESENTATION` — and print, as JSON, each
 placed instance's volume and centroid measured on the placed shape: what
-Arris's reader of the file is held to (ADR-0025 §5, plans/step-reader
-step 16). Exits 2 with `occt_assembly: ERROR <why>` on stderr when a
+Arris's reader of the file is held to (ADR-0025 §5). Exits 2 with `occt_assembly: ERROR <why>` on stderr when a
 recipe does not build or the file is not written. Run as
 `uv run --project tools/oracle tools/oracle/occt_assembly.py`.
 """

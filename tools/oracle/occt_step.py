@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """occt_step.py <fixture-dir> <out.step> [--variant NAME] [--nurbs]  —
 build the fixture's recipe in Open CASCADE and write the result as Open
-CASCADE's own STEP: the file the STEP reader is held to (ADR-0025, plans
-/step-reader steps 14 and 15). `--nurbs` first passes the result through
+CASCADE's own STEP: the file the STEP reader is held to (ADR-0025).
+`--nurbs` first passes the result through
 `BRepBuilderAPI_NurbsConvert`, so every face is a B-spline surface and
 every edge a B-spline curve. Exits 0 with the file written, 2 on a usage
 or environment error or a recipe the oracle cannot build. Run as
