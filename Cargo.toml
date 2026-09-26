@@ -12,7 +12,7 @@ version = "0.3.0-dev"
 edition = "2024"
 rust-version = "1.85"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/Divelix/arris"
+repository = "https://github.com/arris-labs/arris"
 # Resolved relative to this manifest, so every member inherits the one
 # workspace README as its crates.io front page.
 readme = "README.md"

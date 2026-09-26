@@ -17,7 +17,7 @@
 #     crates.io only lets a publisher be added to a crate that exists.
 #   After it: crates.io › each of arris, arris-math, arris-geom,
 #     arris-topo, arris-check, arris-ops, arris-mesh, arris-io › Settings ›
-#     Trusted Publishing › add: owner Divelix, repository arris, workflow
+#     Trusted Publishing › add: owner arris-labs, repository arris, workflow
 #     release.yml, environment crates-io. Then delete the secret; the job
 #     falls back to it only while it exists.
 name: Release
