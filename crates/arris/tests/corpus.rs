@@ -1518,3 +1518,93 @@ fn real_nist_ftc_09() {
 fn real_nist_ftc_09_offset() {
     run_part("real/nist-ftc-09-offset");
 }
+
+/// NIST's CTC-01: waits on regression/pcurve-fit-reported-as-gap.
+#[test]
+fn real_nist_ctc_01() {
+    run_part("real/nist-ctc-01");
+}
+
+/// NIST's CTC-02: its solid refused for a real gap of 0.0112, its surface body as a surface.
+#[test]
+fn real_nist_ctc_02() {
+    run_part("real/nist-ctc-02");
+}
+
+/// NIST's CTC-03: waits on regression/seamless-cylinder-band.
+#[test]
+fn real_nist_ctc_03() {
+    run_part("real/nist-ctc-03");
+}
+
+/// NIST's CTC-04: waits on regression/axis-placement-along-x-without-reference.
+#[test]
+fn real_nist_ctc_04() {
+    run_part("real/nist-ctc-04");
+}
+
+/// NIST's CTC-05: waits on regression/slow-gap-refusal.
+#[test]
+fn real_nist_ctc_05() {
+    run_part("real/nist-ctc-05");
+}
+
+/// NIST's FTC-06: waits on regression/edge-through-sphere-pole.
+#[test]
+fn real_nist_ftc_06() {
+    run_part("real/nist-ftc-06");
+}
+
+/// NIST's FTC-07: waits on regression/pcurve-fit-reported-as-gap.
+#[test]
+fn real_nist_ftc_07() {
+    run_part("real/nist-ftc-07");
+}
+
+/// NIST's FTC-08: waits on regression/axis-placement-along-x-without-reference.
+#[test]
+fn real_nist_ftc_08() {
+    run_part("real/nist-ftc-08");
+}
+
+/// NIST's FTC-10: waits on regression/seamless-cylinder-band.
+#[test]
+fn real_nist_ftc_10() {
+    run_part("real/nist-ftc-10");
+}
+
+/// NIST's FTC-11: waits on regression/seamless-cylinder-band.
+#[test]
+fn real_nist_ftc_11() {
+    run_part("real/nist-ftc-11");
+}
+
+#[test]
+#[ignore = "the reader leaves a cylinder face bounded by two circles without its seam, and its checker refuses the body (ADR-0026 §4)"]
+fn regression_seamless_cylinder_band() {
+    run_part("regression/seamless-cylinder-band");
+}
+
+#[test]
+#[ignore = "the reader refuses a placement on the x axis with no reference direction, which ISO 10303-42 supplies (ADR-0026 §4)"]
+fn regression_axis_placement_along_x_without_reference() {
+    run_part("regression/axis-placement-along-x-without-reference");
+}
+
+#[test]
+#[ignore = "the reader refuses a sphere face bounded by a meridian circle through both poles as an open loop (ADR-0026 §4)"]
+fn regression_edge_through_sphere_pole() {
+    run_part("regression/edge-through-sphere-pole");
+}
+
+#[test]
+#[ignore = "a pcurve fit that fails at the cap is refused as a gap of twice the cap (ADR-0026 §4)"]
+fn regression_pcurve_fit_reported_as_gap() {
+    run_part("regression/pcurve-fit-reported-as-gap");
+}
+
+#[test]
+#[ignore = "CTC-05's right refusals take 88 s in the test profile, past its 60 (ADR-0026 §6)"]
+fn regression_slow_gap_refusal() {
+    run_part("regression/slow-gap-refusal");
+}

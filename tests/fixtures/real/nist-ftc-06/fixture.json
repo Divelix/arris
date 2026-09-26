@@ -1,0 +1,18 @@
+{
+  "kind": "part",
+  "description": "NIST MBE PMI fully-toleranced test case 06, the AP203 geometry-only edition (ADR-0026 §1): face #351, a half sphere bounded by one meridian circle through both poles, is refused as an open loop",
+  "file": "nist_ftc_06_asme1_rd.stp",
+  "source": "https://www.nist.gov/document/nist-pmi-step-files — NIST-PMI-STEP-Files.zip (sha256 8fa78429e6d8d9b0d7681d223b6aa9ec98c3772185c55b1a0e3679b21c181911), AP203 geometry only/nist_ftc_06_asme1_rd.stp",
+  "licence": "NIST: \"The test cases, CAD models, and STEP files can be used without any restrictions.\"",
+  "sha256": "5e30f0903f9470c14a98e70395ca005fe90bcd3fb704c381a80a69958838f169",
+  "solids": [
+    {
+      "id": 101,
+      "instance": 0,
+      "outcome": "read"
+    }
+  ],
+  "waits_on": [
+    "regression/edge-through-sphere-pole"
+  ]
+}

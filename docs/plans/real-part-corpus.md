@@ -190,7 +190,7 @@ part to an oracle.
   spoiled by hand, with one face's surface swapped for an
   `OFFSET_SURFACE`, passes as `refused: offset`, and the lint accepts it
   in `real/`.
-- [ ] Step 4 **[2]** — The committed tier. Every NIST file ADR-0026 names
+- [x] Step 4 **[2]** — The committed tier. Every NIST file ADR-0026 names
   becomes a `real/` fixture. Each solid either reads within the
   fixture's tolerances of the oracle, with a blessed dump, or is recorded
   as the refusal the reader returns. The refusal's `why` must say why the
@@ -219,7 +219,22 @@ part to an oracle.
     Open CASCADE's product structure holds one (nine AP242 editions);
   - an FTC-06 AP242 read that fails the checker at `Full` (S5);
   - reads taking 9–67 s, 790 s (FTC-10 AP242), and past 900 s (CTC-02
-    AP242). If a cause is a missing feature rather than a bug, the `Ok` becomes
+    AP242).
+
+  Step 4 shrank the committed tier's to five `regression/` part fixtures,
+  one box each:
+  - [ ] `seamless-cylinder-band` (CTC-03, FTC-10, FTC-11);
+  - [ ] `axis-placement-along-x-without-reference` (CTC-04, FTC-08);
+  - [ ] `pcurve-fit-reported-as-gap` (CTC-01, FTC-07);
+  - [ ] `edge-through-sphere-pole` (FTC-06; new at step 4, a half sphere
+    bounded by one meridian circle through both poles);
+  - [ ] `slow-gap-refusal` (CTC-05, 66 s in release).
+
+  The rest are the fetched tier's: the camera, the tessellated solid, the
+  phantom placements, FTC-06 AP242's `Full` failure, and the 790 s and
+  900 s reads. Step 8 shrinks them the same way.
+
+  If a cause is a missing feature rather than a bug, the `Ok` becomes
   the refusal it should have been: named, counted, and never an
   approximation. This step may split into several at `/work` time, one
   box per cause.
@@ -340,9 +355,13 @@ C4's accept line, second half:
   uncompressed under a 5 MB budget. The oracle reads healed and records
   `occt_heals` from a second, unhealed reading, because healing *can*
   be turned off but the unhealed reading of a valid file is not a solid.
-- ⚠ OPEN: the corpus runner's time on real parts. The checker at
-  `Full` in a debug build over parts of hundreds of B-spline faces may
-  take the hook past its budget. If it does, the `real/` tests go in
-  their own nextest group, run by CI and the nightly and not by the
-  hook, recorded in ADR-0026's amendment. **Agent**, at step 4, from the
-  timings.
+- Decided at step 4 (ADR-0026, amendment of step 4): the `real_` tests
+  stay in the hook, at 2.7 s with the waiting parts skipped. A slow read
+  is a fixture with a `read_seconds` budget, and no other fixture has
+  one.
+- ⚠ OPEN: a `SHELL_BASED_SURFACE_MODEL` under a
+  `CONSTRUCTIVE_GEOMETRY_REPRESENTATION` ('supplemental geometry', two
+  in CTC-04) is the exporter's construction geometry, not a body of the
+  part, yet ADR-0026 §5 counts it against the healing cycle. **Agent**,
+  at step 7: whether the table counts it as itself, which would take the
+  reader telling it apart and so a new kind or field, a design delta.

@@ -1,0 +1,15 @@
+{
+  "kind": "part",
+  "description": "a half ball r 5 cut by the plane y = 0: the sphere face bounded by one meridian circle through both poles, its vertex at the north pole and its edge through the south, as NIST's FTC-06 writes face #351; the reader refuses it as an open loop, where the edge wants splitting at the pole it runs through (ADR-0021) and the face a seam. Shrunk from FTC-06 (ADR-0026 §4); Open CASCADE reads it, healed, to 2π·125/3",
+  "file": "half-ball.stp",
+  "source": "written by hand for this fixture, shrunk from NIST parts (ADR-0026 §4)",
+  "licence": "the project's own",
+  "sha256": "5dee2f32fcd5fb9c1174329f9d2fd79ee9cbb3c5c4fad09db6e01320d2d0d257",
+  "solids": [
+    {
+      "id": 22,
+      "instance": 0,
+      "outcome": "read"
+    }
+  ]
+}

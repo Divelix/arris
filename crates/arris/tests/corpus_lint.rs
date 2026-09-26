@@ -329,6 +329,31 @@ fn a_geometry_fixture_is_linted_for_presence_hash_and_shape() {
     );
 }
 
+/// The parts of the real-part corpus wait on exactly the part fixtures
+/// open under `regression/`: every exclusion names one, and every one is
+/// named (ADR-0026 §4). A fix moves its fixture out of `regression/`, and
+/// the part's lint then fails until the exclusion is lifted.
+#[test]
+fn every_part_exclusion_is_an_open_regression_part() {
+    let mut waited = std::collections::BTreeSet::new();
+    let mut open = std::collections::BTreeSet::new();
+    for dir in corpus() {
+        if kind_of(&dir).unwrap() != Kind::Part {
+            continue;
+        }
+        let part = arris_debug::part::load(&dir).unwrap();
+        if part.name.starts_with("regression/") {
+            open.insert(part.name.clone());
+        } else {
+            waited.extend(part.part.waits_on.iter().cloned());
+        }
+    }
+    assert_eq!(
+        waited, open,
+        "the parts' exclusions, and the part fixtures open under regression/"
+    );
+}
+
 /// A part fixture (ADR-0026) is linted for its file's hash, the dump of
 /// every solid it reads and a reason for every refusal it records.
 #[test]

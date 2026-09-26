@@ -532,6 +532,29 @@ and this is it: the parts under `real/nist-*` are NIST's.
 - **The lint** holds the file to its `sha256`, `expected.json` to the
   hash, the oracle's solids to the Euler line, every refusal to a reason,
   and every `read` solid to its committed dump — none under `regression/`.
+- **`waits_on`** lists the part fixtures under `regression/` a part waits
+  on. Each is a reader bug it meets, shrunk to the smallest file that
+  still fails, with the desired outcome, and its test `regression_<slug>`
+  is `#[ignore]`d. While any is listed, the runner does not read the part;
+  its `solids` record the outcomes it is to have once the bugs are fixed,
+  so it needs no dump yet. The lint fails once a named fixture has left
+  `regression/`, so the fix that moves it lifts the exclusion. The part
+  exclusions and the part fixtures open under `regression/` are the same
+  set, by test (`corpus_lint.rs`).
+- **`read_seconds`** caps the read in the test profile's optimised build.
+  It is set only on the fixture a slow read is shrunk to
+  (`regression/slow-gap-refusal`), since timing on a shared machine is no
+  assertion anywhere else (ADR-0026 §6).
+- **The committed tier** is NIST's eleven AP203 geometry-only files,
+  `real/nist-ctc-01` to `-05` and `real/nist-ftc-06` to `-11`. Two run
+  today: FTC-09 reads, and CTC-02's solid is refused for a real gap (its
+  surface body refused as a surface). The other nine wait on five reader
+  bugs, in `regression/seamless-cylinder-band`,
+  `axis-placement-along-x-without-reference`, `edge-through-sphere-pole`,
+  `pcurve-fit-reported-as-gap` and `slow-gap-refusal`. The first three are
+  small files written by hand. The last two are the NIST files themselves:
+  the fit's edge is the exporter's between two of the part's own
+  cylinders, and the time is the whole read's.
 - `real/nist-ftc-09-offset` is `real/nist-ftc-09` with one plane wrapped
   in an `OFFSET_SURFACE` by hand: the refusal path under test.
 

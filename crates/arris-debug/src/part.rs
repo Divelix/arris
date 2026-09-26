@@ -87,6 +87,20 @@ pub struct Part {
     /// Comparison tolerances, before each read body's own widens them.
     #[serde(default)]
     pub tolerances: Tolerances,
+    /// The fixtures under `regression/` this part waits on: each a reader
+    /// bug the part meets, shrunk (ADR-0026 §4). While any is listed the
+    /// runner does not read the part, and the lint fails once one has
+    /// left `regression/`, so the fix that moves it lifts the exclusion.
+    /// `solids` records the outcomes the part is to have once they are
+    /// fixed.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub waits_on: Vec<String>,
+    /// How long the read may take, in seconds of the test profile's
+    /// optimised build: set on the fixture a slow read is shrunk to
+    /// (ADR-0026 §6), and on no other, since a shared machine's timing is
+    /// no assertion.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub read_seconds: Option<f64>,
 }
 
 /// One solid of the oracle's reading of a part's file.
@@ -202,6 +216,14 @@ pub fn run(dir: &Path) -> Result<(), CorpusError> {
         fixture: name.clone(),
         what,
     };
+    if !fixture.part.waits_on.is_empty() {
+        // Excluded until the bugs it meets are fixed: each must still be
+        // waiting under `regression/`.
+        return match waiting_problems(&fixture).first() {
+            Some(problem) => Err(fail(problem.clone())),
+            None => Ok(()),
+        };
+    }
     let file = |what: String| CorpusError::StepFile {
         fixture: name.clone(),
         step: fixture.part.file.clone(),
@@ -223,8 +245,15 @@ pub fn run(dir: &Path) -> Result<(), CorpusError> {
         }
     })?;
     let text = String::from_utf8_lossy(&bytes);
+    let started = std::time::Instant::now();
     let read =
         step::read(&mut model, &text, &ReadOptions::default()).map_err(|e| file(e.to_string()))?;
+    let seconds = started.elapsed().as_secs_f64();
+    if let Some(budget) = fixture.part.read_seconds.filter(|&b| seconds > b) {
+        return Err(fail(format!(
+            "the read took {seconds:.1} s, past its budget of {budget} s"
+        )));
+    }
 
     let found: Vec<(u64, u32)> = (read.solids.iter())
         .map(|s| (s.entity.id, s.entity.instance))
@@ -382,10 +411,30 @@ fn read_stages(
     corpus::check_dump(&name, &path, &dump, blessing())
 }
 
+/// What is wrong with the exclusions `fixture` waits on: each must name a
+/// part fixture still under [`REGRESSION_AREA`].
+fn waiting_problems(fixture: &PartFixture) -> Vec<String> {
+    let root = crate::fixtures::corpus_root();
+    let mut problems = Vec::new();
+    for slug in &fixture.part.waits_on {
+        let dir = root.join(slug);
+        let waits = slug.starts_with(&format!("{REGRESSION_AREA}/"))
+            && crate::fixtures::kind_of(&dir).is_ok_and(|k| k == crate::fixtures::Kind::Part);
+        if !waits {
+            problems.push(format!(
+                "waits on {slug}, which is not a part fixture under {REGRESSION_AREA}/ any more: lift the exclusion and record the outcomes the fix gives"
+            ));
+        }
+    }
+    problems
+}
+
 /// The lint of a part fixture: both files present and parseable, the
 /// file present and its SHA-256 the fixture's, `expected.json` not stale,
 /// every oracle solid on the Euler line with its genus, every refusal
-/// with a reason, and every `read` solid's dump committed — none under
+/// with a reason, every exclusion a part fixture still under
+/// [`REGRESSION_AREA`], and every `read` solid's dump committed — unless
+/// the part waits, having not passed yet — with none under
 /// [`REGRESSION_AREA`], where a fixture waits for its fix. Returns every
 /// problem found, empty when clean.
 pub fn lint(dir: &Path) -> Vec<String> {
@@ -430,7 +479,11 @@ pub fn lint(dir: &Path) -> Vec<String> {
             ));
         }
     }
+    for p in waiting_problems(&fixture) {
+        problem(p);
+    }
     let area = name.split('/').next().unwrap_or_default();
+    let waiting = !fixture.part.waits_on.is_empty();
     for solid in &fixture.part.solids {
         let dump = dump_path(dir, solid.id, solid.instance);
         match &solid.outcome {
@@ -443,12 +496,14 @@ pub fn lint(dir: &Path) -> Vec<String> {
                 "{} is committed under {REGRESSION_AREA}/: the part passes, so it moves into its area",
                 dump.display()
             )),
-            Outcome::Read if area != REGRESSION_AREA && !dump.is_file() => problem(format!(
-                "#{}[{}] reads but {} is not committed (ARRIS_BLESS=1)",
-                solid.id,
-                solid.instance,
-                dump.file_name().unwrap_or_default().to_string_lossy()
-            )),
+            Outcome::Read if area != REGRESSION_AREA && !waiting && !dump.is_file() => {
+                problem(format!(
+                    "#{}[{}] reads but {} is not committed (ARRIS_BLESS=1)",
+                    solid.id,
+                    solid.instance,
+                    dump.file_name().unwrap_or_default().to_string_lossy()
+                ))
+            }
             Outcome::Read => {}
         }
     }

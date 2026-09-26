@@ -1,0 +1,18 @@
+{
+  "kind": "part",
+  "description": "NIST MBE PMI fully-toleranced test case 11, the AP203 geometry-only edition (ADR-0026 §1): cylinder faces bounded by two circles and no seam fail the reader's checker",
+  "file": "nist_ftc_11_asme1_rb.stp",
+  "source": "https://www.nist.gov/document/nist-pmi-step-files — NIST-PMI-STEP-Files.zip (sha256 8fa78429e6d8d9b0d7681d223b6aa9ec98c3772185c55b1a0e3679b21c181911), AP203 geometry only/nist_ftc_11_asme1_rb.stp",
+  "licence": "NIST: \"The test cases, CAD models, and STEP files can be used without any restrictions.\"",
+  "sha256": "a5abfea460499dc31bc812aca68917948a117565fea4f5a080e36eb32f39650d",
+  "solids": [
+    {
+      "id": 189,
+      "instance": 0,
+      "outcome": "read"
+    }
+  ],
+  "waits_on": [
+    "regression/seamless-cylinder-band"
+  ]
+}

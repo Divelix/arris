@@ -361,3 +361,31 @@ is a reader bug under §4, not a timing to accommodate.
   `occt_heals`, and a read solid's counts are held wherever the two
   readings' counts agree.
 
+## Amendment (2026-09-26, plan `real-part-corpus` step 4)
+
+- **A part waits under an exclusion, and is not run.** A part meeting a
+  reader bug records the outcomes it is to have, and names the
+  `regression/` part fixture the bug was shrunk to in `waits_on`. The
+  runner skips it until then, and the lint fails once that fixture leaves
+  `regression/`, as ADR-0024 §2's exclusions do. Asserting the part's
+  present, wrong outcome instead would run CTC-05's 88 s read on every
+  commit, to prove a failure its regression fixture already proves.
+- **The committed tier stays in the hook.** With the waiting parts
+  skipped, the `real_` tests take 2.7 s in the test profile, FTC-09's
+  checker at `Full` the most of it, so no nextest group of their own is
+  needed. The plan's open question on time is settled on that number.
+- **A time budget is a fixture's field, set on one fixture.** A slow read
+  is shrunk to a part fixture with `read_seconds: 60`. It runs in the
+  test profile's optimised build, which came to 88 s where release took
+  66. No other fixture carries a budget, since the time of a test that
+  shares the machine with a thousand others is no assertion.
+- **The committed tier's first outcome.** Of the eleven parts, two run:
+  FTC-09 reads, within 1e-14 of Open CASCADE's measures, and CTC-02's
+  solid is refused for a real gap. Nine wait on five bugs. Three are the
+  step-1 findings: the seamless band (CTC-03, FTC-10, FTC-11), the axis
+  without a reference direction (CTC-04, FTC-08) and the fit reported as a
+  gap (CTC-01, FTC-07). One is new: an edge through a sphere's pole
+  (FTC-06, its "open loop" a half sphere bounded by a meridian circle).
+  The last is the slow read (CTC-05). Every `SHELL_BASED_SURFACE_MODEL` of
+  the tier is a one-face open shell, and its refusal is right.
+

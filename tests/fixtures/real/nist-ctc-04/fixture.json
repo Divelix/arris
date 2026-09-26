@@ -1,0 +1,48 @@
+{
+  "kind": "part",
+  "description": "NIST MBE PMI combined test case 04, the AP203 geometry-only edition (ADR-0026 §1): circle #7320's placement #7319 has an axis along -x and no reference direction, which the reader refuses where ISO 10303-42 supplies one",
+  "file": "nist_ctc_04_asme1_rd.stp",
+  "source": "https://www.nist.gov/document/nist-pmi-step-files — NIST-PMI-STEP-Files.zip (sha256 8fa78429e6d8d9b0d7681d223b6aa9ec98c3772185c55b1a0e3679b21c181911), AP203 geometry only/nist_ctc_04_asme1_rd.stp",
+  "licence": "NIST: \"The test cases, CAD models, and STEP files can be used without any restrictions.\"",
+  "sha256": "cdb59a085a3364941b881f96b511265a7cb5f6e94180c4426bdc3025481f405a",
+  "solids": [
+    {
+      "id": 24,
+      "instance": 0,
+      "outcome": "read"
+    },
+    {
+      "id": 14152,
+      "instance": 0,
+      "outcome": {
+        "refused": {
+          "kind": "unsupported entity",
+          "why": "a SHELL_BASED_SURFACE_MODEL of one OPEN_SHELL of one face, a surface and not a solid: sheet bodies are the healing cycle's (ADR-0025 §2)"
+        }
+      }
+    },
+    {
+      "id": 14574,
+      "instance": 0,
+      "outcome": {
+        "refused": {
+          "kind": "unsupported entity",
+          "why": "a SHELL_BASED_SURFACE_MODEL of one OPEN_SHELL of one face, the file's 'supplemental geometry', a surface and not a solid: sheet bodies are the healing cycle's (ADR-0025 §2)"
+        }
+      }
+    },
+    {
+      "id": 14624,
+      "instance": 0,
+      "outcome": {
+        "refused": {
+          "kind": "unsupported entity",
+          "why": "a SHELL_BASED_SURFACE_MODEL of one OPEN_SHELL of one face, the file's 'supplemental geometry', a surface and not a solid: sheet bodies are the healing cycle's (ADR-0025 §2)"
+        }
+      }
+    }
+  ],
+  "waits_on": [
+    "regression/axis-placement-along-x-without-reference"
+  ]
+}

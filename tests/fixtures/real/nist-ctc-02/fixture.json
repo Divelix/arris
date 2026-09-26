@@ -1,0 +1,30 @@
+{
+  "kind": "part",
+  "description": "NIST MBE PMI combined test case 02, the AP203 geometry-only edition (ADR-0026 §1): the solid is refused for a real gap, the surface body beside it as a surface",
+  "file": "nist_ctc_02_asme1_rc.stp",
+  "source": "https://www.nist.gov/document/nist-pmi-step-files — NIST-PMI-STEP-Files.zip (sha256 8fa78429e6d8d9b0d7681d223b6aa9ec98c3772185c55b1a0e3679b21c181911), AP203 geometry only/nist_ctc_02_asme1_rc.stp",
+  "licence": "NIST: \"The test cases, CAD models, and STEP files can be used without any restrictions.\"",
+  "sha256": "e6df6d0ed68fd8a91bd3f8360c7047f2af3d61068b89050d84423fe8ddb93bcf",
+  "solids": [
+    {
+      "id": 20700,
+      "instance": 0,
+      "outcome": {
+        "refused": {
+          "kind": "gap past the cap",
+          "why": "edge #11056 lies 0.0112 from a face it bounds, past the model's max_tolerance of 0.01: closing that is sewing, which is healing (ADR-0025 §4); Open CASCADE carries the part at vertex and edge tolerances of up to 0.108"
+        }
+      }
+    },
+    {
+      "id": 20701,
+      "instance": 0,
+      "outcome": {
+        "refused": {
+          "kind": "unsupported entity",
+          "why": "a SHELL_BASED_SURFACE_MODEL of one OPEN_SHELL of one face, a surface and not a solid: sheet bodies are the healing cycle's (ADR-0025 §2)"
+        }
+      }
+    }
+  ]
+}

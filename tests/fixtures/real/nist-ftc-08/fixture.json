@@ -1,0 +1,18 @@
+{
+  "kind": "part",
+  "description": "NIST MBE PMI fully-toleranced test case 08, the AP203 geometry-only edition (ADR-0026 §1): circle placement #3672 has an axis along x and no reference direction, which the reader refuses where ISO 10303-42 supplies one",
+  "file": "nist_ftc_08_asme1_rc.stp",
+  "source": "https://www.nist.gov/document/nist-pmi-step-files — NIST-PMI-STEP-Files.zip (sha256 8fa78429e6d8d9b0d7681d223b6aa9ec98c3772185c55b1a0e3679b21c181911), AP203 geometry only/nist_ftc_08_asme1_rc.stp",
+  "licence": "NIST: \"The test cases, CAD models, and STEP files can be used without any restrictions.\"",
+  "sha256": "4b7011b0b86cf6301058aa954b76a9587d23478b6dee2660f4a80caf0dfe8b73",
+  "solids": [
+    {
+      "id": 27,
+      "instance": 0,
+      "outcome": "read"
+    }
+  ],
+  "waits_on": [
+    "regression/axis-placement-along-x-without-reference"
+  ]
+}
