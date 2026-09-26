@@ -367,6 +367,45 @@ def check_degenerate_edge_smoke(tmp: Path) -> bool:
     return ok
 
 
+def check_step_solids_smoke(tmp: Path) -> bool:
+    """`step.solids` names each solid it reads by the `#id` of its
+    `MANIFOLD_SOLID_BREP`, which Open CASCADE's model does not keep: a box
+    and a cylinder written into one file come back each under the `#id`
+    whose shell has its own face count. And the instance scan skips a `;`
+    or a `#id =` inside a string or a comment."""
+    from OCP.BRep import BRep_Builder
+    from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox, BRepPrimAPI_MakeCylinder
+    from OCP.TopoDS import TopoDS_Compound
+    from OCP.gp import gp_Ax2, gp_Dir, gp_Pnt
+
+    print("smoke: the solids of a STEP file named by their #id")
+    ok = True
+    text = "DATA;\n#1=A('x;#9=B',/* ;#8=C */ 2);\n/* #6=F; */ #2 = B(''';#7=D''');\nENDSEC;\nDATA;#3=E();ENDSEC;"
+    found = step.instances(text)
+    if sorted(found) != [1, 2, 3]:
+        print(f"  the instance scan found {sorted(found)}, not [1, 2, 3]")
+        ok = False
+    compound = TopoDS_Compound()
+    builder = BRep_Builder()
+    builder.MakeCompound(compound)
+    builder.Add(compound, BRepPrimAPI_MakeBox(2.0, 3.0, 4.0).Shape())
+    builder.Add(compound, BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(10, 0, 0), gp_Dir(0, 0, 1)), 1.0, 2.0).Shape())
+    path = tmp / "two-solids.step"
+    step.write(compound, path)
+    bodies = step.instances(path.read_text())
+    faces = {}
+    for label, body in bodies.items():
+        if body.lstrip().startswith("MANIFOLD_SOLID_BREP"):
+            shell = int(body.split("#")[-1].rstrip(") "))
+            faces[label] = bodies[shell].count("#")
+    read = {label: measure(solid, [], DEFAULT_TOLERANCES["probe"])["volume"] for label, solid in step.solids(path)}
+    expect = {label: 24.0 if n == 6 else PI * 2.0 for label, n in faces.items()}
+    if sorted(read) != sorted(expect) or any(not _close([read[k]], [expect[k]]) for k in expect):
+        print(f"  solids by #id {read} differ from {expect}")
+        ok = False
+    return ok
+
+
 def check_expr_cases() -> bool:
     """`tests/fixtures/expr-cases.json`: the same grammar cases
     `arris_debug::fixtures::expr`'s test evaluates too, so `^`, `**` and
@@ -401,6 +440,7 @@ def run_smokes(tmp: Path) -> bool:
     ok = check_geometry_smoke()
     ok &= check_expr_cases()
     ok &= check_degenerate_edge_smoke(tmp)
+    ok &= check_step_solids_smoke(tmp)
     for smoke in SMOKES:
         recipe = smoke["recipe"]
         print(f"smoke: {smoke['name']}")

@@ -1,0 +1,89 @@
+{
+  "occt": "8.0.1.0.0",
+  "recipe_sha256": "4b87b9b2900dd0d4061aaf2fec1afaee6868baf2f973286e325d491b6a5b478c",
+  "results": {
+    "default": {
+      "area": 3575.1327412287183,
+      "centroid": [
+        16.483791567715336,
+        15.0,
+        3.906483372913865
+      ],
+      "counts": {
+        "edges": 21,
+        "faces": 9,
+        "loops": 11,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 14
+      },
+      "degenerate": false,
+      "euler_characteristic": 0,
+      "genus": 1,
+      "inertia": [
+        [
+          674835.6536299717,
+          2.3283064365386963e-10,
+          101067.65513679752
+        ],
+        [
+          2.3283064365386963e-10,
+          1150942.2914719656,
+          -5.820766091346741e-11
+        ],
+        [
+          101067.65513679752,
+          -5.820766091346741e-11,
+          1711596.018543696
+        ]
+      ],
+      "nurbs_counts": {
+        "edges": 21,
+        "faces": 9,
+        "loops": 11,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 14
+      },
+      "probes": [
+        {
+          "class": "in",
+          "label": "inside",
+          "point": [
+            5.0,
+            5.0,
+            5.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "removed",
+          "point": [
+            30.0,
+            15.0,
+            8.0
+          ]
+        },
+        {
+          "class": "on",
+          "label": "on_step",
+          "point": [
+            30.0,
+            5.0,
+            5.0
+          ]
+        },
+        {
+          "class": "out",
+          "label": "in_hole",
+          "point": [
+            20.0,
+            15.0,
+            2.0
+          ]
+        }
+      ],
+      "volume": 7998.672587712817
+    }
+  }
+}

@@ -58,6 +58,14 @@ fn boolean_blind_hole() {
     run("boolean/blind-hole");
 }
 
+/// A solid read from a STEP file as an operand — Arris's own STEP of
+/// `boolean/through-hole`'s result — cut by a box through its hole: the
+/// `step` op read by both kernels' readers (ADR-0026).
+#[test]
+fn boolean_step_operand_cut() {
+    run("boolean/step-operand-cut");
+}
+
 /// The consumer's through-hole probe in its own units: a 0.1 m plate less
 /// a r 0.02 cylinder, in a model whose default tolerance is a micrometre
 /// — `w²t − πr²t = 8.7434e-5`.

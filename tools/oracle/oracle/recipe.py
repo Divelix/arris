@@ -48,6 +48,11 @@ Operations, by `op`:
     chamfer    of <name>, edges [[x,y,z], ...], distance
                (edges named as a fillet's; one distance, measured on both
                faces from the edge)
+    step       file <path beside fixture.json>, sha256 <of the file>,
+               id <#id of its MANIFOLD_SOLID_BREP or BREP_WITH_VOIDS>,
+               near [x,y,z] (where the file places it more than once:
+               the placement whose centroid is nearest)
+               (read by Open CASCADE's reader, healed — ADR-0026 §3)
 
 Conventions are Open CASCADE's: a full revolve (360°) has seam edges, a
 fuse of flush boxes does not merge coplanar faces, a common with no volume
@@ -59,6 +64,7 @@ import ast
 import hashlib
 import json
 import math
+from pathlib import Path
 from typing import Any
 
 from OCP.BRepAlgoAPI import BRepAlgoAPI_Common, BRepAlgoAPI_Cut, BRepAlgoAPI_Fuse
@@ -71,6 +77,7 @@ from OCP.BRepBuilderAPI import (
 )
 from OCP.BRepExtrema import BRepExtrema_DistShapeShape
 from OCP.BRepFilletAPI import BRepFilletAPI_MakeChamfer, BRepFilletAPI_MakeFillet
+from OCP.BRepGProp import BRepGProp
 from OCP.BRepPrimAPI import (
     BRepPrimAPI_MakeBox,
     BRepPrimAPI_MakeCylinder,
@@ -78,6 +85,7 @@ from OCP.BRepPrimAPI import (
     BRepPrimAPI_MakeRevol,
 )
 from OCP.GC import GC_MakeArcOfCircle, GC_MakeArcOfEllipse
+from OCP.GProp import GProp_GProps
 from OCP.gp import gp_Ax1, gp_Ax2, gp_Ax3, gp_Circ, gp_Dir, gp_Elips, gp_Pln, gp_Pnt, gp_Trsf, gp_Vec
 from OCP.ShapeFix import ShapeFix_Face
 from OCP.TopAbs import TopAbs_EDGE
@@ -85,7 +93,7 @@ from OCP.TopExp import TopExp
 from OCP.TopoDS import TopoDS, TopoDS_Shape
 from OCP.collections import IndexedMap_TopoDS_Shape_TopTools_ShapeMapHasher as IndexedMapOfShape
 
-from . import OracleError
+from . import OracleError, step as step_file
 
 # --- parameters and expressions -------------------------------------------
 
@@ -185,6 +193,10 @@ def probes(fixture: dict, variant: str = "default") -> list[dict]:
 
 
 SOLID_KEYS = ("params", "variants", "steps", "result", "probes")
+
+# Where `fixture.load_fixture` records a recipe's directory, which a `step`
+# operand's file is relative to: no recipe writes it, and no hash reads it.
+DIR_KEY = "__dir__"
 GEOMETRY_KEYS = ("kind", "params", "surfaces", "curves", "samples", "pairs")
 
 
@@ -368,6 +380,7 @@ def build(fixture: dict, variant: str = "default") -> tuple[TopoDS_Shape, dict[s
     """The result shape of `fixture` for `variant`, and every named step."""
     params = resolve_params(fixture, variant)
     probe = float(fixture.get("tolerances", {}).get("probe", 1e-7))
+    base = fixture.get(DIR_KEY)
     shapes: dict[str, TopoDS_Shape] = {}
 
     def ref(name: Any) -> TopoDS_Shape:
@@ -383,7 +396,7 @@ def build(fixture: dict, variant: str = "default") -> tuple[TopoDS_Shape, dict[s
         if name in shapes:
             raise OracleError(f"step {i}: name {name!r} is already used")
         try:
-            shapes[name] = _build_step(step, op, params, ref, probe)
+            shapes[name] = _build_step(step, op, params, ref, probe, base)
         except KeyError as e:
             raise OracleError(f"step {name!r} ({op}): missing field {e}") from e
     result = fixture.get("result")
@@ -410,7 +423,44 @@ def _edge_at(shape: TopoDS_Shape, point: list[float], probe: float):
     return near[0]
 
 
-def _build_step(step: dict, op: str, params: dict[str, float], ref, probe: float = 1e-7) -> TopoDS_Shape:
+def _read_solid(step: dict, params: dict[str, float], probe: float, base: str | None) -> TopoDS_Shape:
+    """The solid a `step` operand names: of the file's solids from `#id`,
+    the only one, or the one whose centroid is nearest `near`, a tie
+    within `probe` refused — the rule the Rust side keeps with Arris's
+    reader."""
+    if base is None:
+        raise OracleError("a step operand needs its fixture's directory")
+    path = Path(base) / step["file"]
+    if not path.exists():
+        raise OracleError(f"no such STEP file: {path}")
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    if digest != step["sha256"]:
+        raise OracleError(f"{path} hashes to {digest}, not the recipe's {step['sha256']}")
+    wanted = int(step["id"])
+    candidates = [s for label, s in step_file.solids(path) if label == wanted]
+    if not candidates:
+        raise OracleError(f"{step['file']} has no solid #{wanted} that Open CASCADE reads")
+    if len(candidates) == 1:
+        return candidates[0]
+    if "near" not in step:
+        raise OracleError(f"{step['file']} places #{wanted} {len(candidates)} times: name one by `near`")
+    near = vector(step["near"], params)
+
+    def distance(solid) -> float:
+        props = GProp_GProps()
+        BRepGProp.VolumeProperties_s(solid, props)
+        c = props.CentreOfMass()
+        return math.dist((c.X(), c.Y(), c.Z()), near)
+
+    ranked = sorted((distance(s), k) for k, s in enumerate(candidates))
+    if ranked[1][0] - ranked[0][0] <= probe:
+        raise OracleError(f"two placements of #{wanted} are as near {near}")
+    return candidates[ranked[0][1]]
+
+
+def _build_step(
+    step: dict, op: str, params: dict[str, float], ref, probe: float = 1e-7, base: str | None = None
+) -> TopoDS_Shape:
     if op == "box":
         lo, hi = vector(step["min"], params), vector(step["max"], params)
         if any(h <= l for l, h in zip(lo, hi)):
@@ -487,4 +537,6 @@ def _build_step(step: dict, op: str, params: dict[str, float], ref, probe: float
         for p in points:
             mc.Add(distance, _edge_at(shape, vector(p, params), probe))
         return _checked(mc, "chamfer")
+    if op == "step":
+        return _read_solid(step, params, probe, base)
     raise OracleError(f"unknown op {op!r}")

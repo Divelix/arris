@@ -291,6 +291,28 @@ pub enum CorpusError {
         /// The difference, or that the file is missing.
         what: String,
     },
+    /// A `step` operand's file is missing, is not the file the recipe
+    /// hashed, does not parse, or names no single solid.
+    #[error("{fixture}: step {step:?}: {what}")]
+    StepFile {
+        /// The fixture.
+        fixture: String,
+        /// The step's name.
+        step: String,
+        /// What is wrong.
+        what: String,
+    },
+    /// The STEP reader refused the solid a `step` operand names: the
+    /// refusal is the step's typed error (ADR-0025 §2).
+    #[error("{fixture}: step {step:?}: the reader refuses it: {refusal}")]
+    Refused {
+        /// The fixture.
+        fixture: String,
+        /// The step's name.
+        step: String,
+        /// The reader's refusal.
+        refusal: Box<step::Refusal>,
+    },
     /// A file could not be read or written.
     #[error("{path}: {source}")]
     Io {
@@ -629,7 +651,9 @@ impl CorpusError {
             | CorpusError::Precision { .. }
             | CorpusError::Axis { .. }
             | CorpusError::Expectation { .. }
-            | CorpusError::Op { .. } => Stage::Build,
+            | CorpusError::Op { .. }
+            | CorpusError::StepFile { .. }
+            | CorpusError::Refused { .. } => Stage::Build,
             CorpusError::Check { .. } | CorpusError::Lumps { .. } => Stage::Check,
             CorpusError::Counts { .. } | CorpusError::Genus { .. } => Stage::Counts,
             CorpusError::Measure { .. } => Stage::Measure,
@@ -1352,7 +1376,8 @@ impl Inputs {
             | Step::Revolve { .. }
             | Step::Transform { .. }
             | Step::Fillet { .. }
-            | Step::Chamfer { .. } => return None,
+            | Step::Chamfer { .. }
+            | Step::Read { .. } => return None,
         };
         Some((*self.bodies.get(x)?, *self.bodies.get(y)?))
     }
@@ -1650,6 +1675,106 @@ fn build_step(
                 fillet(m, of_body, &selected, size)
             };
             body(blended.map_err(op)?, vec![of_body])
+        }
+        Step::Read {
+            file,
+            sha256,
+            id,
+            near,
+            ..
+        } => {
+            let near = match near {
+                Some(p) => Some(point(fixture, step, p, params)?),
+                None => None,
+            };
+            let probe = fixture.recipe.tolerances.probe;
+            let read =
+                read_solid(m, &fixture.dir, file, sha256, *id, near, probe).map_err(|fault| {
+                    match fault {
+                        ReadFault::Refused(refusal) => CorpusError::Refused {
+                            fixture: name.clone(),
+                            step: step.name().to_string(),
+                            refusal: Box::new(refusal),
+                        },
+                        ReadFault::File(what) => CorpusError::StepFile {
+                            fixture: name.clone(),
+                            step: step.name().to_string(),
+                            what,
+                        },
+                    }
+                })?;
+            body((read.body, read.provenance), Vec::new())
+        }
+    }
+}
+
+/// Why a `step` operand gave no solid.
+enum ReadFault {
+    /// The reader refused the solid named.
+    Refused(step::Refusal),
+    /// The file is missing, is not the one the recipe hashed, does not
+    /// parse, or names no single solid.
+    File(String),
+}
+
+/// The solid a `step` operand names ([`Step::Read`]): the file `file`
+/// beside the fixture in `dir`, held to `sha256`, read into `m` by
+/// `arris_io::step::read` in millimetres; of its instances of `#id`, the
+/// only one, or the one whose centroid is nearest `near`. Every instance
+/// of `#id` must read: a refusal of any is the operand's. A tie for
+/// nearest — two centroids whose distances from `near` differ by no more
+/// than `probe` — names no solid.
+fn read_solid(
+    m: &mut Model,
+    dir: &Path,
+    file: &str,
+    sha256: &str,
+    id: u64,
+    near: Option<Point3>,
+    probe: f64,
+) -> Result<step::ReadBody, ReadFault> {
+    let path = dir.join(file);
+    let bytes =
+        std::fs::read(&path).map_err(|e| ReadFault::File(format!("{}: {e}", path.display())))?;
+    let digest: String = Sha256::digest(&bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    if digest != sha256 {
+        return Err(ReadFault::File(format!(
+            "{} hashes to {digest}, not the recipe's {sha256}",
+            path.display()
+        )));
+    }
+    // Part 21 is ISO 8859-1 outside its escapes; a byte that is not UTF-8
+    // can only sit in a string, whose text the reader does not use.
+    let text = String::from_utf8_lossy(&bytes);
+    let read = step::read(m, &text, &step::ReadOptions::default())
+        .map_err(|e| ReadFault::File(format!("{}: {e}", path.display())))?;
+    let mut candidates = Vec::new();
+    for solid in read.solids.into_iter().filter(|s| s.entity.id == id) {
+        candidates.push(solid.result.map_err(ReadFault::Refused)?);
+    }
+    match (candidates.len(), near) {
+        (0, _) => Err(ReadFault::File(format!("{file} has no solid #{id}"))),
+        (1, _) => Ok(candidates.remove(0)),
+        (n, None) => Err(ReadFault::File(format!(
+            "{file} places #{id} {n} times: name one by `near`"
+        ))),
+        (_, Some(near)) => {
+            let mut by_distance = Vec::with_capacity(candidates.len());
+            for (k, c) in candidates.iter().enumerate() {
+                let props = mass_properties(m, c.body)
+                    .map_err(|e| ReadFault::File(format!("#{id}, placement {k}: {e}")))?;
+                by_distance.push(((props.centroid - near).norm(), k));
+            }
+            by_distance.sort_by(|a, b| a.0.total_cmp(&b.0));
+            if by_distance[1].0 - by_distance[0].0 <= probe {
+                return Err(ReadFault::File(format!(
+                    "two placements of #{id} are as near {near:?}"
+                )));
+            }
+            Ok(candidates.swap_remove(by_distance[0].1))
         }
     }
 }
@@ -1986,6 +2111,68 @@ mod tests {
             chain(&scratch, "default"),
             Err(CorpusError::Precision { .. })
         ));
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    /// A `step` operand reads only the file it hashes, names a solid the
+    /// file has, and carries the reader's refusal as its own.
+    #[test]
+    fn a_step_operand_is_the_solid_of_the_file_it_hashes() {
+        let dir = crate::fixtures::corpus_root().join("boolean/step-operand-cut");
+        let file = "operand.step";
+        let bytes = std::fs::read(dir.join(file)).expect("the committed operand");
+        let digest: String = Sha256::digest(&bytes)
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        let probe = Tolerances::default().probe;
+        let mut m = Model::default();
+        let read = read_solid(&mut m, &dir, file, &digest, 22, None, probe)
+            .unwrap_or_else(|_| panic!("#22 of {file}"));
+        assert!(check(&m, read.body, Level::Full).is_ok());
+
+        let fault = |r: Result<step::ReadBody, ReadFault>| match r {
+            Ok(_) => panic!("read a solid it should not have"),
+            Err(ReadFault::File(what)) => what,
+            Err(ReadFault::Refused(r)) => format!("refused: {r}"),
+        };
+        let mut m = Model::default();
+        let other = "0".repeat(64);
+        let what = fault(read_solid(&mut m, &dir, file, &other, 22, None, probe));
+        assert!(what.contains("not the recipe's"), "{what}");
+        let what = fault(read_solid(&mut m, &dir, file, &digest, 23, None, probe));
+        assert!(what.contains("has no solid #23"), "{what}");
+        let what = fault(read_solid(
+            &mut m,
+            &dir,
+            "absent.step",
+            &digest,
+            22,
+            None,
+            probe,
+        ));
+        assert!(what.contains("absent.step"), "{what}");
+
+        // The same file with its context's length unit taken away: the
+        // reader refuses the solid, and the operand is that refusal.
+        let scratch =
+            std::env::temp_dir().join(format!("arris-corpus-step-operand-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&scratch);
+        std::fs::create_dir_all(&scratch).expect("a scratch directory");
+        let text = String::from_utf8(bytes).expect("Arris writes ASCII");
+        let unitless = text.replace(
+            "GLOBAL_UNIT_ASSIGNED_CONTEXT((#10,",
+            "GLOBAL_UNIT_ASSIGNED_CONTEXT((",
+        );
+        assert_ne!(unitless, text, "the operand declares a length unit");
+        std::fs::write(scratch.join(file), &unitless).expect("the edited operand");
+        let digest: String = Sha256::digest(unitless.as_bytes())
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        let mut m = Model::default();
+        let what = fault(read_solid(&mut m, &scratch, file, &digest, 22, None, probe));
+        assert!(what.starts_with("refused: "), "{what}");
         let _ = std::fs::remove_dir_all(&scratch);
     }
 

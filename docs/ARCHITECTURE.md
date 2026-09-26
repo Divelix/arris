@@ -1393,7 +1393,12 @@ B-Rep).
   accounting of its own; a `fillet` or `chamfer` step's edges named by a point each,
   the edge `classify_point` answers `On(Edge)` for when no second edge of
   the body passes within the fixture's `probe` of the point, a
-  `CorpusError::EdgePoint` otherwise; checker, counts — a solid per lump — and genus,
+  `CorpusError::EdgePoint` otherwise; a `step` step's solid read by
+  `arris_io::step::read` from the file beside the recipe, held to the
+  recipe's SHA-256 of it and named by its `#id` — and, where an assembly
+  places it more than once, by the placement whose centroid is nearest a
+  point — the reader's refusal of it `CorpusError::Refused` (ADR-0026);
+  checker, counts — a solid per lump — and genus,
   the oracle's reading
   of the STEP, the mass properties against the oracle's within the
   fixture's tolerances, the mesh closed and within `mesh_volume_rel`,

@@ -1,0 +1,21 @@
+{
+  "description": "a solid read from a STEP file as a recipe operand (ADR-0026, plans/real-part-corpus step 2): operand.step is Arris's own STEP of boolean/through-hole's result, the plate [0,40]×[0,30]×[0,10] less a hole of r 4 at (20,15); the box [15,−1,5]–[41,31,11] cuts its upper half away beyond x = 15, through the hole, leaving a step with a hole through the lower slab only, genus 1",
+  "steps": [
+    {"name": "part", "op": "step", "file": "operand.step", "sha256": "ad8ef65f2471d3c1daa8ae99a04f28a734a90f81959983610c2892b577b45b60", "id": 22},
+    {"name": "block", "op": "box", "min": [15, -1, 5], "max": [41, 31, 11]},
+    {"name": "result", "op": "cut", "target": "part", "tool": "block"}
+  ],
+  "result": "result",
+  "probes": [
+    {"label": "inside", "point": [5, 5, 5], "expect": "in"},
+    {"label": "removed", "point": [30, 15, 8], "expect": "out"},
+    {"label": "on_step", "point": [30, 5, 5], "expect": "on"},
+    {"label": "in_hole", "point": [20, 15, 2], "expect": "out"}
+  ],
+  "analytic": {
+    "volume": "8250 - 80 * pi",
+    "area": "3550 + 8 * pi",
+    "centroid": ["(136875 - 1600 * pi) / (8250 - 80 * pi)", 15, "(31875 - 200 * pi) / (8250 - 80 * pi)"],
+    "genus": 1
+  }
+}

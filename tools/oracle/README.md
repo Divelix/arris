@@ -53,9 +53,13 @@ cache; `ci.yml` sets it, so CI always runs the oracle.
   `transform`, `fuse`, `common`, `cut`, `fillet` and `chamfer`
   (`BRepFilletAPI_MakeFillet`, `MakeChamfer` with one distance, each edge
   the nearest to a recipe point by `BRepExtrema`, which must be
-  the only edge within the fixture's `probe`), chained by step name; `params`
+  the only edge within the fixture's `probe`), and `step` (a solid of a
+  STEP file beside the recipe, by `step.solids`, its SHA-256 checked),
+  chained by step name; `params`
   with string expressions and `variants` overriding them. The grammar is
-  the module docstring and `tests/fixtures/README.md`.
+  the module docstring and `tests/fixtures/README.md`. `fixture.load_fixture`
+  records the recipe's directory under `recipe.DIR_KEY`, outside the hash,
+  which is where a `step` operand's file is found.
 - `oracle/measure.py` — volume, area, centroid and the inertia tensor
   (`GProp`: its fixed-order integration, but the adaptive overloads to
   `SPLINE_EPS` for a shape trimmed by a many-span B-spline pcurve — under
@@ -92,7 +96,17 @@ cache; `ci.yml` sets it, so CI always runs the oracle.
   the B-spline, a line within `LINE_REACH` of its origin, every extremum
   within `Precision::Confusion` a hit.
 - `oracle/step.py` — STEP AP214 write and read, with OCCT's transfer
-  banner silenced.
+  banner silenced; and `solids`, every solid a file's reading transfers,
+  each with the `#id` of the solid entity behind it. The reader heals on
+  transfer as Open CASCADE does by default (`FixShape`, ADR-0026 §3): its
+  unhealed reading of a valid file with a seamless cylinder band is no
+  solid. The model this build reads keeps no `#id` (`Number` and
+  `IdentLabel` answer 0) and drops instances nothing refers to, so the
+  `#id` is found by content: `EntityFromShapeResult` of the solid
+  unplaced (placed, it answers the assembly occurrence), then the face
+  count and first vertex of its outer shell, matched against the same read
+  from the file's own text (`instances`, a scan of the DATA sections that
+  skips strings and comments), which must name one solid alone.
 - `oracle/mesh.py` — STL read through `RWStl`, and its triangle count,
   area and signed volume by the divergence theorem.
 - `oracle/fixture.py` — fixture directories, `expected.json` layout,

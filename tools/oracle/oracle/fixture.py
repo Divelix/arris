@@ -6,7 +6,7 @@ from pathlib import Path
 from . import OracleError, occt_version, step
 from .measure import DEFAULT_TOLERANCES, measure, own_measures
 from .geometry import compute_geometry
-from .recipe import build, fixture_kind, probes, recipe_hash, variant_names
+from .recipe import DIR_KEY, build, fixture_kind, probes, recipe_hash, variant_names
 
 FIXTURE = "fixture.json"
 EXPECTED = "expected.json"
@@ -21,11 +21,16 @@ def corpus_root() -> Path:
 
 
 def load_fixture(directory: Path) -> dict:
+    """The recipe in `directory`, with the directory itself under
+    `recipe.DIR_KEY`, where a `step` operand's file is looked for: a key
+    no recipe writes, and outside the hash."""
     path = directory / FIXTURE
     if not path.exists():
         raise OracleError(f"no {FIXTURE} in {directory}")
     with path.open() as f:
-        return json.load(f)
+        fixture = json.load(f)
+    fixture[DIR_KEY] = str(directory)
+    return fixture
 
 
 def load_expected(directory: Path) -> dict | None:

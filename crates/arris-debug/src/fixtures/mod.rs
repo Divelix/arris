@@ -350,6 +350,29 @@ pub enum Step {
         /// The distance from the edge, measured on each of its faces.
         distance: Num,
     },
+    /// A solid read from a STEP file beside the fixture (`"op": "step"`):
+    /// Arris through `arris_io::step::read`, the oracle through Open
+    /// CASCADE's reader, healed (ADR-0026 §3). The solid is named by its
+    /// file entity and, where an assembly places it more than once, by a
+    /// point its placement's centroid is nearest, so that neither side
+    /// depends on the other's order of instances.
+    #[serde(rename = "step")]
+    Read {
+        /// Step name.
+        name: String,
+        /// The file, relative to the fixture's directory.
+        file: String,
+        /// The file's SHA-256, lower-case hex: both sides refuse a file
+        /// that does not match, and the recipe hash moves with it.
+        sha256: String,
+        /// The `#id` of the `MANIFOLD_SOLID_BREP` or `BREP_WITH_VOIDS`.
+        id: u64,
+        /// Which placement of it, where the file has several: the one
+        /// whose centroid is nearest this point. Required then; a tie
+        /// within `probe` is refused.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        near: Option<[Num; 3]>,
+    },
 }
 
 impl Step {
@@ -366,7 +389,8 @@ impl Step {
             | Step::Common { name, .. }
             | Step::Cut { name, .. }
             | Step::Fillet { name, .. }
-            | Step::Chamfer { name, .. } => name,
+            | Step::Chamfer { name, .. }
+            | Step::Read { name, .. } => name,
         }
     }
 }

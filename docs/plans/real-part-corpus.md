@@ -94,13 +94,18 @@ closes on it.
   - `arris_debug::fixtures` gains `Kind::Part`. The corpus lint holds
     `real/` like the other areas: every `read` solid has its dump.
 - **The recipe grammar gains a `step` operand** (step 2): `{"op": "step",
-  "file": …, "solid": k}`, the k-th solid of a file in the reader's
-  instance order. Both interpreters take it, so the battery runs through
-  the recipe machinery, `expected.py`, the corpus runner and the
-  differential's classes unchanged.
-  - The Python side maps the reader's instance order onto Open CASCADE's
-    by each solid's `#id` and placement path. The mapping is the step's
-    test.
+  "file": …, "sha256": …, "id": #id, "near": [x, y, z]}`, the solid of a
+  file named by its entity and, where an assembly places it more than
+  once, by the point its placement's centroid is nearest. Both
+  interpreters take it, so the battery runs through the recipe machinery,
+  `expected.py`, the corpus runner and the differential's classes
+  unchanged.
+  - Step 2 found that Open CASCADE's model keeps no `#id` and that
+    reproducing Arris's order of placements in Python would mean writing
+    the flattening a second time. So neither side's order of instances
+    names a solid: the `#id` does, and `near` picks the placement.
+    Python finds the `#id` by content (the outer shell's face count and
+    first vertex). The mapping is the step's test.
 - **`arris_debug::battery`** (step 6): the battery's operands derived from
   a read solid, deterministically. The box and the three drills are placed
   from the oracle's centroid and principal axes. The fillet's edges are
@@ -161,7 +166,7 @@ part to an oracle.
 
   Test: none beyond the hook. The ADR is the output, and its first-look
   numbers (solids, read, refused by kind, panics) go in its Context.
-- [ ] Step 2 **[2]** — The `step` operand in both interpreters.
+- [x] Step 2 **[2]** — The `step` operand in both interpreters.
   - Rust: `arris_debug::fixtures`'s recipe evaluator calls `step::read` and
     takes the k-th `ReadSolid`. A refusal is the step's typed error.
   - Python: `tools/oracle/oracle/recipe.py` reads with `STEPControl_Reader`

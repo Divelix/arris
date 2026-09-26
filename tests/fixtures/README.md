@@ -137,6 +137,7 @@ of the step that made the fixture pass, and a later change to it is a
 | `cut` | `target`, `tool` |
 | `fillet` | `of`, `edges` (a list of points, one on each edge to blend), `radius` |
 | `chamfer` | `of`, `edges` (as a `fillet`'s), `distance` (one, measured on both faces from the edge) |
+| `step` | `file` (beside `fixture.json`), `sha256` (of the file), `id` (the `#id` of its `MANIFOLD_SOLID_BREP` or `BREP_WITH_VOIDS`), `near` (a point; only where the file places that solid more than once) |
 
 - **A `fillet`'s or a `chamfer`'s edges are named by a point each**, so a selection
   survives a transform and a second blend, which a role does not: Arris
@@ -144,6 +145,22 @@ of the step that made the fixture pass, and a later change to it is a
   nearest edge by `BRepExtrema`, and both refuse a point that is within
   `probe` of two edges or on none — a vertex, a face, the inside or the
   outside (`CorpusError::EdgePoint`).
+- **A `step` operand is a solid read from a file** (ADR-0026): Arris
+  through `arris_io::step::read`, the oracle through Open CASCADE's
+  reader, which heals on transfer by default (ADR-0026 §3). Both refuse a
+  file whose SHA-256 is not the recipe's, and since the hash is in the
+  recipe, a changed file stales `expected.json` and misses the oracle's
+  cache. The solid is named by its file entity, not by either reader's
+  order of instances. Arris keeps it as the reader numbers it; Open
+  CASCADE's model keeps no `#id`, so `oracle/step.py` finds it by the
+  face count and first vertex of its outer shell. Where an assembly
+  places the solid more than once, the placement whose centroid is
+  nearest `near` is taken, and a tie within `probe` is refused. A
+  refusal of the solid by Arris's reader is the step's error
+  (`CorpusError::Refused`); a file that is missing, does not match its
+  hash, or has no such solid is `CorpusError::StepFile`.
+  `boolean/step-operand-cut` cuts Arris's own STEP of
+  `boolean/through-hole`'s result.
 - **An ellipse** (ADR-0014) is its centre, `major` — from the centre to a
   major vertex, so its length is the major radius and its direction the
   axis — and `minor_radius`; an `ellipse_to` segment runs from the
