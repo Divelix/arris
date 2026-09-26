@@ -1,0 +1,350 @@
+# ADR-0026 — The real-part corpus: NIST's parts committed and fetched, the oracle reading healed, and every refusal mapped to the cycle it blocks
+
+- Status: accepted (2026-09-26)
+- Plan: `real-part-corpus` step 1
+- Follows: ADR-0025 §6 and §7 (the corpus's two tiers, the battery and a
+  coarse refusal table, left to this plan), ADR-0024 §2 (the
+  differential's classes and its `Reason` count), ADR-0020 (the histogram
+  picks the cycle after the reader)
+
+## Context
+
+ADR-0025 §6 decided that C4 closes on a refusal histogram over real parts,
+in two tiers: a committed tier of public-domain parts, named as the NIST
+MBE PMI test models, and a fetched tier, a pinned sample of a large public
+dataset whose licence is confirmed before the plan names it. Its table from
+refusal to cycle is coarse, and it leaves four rows open: `Topology`,
+`Pcurve`, `Invalid` and `Degenerate`. It also leaves how the operations'
+tangent and non-manifold reasons count. Three facts had to come from the
+sources themselves, not from memory.
+
+### The licences, as the sources state them (read 2026-09-26)
+
+- **NIST MBE PMI test models** (nist.gov, "Download Free CAD Models, STEP
+  Files, and Test Results", updated 2025-12-30): *"The test cases, CAD
+  models, and STEP files can be used without any restrictions. Their use in
+  other software or hardware products does not imply a recommendation or
+  endorsement of those products by NIST. We would appreciate
+  acknowledgement if any of the test cases, CAD models, STEP files, or
+  screenshots of the models are used, however, the use of the NIST logo
+  seen at the top of this page is not allowed in promotional materials."*
+  The page links the STEP archive (`NIST-PMI-STEP-Files.zip`) and the D2MI
+  project's CAD files (`NIST-D2MI-Models.zip`) under the same disclaimer.
+  The archive's `README.txt` adds that the files *"are NOT reference STEP
+  files without any errors"*, and that the exporting systems' names have
+  been removed.
+- **ABC dataset** (deep-geometry.github.io/abc-dataset): *"The copyright of
+  the CAD models is owned by their creators. For licensing details, see
+  Onshape Terms of Use 1.g.ii."* Onshape's terms (effective 2020-07-15)
+  grant a licence *"to use the intellectual property contained in
+  Customer's Public Document without restriction, including without
+  limitation the rights to use, copy, modify, merge, publish, distribute,
+  sublicense, and/or sell copies"*. The grant covers *"any Public Document
+  owned by a Free Plan User created on or after August 7, 2018, or any
+  Public Document created prior to that date without a LICENSE tab"*. For
+  a document before that date that *"contained a tab called LICENSE
+  reserving rights greater than the foregoing, those greater reserved
+  rights will continue to apply"*, and likewise for any document owned by
+  a user who is not on the free plan. The dataset's per-model metadata
+  records the creation date (the page's sample model: 2014-08-19). It
+  records neither the owner's plan nor whether the document had a LICENSE
+  tab.
+- **Fusion 360 Gallery Dataset** (its `LICENSE.md`, updated 11/2021):
+  *"You may access, use, reproduce and modify the Dataset, in each case,
+  only for non-commercial research purposes."* Redistribution of a
+  portion is allowed only under the same restriction.
+
+### What Open CASCADE's reader does on transfer
+
+`STEPControl_Reader` runs `ShapeProcess::Operation::FixShape` on every
+transfer by default (`STEPControl_Reader::GetDefaultShapeProcessFlags`).
+The flag setter takes a `std::bitset` that the Python binding cannot pass.
+Healing can still be turned off: `SetShapeFixParameters` with every
+`FixShape.*Mode` set to `0`, **after** `ReadFile`, which is when the
+transfer actor exists. Before it, the call is silently overwritten.
+`read.step.sequence` no longer has any effect. Measured on
+`nist_ctc_03_asme1_rc.stp`, which has 15 cylindrical faces each bounded by
+two circles and no seam, as ISO 10303-42 allows:
+
+| Reading | Cylinder faces with two wires | Seam uses | `BRepCheck` | Volume |
+|---|---|---|---|---|
+| healed (default) | 0 | 30 | valid | 331 938.27 |
+| healing off | 15 | 0 | **invalid** | **−346 282.18** |
+
+Unhealed, Open CASCADE's reading of a valid file is not a solid: its data
+model, like Arris's, needs the seam, and the reader alone does not add it.
+
+### First look: the reader over NIST's files
+
+`inspect_step` and a timing harness ran `step::read` in a release build
+over every STEP file of both archives, with nothing fixed. Per solid
+instance:
+
+| File (AP203 geometry only) | Solids | Outcome |
+|---|---|---|
+| `nist_ctc_01_asme1_rd` | 1 | `Gap` #1864: 0.02 past the cap of 0.01 |
+| `nist_ctc_02_asme1_rc` | 2 | `Gap` #11056 (0.0112); `Unsupported` `SHELL_BASED_SURFACE_MODEL` |
+| `nist_ctc_03_asme1_rc` | 1 | `Invalid`: L4 zero signed area, 12 faces |
+| `nist_ctc_04_asme1_rd` | 4 | `Malformed` #7319, no frame; 3 × `SHELL_BASED_SURFACE_MODEL` |
+| `nist_ctc_05_asme1_rd` | 2 | `Gap` #4444 (0.0182, after 66.6 s); `SHELL_BASED_SURFACE_MODEL` |
+| `nist_ftc_06_asme1_rd` | 1 | `OpenLoop` #351 |
+| `nist_ftc_07_asme1_rd` | 1 | `Gap` #1963: 0.02 (after 20.3 s) |
+| `nist_ftc_08_asme1_rc` | 1 | `Malformed` #3672, no frame |
+| `nist_ftc_09_asme1_rd` | 1 | **read**, 158 faces, `Full` clean (0.81 s) |
+| `nist_ftc_10_asme1_rb` | 1 | `Invalid`: L4 no outer loop (after 9.5 s) |
+| `nist_ftc_11_asme1_rb` | 1 | `Invalid`: L4 zero signed area |
+
+The fetched tier's files, the same way (an instance per placement):
+
+| File | Instances | Outcome |
+|---|---|---|
+| `nist_ctc_01_asme1_ap242-e1` | 1 | `Malformed` #16: a `CAMERA_MODEL_D3` where a placement belongs |
+| `nist_ctc_02_asme1_ap242-e2` | — | **did not finish** in 900 s |
+| `nist_ctc_03_asme1_ap242-e2` | 2 | **read**, 120 faces each, `Full` clean |
+| `nist_ctc_04_asme1_ap242-e1` | 4 | 2 × `Gap` #11276 (0.0106, 15.6 s); 2 × `SHELL_BASED_SURFACE_MODEL` |
+| `nist_ctc_05_asme1_ap242-e1` | 1 | `Unsupported` #1645: a `VERTEX_LOOP` whose seam crosses its face's bound |
+| `nist_ftc_06_asme1_ap242-e2` | 2 | **read, and `Full` fails**: S5, faces meeting away from their shared edges |
+| `nist_ftc_07_asme1_ap242-e2` | 51 | 17 × `Gap` #1534: 0.02; 34 × `SHELL_BASED_SURFACE_MODEL` (108 s) |
+| `nist_ftc_08_asme1_ap242-e1-tg` | 0 | nothing: its `TESSELLATED_SOLID` is not seen |
+| `nist_ftc_08_asme1_ap242-e2` | 13 | `Invalid`: L4 zero signed area |
+| `nist_ftc_09_asme1_ap242-e1` | 6 | **read**, 158 faces, `Full` clean; 5 × `SHELL_BASED_SURFACE_MODEL` |
+| `nist_ftc_10_asme1_ap242-e2` | 247 | 19 × **read**, 264 faces, `Full` clean (the same body 19 times); 228 × `SHELL_BASED_SURFACE_MODEL` (790 s) |
+| `nist_ftc_11_asme1_ap242-e2` | 11 | `Gap` #875: 0.02 |
+| `nist_stc_06_asme1_ap242-e3` | 13 | `Invalid`: L4 zero signed area |
+| `nist_stc_07_asme1_ap242-e3` | 7 | 5 × `Malformed` #1219, no frame; 2 × `SHELL_BASED_SURFACE_MODEL` |
+| `nist_stc_08_asme1_ap242-e3` | 4 | **read**, 270 faces each, `Full` clean; 2 × `SHELL_BASED_SURFACE_MODEL` |
+| `nist_stc_09_asme1_ap242-e3` | 1 | **read**, 125 faces, `Full` clean |
+| `nist_stc_10_asme1_ap242-e2` | 1 | `Gap` #4962: 0.02 |
+| `nist_ctc_01_asme1_ap203` | 1 | `Gap` #2018: 0.02 |
+| `nist_ctc_02_asme1_ap203` | 1 | `Gap` #5805: 0.02 |
+| `nist_ctc_03_asme1_ap203` | 1 | `Invalid`: L4 zero signed area |
+| `nist_ctc_04_asme1_ap203` | 2 | `SHELL_BASED_SURFACE_MODEL`; `Unsupported` #1954, the `VERTEX_LOOP` seam |
+| `nist_ctc_05_asme1_ap203` | 1 | `Unsupported` #774, the `VERTEX_LOOP` seam |
+| D2MI `827-9999-904 rev c` | — | the file does not parse: a string holds a `\` that starts no directive (line 45 751) |
+| D2MI `827-9999-905` to `-908` | 1 each | `Invalid`: L4 zero signed area |
+
+No file panicked. The first look shows that a refusal is not always the
+file's fault:
+
+- **A cylinder band bounded by two circles** (`ctc_03`, `ftc_11`, and the
+  same faces in `ftc_08`'s AP242 edition) is valid STEP. The reader
+  leaves it seamless, and the reader's own checker then refuses it as
+  `Invalid`. Open CASCADE adds the seam and reads it.
+- **An `AXIS2_PLACEMENT_3D` with no reference direction** along the x
+  axis (`ctc_04`, `ftc_08`) is refused as `Malformed`, where ISO 10303-42
+  defines the default direction.
+- **Every `Gap` of exactly `0.02`** is not a measured distance. It is the
+  fit tolerance after one growth past the cap (`GAP_GROWTH`). The reader
+  reports it when a curve measured off its surface by less than the cap
+  still has no pcurve fit at the cap (`ctc_01`'s #1864 is a cubic
+  B-spline edge). Open CASCADE's reading of `ctc_01` carries no vertex
+  or edge tolerance above `0.0065`.
+- **A `VERTEX_LOOP` on a cone or sphere** whose seam the reader draws
+  across the face's other bound (`ctc_04` and `ctc_05` PMI editions) is
+  refused as `Unsupported`. The limit is the reader's choice of seam, not
+  anything in the file.
+- **Placements that are not there.** Every AP242 edition with more than
+  one instance of a solid (`ctc_03`, `ctc_04`, `ftc_07`, `ftc_08`,
+  `ftc_10`, `ftc_11`, `stc_06`, `stc_07`, `stc_08`: 2 to 19 each) holds
+  one solid by Open CASCADE's reading, which transfers the product
+  structure.
+  Arris's flattening takes some other relationship for a placement, and
+  where the instances read, it returns bodies the part does not have.
+  That is a wrong solid, not a count.
+- **A read that fails the checker at `Full`** (`ftc_06` AP242, S5): the
+  reader's `Fast` check passed a body whose faces meet away from their
+  shared edges. It is a wrong solid until shown otherwise.
+- **A presentation entity** (`CAMERA_MODEL_D3`, `ctc_01` AP242) is
+  followed where a placement belongs, and a `TESSELLATED_SOLID`
+  (`ftc_08` `-tg`) reads as no solid at all, where ADR-0025 §2 counts the
+  tessellated relatives of a faceted B-rep as a refusal.
+- **Time.** Three refused reads take 9–67 s. `ftc_10` AP242 takes 790 s,
+  and `ctc_02` AP242 does not finish in 900 s.
+
+## Decision
+
+### 1. The committed tier: NIST's AP203 geometry-only files
+
+The eleven files of `NIST-PMI-STEP-Files.zip`'s `AP203 geometry only/`,
+one per test case (CTC 01–05, FTC 06–11), are committed as `real/`
+fixtures (`tests/fixtures/real/nist-<case>/`), one per file.
+
+- **Budget: 5 MB of STEP text, committed uncompressed.** The eleven are
+  4.43 MB raw and 0.80 MB after `gzip -9`, which is what git's zlib
+  stores. A compressed file would put a decompressor in
+  `arris-debug`'s dependencies, and it would save the repository less
+  than git's own compression already does. A later part that would
+  exceed the budget goes to the fetched tier.
+- **Each fixture records** its source URL, the archive's `sha256`
+  (`8fa78429e6d8d9b0d7681d223b6aa9ec98c3772185c55b1a0e3679b21c181911`),
+  the file's own `sha256`, and the licence line quoted above. NIST's
+  acknowledgement is given in `tests/fixtures/README.md`.
+- These are the geometry-only editions. The PMI editions carry the same
+  test cases from other exporters, 2–5 times larger, and they go to the
+  fetched tier.
+
+### 2. The fetched tier: NIST's other editions; ABC and Fusion 360 dropped
+
+- **ABC is dropped.** Its licence per model depends on two facts the
+  dataset does not record, the owner's plan and a LICENSE tab, and its
+  sample model predates 2018-08-07. A licence that cannot be confirmed is
+  never assumed (ADR-0025 §6). If Onshape's API is ever shown to expose a
+  document's LICENSE tab, a filter on it could admit a confirmed subset.
+  That is a backlog line, not this plan's work.
+- **Fusion 360 Gallery is dropped.** Its licence restricts use to
+  non-commercial research. Arris is a library whose consumers include
+  commercial ones, and its CI serves them.
+- **The fetched tier is the rest of NIST's public-domain STEP.** From
+  `NIST-PMI-STEP-Files.zip` it takes the AP242 editions (e1, e2, e3, the
+  tessellated `-tg`) and the AP203-with-PMI editions, 22 files and
+  40 MB. From `NIST-D2MI-Models.zip` (`sha256`
+  `f20e36fb68633129dfedadf209ba4836bb0e42e18f12e7a2c28140ecdfb26cf3`) it
+  takes five STEP files. `tools/real-parts.sh` fetches both archives into
+  `target/real-parts/` and checks the archive hashes and each file's hash
+  against a committed list. It never commits the files. Their licence
+  would allow committing them, so a failure found there may be committed
+  as an excerpt, and no recipe is needed.
+- It is smaller than a dataset sample, and it is kept for what it adds:
+  other exporters, three AP242 editions, PMI and presentation entities
+  around the same geometry, and files too large for the budget. The
+  script and the nightly job stay ready for a larger source whose licence
+  is confirmed later.
+
+### 3. The oracle reads healed, and records what healing did
+
+- **The oracle's measures come from the healed reading**, which is Open
+  CASCADE's default. Unhealed, its reading of a valid file can be an
+  invalid shape with a negative volume, so holding Arris to it would hold
+  Arris to a wrong answer.
+- **The oracle also reads with healing off** (§Context's parameters) and
+  records `occt_heals: true` for a solid whose unhealed reading fails
+  `BRepCheck_Analyzer`, or whose counts differ from the healed ones.
+  Such a solid is one that Open CASCADE had to repair or complete before it
+  was a solid.
+- **Arris against a healed solid:**
+  - An Arris read is held to the healed measures within the fixture's
+    tolerances, widened to the read body's own as the read-back stage
+    widens them (ADR-0023).
+  - An Arris refusal is recorded as a refusal and counted, never as a
+    disagreement.
+  - A healed solid Arris reads to other measures is a wrong solid, as
+    anywhere else.
+- **Counts.** A read solid's counts are held to the healed reading's only
+  where `occt_heals` is false. Healing adds seams and splits edges, and
+  that is not a disagreement about the part.
+
+### 4. A refusal is recorded only when it is right
+
+Step 4 records a refusal only where its `why` can say why it is right:
+the file holds an entity outside the subset, or it describes no solid by
+ISO 10303-42. A refusal of a valid entity that the subset maps, like the
+seamless band, the default reference direction, the misreported gap,
+the `VERTEX_LOOP` seam or the followed camera, is a reader bug. The kernel rules treat it as they
+treat a wrong solid: it is shrunk to a `regression/` fixture, its part
+waits under a named exclusion, and plan step 5 fixes it. So is a read that
+does not finish within the corpus's time budget.
+
+### 5. The table: every refusal to the cycle it blocks
+
+The histogram's rows are the named cycles of `docs/ROADMAP.md`, plus
+*counted as itself* for a refusal that no named cycle removes. The table
+is code with exhaustive matches (plan step 7). It takes the refusal
+itself rather than its kind, because one kind splits by the entity it
+names.
+
+**The reader's `Refusal`:**
+
+| Refusal | Blocks | Why |
+|---|---|---|
+| a file that does not parse (`ReadError::Parse`), counted once per file | itself: unparsed | the file breaks Part 21; a lone `\` in a string is the one met |
+| `NoLengthUnit` | itself | the file's omission; nothing to build |
+| `Malformed` | itself | the file breaks the schema |
+| `Offset` | sweep | an offset surface or curve is the sweep cycle's variant decision |
+| `Composite` | sweep | composite curves and surfaces arrive with the sweep cycle's paths |
+| `CurveBounded` | itself | a representation of trimming that no named cycle adds |
+| `DegenerateTorus`, `SelfIntersectingTorus` | itself | the data model holds `R > r` only; a variant decision on evidence |
+| `Unsupported` naming `SHELL_BASED_SURFACE_MODEL` or `FACE_BASED_SURFACE_MODEL` | healing | sheet bodies are the healing cycle's |
+| `Unsupported` naming `FACETED_BREP` or a tessellated solid or shell | itself: faceted | ADR-0025 §6 |
+| any other `Unsupported` | itself: outside the subset | ADR-0025 §6 |
+| `Degenerate` | itself | the file's geometry describes nothing |
+| `Topology` | healing | sewing, splitting and turning loops to close a shell are healing (ADR-0025's amendment of steps 14 and 15) |
+| `Pcurve` | NURBS | a projection or fit that fails on a free-form face is the NURBS cycle's robustness; a curve off its surface is a `Gap`, not this |
+| `OpenLoop` | healing | ADR-0025 §6 |
+| `Gap` | healing | ADR-0025 §4: closing it is sewing |
+| `Invalid` | healing | a body its own file makes invalid needs repair |
+
+**The operations' `OpError`, per battery stage:**
+
+| Error | Blocks |
+|---|---|
+| `Unsupported` with a `Nurbs` surface or curve in the pair | NURBS |
+| `Unsupported` without one, at the fillet stage | blend network (a pair outside ADR-0007's table) |
+| `Unsupported` without one, at any other stage | itself: an unsupported pair (none is expected since C3) |
+| `Degenerate` with `BlendTooLarge`, `TangentChain` or `VertexBlend` | blend network |
+| `Degenerate` with `DirectionNotNormal` or `EllipticRevolve` | sweep |
+| `Degenerate` with `NotSolid` | healing |
+| `Degenerate` with `TangentContact` or `NonManifold` | itself: non-manifold. Only a `General` body holds it, and no named cycle builds one |
+| `Degenerate` with `BesideSingularity` | itself: beside a singularity, a limit of ADR-0021 |
+| `Degenerate` with `Empty` or `ZeroThickness` | itself: a result with no material, the battery's operands missing the part |
+| `Degenerate` with any other `Reason` | itself, by the `Reason`'s name. These are argument errors (`NonFinite`, `NotPositive`, `NoEdges`, `RepeatedEdge`, `EdgeNotInBody`, `NotProjectable`, `DegenerateEdge`, `ProjectionCollapses`, `NotPlanar`, `OutOfDomain`, `Singular`) and sweep-profile errors (`ProfileCrossesAxis`, `AxisNotInProfilePlane`, `AngleAboveTurn`, `SpindleTorus`). The battery should never raise one, so a count there is a battery bug to read |
+| `InvalidInput`, `Profile`, `Tolerance`, `NotFound` | itself, by name |
+| `Internal` | **never counted**: a kernel bug, like a panic (ADR-0024 §2), shrunk to `regression/` |
+
+- **The stage names are the battery's**: `read`, `measure`, `write_read`,
+  `box_cut`, `drill_x`, `drill_y`, `drill_z`, `fillet`. The histogram
+  counts a part once per cycle, at the first stage that cycle blocks it,
+  so *cycle → parts blocked* counts parts and not refusals. It also prints
+  the count per stage beneath.
+- **The mapping is data about cycles, not a judgement of the file.** A
+  row changes only by an ADR, the way a new variant changes a `match`: a
+  new `RefusalKind` or `Reason` fails to compile until the table has its
+  row.
+
+### 6. Time
+
+The first look's slowest reads are refusals that spend their time in
+repeated pcurve fits. The corpus runner therefore times each part's read,
+and plan step 4 settles the nextest group (the plan's open question) from
+those timings. A read that does not finish within 60 s in a release build
+is a reader bug under §4, not a timing to accommodate.
+
+## Consequences
+
+- `tests/fixtures/real/` holds eleven NIST parts, 4.4 MB. The repository
+  records NIST's disclaimer and acknowledgement beside them.
+- The oracle's reader gains a second, unhealed reading per `part` fixture,
+  and `expected.json` gains `occt_heals` per solid.
+- The histogram covers the committed tier and NIST's other editions. It
+  does not cover a large third-party sample, and C4's number says so.
+- Before C4 can close, plan step 5 grows to the reader bugs this ADR
+  lists: the seamless band, the default reference direction, the
+  misreported gap of a fit that fails at the cap, the `VERTEX_LOOP` seam
+  across a bound, the followed presentation entity, tessellated solids
+  not counted, the slow reads, the placements that are not there, and
+  `ftc_06` AP242's read that fails `Full`.
+- Backlog gains a line for an ABC subset filtered by a confirmed licence.
+
+## Alternatives considered
+
+- **ABC under the Onshape grant, assumed.** Most of its models may well
+  be covered. But "may" is not "confirmed", and ADR-0025 §6 forbids naming
+  a tier on an assumed licence.
+- **Fusion 360 Gallery for CI only**, as "research". A kernel meant for
+  commercial consumers, tested for them, is not the non-commercial
+  research the licence names.
+- **Dropping the fetched tier and committing every NIST file.** 45 MB of
+  STEP in the repository is 10× the budget, for editions of the same test
+  cases.
+- **The oracle unhealed**, as the plan first proposed. It is an invalid
+  shape exactly where a file is valid and Open CASCADE's model needs more
+  than the file gives, so Arris would be held to a wrong answer.
+- **The oracle healed and nothing recorded.** Arris's refusal of a
+  seamless band and of a real gap would look the same beside it. The
+  `occt_heals` flag is what tells them apart.
+- **`blocks_refusal(RefusalKind)`**, as the plan's delta first wrote it.
+  `Unsupported` covers a shell-based model (healing) and a faceted B-rep
+  (itself), so the kind alone cannot place it. Splitting the kind would
+  change `arris-io`'s public enum, which this plan does not do.
+- **Recording every refusal as the reader returns it.** It would count
+  the reader's own bugs as the healing cycle's demand and rank the next
+  cycle on them.
