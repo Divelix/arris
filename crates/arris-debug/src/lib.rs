@@ -22,7 +22,6 @@ pub mod differential;
 pub mod dump;
 pub mod fixtures;
 pub mod geom;
-#[cfg(not(target_arch = "wasm32"))]
 pub mod histogram;
 pub mod oracle;
 pub mod part;

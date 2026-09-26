@@ -381,6 +381,7 @@ impl Histogram {
     /// Counts a part surveyed live (`crate::survey`): its solids read and
     /// refused, its battery's classes, and each refusal under the cycle
     /// the table gave it.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn add_report(&mut self, report: &crate::survey::Report) {
         let part = report.part.as_str();
         self.add(part);
