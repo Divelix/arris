@@ -2,6 +2,12 @@
 //! `boolean/`, `sweep/` and `blend/` whose recipe builds, the recipe's
 //! build and the result's tessellation at the fixture's `mesh_chord`,
 //! timed apart, so a change that costs 10× in either shows as a ratio.
+//! For every part under `real/` that does not wait, the STEP reader's
+//! read of its file, and the checker at `Fast` alone on every solid the
+//! read returns (ADR-0025 §5): the reader runs that check on each solid in
+//! every build, so the read less the check is what the reader costs
+//! without it (plan real-part-corpus step 10). A part whose file another
+//! part already timed is skipped by name.
 //!
 //! ```sh
 //! cargo bench -p arris --bench corpus                          # print the timings
@@ -22,9 +28,12 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+use arris::check::{Level, check};
+use arris::io::step::{self, ReadOptions};
 use arris::mesh::{MeshRequest, tessellate_with};
+use arris::topo::Model;
 use arris_debug::bench::{self, Config, Report, Wall};
-use arris_debug::{corpus, fixtures};
+use arris_debug::{corpus, fixtures, part};
 
 /// The corpus areas whose fixtures build a solid from operations.
 const AREAS: [&str; 3] = ["boolean/", "sweep/", "blend/"];
@@ -128,15 +137,84 @@ fn main() -> ExitCode {
             report.cases.push(case);
         }
     }
-    let (builds, meshes): (Vec<_>, Vec<_>) = report
-        .cases
-        .iter()
-        .partition(|c| c.name.ends_with(" build"));
+    let mut solids_read = 0;
+    let mut timed: Vec<String> = Vec::new();
+    for dir in fixtures::corpus() {
+        let name = fixtures::name_of(&dir);
+        if !name.starts_with("real/") {
+            continue;
+        }
+        if args.filter.as_ref().is_some_and(|f| !name.contains(f)) {
+            continue;
+        }
+        let fixture = match part::load(&dir) {
+            Ok(f) => f,
+            Err(e) => {
+                eprintln!("corpus bench: {name}: {e}");
+                return ExitCode::FAILURE;
+            }
+        };
+        if !fixture.part.waits_on.is_empty() {
+            eprintln!("skipped {name}: it waits");
+            continue;
+        }
+        // A part shrunk to its whole file is the same read twice.
+        if timed.contains(&fixture.part.sha256) {
+            eprintln!("skipped {name}: its file is timed already");
+            continue;
+        }
+        timed.push(fixture.part.sha256.clone());
+        let text = match std::fs::read(dir.join(&fixture.part.file)) {
+            Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+            Err(e) => {
+                eprintln!("corpus bench: {name}: {e}");
+                return ExitCode::FAILURE;
+            }
+        };
+        let precision = fixture.part.precision.precision();
+        let read = || {
+            let mut m = Model::new(precision).ok()?;
+            let read = step::read(&mut m, &text, &ReadOptions::default()).ok()?;
+            Some((m, read))
+        };
+        let Some((m, once)) = read() else {
+            eprintln!("skipped {name}: the file does not read");
+            continue;
+        };
+        let bodies: Vec<_> = (once.solids.iter())
+            .filter_map(|s| s.result.as_ref().ok().map(|b| b.body))
+            .collect();
+        solids_read += bodies.len();
+        let read_case = bench::time(&format!("{name} read"), config, &mut clock, || {
+            std::hint::black_box(read());
+        });
+        let check_case = bench::time(&format!("{name} check"), config, &mut clock, || {
+            for &body in &bodies {
+                std::hint::black_box(check(&m, body, Level::Fast));
+            }
+        });
+        for case in [read_case, check_case] {
+            println!(
+                "{:<64} {:>10.4} s ± {:.4}",
+                case.name, case.median, case.mad
+            );
+            report.cases.push(case);
+        }
+    }
+    let sum = |suffix: &str| -> f64 {
+        (report.cases.iter())
+            .filter(|c| c.name.ends_with(suffix))
+            .map(|c| c.median)
+            .sum::<f64>()
+            + 0.0
+    };
     println!(
-        "\n{} cases: build {:.3} s, mesh {:.3} s, total {:.3} s",
+        "\n{} cases: build {:.3} s, mesh {:.3} s, read {:.3} s of which check {:.3} s over {solids_read} solids read, total {:.3} s",
         report.cases.len(),
-        builds.iter().map(|c| c.median).sum::<f64>(),
-        meshes.iter().map(|c| c.median).sum::<f64>(),
+        sum(" build"),
+        sum(" mesh"),
+        sum(" read"),
+        sum(" check"),
         report.total()
     );
     if let Some(path) = &args.compare {

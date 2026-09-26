@@ -1327,7 +1327,11 @@ B-Rep).
 - **The corpus benchmark** (`crates/arris/benches/corpus.rs`, `harness =
   false`, ADR-0024 §4): for every fixture under `boolean/`, `sweep/` and
   `blend/` whose recipe builds, the build and the tessellation at its
-  `mesh_chord`, timed apart by `arris_debug::bench`. The timer takes a
+  `mesh_chord`, timed apart by `arris_debug::bench`. For every `real/`
+  part that does not wait, the reader's read of its file, and the checker
+  at `Fast` alone on each solid read. The reader runs that check in every
+  build, so the read less the check is the reader without it. A part
+  shrunk to a file another part already has is skipped. The timer takes a
   warm-up and five timed runs, their median and median absolute
   deviation, and writes a JSON `Report`. `--save` writes a report,
   `--compare` prints each case's ratio against a saved one, flagging
@@ -1335,8 +1339,15 @@ B-Rep).
   comparison as markdown. Time is never a gate. `tools/bench-compare.sh`
   runs it against `target/bench/baseline.json` (`--bless` sets it) or a
   report named, and the nightly runs the same script against the last
-  night's report. On the reference machine it is 250 cases from 125
-  fixtures: build 1.60 s, mesh 0.73 s.
+  night's report. On the reference machine it is 294 cases: 260 from 130
+  fixtures (build 5.15 s, mesh 3.16 s), and 34 from 17 parts' files (read
+  20.99 s).
+- **The reader's cost** in a release build (the benchmark's read cases,
+  plan `real-part-corpus` step 10). The committed tier's files read in
+  0.6 ms to 0.18 s each, 14 of 16 solid instances read. Two files are
+  slower: CTC-05 in 0.97 s, the fits of a solid refused for a gap, and
+  FTC-07 in 19.5 s, its fitted pcurves on B-spline faces. The checker at
+  `Fast` is 0.1% to 13% of a read: 0.074 s of the 20.99 s.
 - **The fuzz targets** (`fuzz/`, ADR-0024 §5): a crate outside the
   workspace (`exclude = ["fuzz"]`), unpublished, on nightly under
   `cargo fuzz` with `libfuzzer-sys` and `arbitrary`, none of them

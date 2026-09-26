@@ -378,12 +378,20 @@ part to an oracle.
   94 s. A file whose every solid Arris refuses is not read by the
   oracle, since Open CASCADE's measure of CTC-02 AP203 ran past 20
   minutes.
-- [ ] Step 10 **[1]** — The reader in the corpus benchmark: a read case per
+- [x] Step 10 **[1]** — The reader in the corpus benchmark: a read case per
   `real/` part, timed with the checker at `Fast` and without it (a
   `bench`-only switch in `arris-debug`, not a public option). The
   release-build cost per solid goes in ARCHITECTURE §Formats and tools.
 
   Test: `tools/bench-compare.sh` runs with the new cases present.
+
+  Found: the reader runs its `Fast` check inside `arris-io`, so no switch
+  in `arris-debug` could turn it off, and one in `arris-io` would be a
+  public option. The bench instead times the read, and the check alone
+  on every solid the read returns. The read less the check is the reader
+  without it. The check is 0.1% to 13% of a read, 0.074 s of 20.99 s.
+  FTC-07's 19.5 s is its fits, not its checker. Parts shrunk to a whole
+  NIST file are skipped as timed already.
 - [ ] Step 11 **[1]** — The histogram recorded.
   - The committed and fetched tiers' histograms are printed and written
     into `docs/ROADMAP.md` §C4's status line. This is the table
