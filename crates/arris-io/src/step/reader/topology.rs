@@ -1442,7 +1442,19 @@ impl PcurveFault {
 /// The pcurve of `curve` over `range` on `surface`, fitted at the model's
 /// default tolerance, or — where the curve lies farther from the surface
 /// than that, or wanders about it so that no fit reaches it — at the gap
-/// it lies at, grown by [`GAP_GROWTH`] up to the cap.
+/// it lies at, grown by [`GAP_GROWTH`] up to one growth past the cap.
+///
+/// The tolerance a fit is asked for is a search step, not the edge's: a
+/// fit holds its image to a fraction of it, and that image is never
+/// nearer the curve than the curve is to the surface. A curve 0.0065 off
+/// its surface cannot be fitted at a cap of 0.01 for that reason alone,
+/// where its pcurve, fitted past the cap, lies within 0.0066 of it
+/// (NIST's CTC-01). So the fit may be asked for more than the cap, and
+/// the gap its pcurve leaves, measured afterwards, is what the cap judges
+/// ([`Gaps::tolerances`]). Errors: the curve farther from the surface
+/// than the cap, as [`PcurveFault::Gap`] with the distance; a fit that
+/// fails even past the cap, as [`PcurveFault::Geom`] with the fit's own
+/// error — a fit, not a gap.
 fn fitted(
     curve: &Curve,
     range: Interval,
@@ -1450,8 +1462,8 @@ fn fitted(
     precision: Precision,
     cap: f64,
 ) -> Result<Curve2, PcurveFault> {
+    let ceiling = GAP_GROWTH * cap;
     let mut linear = precision.default_tolerance;
-    let mut gap: f64 = 0.0;
     loop {
         let tol = Tolerance::new(linear, precision.angular_tolerance);
         let needed = match pcurve_on(curve, range, surface, tol) {
@@ -1460,19 +1472,18 @@ fn fitted(
                 if distance > cap {
                     return Err(PcurveFault::Gap(distance));
                 }
-                gap = gap.max(distance);
                 GAP_GROWTH * linear.max(distance)
             }
-            Err(e @ GeomError::Fit(_)) if linear >= cap && gap == 0.0 => {
+            Err(e @ GeomError::Fit(_)) if linear >= ceiling => {
                 return Err(PcurveFault::Geom(e));
             }
             Err(GeomError::Fit(_)) => GAP_GROWTH * linear,
             Err(e) => return Err(PcurveFault::Geom(e)),
         };
-        if linear >= cap {
+        if linear >= ceiling {
             return Err(PcurveFault::Gap(needed));
         }
-        linear = needed.min(cap);
+        linear = needed.min(ceiling);
     }
 }
 

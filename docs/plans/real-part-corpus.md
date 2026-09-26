@@ -228,7 +228,10 @@ part to an oracle.
   - [x] `cone-face-without-its-apex` (FTC-10; new at step 5, behind the
     band: a cone bounded by its base circle alone, the apex implicit);
   - [x] `axis-placement-along-x-without-reference` (CTC-04, FTC-08);
-  - [ ] `pcurve-fit-reported-as-gap` (CTC-01, FTC-07);
+  - [x] `pcurve-fit-reported-as-gap` (CTC-01; FTC-07 then meets the
+    next);
+  - [ ] `nurbs-pcurve-leaves-domain` (FTC-07; new at step 5, behind the
+    fit: fitted pcurves past a B-spline face's knot domain);
   - [x] `edge-through-sphere-pole` (FTC-06; new at step 4, a half sphere
     bounded by one meridian circle through both poles);
   - [ ] `slow-gap-refusal` (CTC-05, 66 s in release).

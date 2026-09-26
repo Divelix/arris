@@ -1,6 +1,6 @@
 {
   "kind": "part",
-  "description": "NIST MBE PMI combined test case 01, the AP203 geometry-only edition (ADR-0026 §1): its edge #1864, the exporter's cubic B-spline for the meeting of two cylinders, is refused as a gap of 0.02 that is no distance: the pcurve fit failing at the cap (ADR-0026 §Context)",
+  "description": "NIST MBE PMI combined test case 01, the AP203 geometry-only edition (ADR-0026 §1): its solid reads whole, edge #1864, the exporter's cubic B-spline for the meeting of two cylinders 0.0065 off them, fitted past the cap (real/pcurve-fit-reported-as-gap)",
   "file": "nist_ctc_01_asme1_rd.stp",
   "source": "https://www.nist.gov/document/nist-pmi-step-files — NIST-PMI-STEP-Files.zip (sha256 8fa78429e6d8d9b0d7681d223b6aa9ec98c3772185c55b1a0e3679b21c181911), AP203 geometry only/nist_ctc_01_asme1_rd.stp",
   "licence": "NIST: \"The test cases, CAD models, and STEP files can be used without any restrictions.\"",
@@ -11,8 +11,5 @@
       "instance": 0,
       "outcome": "read"
     }
-  ],
-  "waits_on": [
-    "regression/pcurve-fit-reported-as-gap"
   ]
 }

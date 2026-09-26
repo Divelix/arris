@@ -1527,7 +1527,8 @@ may carry different tolerances.
 - **Read from a file**, tolerances are measured, never taken from the
   file's global uncertainty (ADR-0025 §4). The STEP reader rebuilds every
   pcurve, fitting one at the gap where an edge curve lies off its face's
-  surface, and where two pcurves of a loop end apart in (u, v) past L2's
+  surface — the fit's tolerance a search step that may pass the cap, the
+  gap its pcurve leaves what the cap judges — and where two pcurves of a loop end apart in (u, v) past L2's
   band it ends them on one point (`pcurve_ending_on`) — the seam's end
   where one is a seam, else the vertex's own (u, v), as a boolean ends a
   section edge. What the file leaves implicit and Arris's face needs is

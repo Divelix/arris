@@ -1,0 +1,15 @@
+{
+  "kind": "part",
+  "description": "NIST's CTC-01 whole: edge #1864, the exporter's cubic B-spline for the meeting of the cylinders #127 (r 25) and #155 (r 10) and within 0.0065 of both by Open CASCADE's reading, was refused as a gap of 0.02 past the cap of 0.01, a number that was no distance but the fit tolerance one growth past the cap. The fit holds its image to a fraction of the tolerance it is asked for, and the curve lies 0.0065 off the surface, so no fit at the cap could pass: the reader now lets the fit's search run one growth past the cap, and the cap judges the gap the pcurve leaves, measured. Not shrunk below the part, whose own two cylinder faces a closed solid round that edge would have to rebuild; FTC-07's edge #1963 is the same fault (ADR-0026 §4)",
+  "file": "nist_ctc_01_asme1_rd.stp",
+  "source": "https://www.nist.gov/document/nist-pmi-step-files — NIST-PMI-STEP-Files.zip (sha256 8fa78429e6d8d9b0d7681d223b6aa9ec98c3772185c55b1a0e3679b21c181911), AP203 geometry only/nist_ctc_01_asme1_rd.stp",
+  "licence": "NIST: \"The test cases, CAD models, and STEP files can be used without any restrictions.\"",
+  "sha256": "e081d518484d5c708c6729353237f94a7d97da2b74a10d60d4c0d146d67a5855",
+  "solids": [
+    {
+      "id": 101,
+      "instance": 0,
+      "outcome": "read"
+    }
+  ]
+}

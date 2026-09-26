@@ -461,3 +461,15 @@ is a reader bug under §4, not a timing to accommodate.
   bounds, away from its own ends, with a vertex on the point. Every use of
   it on every face walks its pieces, and the walk then adds the poles'
   degenerate edges as it does for any edge ending there. FTC-06 reads.
+- **A fit's tolerance may pass the cap; the gap it leaves may not.** A fit
+  holds its image to a fraction of the tolerance it is asked for, and the
+  image is never nearer the curve than the curve is to its surface. CTC-01's
+  edge #1864 lies 0.0065 off its cylinders, so no fit at the cap of 0.01
+  could pass, and the reader reported the fit tolerance one growth past
+  the cap as a gap of 0.02. The tolerance a fit is asked for was always a
+  search step, and the gap the pcurve leaves is measured afterwards. So
+  the search now runs one growth past the cap, the cap judges the
+  measured gap, and a fit that fails even there is refused as a fit, with
+  the fit's own error, never as a gap. CTC-01 reads. FTC-07 then meets
+  fitted pcurves past the knot domain of eight B-spline faces, shrunk for
+  now to its own file, `regression/nurbs-pcurve-leaves-domain`.

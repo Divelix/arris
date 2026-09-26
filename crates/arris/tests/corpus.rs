@@ -1540,6 +1540,14 @@ fn real_edge_through_sphere_pole() {
     run_part("real/edge-through-sphere-pole");
 }
 
+/// NIST's CTC-01 whole, whose edge #1864 lies 0.0065 off its cylinders:
+/// its pcurve is fitted past the cap, and the cap judges the gap it
+/// leaves (ADR-0026's amendment of step 5).
+#[test]
+fn real_pcurve_fit_reported_as_gap() {
+    run_part("real/pcurve-fit-reported-as-gap");
+}
+
 /// NIST's FTC-09, AP203 geometry only: one solid of 158 faces, read whole.
 #[test]
 fn real_nist_ftc_09() {
@@ -1553,7 +1561,7 @@ fn real_nist_ftc_09_offset() {
     run_part("real/nist-ftc-09-offset");
 }
 
-/// NIST's CTC-01: waits on regression/pcurve-fit-reported-as-gap.
+/// NIST's CTC-01: one solid read whole, an exporter's edge fitted past the cap.
 #[test]
 fn real_nist_ctc_01() {
     run_part("real/nist-ctc-01");
@@ -1589,7 +1597,7 @@ fn real_nist_ftc_06() {
     run_part("real/nist-ftc-06");
 }
 
-/// NIST's FTC-07: waits on regression/pcurve-fit-reported-as-gap.
+/// NIST's FTC-07: waits on regression/nurbs-pcurve-leaves-domain.
 #[test]
 fn real_nist_ftc_07() {
     run_part("real/nist-ftc-07");
@@ -1614,9 +1622,9 @@ fn real_nist_ftc_11() {
 }
 
 #[test]
-#[ignore = "a pcurve fit that fails at the cap is refused as a gap of twice the cap (ADR-0026 §4)"]
-fn regression_pcurve_fit_reported_as_gap() {
-    run_part("regression/pcurve-fit-reported-as-gap");
+#[ignore = "FTC-07's fitted pcurves on B-spline faces leave the surface's knot domain, and the reader's checker refuses the solid (ADR-0026 §4)"]
+fn regression_nurbs_pcurve_leaves_domain() {
+    run_part("regression/nurbs-pcurve-leaves-domain");
 }
 
 #[test]

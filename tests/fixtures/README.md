@@ -546,21 +546,23 @@ and this is it: the parts under `real/nist-*` are NIST's.
   (`regression/slow-gap-refusal`), since timing on a shared machine is no
   assertion anywhere else (ADR-0026 §6).
 - **The committed tier** is NIST's eleven AP203 geometry-only files,
-  `real/nist-ctc-01` to `-05` and `real/nist-ftc-06` to `-11`. Eight run
-  today: FTC-06, FTC-08 to FTC-11, CTC-03 and CTC-04 read, and CTC-02's
-  solid is refused for a real gap (every surface body refused as a
-  surface). The other three wait on two reader bugs, in
-  `regression/pcurve-fit-reported-as-gap` and `slow-gap-refusal`, the
-  NIST files themselves: the fit's edge is the exporter's between two of
-  the part's own cylinders, and the time is the whole read's.
-- A bug fixed moves its hand-written part into `real/` beside the NIST
-  parts: `real/axis-placement-along-x-without-reference`, a cylinder whose
+  `real/nist-ctc-01` to `-05` and `real/nist-ftc-06` to `-11`. Nine run
+  today: CTC-01, CTC-03, CTC-04, FTC-06 and FTC-08 to FTC-11 read, and
+  CTC-02's solid is refused for a real gap (every surface body refused as
+  a surface). The other two wait on two reader bugs, in
+  `regression/nurbs-pcurve-leaves-domain` and `slow-gap-refusal`, the
+  NIST files themselves: FTC-07's B-spline faces, and CTC-05's time,
+  which is the whole read's.
+- A bug fixed moves its part into `real/` beside the NIST parts:
+  `real/axis-placement-along-x-without-reference`, a cylinder whose
   circles are placed on an axis along `-X` to rounding with no reference
   direction; `real/seamless-cylinder-band`, a cylinder whose side is
   bounded by its two circles and no seam;
   `real/cone-face-without-its-apex`, a cone bounded by its base circle
-  alone; and `real/edge-through-sphere-pole`, a half ball bounded by one
-  meridian circle through both poles.
+  alone; `real/edge-through-sphere-pole`, a half ball bounded by one
+  meridian circle through both poles; and
+  `real/pcurve-fit-reported-as-gap`, CTC-01's file, whose edge #1864 lies
+  0.0065 off its cylinders.
 - `real/nist-ftc-09-offset` is `real/nist-ftc-09` with one plane wrapped
   in an `OFFSET_SURFACE` by hand: the refusal path under test.
 
