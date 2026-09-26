@@ -970,7 +970,7 @@ boolean's face pairs go through before any intersection is computed.
 moved in (u, v) with its parameter carried along: how a boolean puts a
 section edge's pcurve on a periodic surface into the copy of the domain
 the face's loops are written in, a whole number of periods along `u`.
-`integrate::region_integral(pieces, inner_step, f)` is `∬ f du dv` over
+`integrate::region_integral(pieces, grid, f)` is `∬ f du dv` over
 the region by Green's theorem — `∮ G dv` with `G = ∫_{u₀}^{u} f ds` —
 with Gauss–Legendre quadrature of `GAUSS_ORDER` points per interval, a
 conic piece split at quarter turns and a NURBS at its knots — a
@@ -979,18 +979,25 @@ section wraps past the knots' end (`NurbsCurve2::breaks_within`) — signed by
 the loop's turn so holes subtract themselves: `f = |∂P/∂u × ∂P/∂v|` is
 an area, `f = P · (∂P/∂u × ∂P/∂v) / 3` summed over a solid's faces with
 their use orientation is Gauss's volume (B2, `measure`). The *inner*
-integral is split at every whole multiple of `inner_step` it crosses —
-the grid the surface's own turns and quarter turns lie on, so a feature
-of the integrand there is an interval's end and never its middle — at
-most `MAX_INNER_INTERVALS` intervals, beyond which it falls back to that
-many equal ones: a strip that crosses a whole turn of `cos u` is not one
-interval's work, so a caller passes `integrate::inner_step(surface)` — a
-quarter period on the quadrics, a sixteenth on an elliptic cylinder,
-whose area element `√(a² sin²u + b² cos²u)` is no trigonometric
-polynomial and has complex singularities `atanh(b / a)` off `u = 0` and
-`π` that a quarter turn resolves to `1e-7` at an aspect of eighteen and
-a sixteenth to `1e-11`, a knot span on a NURBS, `f64::INFINITY` (one
-interval, exact for a polynomial `f`) on a plane.
+integral is split at every break of a `Grid`'s `inner` it crosses — the
+surface's own quarter turns or knots, repeated by its period, so a
+feature of the integrand there is an interval's end and never its
+middle — at most `MAX_INNER_INTERVALS` intervals, beyond which it falls
+back to that many equal ones: a strip that crosses a whole turn of
+`cos u` is not one interval's work, so a caller passes
+`integrate::surface_grid(surface)` — quarter turns on the quadrics,
+sixteenths on an elliptic cylinder, whose area element `√(a² sin²u + b²
+cos²u)` is no trigonometric polynomial and has complex singularities
+`atanh(b / a)` off `u = 0` and `π` that a quarter turn resolves to
+`1e-7` at an aspect of eighteen and a sixteenth to `1e-11`, a NURBS's
+own `u` knots, repeated by its closure — where its derivatives jump at a
+knot of multiplicity its degree, which Open CASCADE's converted
+quadrics have at every arc's end, and which a grid of its smallest span
+anchored at zero put inside an interval, off by `1e-5` of a volume — and
+`Grid::NONE` (one interval, exact for a polynomial `f`) on a plane. On
+a NURBS the grid's `outer` breaks, its knots in `u` and `v`, also split
+each boundary piece where it crosses one, where the boundary integrand
+kinks for the same reason.
 
 `project_to_plane(curve, plane)` is the orthogonal projection onto a plane
 for a consumer's sketch (architecture §How a consumer's kernel facade maps on): a point-set projection

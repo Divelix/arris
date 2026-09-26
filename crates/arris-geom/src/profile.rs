@@ -16,7 +16,7 @@ use arris_math::{
     Frame, Interval, Point2, Point3, Tolerance, UnitVec3, Vec2, Vec3, is_negligible, wrap_angle,
 };
 
-use crate::integrate::region_integral;
+use crate::integrate::{Grid, region_integral};
 use crate::project::{ellipse_distance, ellipse_nearest};
 use crate::region2::{Piece, Polygon2};
 use crate::{Curve, Curve2, GeomError, Surface, pcurve_on};
@@ -799,14 +799,14 @@ fn polygon_of(edges: &[ProfileEdge]) -> (Polygon2, Vec<usize>) {
 /// The area and (u, v) centroid of the region the oriented loops bound.
 /// A plane's (u, v) is affine, so the integrands here are polynomials the
 /// quadrature is exact for and the inner integral is taken in one
-/// interval — `integrate::inner_step` of a plane.
+/// interval — `integrate::surface_grid` of a plane.
 fn area_and_centroid_of(loops: &[Vec<ProfileEdge>]) -> (f64, Point2) {
     let pieces: Vec<Piece<'_>> = loops
         .iter()
         .flatten()
         .map(|e| Piece::along(&e.pcurve, e.range))
         .collect();
-    let step = f64::INFINITY;
+    let step = &Grid::NONE;
     let area = region_integral(&pieces, step, |_, _| 1.0);
     if is_negligible(area, 1.0) {
         return (area, Point2::origin());

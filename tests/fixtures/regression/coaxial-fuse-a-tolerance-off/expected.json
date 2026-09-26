@@ -37,6 +37,14 @@
           50.265482457436995
         ]
       ],
+      "nurbs_counts": {
+        "edges": 5,
+        "faces": 5,
+        "loops": 7,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 4
+      },
       "probes": [],
       "volume": 25.13274122871834
     },
@@ -75,6 +83,14 @@
           50.265482457436995
         ]
       ],
+      "nurbs_counts": {
+        "edges": 5,
+        "faces": 5,
+        "loops": 7,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 4
+      },
       "probes": [],
       "volume": 25.13274122871834
     },
@@ -113,6 +129,14 @@
           50.26548245743695
         ]
       ],
+      "nurbs_counts": {
+        "edges": 5,
+        "faces": 5,
+        "loops": 7,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 4
+      },
       "probes": [],
       "volume": 25.13274122871834
     },
@@ -151,6 +175,14 @@
           50.26548245743697
         ]
       ],
+      "nurbs_counts": {
+        "edges": 5,
+        "faces": 5,
+        "loops": 7,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 4
+      },
       "probes": [],
       "volume": 25.13274122871834
     },
@@ -189,6 +221,14 @@
           50.265482457436896
         ]
       ],
+      "nurbs_counts": {
+        "edges": 5,
+        "faces": 5,
+        "loops": 7,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 4
+      },
       "probes": [],
       "volume": 25.13274122871832
     },
@@ -227,6 +267,14 @@
           50.26548245743688
         ]
       ],
+      "nurbs_counts": {
+        "edges": 5,
+        "faces": 5,
+        "loops": 7,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 4
+      },
       "probes": [],
       "volume": 25.13274122871826
     }

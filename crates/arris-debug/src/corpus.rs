@@ -30,6 +30,8 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use arris_geom::Profile;
+use arris_io::arris_check::arris_topo::FaceId;
+use arris_io::arris_check::arris_topo::arris_geom::{Surface, SurfaceKind};
 use arris_io::arris_check::arris_topo::arris_math::nalgebra::UnitQuaternion;
 use arris_io::arris_check::arris_topo::arris_math::{
     Axis, FrameError, Isometry, Point3, UnitVec3, Vec3,
@@ -40,7 +42,7 @@ use arris_io::arris_check::arris_topo::{
     Body, Edge, EntityId, Model, Orientation, Provenance, TopoError,
 };
 use arris_io::arris_check::classify::{Classification, classify_point};
-use arris_io::arris_check::{Level, LumpError, Report, check, lumps};
+use arris_io::arris_check::{Level, LumpError, Report, Unchecked, check, lumps};
 use arris_io::step::{self, StepError};
 use arris_mesh::{MeshRequest, TriMesh, tessellate_with};
 use arris_ops::measure::mass_properties;
@@ -731,6 +733,12 @@ pub fn run(dir: &Path, variant: &str) -> Result<(), CorpusError> {
     if fixture.recipe.analytic.step_differs.is_none() {
         let occt = oracle::occt_step(dir, Some(variant), false, &format!("occt-{tag}"))?;
         read_back_stage(&fixture, variant, &occt, expected)?;
+        // And converted to B-splines first: free-form faces with seams
+        // and poles, held to the converted shape's own counts.
+        if expected.nurbs_fails.is_none() {
+            let occt = oracle::occt_step(dir, Some(variant), true, &format!("occt-nurbs-{tag}"))?;
+            read_back_nurbs_stage(&fixture, variant, &occt, expected)?;
+        }
     }
 
     // The dump.
@@ -795,6 +803,37 @@ pub fn read_back_stage(
     read_back(fixture, variant, text, expected, "plain")
 }
 
+/// [`read_back_stage`] of Open CASCADE's STEP of the result converted to
+/// B-splines by `BRepBuilderAPI_NurbsConvert` (`occt_step.py --nurbs`):
+/// every face a NURBS surface, every edge a NURBS curve — the proof on
+/// files of the projection, the pcurves and the rebuilt poles onto NURBS
+/// (plans/step-reader step 15). Held as the plain file is, but to the
+/// converted shape's own counts (`nurbs_counts` in `expected.json`, since
+/// conversion can add seams), and with the rows the checker cannot
+/// decide on a NURBS face left unchecked: S5's and B1's face pairs with
+/// a NURBS face in them, and B1's nesting of a shell no ray is cast from,
+/// which a NURBS face never answers. `analytic.occt_step_refused` names
+/// the plain file's refusal only. Errors: as [`read_back_stage`], and
+/// [`CorpusError::ReadBack`] where `expected.json` records no
+/// `nurbs_counts`.
+pub fn read_back_nurbs_stage(
+    fixture: &Fixture,
+    variant: &str,
+    text: &str,
+    expected: &Measured,
+) -> Result<(), CorpusError> {
+    let counts = expected.nurbs_counts.ok_or_else(|| CorpusError::ReadBack {
+        fixture: fixture.name.clone(),
+        file: "NURBS",
+        what: "against no nurbs_counts in expected.json: rerun expected.py".into(),
+    })?;
+    let converted = Measured {
+        counts,
+        ..expected.clone()
+    };
+    read_back(fixture, variant, text, &converted, "NURBS")
+}
+
 /// [`read_back_stage`] of the file `which` names.
 fn read_back(
     fixture: &Fixture,
@@ -817,7 +856,8 @@ fn read_back(
     let mut model = model_for(fixture)?;
     let read = step::read(&mut model, text, &step::ReadOptions::default())
         .map_err(|e| fail(e.to_string()))?;
-    if let Some(refused) = &fixture.recipe.analytic.occt_step_refused {
+    let nurbs = which == "NURBS";
+    if let (Some(refused), false) = (&fixture.recipe.analytic.occt_step_refused, nurbs) {
         // The file describes no solid by the standard: the refusal it
         // names is the pass, and a read is the failure that lifts it.
         let kinds: Vec<String> = (read.solids.iter())
@@ -889,8 +929,69 @@ fn read_back(
     held.recipe.analytic.measure_differs = None;
     held.recipe.tolerances =
         within_own_tolerance(&fixture.recipe.tolerances, &chain.model, body).map_err(fail)?;
-    let (_, report) = check_stage(&held, &chain)?;
-    counts_stage(&held, &chain, &report, expected)?;
+    let report = if nurbs {
+        // What the checker leaves undecided on a NURBS face, and nothing
+        // else.
+        let report = check(&chain.model, body, Level::Full);
+        let has_nurbs = |f: FaceId| {
+            (chain.model.face(f))
+                .and_then(|f| chain.model.surface(f.surface()))
+                .is_ok_and(|s| matches!(s, Surface::Nurbs(_)))
+        };
+        let any_nurbs = (chain
+            .model
+            .closure(body)
+            .map_err(|e| fail(e.to_string()))?
+            .faces)
+            .into_iter()
+            .any(has_nurbs);
+        let undecidable = |u: &Unchecked| match u {
+            Unchecked::FacePair { kinds, .. } | Unchecked::ShellFacePair { kinds, .. } => {
+                kinds.0 == SurfaceKind::Nurbs || kinds.1 == SurfaceKind::Nurbs
+            }
+            Unchecked::ShellNesting { .. } => any_nurbs,
+            // A row added later is not known to be a NURBS limit.
+            _ => false,
+        };
+        if !report.is_ok() || !report.unchecked().iter().all(undecidable) {
+            return Err(CorpusError::Check {
+                fixture: held.name.clone(),
+                report: Box::new(report),
+            });
+        }
+        report
+    } else {
+        check_stage(&held, &chain)?.1
+    };
+    // Counts as the oracle's, a solid per solid read — each is one of
+    // the file's, as Open CASCADE counts them, and no lump query is asked
+    // of shells no ray may be cast against (a NURBS face's).
+    let line = report.euler().ok_or_else(|| CorpusError::Check {
+        fixture: held.name.clone(),
+        report: Box::new(report.clone()),
+    })?;
+    let found = Counts {
+        vertices: line.vertices,
+        edges: line.edges,
+        faces: line.faces,
+        loops: line.loops,
+        shells: line.shells,
+        solids: bodies.len(),
+    };
+    if found != expected.counts {
+        return Err(CorpusError::Counts {
+            fixture: held.name.clone(),
+            expected: expected.counts,
+            found,
+        });
+    }
+    if let Some(genus) = expected.genus.filter(|&g| g != line.genus) {
+        return Err(CorpusError::Genus {
+            fixture: held.name.clone(),
+            expected: genus,
+            found: line.genus,
+        });
+    }
     measure_stage(&held, &chain, expected)?;
     Ok(())
 }

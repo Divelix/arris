@@ -1067,6 +1067,26 @@ struct Spline<'a> {
     rational: Option<Args<'a>>,
 }
 
+/// `knots` of degree `p` over `n` control points with a padding knot
+/// moved onto the domain's end where that end already has multiplicity
+/// `p`: the knot outside it enters no basis function on the domain, so the
+/// curve or surface is the same there, and it is now clamped. Open
+/// CASCADE writes a periodic B-spline so — `(1, 2, …, 2, 1)` of degree
+/// two around a closed circle — and clamped, a direction whose ends are
+/// one row is closed (`NurbsSurface::closure`), which the pcurves and the
+/// seams need.
+fn clamped(mut knots: Vec<f64>, p: usize, n: usize) -> Vec<f64> {
+    if knots.len() == n + p + 1 && p >= 1 {
+        if knots[1..=p].iter().all(|&k| k == knots[p]) {
+            knots[0] = knots[p];
+        }
+        if knots[n..n + p].iter().all(|&k| k == knots[n]) {
+            knots[n + p] = knots[n];
+        }
+    }
+    knots
+}
+
 /// The knot subtype of a B-spline.
 enum KnotForm<'a> {
     /// `_WITH_KNOTS`: multiplicities and values per direction, from
@@ -1214,7 +1234,7 @@ impl<'a> Spline<'a> {
                 knots.len()
             )));
         }
-        Ok(knots)
+        Ok(clamped(knots, p, n))
     }
 
     /// The weights, flattened in the net's order, if the spline is
@@ -1652,7 +1672,9 @@ mod tests {
         assert_eq!(b.weights(), [1.0, 1.0, 0.5, 2.0, 1.0, 1.0]);
         assert_eq!(nurbs(63).knots()[0], [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
         assert_eq!(nurbs(64).knots()[0], [0.0, 0.0, 1.0, 2.0, 2.0]);
-        assert_eq!(nurbs(65).knots()[1], [-1.0, 0.0, 1.0, 2.0]);
+        // `−1, 0, 1, 2`, whose ends pad a degree-one domain and enter no
+        // basis function on it: clamped, the same surface.
+        assert_eq!(nurbs(65).knots()[1], [0.0, 0.0, 1.0, 1.0]);
         assert_eq!(
             x.surface(66).unwrap_err().kind(),
             super::super::RefusalKind::Malformed

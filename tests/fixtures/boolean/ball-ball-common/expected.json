@@ -37,6 +37,14 @@
           4.3060114570641055
         ]
       ],
+      "nurbs_counts": {
+        "edges": 5,
+        "faces": 3,
+        "loops": 3,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 4
+      },
       "probes": [
         {
           "class": "in",

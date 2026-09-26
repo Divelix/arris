@@ -278,3 +278,33 @@ files that are wrong.
 - **The cap's constant** is `arris_math::READ_GAP_FRACTION`, `1e-4` of the
   diameter of the ball holding the part's vertices and edges, at most
   `max_tolerance`; its comment carries the evidence.
+
+## Amendment (2026-09-26, plan `step-reader` steps 14 and 15)
+
+- **The cap is `2e-4` of the part's size.** Open CASCADE's own STEP of
+  the corpus, plain and converted to B-splines, leaves gaps of at most
+  `2.5e-6` of the part but for one fixture whose boolean it gets wrong,
+  where its converted file measures `1.13e-4` — exactly the tolerance its
+  own shape carries there and its checker passes. A file its exporter
+  calls valid by its own tolerances is read; `2e-4` admits it with `1.8×`
+  to spare. `READ_GAP_FRACTION`'s comment carries the numbers.
+- **A B-spline's padding knot is clamped.** Open CASCADE writes a
+  periodic B-spline unclamped — `(1, 2, …, 2, 1)` of degree two round a
+  closed circle — whose end knots lie outside the domain and enter no
+  basis function on it. The reader moves them onto the domain's end, an
+  exact change, so a closed direction is recognised as closed.
+- **A file that describes no solid is refused, not healed.** Open
+  CASCADE's writer keeps the bounds' sense of a face reversed on a
+  left-handed torus frame while writing the frame right-handed with
+  `same_sense` turned, so the face walks an edge the way its neighbour
+  does; its own cut can leave a face whose walk cannot close. Both are
+  refusals — `Topology` and `OpenLoop` — and a fixture that meets one
+  says so (`analytic.occt_step_refused`). Turning a face's loops to agree
+  with its neighbours is the healing cycle's.
+- **The measures on a NURBS face split at its knots.** The face integral
+  split its inner quadrature on a grid of the smallest knot span anchored
+  at zero, which put a converted quadric's knots, where its derivatives
+  jump, inside an interval: `1e-5` of a volume. `integrate::Grid` splits
+  at the knots themselves, in `u` inside and in both parameters along the
+  boundary.
+

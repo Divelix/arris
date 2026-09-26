@@ -9,7 +9,7 @@
 
 use core::fmt;
 
-use arris_topo::arris_geom::integrate::{inner_step, region_integral};
+use arris_topo::arris_geom::integrate::{region_integral, surface_grid};
 use arris_topo::arris_math::{Point3, Vec3};
 use arris_topo::{FaceId, Model, NotFound};
 
@@ -53,8 +53,8 @@ impl From<NotFound> for FluxError {
 /// (u, v): the flux through the face, with its surface's normal, of the
 /// field whose divergence `integrand` is the matching term of.
 ///
-/// Guarantees: each loop is integrated by `region_integral` at the
-/// surface's `inner_step` and the loops are summed in stored order, so a
+/// Guarantees: each loop is integrated by `region_integral` on the
+/// surface's `surface_grid` and the loops are summed in stored order, so a
 /// counter-clockwise outer loop counts positively and a clockwise hole
 /// subtracts itself. The sign is the face's; a caller integrating over a
 /// shell multiplies by each face use's orientation. `integrand` receives
@@ -86,13 +86,13 @@ pub fn face_flux(
 ) -> Result<f64, FluxError> {
     let entity = model.face(face)?;
     let surface = model.surface(entity.surface())?;
-    let step = inner_step(surface);
+    let grid = surface_grid(surface);
     let mut total = 0.0;
     for l in entity.loops() {
         let Some(pieces) = bounded_pieces(model, l)? else {
             return Err(FluxError::Unintegrable { face });
         };
-        total += region_integral(&pieces, step, |u, v| {
+        total += region_integral(&pieces, &grid, |u, v| {
             let e = surface.eval(u, v);
             integrand(e.point, e.du.cross(&e.dv))
         });

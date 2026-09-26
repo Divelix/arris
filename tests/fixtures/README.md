@@ -44,7 +44,14 @@ Arris's reader (`corpus::read_back_stage`, ADR-0025): every solid read,
 the checker at `Full` clean, the oracle's own counts and genus — the file
 is Open CASCADE's topology, so `counts_differ` does not apply — and the
 oracle's own volume, area, centroid and inertia within the fixture's
-tolerances widened to the read body's own (ADR-0023), measures it over the B-Rep
+tolerances widened to the read body's own (ADR-0023); then the same again
+for the result converted to B-splines (`occt_step.py --nurbs`,
+`corpus::read_back_nurbs_stage`), held to `expected.json`'s `nurbs_counts`
+— the converted shape's, since conversion can add seams — with the rows
+the checker cannot decide on a NURBS face (S5's and B1's face pairs with
+one in them, B1's nesting of a shell no ray is cast from) left
+unchecked and nothing else, and skipped where `expected.json` records
+`nurbs_fails`, Open CASCADE's own conversion failing; measures it over the B-Rep
 (`ops::measure::mass_properties`) and holds its volume, area, centroid
 and inertia tensor to the oracle's within `volume_rel`, `area_rel`,
 `centroid_abs` and `inertia_rel`, tessellates the result at `mesh_chord` and

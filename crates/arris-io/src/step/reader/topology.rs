@@ -501,6 +501,7 @@ impl Geometry<'_> {
                     band: PCURVE_SINGULAR_BAND * tol.linear,
                     cap,
                     parametric: precision.parametric_tolerance,
+                    angular: precision.angular_tolerance,
                     fit: tolerance,
                     flipped,
                 };
@@ -924,6 +925,9 @@ struct Junctions<'a> {
     /// The model's parametric tolerance: two values along a singular row
     /// nearer than it are one.
     parametric: f64,
+    /// The model's angular tolerance: two headings nearer than it to one
+    /// line make no turn.
+    angular: f64,
     /// The tolerance a pcurve ended on a junction is first fitted to,
     /// where it has to be fitted first: the model's default, grown by
     /// [`GAP_GROWTH`] up to the cap where the fit misses.
@@ -1057,9 +1061,15 @@ impl Junctions<'_> {
 
     /// `true` when the walk turns from `prev` into `next` towards the
     /// face: left in (u, v), or right on a face whose effective normal is
-    /// its surface's turned.
+    /// its surface's turned. Headings within the angular tolerance of one
+    /// line make no turn: a seam's two uses at a pole head exactly apart,
+    /// and one of them moved by a period rounds its tangent.
     fn turns_in(&self, prev: &Use, next: &Use) -> bool {
-        let turn = prev.heading(1).perp(&next.heading(0));
+        let (a, b) = (prev.heading(1), next.heading(0));
+        let turn = a.perp(&b);
+        if turn.abs() <= self.angular * a.norm() * b.norm() {
+            return false;
+        }
         if self.flipped { turn < 0.0 } else { turn > 0.0 }
     }
 

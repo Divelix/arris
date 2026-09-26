@@ -16,8 +16,6 @@ from oracle import OracleError, require_ocp
 
 require_ocp()
 
-from OCP.BRepBuilderAPI import BRepBuilderAPI_NurbsConvert  # noqa: E402
-
 from oracle import step  # noqa: E402
 from oracle.fixture import load_fixture  # noqa: E402
 from oracle.recipe import build, fixture_kind  # noqa: E402
@@ -30,10 +28,7 @@ def write(directory: Path, out: Path, variant: str = "default", nurbs: bool = Fa
         raise OracleError(f"{directory} is a geometry fixture: it has no solid to write")
     shape, _ = build(fixture, variant)
     if nurbs:
-        converter = BRepBuilderAPI_NurbsConvert(shape, True)
-        if not converter.IsDone():
-            raise OracleError(f"{directory}[{variant}]: BRepBuilderAPI_NurbsConvert failed")
-        shape = converter.Shape()
+        shape = step.nurbs(shape)
     out.parent.mkdir(parents=True, exist_ok=True)
     step.write(shape, out)
 

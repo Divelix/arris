@@ -499,6 +499,8 @@ impl Tolerances {
     ///     euler_characteristic: Some(2),
     ///     genus: Some(0),
     ///     probes: Vec::new(),
+    ///     nurbs_counts: None,
+    ///     nurbs_fails: None,
     ///     own: Some(Own { tolerance: 1e-7, edge_length: 12.0, reach: 0.87, removable_vertices: 0 }),
     /// };
     /// let held = Tolerances::default().within(&measured, 1e-7);
@@ -766,6 +768,18 @@ pub struct Measured {
     /// Probe classifications.
     #[serde(default)]
     pub probes: Vec<ProbeResult>,
+    /// The counts of the result converted to B-splines by
+    /// `BRepBuilderAPI_NurbsConvert`, which may gain seams: what Arris's
+    /// reader of Open CASCADE's STEP of the converted result is held to
+    /// (ADR-0025, plans/step-reader step 15). Absent for a degenerate
+    /// result and one the oracle builds as a non-manifold compound.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nurbs_counts: Option<Counts>,
+    /// Why Open CASCADE could not convert the result to B-splines, where
+    /// it could not: then there are no `nurbs_counts`, and the runner
+    /// reads no converted file back.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nurbs_fails: Option<String>,
     /// The oracle shape's own tolerance and the sizes a boundary moved
     /// within it is measured over: written by `expected.py --own`, which
     /// only the differential runs, and absent from every corpus fixture.

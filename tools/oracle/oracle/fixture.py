@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 
-from . import OracleError, occt_version
+from . import OracleError, occt_version, step
 from .measure import DEFAULT_TOLERANCES, measure, own_measures
 from .geometry import compute_geometry
 from .recipe import build, fixture_kind, probes, recipe_hash, variant_names
@@ -59,6 +59,16 @@ def compute_expected(fixture: dict, own: bool = False) -> dict:
     for variant in variant_names(fixture):
         shape, _ = build(fixture, variant)
         results[variant] = measure(shape, probes(fixture, variant), tol["probe"], manifold)
+        if not results[variant]["degenerate"] and manifold:
+            # The counts of the result converted to B-splines, which may
+            # gain seams: what Arris's reader of Open CASCADE's STEP of it
+            # is held to (plans/step-reader step 15). A conversion Open
+            # CASCADE itself fails is recorded instead, and that read-back
+            # skipped.
+            try:
+                results[variant]["nurbs_counts"] = measure(step.nurbs(shape), [], tol["probe"], manifold)["counts"]
+            except Exception as e:  # OracleError, or Open CASCADE's own
+                results[variant]["nurbs_fails"] = " ".join(str(e).split()) or type(e).__name__
         if own and (measures := own_measures(shape, results[variant])) is not None:
             results[variant]["own"] = measures
     return {"occt": occt_version(), "recipe_sha256": recipe_hash(fixture), "results": results}

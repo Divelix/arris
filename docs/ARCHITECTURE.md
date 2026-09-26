@@ -902,7 +902,7 @@ it.
 `arris_check::flux::face_flux(&model, face, integrand) -> Result<f64,
 FluxError>` is the one `∬ integrand(P, ∂P/∂u × ∂P/∂v) du dv` over a
 face's region, by Green's theorem through its loops
-(`geom::integrate::region_integral` at the surface's own `inner_step`):
+(`geom::integrate::region_integral` on the surface's own `surface_grid`):
 B2's enclosed volume, `arris_check::lumps`'s per-shell volume (both
 `P/3`'s flux, whose divergence is one) and `ops::measure`'s mass
 properties (the same integral with the density's and the moments' fields)

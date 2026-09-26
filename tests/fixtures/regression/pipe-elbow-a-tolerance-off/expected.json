@@ -37,6 +37,14 @@
           164.21058382784406
         ]
       ],
+      "nurbs_counts": {
+        "edges": 6,
+        "faces": 4,
+        "loops": 4,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 4
+      },
       "probes": [],
       "volume": 27.370777058913575
     },
@@ -75,6 +83,14 @@
           164.21060891235138
         ]
       ],
+      "nurbs_counts": {
+        "edges": 6,
+        "faces": 4,
+        "loops": 4,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 4
+      },
       "probes": [],
       "volume": 27.370779729267454
     },
@@ -113,6 +129,14 @@
           164.2106258580319
         ]
       ],
+      "nurbs_counts": {
+        "edges": 6,
+        "faces": 4,
+        "loops": 4,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 4
+      },
       "probes": [],
       "volume": 27.370782242541953
     },
@@ -151,6 +175,14 @@
           164.21056968268337
         ]
       ],
+      "nurbs_counts": {
+        "edges": 6,
+        "faces": 4,
+        "loops": 4,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 4
+      },
       "probes": [],
       "volume": 27.370775959356145
     },
@@ -189,6 +221,14 @@
           164.21061367020948
         ]
       ],
+      "nurbs_counts": {
+        "edges": 6,
+        "faces": 4,
+        "loops": 4,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 4
+      },
       "probes": [],
       "volume": 27.37077763487223
     },
@@ -227,6 +267,7 @@
           164.2106355912744
         ]
       ],
+      "nurbs_fails": "BSpline curve: Knots interval values too close",
       "probes": [],
       "volume": 27.37077614932256
     },
@@ -265,6 +306,14 @@
           164.21059267641763
         ]
       ],
+      "nurbs_counts": {
+        "edges": 6,
+        "faces": 4,
+        "loops": 4,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 4
+      },
       "probes": [],
       "volume": 27.370777229083174
     }

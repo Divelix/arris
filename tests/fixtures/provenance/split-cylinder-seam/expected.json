@@ -37,6 +37,14 @@
           259778.6202824821
         ]
       ],
+      "nurbs_counts": {
+        "edges": 15,
+        "faces": 9,
+        "loops": 9,
+        "shells": 2,
+        "solids": 2,
+        "vertices": 10
+      },
       "probes": [
         {
           "class": "in",
@@ -121,6 +129,14 @@
           287359.86655434227
         ]
       ],
+      "nurbs_counts": {
+        "edges": 15,
+        "faces": 9,
+        "loops": 9,
+        "shells": 2,
+        "solids": 2,
+        "vertices": 10
+      },
       "probes": [
         {
           "class": "in",
@@ -205,6 +221,14 @@
           259778.62028248206
         ]
       ],
+      "nurbs_counts": {
+        "edges": 15,
+        "faces": 9,
+        "loops": 9,
+        "shells": 2,
+        "solids": 2,
+        "vertices": 10
+      },
       "probes": [
         {
           "class": "in",
@@ -289,6 +313,14 @@
           259778.62028248206
         ]
       ],
+      "nurbs_counts": {
+        "edges": 15,
+        "faces": 9,
+        "loops": 9,
+        "shells": 2,
+        "solids": 2,
+        "vertices": 10
+      },
       "probes": [
         {
           "class": "in",

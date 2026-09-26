@@ -523,7 +523,7 @@ after, because it is routine.
     boolean Open CASCADE gets wrong by that much), every other at most
     `2.5e-6`. `READ_GAP_FRACTION` stays `1e-4`, its comment citing
     this.
-- [ ] Step 15 **[3]** — Free-form faces from a file. Every corpus fixture
+- [x] Step 15 **[3]** — Free-form faces from a file. Every corpus fixture
   goes through `BRepBuilderAPI_NurbsConvert`, is written by Open CASCADE
   and is read back:
   - held to the same volume, area and centroid;
@@ -535,6 +535,37 @@ after, because it is routine.
   This is the proof of steps 3, 4 and 11 on files: closed and periodic
   NURBS surfaces, converted spheres' poles, converted tori's two seams.
   Failures are shrunk to `regression/` fixtures.
+
+  Done: every corpus fixture's converted file reads back at the plain
+  file's volume, area and centroid and the converted shape's own counts
+  (`nurbs_counts`), 168 tests. Open CASCADE fails its own conversion of
+  one variant (`regression/pipe-elbow-a-tolerance-off`, "knots interval
+  values too close"), recorded as `nurbs_fails`; the ⚠ OPEN below is
+  answered: one, and outside the corpus areas. Findings:
+  - **Open CASCADE's periodic B-splines are unclamped** —
+    `(1, 2, …, 2, 1)` round a closed circle — so no closed direction was
+    recognised, and the pcurves on every converted quadric failed after a
+    minute of fitting. The padding knots enter no basis function on the
+    domain; the reader clamps them, which is exact, and a converted
+    cylinder reads in 0.1 s.
+  - **A seam's two uses at a converted pole** head apart only to
+    rounding once one is moved by a period, and a turn of `1e-14` read as
+    turning in towards the face: no whole-turn degenerate edge, the two
+    uses a period short (E7). Headings within the angular tolerance of
+    one line now make no turn.
+  - **The face integral put a NURBS surface's knots inside its Gauss
+    intervals** (the grid was the smallest span, anchored at zero), and
+    split no boundary piece where it crosses a knot: converted booleans
+    were `1e-5`–`5e-4` off in volume. `integrate::Grid` (public,
+    replacing `inner_step`'s `f64` and changing `region_integral`'s
+    signature) splits at the knots, inner and outer.
+  - **B1 cannot nest shells with NURBS faces** — no ray is cast against
+    one — so a converted multi-shell body leaves B1 unchecked as S5's
+    pairs are, and the read-back counts a solid per solid read, never
+    asking `lumps`.
+  - **The cap moved to `2e-4`**: the converted band variant of
+    `seam-beside-crossing-fuse` measures `1.13e-4` of its part, the
+    tolerance Open CASCADE's own shape carries there.
 - [ ] Step 16 **[2]** — Assemblies and several solids (ADR-0025 §3 and §5).
   - The product structure is flattened (`SHAPE_DEFINITION_REPRESENTATION`,
     `NEXT_ASSEMBLY_USAGE_OCCURRENCE`,
@@ -609,14 +640,16 @@ after, because it is routine.
 
 ## Open questions
 
-- ⚠ OPEN: the gap cap's value. It is relative to the part's size, but the
+- Answered at steps 12, 14 and 15 (was ⚠ OPEN): the gap cap's value. It is relative to the part's size, but the
   fraction is not yet known. **Agent**, by step 12, from gaps measured on
   Open CASCADE's files and on the files of the literature. It is revisited
   by `real-part-corpus` against real parts, and changing it there is a
   one-constant commit with its evidence.
-- ⚠ OPEN: whether `BRepBuilderAPI_NurbsConvert` round-trips every fixture
+- Answered at step 15 (was ⚠ OPEN): whether `BRepBuilderAPI_NurbsConvert` round-trips every fixture
   in Open CASCADE itself. If the oracle's own converted shape fails
   `BRepCheck_Analyzer` or its own round trip, the fixture's NURBS variant
   is recorded as `step_differs`-like. **Agent**, at step 15. If that holds
   for more than a handful of fixtures, it is an amendment to ADR-0023, not
-  a new escape.
+  a new escape. Answer: Open CASCADE converts every corpus fixture; it fails one
+  variant of one regression fixture, recorded as `nurbs_fails`, and no
+  amendment is needed.

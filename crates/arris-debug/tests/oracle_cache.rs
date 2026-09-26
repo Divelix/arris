@@ -61,7 +61,7 @@ fn off_runs_the_oracle_every_time() {
     corpus::run(&dir, "default").unwrap();
     corpus::run(&dir, "default").unwrap();
     // Each run asks `compare.py` of Arris's STEP and `occt_step.py` for
-    // Open CASCADE's.
-    assert_eq!(oracle::spawns(), before + 4);
+    // Open CASCADE's, plain and converted to B-splines.
+    assert_eq!(oracle::spawns(), before + 6);
     cache::set(None);
 }

@@ -37,6 +37,14 @@
           16752.497498812154
         ]
       ],
+      "nurbs_counts": {
+        "edges": 12,
+        "faces": 6,
+        "loops": 6,
+        "shells": 1,
+        "solids": 1,
+        "vertices": 8
+      },
       "probes": [],
       "volume": 727.301377805705
     }

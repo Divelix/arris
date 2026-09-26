@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from OCP.BRepBuilderAPI import BRepBuilderAPI_NurbsConvert
 from OCP.IFSelect import IFSelect_RetDone
 from OCP.Interface import Interface_Static
 from OCP.Message import Message, Message_Gravity
@@ -39,3 +40,13 @@ def read(path: Path) -> TopoDS_Shape:
     if r.NbShapes() == 0:
         raise OracleError(f"STEP file has no shapes: {path}")
     return r.OneShape()
+
+
+def nurbs(shape: TopoDS_Shape) -> TopoDS_Shape:
+    """`shape` with every surface and curve converted to B-splines by
+    `BRepBuilderAPI_NurbsConvert`: the free-form faces with seams and poles
+    the STEP reader is held to (plans/step-reader step 15)."""
+    converter = BRepBuilderAPI_NurbsConvert(shape, True)
+    if not converter.IsDone():
+        raise OracleError("BRepBuilderAPI_NurbsConvert failed")
+    return converter.Shape()

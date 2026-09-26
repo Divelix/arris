@@ -14,7 +14,7 @@
 //! and not a mesh's: they match Open CASCADE to 1e-9 relative on the
 //! fixture corpus.
 
-use arris_check::arris_topo::arris_geom::integrate::{inner_step, region_integral};
+use arris_check::arris_topo::arris_geom::integrate::{region_integral, surface_grid};
 use arris_check::arris_topo::arris_math::{Aabb, Matrix3, Point3, Vec3};
 use arris_check::arris_topo::entity::{Body as BodyEntity, BodyKind};
 use arris_check::arris_topo::{Body, FaceId, Model, Shape};
@@ -268,10 +268,10 @@ fn face_area(m: &Model, faces: &[(FaceId, f64)]) -> Result<f64, OpError> {
     for &(id, _) in faces {
         let face = m.face(id)?;
         let surface = m.surface(face.surface())?;
-        let step = inner_step(surface);
+        let grid = surface_grid(surface);
         for l in face.loops() {
             let pieces = m.loop_pieces(l)?;
-            area += region_integral(&pieces, step, |u, v| {
+            area += region_integral(&pieces, &grid, |u, v| {
                 let e = surface.eval(u, v);
                 e.du.cross(&e.dv).norm()
             });

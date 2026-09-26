@@ -16,13 +16,13 @@
 //! turn, exact for a line and to rounding for an arc — and of a
 //! sixteenth of a turn for an elliptic arc, whose speed `√(a² sin² +
 //! b² cos²)` the quadrature resolves to `1e-11` at that cadence
-//! (`integrate::inner_step`'s reason), where a quarter turn leaves
+//! (`integrate::surface_grid`'s reason), where a quarter turn leaves
 //! `1e-7` at an aspect of eighteen.
 
 use core::f64::consts::{FRAC_PI_2, FRAC_PI_8, TAU};
 
 use arris_geom::Curve2;
-use arris_geom::integrate::{gauss_legendre, region_integral};
+use arris_geom::integrate::{Grid, gauss_legendre, region_integral};
 use arris_geom::profile::{Profile, ProfileEdge, ProfileError};
 use arris_geom::region2::Piece;
 use arris_math::{Axis, Point2, Tolerance, Vec2};
@@ -80,8 +80,8 @@ pub fn revolved(
         .flatten()
         .map(|e| Piece::along(&e.pcurve, e.range))
         .collect();
-    let area = region_integral(&pieces, f64::INFINITY, |_, _| 1.0);
-    let moment = region_integral(&pieces, f64::INFINITY, |u, v| rho(Point2::new(u, v)));
+    let area = region_integral(&pieces, &Grid::NONE, |_, _| 1.0);
+    let moment = region_integral(&pieces, &Grid::NONE, |u, v| rho(Point2::new(u, v)));
     let boundary = boundary_integral(&loops, |p| rho(p).abs());
     let full = (angle - TAU).abs() <= tol.angular;
     let ends = if full { 0.0 } else { 2.0 * area.abs() };
@@ -119,7 +119,7 @@ pub fn extruded(profile: &Profile, length: f64, tol: Tolerance) -> Result<Pappus
         .flatten()
         .map(|e| Piece::along(&e.pcurve, e.range))
         .collect();
-    let area = region_integral(&pieces, f64::INFINITY, |_, _| 1.0).abs();
+    let area = region_integral(&pieces, &Grid::NONE, |_, _| 1.0).abs();
     let perimeter = boundary_integral(&loops, |_| 1.0);
     Ok(Pappus {
         volume: area * length,
