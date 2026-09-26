@@ -1531,6 +1531,15 @@ fn real_cone_face_without_its_apex() {
     run_part("real/cone-face-without-its-apex");
 }
 
+/// A half ball whose sphere face is bounded by one meridian circle
+/// through both poles, as NIST's FTC-06 writes face #351: the reader
+/// splits the edge at the pole it runs through (ADR-0026's amendment of
+/// step 5).
+#[test]
+fn real_edge_through_sphere_pole() {
+    run_part("real/edge-through-sphere-pole");
+}
+
 /// NIST's FTC-09, AP203 geometry only: one solid of 158 faces, read whole.
 #[test]
 fn real_nist_ftc_09() {
@@ -1574,7 +1583,7 @@ fn real_nist_ctc_05() {
     run_part("real/nist-ctc-05");
 }
 
-/// NIST's FTC-06: waits on regression/edge-through-sphere-pole.
+/// NIST's FTC-06: one solid read whole, its meridian edge split at the pole it passes.
 #[test]
 fn real_nist_ftc_06() {
     run_part("real/nist-ftc-06");
@@ -1602,12 +1611,6 @@ fn real_nist_ftc_10() {
 #[test]
 fn real_nist_ftc_11() {
     run_part("real/nist-ftc-11");
-}
-
-#[test]
-#[ignore = "the reader refuses a sphere face bounded by a meridian circle through both poles as an open loop (ADR-0026 §4)"]
-fn regression_edge_through_sphere_pole() {
-    run_part("regression/edge-through-sphere-pole");
 }
 
 #[test]

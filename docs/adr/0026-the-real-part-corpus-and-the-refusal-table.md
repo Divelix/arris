@@ -453,3 +453,11 @@ is a reader bug under §4, not a timing to accommodate.
   meridian to a sphere's pole). A face with no singular point on that
   side would be unbounded, and is refused. FTC-10 reads, in 20 s in the
   test profile.
+- **An edge through a singular point is split there.** FTC-06 bounds a
+  half sphere by one meridian circle whose vertex is at the north pole and
+  which runs through the south. No pcurve runs through a pole, and each
+  side of it has one (ADR-0021), so before any face is walked, the reader
+  splits every edge whose curve passes a singular point of a face it
+  bounds, away from its own ends, with a vertex on the point. Every use of
+  it on every face walks its pieces, and the walk then adds the poles'
+  degenerate edges as it does for any edge ending there. FTC-06 reads.

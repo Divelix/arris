@@ -229,7 +229,7 @@ part to an oracle.
     band: a cone bounded by its base circle alone, the apex implicit);
   - [x] `axis-placement-along-x-without-reference` (CTC-04, FTC-08);
   - [ ] `pcurve-fit-reported-as-gap` (CTC-01, FTC-07);
-  - [ ] `edge-through-sphere-pole` (FTC-06; new at step 4, a half sphere
+  - [x] `edge-through-sphere-pole` (FTC-06; new at step 4, a half sphere
     bounded by one meridian circle through both poles);
   - [ ] `slow-gap-refusal` (CTC-05, 66 s in release).
   - [x] an edge's tolerance measured only at the checker's samples, a

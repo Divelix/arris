@@ -1530,7 +1530,12 @@ may carry different tolerances.
   surface, and where two pcurves of a loop end apart in (u, v) past L2's
   band it ends them on one point (`pcurve_ending_on`) — the seam's end
   where one is a seam, else the vertex's own (u, v), as a boolean ends a
-  section edge. Each edge then carries the largest distance of its
+  section edge. What the file leaves implicit and Arris's face needs is
+  rebuilt: an edge running through a pole or an apex is split there, two
+  loops each wrapping a period of the surface are joined by a seam along
+  an isocurve (an edge split where the seam must meet it), and one such
+  loop is joined to the singular point on its face's side, as a
+  `VERTEX_LOOP` is. Each edge then carries the largest distance of its
   pcurves' images from its curve — sampled at the checker's samples and
   at the `PCURVE_SAMPLES` a fit is held to, each peak past the default
   climbed to its top between them, since a fitted pcurve strays furthest

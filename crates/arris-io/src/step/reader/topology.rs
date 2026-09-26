@@ -40,6 +40,19 @@
 //!   towards the face. A `VERTEX_LOOP` at a singular point is a loop of
 //!   one degenerate coedge, a whole turn along its row. A jump in (u, v)
 //!   anywhere else is [`Refusal::OpenLoop`].
+//! - **Singular points an edge runs through** split it there, before any
+//!   face is walked, a vertex on the point: no pcurve runs through a
+//!   pole or an apex, and each side of it has one. Every use of the edge
+//!   walks its pieces.
+//! - **Seams the writer left out** are rebuilt where a face's loops wrap
+//!   a period of its surface, which ISO 10303-42 allows and Arris's face,
+//!   one region in (u, v), does not. Two loops wrapping once each — a
+//!   cylinder's side bounded by its two circles — are joined by a seam
+//!   along the surface's isocurve through a vertex of each, the other
+//!   loop's edge split where no vertex faces the first, on every face
+//!   that uses it ([`band`]). One loop wrapping once — a cone bounded by
+//!   its base circle alone — gets a vertex at the singular point on the
+//!   side the face lies on, joined as a `VERTEX_LOOP` is ([`apex`]).
 //!
 //! - **Gaps** are measured, never assumed (ADR-0025 §4). An edge curve
 //!   off a face's surface has its pcurve fitted at the gap, and two
@@ -480,6 +493,64 @@ impl Geometry<'_> {
         let mut vertex_ids: Vec<u64> = file.vertices.clone();
         let mut edge_ids: Vec<u64> = file.edges.iter().map(|e| e.id).collect();
         let mut splits: Vec<Split> = Vec::new();
+
+        // An edge whose curve runs through a singular point of a face it
+        // bounds — a meridian circle through a sphere's pole — is split
+        // there before any face is walked, a vertex on the point: no
+        // pcurve runs through it, and each side of it has one (ADR-0021).
+        // Each file edge walks as its pieces, in its curve's order.
+        let mut pieces: Vec<Vec<usize>> = (0..edges.len()).map(|i| vec![i]).collect();
+        let on_point = PCURVE_SINGULAR_BAND * tol.linear;
+        for face in file.shells.iter().flat_map(|shell| &shell.faces) {
+            let surface = match surfaces.get(&face.surface.id) {
+                Some(s) => s.0.clone(),
+                None => {
+                    let s = face.surface.resolve(&part)?;
+                    let id = model.add_surface(s.clone());
+                    surfaces.insert(face.surface.id, (s.clone(), id));
+                    s
+                }
+            };
+            for row in surface.singularities() {
+                for bound in &face.bounds {
+                    let Walk::Edges(ref walk) = bound.walk else {
+                        continue;
+                    };
+                    for step in walk {
+                        while let Some((at, p, t)) = (pieces[step.edge].iter().enumerate())
+                            .find_map(|(at, &p)| {
+                                Some((at, p, through(&edges[p], row.point, on_point)?))
+                            })
+                        {
+                            let old = &edges[p];
+                            let (Ok(before), Ok(after)) = (
+                                Interval::new(old.range.lo(), t),
+                                Interval::new(t, old.range.hi()),
+                            ) else {
+                                break;
+                            };
+                            let (vertex, new) = (points.len(), edges.len());
+                            let piece = Edge {
+                                geometry: old.geometry.clone(),
+                                curve: old.curve,
+                                range: after,
+                                start: vertex,
+                                end: old.end,
+                                along: old.along,
+                            };
+                            points.push(row.point);
+                            vertex_ids.push(edge_ids[p]);
+                            edges[p].range = before;
+                            edges[p].end = vertex;
+                            edges.push(piece);
+                            edge_ids.push(edge_ids[p]);
+                            pieces[step.edge].insert(at + 1, new);
+                        }
+                    }
+                }
+            }
+        }
+
         let mut walked = Vec::with_capacity(file.shells.len());
         for shell in &file.shells {
             let mut faces = Vec::with_capacity(shell.faces.len());
@@ -529,13 +600,26 @@ impl Geometry<'_> {
                     if face.turned {
                         turn(&mut walk);
                     }
+                    // Each file edge's pieces, in the walk's direction.
+                    let walk: Vec<Step> = (walk.iter())
+                        .flat_map(|s| {
+                            let mut run = pieces[s.edge].clone();
+                            if s.forward != edges[s.edge].along {
+                                run.reverse();
+                            }
+                            run.into_iter().map(|edge| Step {
+                                edge,
+                                forward: s.forward,
+                            })
+                        })
+                        .collect();
                     let mut uses = Vec::with_capacity(walk.len());
                     for s in walk {
                         let edge = &edges[s.edge];
                         let pcurve = match pcurves.get(&s.edge) {
                             Some(p) => p.clone(),
                             None => {
-                                let id = file.edges[s.edge].id;
+                                let id = edge_ids[s.edge];
                                 let p =
                                     fitted(&edge.geometry, edge.range, &surface, precision, cap)
                                         .map_err(|fault| fault.refusal(id, face.id, cap))?;
@@ -1746,6 +1830,26 @@ fn seam_to(
         range,
         pcurve,
     })
+}
+
+/// The parameter strictly inside `edge`'s range at which its curve runs
+/// through `point` within `band`, away from its ends: where a pcurve on a
+/// surface singular there cannot run on.
+fn through(edge: &Edge, point: Point3, band: f64) -> Option<f64> {
+    let (lo, hi) = (edge.range.lo(), edge.range.hi());
+    let at_end = |t: f64| (edge.geometry.point(t) - point).norm() <= band;
+    if at_end(lo) || at_end(hi) {
+        return None;
+    }
+    let near = edge.geometry.project(point).ok()?;
+    if near.distance > band {
+        return None;
+    }
+    let t = match edge.geometry.period() {
+        Some(p) => lo + (near.t - lo).rem_euclid(p),
+        None => near.t,
+    };
+    (lo < t && t < hi).then_some(t)
 }
 
 /// The index a band's seam walks under while its arc is tried, before it
