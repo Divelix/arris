@@ -621,6 +621,10 @@ pub enum ExpectError {
     /// a profile with an elliptic segment, whose swept surface has no
     /// variant (ADR-0014).
     EllipticRevolve,
+    /// `OpError::Unsupported` with a NURBS surface or curve in the pair:
+    /// an operation on a free-form face the kernel has no closed form
+    /// for, the NURBS cycle's (ADR-0026 §5).
+    Nurbs,
 }
 
 /// A refusal the STEP reader is expected to return for Open CASCADE's own
@@ -811,7 +815,9 @@ pub struct Measured {
     pub nurbs_fails: Option<String>,
     /// The oracle shape's own tolerance and the sizes a boundary moved
     /// within it is measured over: written by `expected.py --own`, which
-    /// only the differential runs, and absent from every corpus fixture.
+    /// only the differential runs, and for a part's battery, which is held
+    /// as the differential holds a draw (`crate::battery`); absent from
+    /// every solid fixture of the corpus.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub own: Option<Own>,
 }
@@ -934,9 +940,10 @@ pub const SOLID_KEYS: [&str; 5] = ["params", "variants", "steps", "result", "pro
 /// The keys of a geometry recipe the oracle evaluates and hashes.
 pub const GEOMETRY_KEYS: [&str; 6] = ["kind", "params", "surfaces", "curves", "samples", "pairs"];
 /// The keys of a part fixture the oracle reads and hashes: the file, by
-/// name and by content. The solids' outcomes are Arris's, not the
-/// oracle's.
-pub const PART_KEYS: [&str; 3] = ["kind", "file", "sha256"];
+/// name and by content, and the battery's operands it builds. The
+/// solids' outcomes and the battery's recorded classes are Arris's, not
+/// the oracle's.
+pub const PART_KEYS: [&str; 4] = ["kind", "file", "sha256", "battery"];
 
 /// The SHA-256 the oracle records: over the recipe's evaluated keys as
 /// parsed — [`SOLID_KEYS`], [`GEOMETRY_KEYS`] or [`PART_KEYS`] by
@@ -1377,6 +1384,20 @@ mod tests {
             .map(|b| format!("{b:02x}"))
             .collect::<String>();
         assert_eq!(recipe_hash(&v).unwrap(), expected);
+    }
+
+    /// serde_json writes a float down to 1e-5 with a decimal point and
+    /// below it with an exponent, and a positive exponent with its sign;
+    /// the oracle's `canonical_json` follows those rules, where Python's
+    /// `repr` switches below 1e-4.
+    #[test]
+    fn floats_are_hashed_as_serde_json_writes_them() {
+        let near = |x: f64| serde_json::Value::from(x).to_string();
+        assert_eq!(near(5.166967270501008e-5), "0.00005166967270501008");
+        assert_eq!(near(-1.5e-5), "-0.000015");
+        assert_eq!(near(1e-6), "1e-6");
+        assert_eq!(near(1e16), "1e+16");
+        assert_eq!(near(1e-4), "0.0001");
     }
 
     #[test]

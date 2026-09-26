@@ -31,7 +31,7 @@ use std::path::{Path, PathBuf};
 
 use arris_geom::Profile;
 use arris_io::arris_check::arris_topo::FaceId;
-use arris_io::arris_check::arris_topo::arris_geom::{Surface, SurfaceKind};
+use arris_io::arris_check::arris_topo::arris_geom::{CurveKind, GeomKind, Surface, SurfaceKind};
 use arris_io::arris_check::arris_topo::arris_math::nalgebra::UnitQuaternion;
 use arris_io::arris_check::arris_topo::arris_math::{
     Axis, FrameError, Isometry, Point3, UnitVec3, Vec3,
@@ -379,6 +379,9 @@ impl Refusal {
             Refusal::Error(ExpectError::EllipticRevolve) => {
                 "OpError::Degenerate with Reason::EllipticRevolve".into()
             }
+            Refusal::Error(ExpectError::Nurbs) => {
+                "OpError::Unsupported with a NURBS surface or curve in the pair".into()
+            }
         }
     }
 
@@ -405,6 +408,7 @@ impl Refusal {
                     Refusal::Error(ExpectError::EllipticRevolve) => {
                         matches!(reason, Reason::EllipticRevolve { .. })
                     }
+                    Refusal::Error(ExpectError::Nurbs) => false,
                 };
                 if matches {
                     return Ok(());
@@ -414,10 +418,21 @@ impl Refusal {
             Err(CorpusError::Op {
                 source: OpError::Unsupported { a, b },
                 ..
-            }) => format!(
-                "OpError::Unsupported: no closed form for {} ({}) against {} ({})",
-                a.1, a.0, b.1, b.0
-            ),
+            }) => {
+                let nurbs = |k: GeomKind| {
+                    matches!(
+                        k,
+                        GeomKind::Surface(SurfaceKind::Nurbs) | GeomKind::Curve(CurveKind::Nurbs)
+                    )
+                };
+                if self == Refusal::Error(ExpectError::Nurbs) && (nurbs(a.0) || nurbs(b.0)) {
+                    return Ok(());
+                }
+                format!(
+                    "OpError::Unsupported: no closed form for {} ({}) against {} ({})",
+                    a.1, a.0, b.1, b.0
+                )
+            }
             Err(e) => e.to_string(),
         };
         Err(CorpusError::Expectation {
@@ -523,15 +538,26 @@ pub fn build(name: &str, recipe: &Recipe) -> Result<Chain, CorpusError> {
     chain_of(&fixture, "default")
 }
 
-fn chain_of(fixture: &Fixture, variant: &str) -> Result<Chain, CorpusError> {
+pub(crate) fn chain_of(fixture: &Fixture, variant: &str) -> Result<Chain, CorpusError> {
+    chain_from(fixture, variant, model_for(fixture)?, BTreeMap::new())
+}
+
+/// [`chain_of`] starting from `model` with the steps of `steps` already
+/// built in it: those are not built again. How the battery starts each
+/// case from the solid the part runner already read, where a fresh read
+/// of the same file would give the same model (`crate::battery`).
+pub(crate) fn chain_from(
+    fixture: &Fixture,
+    variant: &str,
+    mut model: Model,
+    mut steps: BTreeMap<String, Made>,
+) -> Result<Chain, CorpusError> {
     let Some(params) = fixture.recipe.params_of(variant) else {
         return Err(CorpusError::Variant {
             fixture: fixture.name.clone(),
             variant: variant.to_string(),
         });
     };
-    let mut model = model_for(fixture)?;
-    let mut steps = BTreeMap::new();
     let mut profiles = BTreeMap::new();
     build_all(
         &mut model,
@@ -564,6 +590,9 @@ fn build_all(
     profiles: &mut BTreeMap<String, Profile>,
 ) -> Result<bool, CorpusError> {
     for step in &fixture.recipe.steps {
+        if made.contains_key(step.name()) {
+            continue;
+        }
         let built = build_step(m, fixture, step, params, made, profiles);
         if let Some(refusal) = refusal {
             if step.name() == fixture.recipe.result {

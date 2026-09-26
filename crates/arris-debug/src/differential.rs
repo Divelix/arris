@@ -424,7 +424,7 @@ pub fn exclusion_of_error(e: &OpError) -> Option<&'static Exclusion> {
 
 /// The outcome of a caught panic: the debug build's checker guard is a
 /// [`Outcome::CheckerViolation`], any other a [`Outcome::Panic`].
-fn panicked(payload: &(dyn std::any::Any + Send)) -> Outcome {
+pub(crate) fn panicked(payload: &(dyn std::any::Any + Send)) -> Outcome {
     let message = payload
         .downcast_ref::<&str>()
         .map(|s| s.to_string())
@@ -606,7 +606,7 @@ pub fn removable_vertices(m: &Model, body: Body) -> usize {
 /// (`expected.own`), so the counts stage compares the two net of them —
 /// a vertex that merges two edges into one is not a different solid.
 /// Unchanged where the oracle recorded no `own`.
-fn net_of_removable(expected: &Measured, chain: &corpus::Chain) -> Measured {
+pub(crate) fn net_of_removable(expected: &Measured, chain: &corpus::Chain) -> Measured {
     let mut out = expected.clone();
     let (Some(own), Some(body)) = (expected.own, chain.result()) else {
         return out;

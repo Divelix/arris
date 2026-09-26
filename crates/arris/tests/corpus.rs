@@ -722,6 +722,35 @@ fn regression_tangent_seam_on_face_cut() {
     run("regression/tangent-seam-on-face-cut");
 }
 
+/// NIST's CTC-04 cut by a speck of a box: its plane f393, bounded by
+/// B-spline edges, fails to split though nothing crosses it — every cut
+/// and drill of the part's battery meets it (ADR-0026 §4).
+#[test]
+#[ignore = "Fault::Split, a cycle of f393's arrangement does not turn once, on a face no section crosses (ADR-0026 §4, the battery)"]
+fn regression_nist_ctc_04_face_arrangement_turn() {
+    run("regression/nist-ctc-04-face-arrangement-turn");
+}
+
+/// NIST's FTC-06 cut by a speck of a box: its plane f0, whose loop runs
+/// two arcs of one circle end to end, fails to split though nothing
+/// crosses it — every cut and drill of the part's battery meets it
+/// (ADR-0026 §4).
+#[test]
+#[ignore = "Fault::Split, a cycle of f0's arrangement does not turn once, on a face no section crosses (ADR-0026 §4, the battery)"]
+fn regression_nist_ftc_06_face_arrangement_turn() {
+    run("regression/nist-ftc-06-face-arrangement-turn");
+}
+
+/// An all-NURBS box cut by a box inside it: the tool's faces are
+/// classified by a ray against NURBS faces, which has no closed form, and
+/// the boolean returns an internal fault where the typed refusal the
+/// NURBS cycle counts belongs (ADR-0026 §5).
+#[test]
+#[ignore = "OpError::Internal(Classify), no closed form for a line against a NURBS surface, where OpError::Unsupported naming the pair is desired (ADR-0026 §4, the battery)"]
+fn regression_nurbs_box_cavity_cut() {
+    run("regression/nurbs-box-cavity-cut");
+}
+
 /// A tee of equal radii: the branch's rim circle touches the main wall
 /// exactly at the two crossing vertices, and each touch cuts the rim
 /// there.

@@ -193,7 +193,7 @@ def probes(fixture: dict, variant: str = "default") -> list[dict]:
 
 
 SOLID_KEYS = ("params", "variants", "steps", "result", "probes")
-PART_KEYS = ("kind", "file", "sha256")
+PART_KEYS = ("kind", "file", "sha256", "battery")
 
 # Where `fixture.load_fixture` records a recipe's directory, which a `step`
 # operand's file is relative to: no recipe writes it, and no hash reads it.
@@ -223,8 +223,9 @@ def recipe_hash(fixture: dict) -> str:
 def canonical_json(value: Any) -> str:
     """The encoding the Rust side (`arris_debug::fixtures`) hashes too:
     sorted keys, no whitespace, non-ASCII kept, and floats in the shortest
-    round-trip form with a bare exponent (`1e-9`, `1e16`), which is what
-    serde_json prints; Python's repr writes `1e-09` and `1e+16`."""
+    round-trip form with the exponent's leading zeros dropped (`1e-9`,
+    `1e+16`), which is what serde_json prints; Python's repr writes
+    `1e-09`, and `5e-05` where serde_json writes `0.00005`."""
     if isinstance(value, bool) or value is None:
         return json.dumps(value)
     if isinstance(value, int):
@@ -233,7 +234,12 @@ def canonical_json(value: Any) -> str:
         text = repr(value)
         if "e" in text:
             mantissa, exp = text.split("e")
-            sign = "-" if exp.startswith("-") else ""
+            if int(exp) == -5:
+                # serde_json writes a decimal point down to 1e-5, where
+                # repr has switched to an exponent below 1e-4.
+                sign = "-" if mantissa.startswith("-") else ""
+                return f"{sign}0.0000{mantissa.lstrip('-').replace('.', '')}"
+            sign = "-" if exp.startswith("-") else "+"
             exp = exp.lstrip("+-").lstrip("0") or "0"
             text = f"{mantissa}e{sign}{exp}"
         return text

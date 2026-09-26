@@ -12,6 +12,7 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod battery;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod bench;
 pub mod body;

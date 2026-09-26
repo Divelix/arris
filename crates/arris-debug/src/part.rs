@@ -31,6 +31,7 @@ use arris_ops::measure::mass_properties;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use crate::battery::{Case, Class, OracleCase};
 use crate::corpus::{
     self, CorpusError, Target, blessing, check_leaving_nurbs, compare_mass, mesh_check,
     within_own_tolerance,
@@ -63,6 +64,11 @@ pub struct PartSolid {
     pub instance: u32,
     /// What the reader is expected to make of it.
     pub outcome: Outcome,
+    /// The class each battery stage of a `read` solid is recorded at, by
+    /// stage (`crate::battery`): what the runner holds it to. Empty for a
+    /// solid the fixture has no battery for.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub battery: BTreeMap<String, Class>,
 }
 
 /// A part fixture's `fixture.json`.
@@ -82,10 +88,10 @@ pub struct Part {
     /// Every solid instance the reader returns, in its order.
     pub solids: Vec<PartSolid>,
     /// The precision the model is read into.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_default")]
     pub precision: PrecisionSpec,
     /// Comparison tolerances, before each read body's own widens them.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_default")]
     pub tolerances: Tolerances,
     /// The fixtures under `regression/` this part waits on: each a reader
     /// bug the part meets, shrunk (ADR-0026 §4). While any is listed the
@@ -101,6 +107,16 @@ pub struct Part {
     /// no assertion.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub read_seconds: Option<f64>,
+    /// The battery's operands, by solid (`crate::battery::key`) and stage:
+    /// written once by `crate::battery::derive`, then data both kernels
+    /// build. Empty for a part shrunk from another, whose battery is its
+    /// source's.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub battery: BTreeMap<String, BTreeMap<String, Case>>,
+}
+
+fn is_default<T: Default + PartialEq>(value: &T) -> bool {
+    *value == T::default()
 }
 
 /// One solid of the oracle's reading of a part's file.
@@ -138,6 +154,9 @@ pub struct PartExpected {
     pub recipe_sha256: String,
     /// Every solid the oracle reads, in its transfer's order.
     pub solids: Vec<OracleSolid>,
+    /// Its answer to each battery case, by solid and stage.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub battery: BTreeMap<String, BTreeMap<String, OracleCase>>,
 }
 
 /// A loaded part fixture.
@@ -183,6 +202,22 @@ pub fn load(dir: &Path) -> Result<PartFixture, FixtureError> {
         recipe_sha256,
         expected: read_json(&dir.join("expected.json"))?,
     })
+}
+
+/// Writes `part` as the `fixture.json` in `dir`: `"kind": "part"` first,
+/// then its fields in declaration order, two-space indented, as
+/// `crate::battery::derive`'s caller rewrites a fixture. Errors: the file
+/// cannot be written.
+pub fn save(dir: &Path, part: &Part) -> std::io::Result<()> {
+    #[derive(Serialize)]
+    struct File<'a> {
+        kind: &'static str,
+        #[serde(flatten)]
+        part: &'a Part,
+    }
+    let text = serde_json::to_string_pretty(&File { kind: "part", part })
+        .map_err(std::io::Error::other)?;
+    std::fs::write(dir.join("fixture.json"), text + "\n")
 }
 
 /// The dump of one solid read: `dump.<id>.<instance>.txt`.
@@ -297,6 +332,8 @@ pub fn run(dir: &Path) -> Result<(), CorpusError> {
             }
             (Outcome::Read, Ok(back)) => {
                 read_stages(&fixture, &model, back.body, spec, &mut taken)?;
+                #[cfg(not(target_arch = "wasm32"))]
+                battery_stages(&fixture, &model, back, spec)?;
             }
         }
     }
@@ -411,6 +448,87 @@ fn read_stages(
     corpus::check_dump(&name, &path, &dump, blessing())
 }
 
+/// The battery of one solid read (`crate::battery`): every stage the
+/// fixture has operands for, and `write_read`, run and held to the class
+/// the solid records for it — or, where it records that the stage waits
+/// on a fixture under [`REGRESSION_AREA`], skipped while that fixture is
+/// there. A solid with no battery and no classes passes. Errors: [`CorpusError::Part`] for a stage with no class or a
+/// class with no stage, an outcome that is a kernel bug — a
+/// disagreement, a checker violation, a panic, an internal fault — and
+/// an outcome of another class than the one recorded, and a wait on a
+/// fixture that has left [`REGRESSION_AREA`].
+#[cfg(not(target_arch = "wasm32"))]
+fn battery_stages(
+    fixture: &PartFixture,
+    m: &Model,
+    back: &arris_io::step::ReadBody,
+    spec: &PartSolid,
+) -> Result<(), CorpusError> {
+    use crate::battery::{self, STAGES};
+    let key = battery::key(spec.id, spec.instance);
+    let fail = |what: String| CorpusError::Part {
+        fixture: fixture.name.clone(),
+        what: format!("{key} {what}"),
+    };
+    let cases = fixture.part.battery.get(&key);
+    if cases.is_none() && spec.battery.is_empty() {
+        return Ok(());
+    }
+    let stages: Vec<&str> = STAGES
+        .into_iter()
+        .filter(|&s| s == "write_read" || cases.is_some_and(|c| c.contains_key(s)))
+        .collect();
+    let recorded: Vec<&str> = spec.battery.keys().map(String::as_str).collect();
+    let mut sorted = stages.clone();
+    sorted.sort_unstable();
+    if recorded != sorted {
+        return Err(fail(format!(
+            "records classes for the stages {recorded:?}, but its battery has {stages:?}"
+        )));
+    }
+    let hold = battery::holds_counts(fixture, spec.id);
+    let waits = |slug: &str| {
+        slug.starts_with(&format!("{REGRESSION_AREA}/"))
+            && crate::fixtures::corpus_root()
+                .join(slug)
+                .join("fixture.json")
+                .is_file()
+    };
+    for stage in stages {
+        let expected = &spec.battery[stage];
+        if let Class::WaitsOn(slug) = expected {
+            if !waits(slug) {
+                return Err(fail(format!(
+                    "{stage} waits on {slug}, which is not a fixture under {REGRESSION_AREA}/ any more: record the class the fix gives"
+                )));
+            }
+            continue;
+        }
+        let name = format!("{} {key} {stage}", fixture.name);
+        let outcome = match cases.and_then(|c| c.get(stage)) {
+            None => battery::write_read(&name, m, back.body, &fixture.part.tolerances),
+            Some(case) => {
+                let oracle = battery::oracle_case(fixture, &key, stage).map_err(&fail)?;
+                battery::judge(fixture, &name, case, oracle, hold, Some((m, back)))
+            }
+        };
+        match Class::of(&outcome) {
+            None => {
+                return Err(fail(format!(
+                    "{stage}: {outcome} — a kernel bug, shrunk to regression/ (ADR-0026 §4)"
+                )));
+            }
+            Some(class) if class != *expected => {
+                return Err(fail(format!(
+                    "{stage} is {outcome}, recorded as {expected:?}"
+                )));
+            }
+            Some(_) => {}
+        }
+    }
+    Ok(())
+}
+
 /// What is wrong with the exclusions `fixture` waits on: each must name a
 /// part fixture still under [`REGRESSION_AREA`].
 fn waiting_problems(fixture: &PartFixture) -> Vec<String> {
@@ -432,8 +550,8 @@ fn waiting_problems(fixture: &PartFixture) -> Vec<String> {
 /// The lint of a part fixture: both files present and parseable, the
 /// file present and its SHA-256 the fixture's, `expected.json` not stale,
 /// every oracle solid on the Euler line with its genus, every refusal
-/// with a reason, every exclusion a part fixture still under
-/// [`REGRESSION_AREA`], and every `read` solid's dump committed — unless
+/// with a reason, every exclusion and every battery stage's wait a
+/// fixture still under [`REGRESSION_AREA`], and every `read` solid's dump committed — unless
 /// the part waits, having not passed yet — with none under
 /// [`REGRESSION_AREA`], where a fixture waits for its fix. Returns every
 /// problem found, empty when clean.
@@ -481,6 +599,22 @@ pub fn lint(dir: &Path) -> Vec<String> {
     }
     for p in waiting_problems(&fixture) {
         problem(p);
+    }
+    let root = crate::fixtures::corpus_root();
+    for solid in &fixture.part.solids {
+        for (stage, class) in &solid.battery {
+            let Class::WaitsOn(slug) = class else {
+                continue;
+            };
+            let open = slug.starts_with(&format!("{REGRESSION_AREA}/"))
+                && root.join(slug).join("fixture.json").is_file();
+            if !open {
+                problem(format!(
+                    "#{}[{}] {stage} waits on {slug}, which is not a fixture under {REGRESSION_AREA}/ any more: record the class the fix gives",
+                    solid.id, solid.instance
+                ));
+            }
+        }
     }
     let area = name.split('/').next().unwrap_or_default();
     let waiting = !fixture.part.waits_on.is_empty();
@@ -560,6 +694,42 @@ mod tests {
         assert!(
             matches!(&e, CorpusError::Part { what, .. } if what.contains("lift it")),
             "{e}"
+        );
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    /// A battery stage is held to the class it records, and a stage that
+    /// waits must wait on a fixture still under `regression/`.
+    #[test]
+    fn a_battery_stage_is_held_to_its_class() {
+        let scratch = edited(
+            "real/nist-ftc-11",
+            "battery",
+            r#""fillet": "both-refuse""#,
+            r#""fillet": "agree""#,
+        );
+        let e = run(&scratch).expect_err("both kernels refuse the fillet");
+        assert!(
+            matches!(&e, CorpusError::Part { what, .. } if what.contains("fillet is BothRefuse, recorded as Agree")),
+            "{e}"
+        );
+        let _ = std::fs::remove_dir_all(&scratch);
+
+        let scratch = edited(
+            "real/nist-ftc-11",
+            "wait",
+            r#""fillet": "both-refuse""#,
+            r#""fillet": {"waits-on": "regression/no-such-fixture"}"#,
+        );
+        let e = run(&scratch).expect_err("the wait names no fixture");
+        assert!(
+            matches!(&e, CorpusError::Part { what, .. } if what.contains("record the class the fix gives")),
+            "{e}"
+        );
+        assert!(
+            lint(&scratch)
+                .iter()
+                .any(|p| p.contains("regression/no-such-fixture"))
         );
         let _ = std::fs::remove_dir_all(&scratch);
     }

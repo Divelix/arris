@@ -9,7 +9,244 @@
     {
       "id": 189,
       "instance": 0,
-      "outcome": "read"
+      "outcome": "read",
+      "battery": {
+        "box_cut": "agree",
+        "drill_x": "agree",
+        "drill_y": "agree",
+        "drill_z": "agree",
+        "fillet": "both-refuse",
+        "write_read": "agree"
+      }
     }
-  ]
+  ],
+  "battery": {
+    "#189[0]": {
+      "box_cut": {
+        "steps": [
+          {
+            "op": "step",
+            "name": "part",
+            "file": "nist_ftc_11_asme1_rb.stp",
+            "sha256": "a5abfea460499dc31bc812aca68917948a117565fea4f5a080e36eb32f39650d",
+            "id": 189
+          },
+          {
+            "op": "profile",
+            "name": "square",
+            "plane": {
+              "origin": [
+                2.6374956630400032e-15,
+                6.13938066102589e-15,
+                -0.3512609980695671
+              ],
+              "x": [
+                -0.0,
+                1.0,
+                -6.938893903907227e-18
+              ],
+              "y": [
+                1.0,
+                0.0,
+                0.0
+              ]
+            },
+            "outer": {
+              "start": [
+                0.0,
+                0.0
+              ],
+              "segments": [
+                {
+                  "line_to": [
+                    133.75853058981608,
+                    0.0
+                  ]
+                },
+                {
+                  "line_to": [
+                    133.75853058981608,
+                    133.75853058981608
+                  ]
+                },
+                {
+                  "line_to": [
+                    0.0,
+                    133.75853058981608
+                  ]
+                },
+                {
+                  "line_to": [
+                    0.0,
+                    0.0
+                  ]
+                }
+              ]
+            },
+            "holes": []
+          },
+          {
+            "op": "extrude",
+            "name": "box",
+            "profile": "square",
+            "direction": [
+              0.0,
+              -6.938893903907227e-18,
+              -1.0
+            ],
+            "length": 133.75853058981608
+          },
+          {
+            "op": "cut",
+            "name": "result",
+            "target": "part",
+            "tool": "box"
+          }
+        ],
+        "result": "result"
+      },
+      "drill_x": {
+        "steps": [
+          {
+            "op": "step",
+            "name": "part",
+            "file": "nist_ftc_11_asme1_rb.stp",
+            "sha256": "a5abfea460499dc31bc812aca68917948a117565fea4f5a080e36eb32f39650d",
+            "id": 189
+          },
+          {
+            "op": "cylinder",
+            "name": "drill",
+            "base": [
+              2.6374956630400032e-15,
+              -66.87926529490804,
+              -0.3512609980695667
+            ],
+            "axis": [
+              -0.0,
+              1.0,
+              -6.938893903907227e-18
+            ],
+            "radius": 1.7788086558138965,
+            "height": 133.75853058981608
+          },
+          {
+            "op": "cut",
+            "name": "result",
+            "target": "part",
+            "tool": "drill"
+          }
+        ],
+        "result": "result"
+      },
+      "drill_y": {
+        "steps": [
+          {
+            "op": "step",
+            "name": "part",
+            "file": "nist_ftc_11_asme1_rb.stp",
+            "sha256": "a5abfea460499dc31bc812aca68917948a117565fea4f5a080e36eb32f39650d",
+            "id": 189
+          },
+          {
+            "op": "cylinder",
+            "name": "drill",
+            "base": [
+              -66.87926529490804,
+              6.13938066102589e-15,
+              -0.3512609980695671
+            ],
+            "axis": [
+              1.0,
+              0.0,
+              0.0
+            ],
+            "radius": 1.7788086558138965,
+            "height": 133.75853058981608
+          },
+          {
+            "op": "cut",
+            "name": "result",
+            "target": "part",
+            "tool": "drill"
+          }
+        ],
+        "result": "result"
+      },
+      "drill_z": {
+        "steps": [
+          {
+            "op": "step",
+            "name": "part",
+            "file": "nist_ftc_11_asme1_rb.stp",
+            "sha256": "a5abfea460499dc31bc812aca68917948a117565fea4f5a080e36eb32f39650d",
+            "id": 189
+          },
+          {
+            "op": "cylinder",
+            "name": "drill",
+            "base": [
+              2.6374956630400032e-15,
+              6.603448787278521e-15,
+              66.52800429683847
+            ],
+            "axis": [
+              0.0,
+              -6.938893903907227e-18,
+              -1.0
+            ],
+            "radius": 1.7788086558138965,
+            "height": 133.75853058981608
+          },
+          {
+            "op": "cut",
+            "name": "result",
+            "target": "part",
+            "tool": "drill"
+          }
+        ],
+        "result": "result"
+      },
+      "fillet": {
+        "steps": [
+          {
+            "op": "step",
+            "name": "part",
+            "file": "nist_ftc_11_asme1_rb.stp",
+            "sha256": "a5abfea460499dc31bc812aca68917948a117565fea4f5a080e36eb32f39650d",
+            "id": 189
+          },
+          {
+            "op": "fillet",
+            "name": "result",
+            "of": "part",
+            "edges": [
+              [
+                1.959434878635765e-15,
+                16.0,
+                -1.499999999999999
+              ],
+              [
+                3.857637417314163e-15,
+                31.5,
+                -1.500000000000001
+              ],
+              [
+                20.196007535093457,
+                20.196007535093504,
+                0.425
+              ],
+              [
+                -20.196007535093454,
+                -20.196007535093504,
+                0.425
+              ]
+            ],
+            "radius": 4.486312257750244
+          }
+        ],
+        "result": "result"
+      }
+    }
+  }
 }

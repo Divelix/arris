@@ -1,0 +1,36 @@
+{
+  "description": "Open CASCADE's own STEP of primitive/box converted to B-splines (occt_step.py --nurbs), every face a NURBS surface, cut by the box [19,14,4]\u2013[21,16,6] inside it: the boolean classifies the tool's faces against the part by a ray, which has no closed form against a NURBS face, and the fault comes back as OpError::Internal(Classify) instead of the typed refusal. Shrunk from the battery of real/nist-ftc-07 and real/nist-ftc-10, whose every cut and drill meets it (ADR-0026 \u00a75: a boolean on a NURBS face is the NURBS cycle's)",
+  "steps": [
+    {
+      "name": "part",
+      "op": "step",
+      "file": "nurbs-box.step",
+      "sha256": "92c2ef2937819b71f5bd6ac04d3d755094ec414fec08928d31acc0ed1062aee2",
+      "id": 15
+    },
+    {
+      "name": "cavity",
+      "op": "box",
+      "min": [
+        19,
+        14,
+        4
+      ],
+      "max": [
+        21,
+        16,
+        6
+      ]
+    },
+    {
+      "name": "result",
+      "op": "cut",
+      "target": "part",
+      "tool": "cavity"
+    }
+  ],
+  "result": "result",
+  "analytic": {
+    "expect_error": "nurbs"
+  }
+}

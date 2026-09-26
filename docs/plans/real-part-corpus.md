@@ -115,7 +115,22 @@ closes on it.
   variants of steps built on the `step` operand. Once written, they are
   data: a later kernel change that would pick other operands does not
   silently change the fixture.
-- **`arris_debug::histogram`** (step 7):
+  - As built at step 6: the operands sit in the part's `battery`, by
+    solid and stage, in the hash `expected.py` checks, and each solid
+    records its classes beside its outcome. The box has a corner at the
+    centroid and reaches 1.5 times the farthest box corner past it; a
+    drill's radius is a tenth of the smallest radius of gyration; the
+    fillet takes at most four edges between two faces, at a tenth of the
+    shortest one's length. A result is held to the oracle's counts only
+    where healing changed none of the part's topology, and to both
+    shapes' own tolerances, as the differential holds a draw.
+  - A stage that meets a kernel bug records `{"waits-on":
+    "regression/<slug>"}` and is skipped while that fixture waits, as a
+    part's `waits_on` is.
+  - `ExpectError::Nurbs` (`"nurbs"`): an `OpError::Unsupported` with a
+    NURBS surface or curve in the pair, the refusal a regression fixture
+    can now desire.
+- **`arris_debug::histogram`** (step 8):
   - `enum Cycle { Healing, Nurbs, BlendNetwork, Sweep, Itself(&'static
     str) }`, with `fn blocks_refusal(&Refusal) -> Cycle` and `fn
     blocks_reason(Stage, &OpError) -> Option<Cycle>` (`None` for
@@ -128,13 +143,13 @@ closes on it.
     markdown. The test is that every `RefusalKind::ALL` entry and every
     `Reason` has a row, which the compiler holds.
 - **`tools/real-parts.sh`**, with its Rust side
-  `crates/arris/examples/real_parts.rs` (step 8). It fetches the pinned
+  `crates/arris/examples/real_parts.rs` (step 9). It fetches the pinned
   sample into `target/real-parts/`, checks each `sha256`, runs the reader,
   the oracle and the battery on every part, and writes the histogram and
   a failure list. A failure is a panic, a checker-rejected `Ok`, or an
   `Ok` outside the oracle's measures. The nightly job runs it
   (`nightly.yml`, one job, the fetch cached like the fuzz corpora).
-- **The reader's cost in a release build** (step 9): the corpus benchmark
+- **The reader's cost in a release build** (step 10): the corpus benchmark
   gains a read case per `real/` part, with and without the checker at
   `Fast`. This is the measurement ADR-0025 §Consequences promised.
 - **No public type or signature of a published crate changes.** Every
@@ -245,7 +260,7 @@ part to an oracle.
 
   The rest are the fetched tier's: the camera, the tessellated solid, the
   phantom placements, FTC-06 AP242's `Full` failure, and the 790 s and
-  900 s reads. Step 8 shrinks them the same way.
+  900 s reads. Step 9 shrinks them the same way.
 
   If a cause is a missing feature rather than a bug, the `Ok` becomes
   the refusal it should have been: named, counted, and never an
@@ -254,7 +269,7 @@ part to an oracle.
 
   Test: no exclusion left; step 4's test green with every part's outcome
   recorded.
-- [ ] Step 6 **[2]** — The battery.
+- [x] Step 6 **[2]** — The battery.
   - `arris_debug::battery` writes each `read` solid's battery into its
     fixture as variants of steps over the `step` operand:
     - `write_read`, the round trip held as step 13 of the reader's plan
@@ -273,7 +288,34 @@ part to an oracle.
   Test: every `real/` fixture's battery runs green to its recorded class.
   A battery regenerated from the same file writes byte-identical
   operands.
-- [ ] Step 7 **[1]** — `arris_debug::histogram`: ADR-0026's table as
+
+  Found: the nine parts that read run 54 stages. 29 agree, all nine
+  round trips among them; 3 fillets both kernels refuse; 5 fillets Arris
+  refuses (`Unsupported`: circle × plane in three, cylinder × cone,
+  cylinder × cylinder) and 1 as `TangentChain`. The other 16, every cut
+  and drill of four parts, are kernel faults, shrunk to three fixtures
+  that step 7 fixes. Two side findings: `canonical_json` wrote floats
+  between 1e-5 and 1e-4, and those of 1e16 and above, unlike serde_json,
+  so the two hashes parted on the first operand near 1e-5; and FTC-07's
+  round trip costs 39 s in the test profile, its read 26 s, the slowest
+  test of the hook.
+- [ ] Step 7 **[3]** — The battery's kernel faults fixed, one commit per
+  root cause, each moving its `regression/` fixture into its area and
+  recording the class its stages then have:
+  - [ ] `nurbs-box-cavity-cut` (FTC-07, FTC-10): a boolean classifies
+    pieces by a ray, which has no closed form against a NURBS face, and
+    returns `Internal(Classify)`. The fixture desires the typed
+    `Unsupported` naming the pair (`"nurbs"`), the NURBS cycle's count;
+    a classification that avoids or answers NURBS faces would instead
+    record the oracle's solid.
+  - [ ] `nist-ctc-04-face-arrangement-turn`: CTC-04's plane f393, bounded
+    by B-spline edges and four circles, fails to split (`Fault::Split`,
+    `Turn`) with no section on it.
+  - [ ] `nist-ftc-06-face-arrangement-turn`: FTC-06's plane f0, whose loop
+    runs two arcs of one circle end to end among small blends, the same.
+
+  Test: no battery stage waits; step 6's test green.
+- [ ] Step 8 **[1]** — `arris_debug::histogram`: ADR-0026's table as
   exhaustive matches.
   - `Histogram` over the committed tier: read refusals by kind, battery
     refusals by `Reason` and stage, each mapped to its cycle.
@@ -283,7 +325,7 @@ part to an oracle.
   Test: every `RefusalKind::ALL` entry maps (a loop over the array), the
   `Reason` match compiles without a wildcard (the kernel rule), and the
   printed histogram of the committed tier is byte-identical on two runs.
-- [ ] Step 8 **[2]** — The fetched tier, if ADR-0026 kept one.
+- [ ] Step 9 **[2]** — The fetched tier, if ADR-0026 kept one.
   - `tools/real-parts.sh` fetches the pinned sample into
     `target/real-parts/`, checks every hash, and runs
     `real_parts` over it with the oracle through the cache (ADR-0024).
@@ -299,13 +341,13 @@ part to an oracle.
   and its failure list is empty or every entry is excluded by a
   committed `regression/` fixture. If there is no fetched tier, this step
   becomes the committed tier's script only, and its box says so.
-- [ ] Step 9 **[1]** — The reader in the corpus benchmark: a read case per
+- [ ] Step 10 **[1]** — The reader in the corpus benchmark: a read case per
   `real/` part, timed with the checker at `Fast` and without it (a
   `bench`-only switch in `arris-debug`, not a public option). The
   release-build cost per solid goes in ARCHITECTURE §Formats and tools.
 
   Test: `tools/bench-compare.sh` runs with the new cases present.
-- [ ] Step 10 **[1]** — The histogram recorded.
+- [ ] Step 11 **[1]** — The histogram recorded.
   - The committed and fetched tiers' histograms are printed and written
     into `docs/ROADMAP.md` §C4's status line. This is the table
     `/close-cycle` reads to pick the next cycle beside the first
@@ -354,7 +396,7 @@ C4's accept line, second half:
 - `tools/oracle/README.md`: `expected.py` on a `part` fixture, the `step`
   operand, and the reader settings ADR-0026 fixed.
 - `docs/BACKLOG.md`: the refused-entity lines re-ranked or annotated with
-  their counts; a line for each named exclusion step 8 leaves open.
+  their counts; a line for each named exclusion step 9 leaves open.
 - `.agents/skills/inspect/SKILL.md`: a `real/` part inspected by its
   fixture name.
 - `AGENTS.md` current state: C4 done, the histogram's top line named.
@@ -376,5 +418,5 @@ C4's accept line, second half:
   `CONSTRUCTIVE_GEOMETRY_REPRESENTATION` ('supplemental geometry', two
   in CTC-04) is the exporter's construction geometry, not a body of the
   part, yet ADR-0026 §5 counts it against the healing cycle. **Agent**,
-  at step 7: whether the table counts it as itself, which would take the
+  at step 8: whether the table counts it as itself, which would take the
   reader telling it apart and so a new kind or field, a design delta.

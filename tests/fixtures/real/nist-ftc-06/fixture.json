@@ -9,7 +9,254 @@
     {
       "id": 101,
       "instance": 0,
-      "outcome": "read"
+      "outcome": "read",
+      "battery": {
+        "box_cut": {
+          "waits-on": "regression/nist-ftc-06-face-arrangement-turn"
+        },
+        "drill_x": {
+          "waits-on": "regression/nist-ftc-06-face-arrangement-turn"
+        },
+        "drill_y": {
+          "waits-on": "regression/nist-ftc-06-face-arrangement-turn"
+        },
+        "drill_z": {
+          "waits-on": "regression/nist-ftc-06-face-arrangement-turn"
+        },
+        "fillet": {
+          "arris-refuses": "Unsupported(circle curve × plane surface)"
+        },
+        "write_read": "agree"
+      }
     }
-  ]
+  ],
+  "battery": {
+    "#101[0]": {
+      "box_cut": {
+        "steps": [
+          {
+            "op": "step",
+            "name": "part",
+            "file": "nist_ftc_06_asme1_rd.stp",
+            "sha256": "5e30f0903f9470c14a98e70395ca005fe90bcd3fb704c381a80a69958838f169",
+            "id": 101
+          },
+          {
+            "op": "profile",
+            "name": "square",
+            "plane": {
+              "origin": [
+                0.00008448373742261513,
+                29.008838276769712,
+                -109.60007270395712
+              ],
+              "x": [
+                0.9999999999721632,
+                -2.8868949501398086e-7,
+                -7.455897903354854e-6
+              ],
+              "y": [
+                7.457591297389962e-6,
+                0.07094717645110267,
+                0.9974800740355672
+              ]
+            },
+            "outer": {
+              "start": [
+                0.0,
+                0.0
+              ],
+              "segments": [
+                {
+                  "line_to": [
+                    650.4842407513127,
+                    0.0
+                  ]
+                },
+                {
+                  "line_to": [
+                    650.4842407513127,
+                    650.4842407513127
+                  ]
+                },
+                {
+                  "line_to": [
+                    0.0,
+                    650.4842407513127
+                  ]
+                },
+                {
+                  "line_to": [
+                    0.0,
+                    0.0
+                  ]
+                }
+              ]
+            },
+            "holes": []
+          },
+          {
+            "op": "extrude",
+            "name": "box",
+            "profile": "square",
+            "direction": [
+              2.410128852908871e-7,
+              -0.9974800740634036,
+              0.07094717645128065
+            ],
+            "length": 650.4842407513127
+          },
+          {
+            "op": "cut",
+            "name": "result",
+            "target": "part",
+            "tool": "box"
+          }
+        ],
+        "result": "result"
+      },
+      "drill_x": {
+        "steps": [
+          {
+            "op": "step",
+            "name": "part",
+            "file": "nist_ftc_06_asme1_rd.stp",
+            "sha256": "5e30f0903f9470c14a98e70395ca005fe90bcd3fb704c381a80a69958838f169",
+            "id": 101
+          },
+          {
+            "op": "cylinder",
+            "name": "drill",
+            "base": [
+              -325.2420358828652,
+              29.0089321707532,
+              -109.59764773191374
+            ],
+            "axis": [
+              0.9999999999721632,
+              -2.8868949501398086e-7,
+              -7.455897903354854e-6
+            ],
+            "radius": 8.07422607033292,
+            "height": 650.4842407513127
+          },
+          {
+            "op": "cut",
+            "name": "result",
+            "target": "part",
+            "tool": "drill"
+          }
+        ],
+        "result": "result"
+      },
+      "drill_y": {
+        "steps": [
+          {
+            "op": "step",
+            "name": "part",
+            "file": "nist_ftc_06_asme1_rd.stp",
+            "sha256": "5e30f0903f9470c14a98e70395ca005fe90bcd3fb704c381a80a69958838f169",
+            "id": 101
+          },
+          {
+            "op": "cylinder",
+            "name": "drill",
+            "base": [
+              -0.002341039069035538,
+              5.933828173147248,
+              -434.02260701575165
+            ],
+            "axis": [
+              7.457591297389962e-6,
+              0.07094717645110267,
+              0.9974800740355672
+            ],
+            "radius": 8.07422607033292,
+            "height": 650.4842407513127
+          },
+          {
+            "op": "cut",
+            "name": "result",
+            "target": "part",
+            "tool": "drill"
+          }
+        ],
+        "result": "result"
+      },
+      "drill_z": {
+        "steps": [
+          {
+            "op": "step",
+            "name": "part",
+            "file": "nist_ftc_06_asme1_rd.stp",
+            "sha256": "5e30f0903f9470c14a98e70395ca005fe90bcd3fb704c381a80a69958838f169",
+            "id": 101
+          },
+          {
+            "op": "cylinder",
+            "name": "drill",
+            "base": [
+              6.096195572752184e-6,
+              353.43137259761784,
+              -132.67508280763747
+            ],
+            "axis": [
+              2.410128852908871e-7,
+              -0.9974800740634036,
+              0.07094717645128065
+            ],
+            "radius": 8.07422607033292,
+            "height": 650.4842407513127
+          },
+          {
+            "op": "cut",
+            "name": "result",
+            "target": "part",
+            "tool": "drill"
+          }
+        ],
+        "result": "result"
+      },
+      "fillet": {
+        "steps": [
+          {
+            "op": "step",
+            "name": "part",
+            "file": "nist_ftc_06_asme1_rd.stp",
+            "sha256": "5e30f0903f9470c14a98e70395ca005fe90bcd3fb704c381a80a69958838f169",
+            "id": 101
+          },
+          {
+            "op": "fillet",
+            "name": "result",
+            "of": "part",
+            "edges": [
+              [
+                -86.4036219134654,
+                52.19179423127194,
+                -234.95
+              ],
+              [
+                -152.39999999999998,
+                60.0075,
+                -31.749999999999996
+              ],
+              [
+                -152.39999999999998,
+                32.67993596973271,
+                -32.67993596973271
+              ],
+              [
+                8.170080419779834,
+                21.349999999999994,
+                -233.68
+              ]
+            ],
+            "radius": 0.2539999999999992
+          }
+        ],
+        "result": "result"
+      }
+    }
+  }
 }

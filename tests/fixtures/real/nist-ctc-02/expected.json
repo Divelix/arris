@@ -1,7 +1,7 @@
 {
   "kind": "part",
   "occt": "8.0.1.0.0",
-  "recipe_sha256": "8df30aa8e59d53fb4db76356928eb948656af70662806a598bb29a6522b6d824",
+  "recipe_sha256": "66aeda995106ed66050b4514382dda7ba7058017ca1a46db31f36acb1bdd1c06",
   "solids": [
     {
       "area": 2481842.353505858,

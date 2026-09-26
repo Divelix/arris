@@ -58,7 +58,10 @@ def compute_expected(fixture: dict, own: bool = False) -> dict:
     if fixture_kind(fixture) == "geometry":
         return {"occt": occt_version(), "recipe_sha256": recipe_hash(fixture), "kind": "geometry", **compute_geometry(fixture)}
     if fixture_kind(fixture) == "part":
-        return {"occt": occt_version(), "recipe_sha256": recipe_hash(fixture), "kind": "part", "solids": compute_part(fixture)}
+        expected = {"occt": occt_version(), "recipe_sha256": recipe_hash(fixture), "kind": "part", "solids": compute_part(fixture)}
+        if fixture.get("battery"):
+            expected["battery"] = compute_battery(fixture)
+        return expected
     tol = {**DEFAULT_TOLERANCES, **fixture.get("tolerances", {})}
     # A result Arris refuses as non-manifold is Open CASCADE's compound of
     # solids sharing an edge or a vertex, and one it refuses as a tangent
@@ -124,6 +127,31 @@ def compute_part(fixture: dict) -> list[dict]:
     ]
 
 
+def compute_battery(fixture: dict) -> dict:
+    """Open CASCADE's answer to each case of a part's battery
+    (`arris_debug::battery`), by solid and stage: what `measure` records of
+    the result with its `own_measures` — the differential's classes hold
+    the two kernels to both shapes' tolerances (ADR-0024 §2) — or
+    `{"refused": why}` where Open CASCADE raised or built nothing it can
+    measure."""
+    tol = {**DEFAULT_TOLERANCES, **fixture.get("tolerances", {})}
+    out: dict[str, dict] = {}
+    for key, cases in sorted(fixture["battery"].items()):
+        out[key] = {}
+        for stage, case in sorted(cases.items()):
+            recipe = {"steps": case["steps"], "result": case["result"], "tolerances": fixture.get("tolerances", {}), DIR_KEY: fixture[DIR_KEY]}
+            try:
+                shape, _ = build(recipe)
+                result = measure(shape, [], tol["probe"])
+            except Exception as e:  # OracleError, or Open CASCADE's own on a case it cannot build
+                out[key][stage] = {"refused": " ".join(str(e).split()) or type(e).__name__}
+                continue
+            if (own := own_measures(shape, result)) is not None:
+                result["own"] = own
+            out[key][stage] = result
+    return out
+
+
 def _counts_of(shape, tol: dict) -> dict | None:
     """The counts `measure` records of a shape, or `None` where it cannot
     measure it (an unhealed solid may not close)."""
@@ -142,7 +170,11 @@ def dump_expected(expected: dict, path: Path) -> None:
 def summary_lines(name: str, expected: dict) -> list[str]:
     """One line per result: per variant for a solid, one for a geometry."""
     if expected.get("kind") == "part":
-        return [summary_line(f"{name}[#{s['id']}{', healed' if s['occt_heals'] else ''}]", s) for s in expected["solids"]]
+        return [summary_line(f"{name}[#{s['id']}{', healed' if s['occt_heals'] else ''}]", s) for s in expected["solids"]] + [
+            f"{name}{key} {stage}: refused: {result['refused']}" if "refused" in result else summary_line(f"{name}{key} {stage}", result)
+            for key, cases in expected.get("battery", {}).items()
+            for stage, result in cases.items()
+        ]
     if expected.get("kind") == "geometry":
         evals = sum(len(s["evaluations"]) for s in expected["samples"])
         projs = sum(len(s["projections"]) for s in expected["samples"])

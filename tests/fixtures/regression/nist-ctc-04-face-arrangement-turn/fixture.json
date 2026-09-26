@@ -1,0 +1,33 @@
+{
+  "description": "NIST's CTC-04 (real/nist-ctc-04, its file read in place) cut by a box 0.02 across at the oracle's centroid: every face of both operands is split before any is classified, and the split of the part's f393, a plane bounded by B-spline edges and pierced by four circles, which no section crosses, fails with Fault::Split, a cycle of its arrangement that does not turn once. The part itself reads checker-green at Full. Shrunk from the battery of real/nist-ctc-04, whose every cut and drill meets it; the file is not shrunk further (ADR-0026 \u00a74)",
+  "steps": [
+    {
+      "op": "step",
+      "name": "part",
+      "file": "../../real/nist-ctc-04/nist_ctc_04_asme1_rd.stp",
+      "sha256": "cdb59a085a3364941b881f96b511265a7cb5f6e94180c4426bdc3025481f405a",
+      "id": 24
+    },
+    {
+      "name": "speck",
+      "op": "box",
+      "min": [
+        -0.025702557378127662,
+        360.9518808852045,
+        -7.888446010888178
+      ],
+      "max": [
+        -0.00570255737812766,
+        360.9718808852045,
+        -7.868446010888179
+      ]
+    },
+    {
+      "name": "result",
+      "op": "cut",
+      "target": "part",
+      "tool": "speck"
+    }
+  ],
+  "result": "result"
+}

@@ -510,8 +510,9 @@ and this is it: the parts under `real/nist-*` are NIST's.
   healed as Open CASCADE's reader heals by default. It holds one entry
   per solid, with the `#id` it came from, what a solid result records,
   `occt_heals` (the unhealed reading of that entity is not a valid solid,
-  has other counts, or is missing), and `unhealed_counts`. The hash
-  covers `kind`, `file` and `sha256`, so a changed file stales it.
+  has other counts, or is missing), and `unhealed_counts`, and its
+  answer to the battery (below). The hash covers `kind`, `file`,
+  `sha256` and `battery`, so a changed file or operand stales it.
 - **The runner** (`arris_debug::part::run`, `real_<slug>` in
   `crates/arris/tests/corpus.rs`) reads the file into a model of the
   fixture's `precision`, holds the list of instances and each refusal's
@@ -565,6 +566,56 @@ and this is it: the parts under `real/nist-*` are NIST's.
   torus is tangent to a plane on its seam.
 - `real/nist-ftc-09-offset` is `real/nist-ftc-09` with one plane wrapped
   in an `OFFSET_SURFACE` by hand: the refusal path under test.
+
+### The battery
+
+Every solid of the committed tier that reads goes through a fixed
+battery of operations (ADR-0025 §6, `arris_debug::battery`), and each is
+sorted into the differential's classes (ADR-0024 §2):
+
+| Stage | What |
+|---|---|
+| `write_read` | the body written to STEP and read back by Arris: every solid read, the checker green, the same counts, the mass properties within the body's own tolerance. Arris's alone |
+| `box_cut` | cut by a box with a corner at the oracle's centroid, its edges along the oracle's principal axes, reaching past the part |
+| `drill_x`, `drill_y`, `drill_z` | cut by a cylinder through the centroid along each principal axis, smallest moment first, of a tenth of the smallest radius of gyration |
+| `fillet` | at most four of the solid's edges between two faces, in id order at a fixed stride, each named by its curve's midpoint, blended at a tenth of the shortest one's length |
+
+```json
+"solids": [
+  {"id": 189, "instance": 0, "outcome": "read",
+   "battery": {"box_cut": "agree", "fillet": "oracle-refuses", "drill_x": {"arris-refuses": "Degenerate(TangentChain)"}, …}}
+],
+"battery": {
+  "#189[0]": {
+    "box_cut": {"steps": [{"op": "step", "name": "part", …}, …], "result": "result"},
+    …
+  }
+}
+```
+
+- **`battery`** holds the operand stages' recipes by solid
+  (`#<id>[<instance>]`) and stage, each over the `step` operand naming
+  the solid. `cargo run -p arris-debug --release --example battery --
+  --write <dir>` derives them from the file and `expected.json`'s oracle
+  reading, once; after that they are data, and a kernel change that would
+  derive others does not move the fixture. They are in the hash, and
+  `expected.py` builds each: `expected.json`'s `battery` holds what
+  `measure` records of the result with its `own` tolerance and sizes, or
+  `{"refused": why}`.
+- **A solid's `battery`** records each stage's class: `agree`,
+  `both-refuse`, `oracle-refuses`, or `{"arris-refuses": name}` with
+  the differential's name of the `OpError` (the reader's refusal kind for
+  `write_read`). `--record <dir>` runs the battery and writes them. The
+  runner holds every stage to its class. A result is held as the
+  differential holds one: the checker at `Full`, NURBS pairs left
+  unchecked; counts net of removable vertices, only where healing changed
+  none of the part's topology; the mass properties within both shapes'
+  own tolerances; a closed mesh; the provenance audit.
+- **A disagreement, a checker violation, a panic or an internal fault is
+  never recorded.** It is a kernel bug, shrunk to `regression/` as a
+  reader bug is.
+- A part shrunk from another carries no battery: its battery is its
+  source's.
 
 ## `expected.json`
 
