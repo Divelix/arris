@@ -23,6 +23,11 @@
 //!   file's, not the traversal's. A solid no representation lists is
 //!   instance 0 with no context, which the reader refuses.
 //!
+//! A presentation — a `DRAUGHTING_MODEL`, a saved view of AP242's PMI
+//! that maps the part's shape into itself to annotate it, or a
+//! `…_PRESENTATION_REPRESENTATION` — is no representation here: what it
+//! maps is shown, not placed.
+//!
 //! A placement given by a `CARTESIAN_TRANSFORMATION_OPERATOR_3D`, or one
 //! whose axes do not read, is a refusal of every solid below it; a cycle
 //! of placements is not followed round.
@@ -87,6 +92,9 @@ pub(crate) fn placements(
 ) -> Vec<Placed> {
     let mut reps: BTreeMap<u64, Representation> = BTreeMap::new();
     for (&id, instance) in instances {
+        if is_presentation(instance) {
+            continue;
+        }
         for record in instance.records() {
             if !record.name.ends_with("REPRESENTATION") {
                 continue;
@@ -308,6 +316,18 @@ pub(crate) fn placements(
         }
     }
     out
+}
+
+/// Whether `instance` is a presentation of the product rather than a
+/// part of its structure: a `DRAUGHTING_MODEL` — an AP242 saved view,
+/// which maps the part's shape into itself, from a camera's placement,
+/// to annotate it — or a `…_PRESENTATION_REPRESENTATION`. Its mapped
+/// items place nothing, and it is no node of the flattening.
+fn is_presentation(instance: &Instance) -> bool {
+    instance
+        .records()
+        .iter()
+        .any(|r| r.name == "DRAUGHTING_MODEL" || r.name.ends_with("PRESENTATION_REPRESENTATION"))
 }
 
 /// The motion of the relationship `relationship`'s transformation `id`:

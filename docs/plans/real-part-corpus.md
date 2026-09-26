@@ -348,7 +348,7 @@ part to an oracle.
   The committed tier: 11 parts, 16 solids (9 read, 7 refused), 54 stages.
   Blend network blocks 6 parts (all at the fillet), healing 3 (at the
   read), NURBS 2 (at the box cut), and supplemental geometry 1.
-- [ ] Step 9 **[2]** — The fetched tier, if ADR-0026 kept one.
+- [x] Step 9 **[2]** — The fetched tier, if ADR-0026 kept one.
   - `tools/real-parts.sh` fetches the pinned sample into
     `target/real-parts/`, checks every hash, and runs
     `real_parts` over it with the oracle through the cache (ADR-0024).
@@ -364,6 +364,20 @@ part to an oracle.
   and its failure list is empty or every entry is excluded by a
   committed `regression/` fixture. If there is no fetched tier, this step
   becomes the committed tier's script only, and its box says so.
+
+  Found (ADR-0026, amendment of step 9): the phantom placements and the
+  followed camera were one cause. AP242's saved views are draughting
+  models that map the part's shape into themselves, and the flattening
+  now ignores them (`real/saved-view-draughting-model`). A tessellated
+  solid is now refused, not read as nothing. The slow reads were gone
+  after step 5. Six kernel bugs remain, each an excerpt under
+  `regression/`, excluded in `tools/real-parts.waits` and a backlog
+  line: S5 on four reads Open CASCADE holds valid, a mesh point off its
+  face, and a drill's `Internal(Geometry)`. The script runs green: 27
+  parts, 54 solids, 20 read and 34 refused, 89 battery stages. It takes
+  94 s. A file whose every solid Arris refuses is not read by the
+  oracle, since Open CASCADE's measure of CTC-02 AP203 ran past 20
+  minutes.
 - [ ] Step 10 **[1]** — The reader in the corpus benchmark: a read case per
   `real/` part, timed with the checker at `Fast` and without it (a
   `bench`-only switch in `arris-debug`, not a public option). The

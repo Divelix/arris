@@ -1,0 +1,257 @@
+{
+  "kind": "part",
+  "description": "NIST's CTC-04, its AP203-with-PMI edition's solid alone: it reads checker-green and within Open CASCADE's measures, but its battery's drill along the second principal axis returns a kernel fault, OpError::Internal(Fault::Geometry), where Open CASCADE builds the drilled part. The desired class is agree. Shrunk from the fetched tier (plan real-part-corpus step 9)",
+  "file": "nist_ctc_04_asme1_ap203-649.stp",
+  "source": "https://www.nist.gov/document/nist-pmi-step-files — NIST-PMI-STEP-Files.zip (sha256 8fa78429e6d8d9b0d7681d223b6aa9ec98c3772185c55b1a0e3679b21c181911), AP203 with PMI/nist_ctc_04_asme1_ap203.stp: the solid #649 alone, excerpted by tools/oracle/excerpt.py",
+  "licence": "NIST: \"The test cases, CAD models, and STEP files can be used without any restrictions.\"",
+  "sha256": "345d162dffb6dcbbcad60c017f97f59b906ca1f215796e98bc948612fc2e5cad",
+  "solids": [
+    {
+      "id": 649,
+      "instance": 0,
+      "outcome": "read",
+      "battery": {
+        "box_cut": "agree",
+        "drill_x": "agree",
+        "drill_y": "agree",
+        "drill_z": "agree",
+        "fillet": {
+          "arris-refuses": "Unsupported(plane surface × cone surface)"
+        },
+        "write_read": "agree"
+      },
+      "blocks": {
+        "fillet": "blend network"
+      }
+    }
+  ],
+  "battery": {
+    "#649[0]": {
+      "box_cut": {
+        "steps": [
+          {
+            "op": "step",
+            "name": "part",
+            "file": "nist_ctc_04_asme1_ap203-649.stp",
+            "sha256": "345d162dffb6dcbbcad60c017f97f59b906ca1f215796e98bc948612fc2e5cad",
+            "id": 649
+          },
+          {
+            "op": "profile",
+            "name": "square",
+            "plane": {
+              "origin": [
+                -0.015702729218921768,
+                360.9641656864213,
+                -7.8778872902661226
+              ],
+              "x": [
+                0.0005594705008500076,
+                0.9999997059712534,
+                -0.0005244522527649029
+              ],
+              "y": [
+                0.9999998432364302,
+                -0.0005594823816668029,
+                -2.2507325352382683e-05
+              ]
+            },
+            "outer": {
+              "start": [
+                0.0,
+                0.0
+              ],
+              "segments": [
+                {
+                  "line_to": [
+                    1490.0580578917468,
+                    0.0
+                  ]
+                },
+                {
+                  "line_to": [
+                    1490.0580578917468,
+                    1490.0580578917468
+                  ]
+                },
+                {
+                  "line_to": [
+                    0.0,
+                    1490.0580578917468
+                  ]
+                },
+                {
+                  "line_to": [
+                    0.0,
+                    0.0
+                  ]
+                }
+              ]
+            },
+            "holes": []
+          },
+          {
+            "op": "extrude",
+            "name": "box",
+            "profile": "square",
+            "direction": [
+              -2.280074053002945e-05,
+              -0.0005244395783653078,
+              -0.999999862221618
+            ],
+            "length": 1490.0580578917468
+          },
+          {
+            "op": "cut",
+            "name": "result",
+            "target": "part",
+            "tool": "box"
+          }
+        ],
+        "result": "result"
+      },
+      "drill_x": {
+        "steps": [
+          {
+            "op": "step",
+            "name": "part",
+            "file": "nist_ctc_04_asme1_ap203-649.stp",
+            "sha256": "345d162dffb6dcbbcad60c017f97f59b906ca1f215796e98bc948612fc2e5cad",
+            "id": 649
+          },
+          {
+            "op": "cylinder",
+            "name": "drill",
+            "base": [
+              -0.43252449319106434,
+              -384.06464419950055,
+              -7.487155137660212
+            ],
+            "axis": [
+              0.0005594705008500076,
+              0.9999997059712534,
+              -0.0005244522527649029
+            ],
+            "radius": 11.850209574711169,
+            "height": 1490.0580578917468
+          },
+          {
+            "op": "cut",
+            "name": "result",
+            "target": "part",
+            "tool": "drill"
+          }
+        ],
+        "result": "result"
+      },
+      "drill_y": {
+        "steps": [
+          {
+            "op": "step",
+            "name": "part",
+            "file": "nist_ctc_04_asme1_ap203-649.stp",
+            "sha256": "345d162dffb6dcbbcad60c017f97f59b906ca1f215796e98bc948612fc2e5cad",
+            "id": 649
+          },
+          {
+            "op": "cylinder",
+            "name": "drill",
+            "base": [
+              -745.0446148816822,
+              361.3809963019469,
+              -7.861118679514668
+            ],
+            "axis": [
+              0.9999998432364302,
+              -0.0005594823816668029,
+              -2.2507325352382683e-05
+            ],
+            "radius": 11.850209574711169,
+            "height": 1490.0580578917468
+          },
+          {
+            "op": "cut",
+            "name": "result",
+            "target": "part",
+            "tool": "drill"
+          }
+        ],
+        "result": "result"
+      },
+      "drill_z": {
+        "steps": [
+          {
+            "op": "step",
+            "name": "part",
+            "file": "nist_ctc_04_asme1_ap203-649.stp",
+            "sha256": "345d162dffb6dcbbcad60c017f97f59b906ca1f215796e98bc948612fc2e5cad",
+            "id": 649
+          },
+          {
+            "op": "cylinder",
+            "name": "drill",
+            "base": [
+              0.0012844843574128899,
+              361.3548883962316,
+              737.1510390067131
+            ],
+            "axis": [
+              -2.280074053002945e-05,
+              -0.0005244395783653078,
+              -0.999999862221618
+            ],
+            "radius": 11.850209574711169,
+            "height": 1490.0580578917468
+          },
+          {
+            "op": "cut",
+            "name": "result",
+            "target": "part",
+            "tool": "drill"
+          }
+        ],
+        "result": "result"
+      },
+      "fillet": {
+        "steps": [
+          {
+            "op": "step",
+            "name": "part",
+            "file": "nist_ctc_04_asme1_ap203-649.stp",
+            "sha256": "345d162dffb6dcbbcad60c017f97f59b906ca1f215796e98bc948612fc2e5cad",
+            "id": 649
+          },
+          {
+            "op": "fillet",
+            "name": "result",
+            "of": "part",
+            "edges": [
+              [
+                123.132607083785,
+                0.0,
+                9.080505332801
+              ],
+              [
+                240.0,
+                360.0,
+                30.0
+              ],
+              [
+                35.9999999999999,
+                455.0,
+                -67.0
+              ],
+              [
+                -149.0,
+                270.5,
+                -37.5
+              ]
+            ],
+            "radius": 0.3161010665602
+          }
+        ],
+        "result": "result"
+      }
+    }
+  }
+}

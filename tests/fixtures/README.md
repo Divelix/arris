@@ -557,7 +557,13 @@ and this is it: the parts under `real/nist-*` are NIST's.
   so it needs no dump yet. The lint fails once a named fixture has left
   `regression/`, so the fix that moves it lifts the exclusion. The part
   exclusions and the part fixtures open under `regression/` are the same
-  set, by test (`corpus_lint.rs`).
+  set, by test (`corpus_lint.rs`), counting the fetched tier's waits in
+  `tools/real-parts.waits`. A part under `regression/` commits no dump,
+  and its runner holds none.
+- **A fetched part's failure** is committed as an excerpt, the failing
+  solid alone (`tools/oracle/excerpt.py`), where its licence allows
+  (ADR-0026 §2): a `regression/` part named by the fetched part's line in
+  `tools/real-parts.waits`.
 - **`read_seconds`** caps the read in the test profile's optimised build.
   It is set only on the fixture a slow read is shrunk to
   (`real/slow-gap-refusal`, once it passed), since timing on a shared machine is no

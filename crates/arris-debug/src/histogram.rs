@@ -269,7 +269,7 @@ pub struct Histogram {
     read: usize,
     refused: usize,
     /// Battery stages by class: `agree`, `both-refuse`, …
-    classes: BTreeMap<&'static str, usize>,
+    classes: BTreeMap<String, usize>,
     /// Per cycle, each part it blocks and the first stage it does.
     blocked: BTreeMap<String, BTreeMap<String, Stage>>,
     /// Each refusal, by cycle, stage and its name: how many times.
@@ -306,9 +306,9 @@ impl Histogram {
 
     /// Counts a battery stage of `part` at `class`: `agree`,
     /// `both-refuse`, `oracle-refuses` or `arris-refuses`.
-    pub fn add_class(&mut self, part: &str, class: &'static str) {
+    pub fn add_class(&mut self, part: &str, class: &str) {
         self.add(part);
-        *self.classes.entry(class).or_default() += 1;
+        *self.classes.entry(class.to_string()).or_default() += 1;
     }
 
     /// Counts one refusal of `part` at `stage`, named `name` — the
@@ -376,6 +376,22 @@ impl Histogram {
             }
         }
         Ok(())
+    }
+
+    /// Counts a part surveyed live (`crate::survey`): its solids read and
+    /// refused, its battery's classes, and each refusal under the cycle
+    /// the table gave it.
+    pub fn add_report(&mut self, report: &crate::survey::Report) {
+        let part = report.part.as_str();
+        self.add(part);
+        self.read += report.read;
+        for (_, _, class) in &report.classes {
+            *self.classes.entry(class.clone()).or_default() += 1;
+        }
+        for r in &report.refusals {
+            let stage = Stage::of_name(&r.stage).unwrap_or(Stage::Read);
+            self.add_refusal(part, stage, &r.name, &r.cycle);
+        }
     }
 
     /// How many parts `cycle` blocks.

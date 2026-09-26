@@ -232,7 +232,7 @@ pub fn dump_path(dir: &Path, id: u64, instance: u32) -> PathBuf {
     dir.join(format!("dump.{id}.{instance}.txt"))
 }
 
-fn sha256_hex(bytes: &[u8]) -> String {
+pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
     Sha256::digest(bytes)
         .iter()
         .map(|b| format!("{b:02x}"))
@@ -350,7 +350,9 @@ pub fn run(dir: &Path) -> Result<(), CorpusError> {
                         "{at} reads, but records the cycle its read refusal blocks"
                     )));
                 }
-                read_stages(&fixture, &model, back.body, spec, &mut taken)?;
+                // A part waiting under `regression/` commits no dump.
+                let dump = !name.starts_with(&format!("{REGRESSION_AREA}/"));
+                read_stages(&fixture, &model, back.body, spec, &mut taken, dump)?;
                 #[cfg(not(target_arch = "wasm32"))]
                 battery_stages(&fixture, &model, back, spec)?;
             }
@@ -374,13 +376,16 @@ pub fn run(dir: &Path) -> Result<(), CorpusError> {
 }
 
 /// The stages of one solid read (module docs), matching it to the
-/// oracle's solid of its entity nearest by centroid, which `taken` marks.
-fn read_stages(
+/// oracle's solid of its entity nearest by centroid, which `taken` marks;
+/// the dump held to the committed one where `dump`, which a part the
+/// corpus does not hold (the fetched tier) has none of.
+pub(crate) fn read_stages(
     fixture: &PartFixture,
     m: &Model,
     body: Body,
     spec: &PartSolid,
     taken: &mut [bool],
+    dump: bool,
 ) -> Result<(), CorpusError> {
     let name = format!("{} #{}[{}]", fixture.name, spec.id, spec.instance);
     let fail = |what: String| CorpusError::Part {
@@ -456,6 +461,9 @@ fn read_stages(
         by: "the oracle's",
     };
     mesh_check(&name, m, body, &tolerances, &target)?;
+    if !dump {
+        return Ok(());
+    }
 
     // The dump.
     let path = dump_path(&fixture.dir, spec.id, spec.instance);

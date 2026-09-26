@@ -1,0 +1,15 @@
+{
+  "kind": "part",
+  "description": "a half ball r 5, as tests/fixtures/real/edge-through-sphere-pole writes it, shown in two AP242 saved views: a DRAUGHTING_MODEL whose MAPPED_ITEM maps the part's shape from a CAMERA_MODEL_D3, as NIST's CTC-01 AP242 edition writes #34, and a complex DRAUGHTING_MODEL SHAPE_REPRESENTATION whose MAPPED_ITEM maps it 20 mm along x, as its other editions write #31. A presentation places nothing: the reader flattens the product structure without them and reads one solid, where it once refused the camera as a placement and read the displaced view as a second body (ADR-0026, amendment of step 9)",
+  "file": "saved-views.stp",
+  "source": "written by hand for this fixture, shrunk from NIST parts (ADR-0026 §4)",
+  "licence": "the project's own",
+  "sha256": "189a0ca8323b386813e4bafeaaddb84d3fea5d3936339a25af03ae1e651f15d7",
+  "solids": [
+    {
+      "id": 22,
+      "instance": 0,
+      "outcome": "read"
+    }
+  ]
+}

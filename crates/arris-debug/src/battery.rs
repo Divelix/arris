@@ -746,6 +746,16 @@ fn read_file(fixture: &PartFixture, m: &mut Model) -> Result<step::Read, String>
 pub fn derive(fixture: &PartFixture) -> Result<BTreeMap<String, BTreeMap<String, Case>>, String> {
     let mut m = Model::new(fixture.part.precision.precision()).map_err(|e| e.to_string())?;
     let read = read_file(fixture, &mut m)?;
+    derive_from(fixture, &m, &read)
+}
+
+/// [`derive()`] over the file already read, `read` into `m`: what a caller
+/// that holds the reading passes, so a large file is read once.
+pub fn derive_from(
+    fixture: &PartFixture,
+    m: &Model,
+    read: &step::Read,
+) -> Result<BTreeMap<String, BTreeMap<String, Case>>, String> {
     let oracle = &fixture.expected.solids;
     let mut taken = vec![false; oracle.len()];
     let mut out = BTreeMap::new();
@@ -758,7 +768,7 @@ pub fn derive(fixture: &PartFixture) -> Result<BTreeMap<String, BTreeMap<String,
             .result
             .as_ref()
             .map_err(|r| format!("{key} is refused: {r}"))?;
-        let mass = mass_properties(&m, back.body).map_err(|e| format!("{key}: {e}"))?;
+        let mass = mass_properties(m, back.body).map_err(|e| format!("{key}: {e}"))?;
         let nearest = (oracle.iter().enumerate())
             .filter(|(k, s)| s.id == spec.id && !taken[*k])
             .filter_map(|(k, s)| {
@@ -777,7 +787,7 @@ pub fn derive(fixture: &PartFixture) -> Result<BTreeMap<String, BTreeMap<String,
             fixture,
             spec,
             placements > 1,
-            &m,
+            m,
             back.body,
             &oracle[k].measured,
         )

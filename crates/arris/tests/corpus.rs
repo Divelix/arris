@@ -1542,6 +1542,58 @@ fn tempdir(tag: &str) -> std::path::PathBuf {
     dir
 }
 
+/// NIST's CTC-02 AP242 solid alone, from the fetched tier: mitred
+/// cylinders of radius 10 that the checker at `Full` finds meeting away
+/// from their shared edges.
+#[test]
+#[ignore = "S5: f366–f368, mitred cylinders of one radius, meet away from their shared edges on a read Open CASCADE holds valid (docs/BACKLOG.md, S5 on the fetched tier's reads)"]
+fn regression_nist_ctc_02_ap242_mitred_pipes_s5() {
+    run_part("regression/nist-ctc-02-ap242-mitred-pipes-s5");
+}
+
+/// NIST's FTC-06 AP242 solid alone, from the fetched tier: cylinders at
+/// 45° that the checker at `Full` finds meeting away from their shared
+/// edges.
+#[test]
+#[ignore = "S5: f110, f113 and f114, cylinders mitred at 45°, meet away from their shared edges on a read Open CASCADE holds valid (docs/BACKLOG.md, S5 on the fetched tier's reads)"]
+fn regression_nist_ftc_06_ap242_mitred_pipes_s5() {
+    run_part("regression/nist-ftc-06-ap242-mitred-pipes-s5");
+}
+
+/// NIST's CTC-05 AP203-with-PMI solid alone, from the fetched tier: a
+/// torus elbow and the cylinders of its minor radius it joins, which the
+/// checker at `Full` finds meeting away from their shared edges.
+#[test]
+#[ignore = "S5: the torus f116 and the cylinders f114 and f118 of its minor radius meet away from their shared edges on a read Open CASCADE holds valid (docs/BACKLOG.md, S5 on the fetched tier's reads)"]
+fn regression_nist_ctc_05_ap203_torus_elbow_s5() {
+    run_part("regression/nist-ctc-05-ap203-torus-elbow-s5");
+}
+
+/// NIST's STC-10 AP242 solid alone, from the fetched tier: three holes
+/// into a bore, their axes crossing, which the checker at `Full` finds
+/// meeting the bore away from their shared edges.
+#[test]
+#[ignore = "S5: the holes f64, f86 and f87 meet the bore f58 away from their shared edges, as f61–f63 meet f60, on a read Open CASCADE holds valid (docs/BACKLOG.md, S5 on the fetched tier's reads)"]
+fn regression_nist_stc_10_ap242_holes_into_bore_s5() {
+    run_part("regression/nist-stc-10-ap242-holes-into-bore-s5");
+}
+
+/// NIST's FTC-10 AP242 solid alone, from the fetched tier: a mesh point of
+/// face f95 1.4e-4 from where its (u, v) evaluates.
+#[test]
+#[ignore = "mesh: a point of f95 stands 1.4e-4 from where its (u, v) evaluates, past the face's and its boundary's 4.6e-6 (docs/BACKLOG.md, a mesh point off its face on the fetched tier)"]
+fn regression_nist_ftc_10_ap242_mesh_off_face() {
+    run_part("regression/nist-ftc-10-ap242-mesh-off-face");
+}
+
+/// NIST's CTC-04 AP203-with-PMI solid alone, from the fetched tier: its
+/// battery's drill along the second principal axis is a kernel fault.
+#[test]
+#[ignore = "drill_y: OpError::Internal(Fault::Geometry) where Open CASCADE builds the drilled part (docs/BACKLOG.md, a drill's geometry fault on the fetched tier)"]
+fn regression_nist_ctc_04_ap203_drill_geometry_fault() {
+    run_part("regression/nist-ctc-04-ap203-drill-geometry-fault");
+}
+
 /// A cylinder whose circles are placed on the axis `(-1, -6.1e-17, 0)`
 /// with no reference direction, as NIST's CTC-04 and FTC-08 write them:
 /// ISO 10303-42's reference direction is world `Y` for an axis along `X`
@@ -1574,6 +1626,15 @@ fn real_cone_face_without_its_apex() {
 #[test]
 fn real_edge_through_sphere_pole() {
     run_part("real/edge-through-sphere-pole");
+}
+
+/// A half ball shown in two AP242 saved views, draughting models that map
+/// its shape — one from a camera, as NIST's CTC-01 AP242 edition writes
+/// it, one displaced: a presentation places nothing, and the reader reads
+/// one solid (ADR-0026's amendment of step 9).
+#[test]
+fn real_saved_view_draughting_model() {
+    run_part("real/saved-view-draughting-model");
 }
 
 /// NIST's CTC-01 whole, whose edge #1864 lies 0.0065 off its cylinders:

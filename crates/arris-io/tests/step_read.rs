@@ -321,6 +321,27 @@ fn a_faceted_brep_is_refused_beside_the_solid() {
     );
 }
 
+/// An AP242 `TESSELLATED_SOLID`, as NIST's FTC-08 `-tg` edition writes
+/// its part, is a faceted relative refused where it stands (ADR-0025 §2),
+/// never a file of no solid.
+#[test]
+fn a_tessellated_solid_is_refused_beside_the_solid() {
+    let text = cylinder_step().replace(
+        "ENDSEC;\nEND-ISO-10303-21;",
+        "#90000 = TESSELLATED_SOLID('',(#90001),$);\n#90001 = COMPLEX_TRIANGULATED_FACE('',#90002,3,(),$,(1,2,3),(),((1,2,3)));\n#90002 = COORDINATES_LIST('',3,((0.,0.,0.),(1.,0.,0.),(0.,1.,0.)));\nENDSEC;\nEND-ISO-10303-21;",
+    );
+    let mut m = Model::default();
+    let read = step::read(&mut m, &text, &ReadOptions::default()).unwrap();
+    assert_eq!(read.solids.len(), 2);
+    let refusal = read.solids[1].result.as_ref().unwrap_err();
+    assert_eq!(refusal.kind(), step::RefusalKind::Unsupported);
+    assert_eq!(refusal.entity(), 90000);
+    assert!(
+        refusal.to_string().contains("TESSELLATED_SOLID"),
+        "{refusal}"
+    );
+}
+
 /// A file that does not parse fails whole.
 #[test]
 fn a_parse_error_fails_the_file() {

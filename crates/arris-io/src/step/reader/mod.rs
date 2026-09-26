@@ -453,9 +453,12 @@ pub struct ReadBody {
 const SOLIDS: [&str; 2] = ["MANIFOLD_SOLID_BREP", "BREP_WITH_VOIDS"];
 
 /// The entity names that stand where a solid would, which the reader
-/// counts and refuses (ADR-0025 §2).
-const REFUSED_SOLIDS: [&str; 3] = [
+/// counts and refuses (ADR-0025 §2): a faceted B-rep and its tessellated
+/// relatives of AP242, and the surface models.
+const REFUSED_SOLIDS: [&str; 5] = [
     "FACETED_BREP",
+    "TESSELLATED_SOLID",
+    "TESSELLATED_SHELL",
     "SHELL_BASED_SURFACE_MODEL",
     "FACE_BASED_SURFACE_MODEL",
 ];

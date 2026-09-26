@@ -125,6 +125,36 @@ jobs:
   # nothing about the timings, and skipping its report would compare
   # against an older night than the last one measured. The first night,
   # or one after the artifacts expired, has no baseline and says so.
+  # The fetched tier of the real-part corpus (ADR-0026 §2): NIST's other
+  # STEP editions and D2MI models, read, held to Open CASCADE and put
+  # through the battery. The archives are cached by the manifest's hash;
+  # the oracle's answers are not (ARRIS_ORACLE_CACHE above).
+  real-parts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: astral-sh/setup-uv@v10.1.0
+        with:
+          enable-cache: true
+      - run: uv sync --project tools/oracle
+      - uses: actions/cache@v6
+        with:
+          path: target/real-parts/archives
+          key: real-parts-${{ hashFiles('tools/real-parts.sha256') }}
+      - run: tools/real-parts.sh --jobs 4
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: real-parts
+          path: |
+            target/real-parts/histogram.md
+            target/real-parts/failures.md
+          if-no-files-found: ignore
+          retention-days: 90
+
   bench:
     runs-on: ubuntu-latest
     timeout-minutes: 60

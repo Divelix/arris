@@ -564,3 +564,64 @@ is a reader bug under §4, not a timing to accommodate.
   stage both kernels refuse is counted as a class, never under a cycle:
   the fillet whose radius neither can fit says nothing about which cycle
   Arris lacks.
+
+## Amendment (2026-09-26, plan `real-part-corpus` step 9)
+
+- **The fetched tier runs by script.** `tools/real-parts.sh` fetches both
+  archives, checks their hashes and each file's against
+  `tools/real-parts.sha256` (27 files), and surveys each file in its own
+  process of the `real_parts` example, under a timeout
+  (`arris_debug::survey`). A survey holds the file as the part runner
+  holds a committed part, but counts instead of stopping. It writes a
+  scratch part fixture, has Open CASCADE read it through the oracle's
+  cache, holds every solid Arris reads to it, and runs the battery. The
+  histogram and the failure list go to `target/real-parts/`. A failure
+  is excluded only by a line of `tools/real-parts.waits` naming a
+  fixture still under `regression/`, and the corpus lint counts those
+  lines among the part exclusions. The nightly runs it as one job,
+  with the archives cached.
+- **The battery runs on the first placement of each solid.** Another
+  placement is the same solid moved, and FTC-10 AP242 would otherwise run
+  it nineteen times.
+- **A file whose every solid Arris refuses is not read by the oracle.**
+  Nothing in it is held to the oracle's reading. Open CASCADE's
+  Gauss–Kronrod measure of CTC-02 AP203's healed solid ran past twenty
+  minutes, where its read takes 0.6 s. A file the reader returns neither
+  a solid nor a refusal of is a failure, since that is a solid it does
+  not see.
+- **A presentation places nothing.** The phantom placements and the
+  followed camera were one cause. AP242's saved views are
+  `DRAUGHTING_MODEL`s, some of them complex instances that are also a
+  `REPRESENTATION`, and each maps the part's shape into itself by a
+  `MAPPED_ITEM`, from the origin or from a `CAMERA_MODEL_D3`. The
+  flattening took each map for a placement. A `DRAUGHTING_MODEL` or a
+  `…_PRESENTATION_REPRESENTATION` is now no node of it. Every AP242
+  edition reads one instance per solid, as Open CASCADE does, and CTC-01
+  AP242 reads (`real/saved-view-draughting-model`).
+- **A `TESSELLATED_SOLID` or `TESSELLATED_SHELL` is refused where it
+  stands**, as a faceted relative (ADR-0025 §2). FTC-08's `-tg` edition
+  read to nothing before.
+- **The slow reads are gone.** Step 5's fit fixes, and one instance read
+  where there were nineteen, bring FTC-10 AP242 from 790 s to 0.5 s in a
+  release build, and CTC-02 AP242 from past 900 s to 8 s. Every read of
+  the tier is under §6's 60 s. The whole script takes 94 s on six jobs
+  with the oracle's cache warm.
+- **Six failures are excluded, each committed as an excerpt.** The first
+  full run met them after the two fixes above.
+  `tools/oracle/excerpt.py` cuts the failing solid out of its file, with
+  a product for Open CASCADE to transfer from, as a `regression/` part.
+  Such a part commits no dump, and its runner holds none.
+  - The checker at `Full` finds faces meeting away from their shared
+    edges (S5) on four reads that Open CASCADE holds valid: mitred cylinders
+    of one radius (CTC-02 AP242, FTC-06 AP242), a torus elbow on
+    cylinders of its minor radius (CTC-05 AP203), and holes into a bore
+    with crossing axes (STC-10 AP242). Each is a wrong solid until shown
+    otherwise. Which side is wrong, the reader's body or the checker's
+    section, is the first thing their fix has to find.
+  - FTC-10 AP242's mesh puts a point of one face 1.4e-4 from where its
+    (u, v) evaluates.
+  - CTC-04 AP203's drill along its second axis is
+    `Internal(Fault::Geometry)`.
+  Each is a backlog line. Open CASCADE's `STEPControl_Reader` holds all
+  of them, so none is a refusal to count, and the histogram counts their
+  other stages as they are.

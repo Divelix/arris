@@ -9,6 +9,7 @@ use std::path::Path;
 
 use arris_debug::differential;
 use arris_debug::fixtures::{Kind, corpus, corpus_root, kind_of, lint, load};
+use arris_debug::oracle::workspace_root;
 
 #[test]
 fn every_fixture_directory_is_clean() {
@@ -329,9 +330,10 @@ fn a_geometry_fixture_is_linted_for_presence_hash_and_shape() {
     );
 }
 
-/// The parts of the real-part corpus wait on exactly the part fixtures
-/// open under `regression/`: every exclusion names one, and every one is
-/// named (ADR-0026 §4). A fix moves its fixture out of `regression/`, and
+/// The parts of the real-part corpus — the committed tier's fixtures and
+/// the fetched tier's `tools/real-parts.waits` — wait on exactly the part
+/// fixtures open under `regression/`: every exclusion names one, and
+/// every one is named (ADR-0026 §4). A fix moves its fixture out of `regression/`, and
 /// the part's lint then fails until the exclusion is lifted.
 #[test]
 fn every_part_exclusion_is_an_open_regression_part() {
@@ -346,6 +348,14 @@ fn every_part_exclusion_is_an_open_regression_part() {
             open.insert(part.name.clone());
         } else {
             waited.extend(part.part.waits_on.iter().cloned());
+        }
+    }
+    // The fetched tier's parts are not in the corpus: they wait by line.
+    let waits = std::fs::read_to_string(workspace_root().join("tools/real-parts.waits")).unwrap();
+    for line in waits.lines() {
+        let line = line.split('#').next().unwrap_or("").trim();
+        if let Some((_, slug)) = line.split_once(char::is_whitespace) {
+            waited.insert(slug.trim().to_string());
         }
     }
     assert_eq!(

@@ -34,6 +34,8 @@ pub mod rerun;
 pub mod sample;
 pub mod step_file;
 #[cfg(not(target_arch = "wasm32"))]
+pub mod survey;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod testing;
 
 pub use body::{
