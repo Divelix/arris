@@ -24,7 +24,7 @@ re-exports the public API. Lower crates never name types from upper ones.
 | `arris-ops` | Primitives, extrude and revolve of a `Profile`, transform, booleans, the blends, each returning `Provenance`; the queries `measure` (mass properties) and `query` (projection onto a plane, a face's outward frame) | `arris-check`, `thiserror`, `rayon` (feature) | 2 — algorithms |
 | `arris-mesh` | `TriMesh`, `Polyline`, the constrained Delaunay triangulation in (u, v) (`cdt`, ADR-0003), tessellation of faces and edges with shared edge discretisation; re-exports `arris-math`'s `Aabb` and `Interval` | `arris-check`, `arris-topo`, `thiserror`, `rayon` (feature) | 2 — algorithms |
 | `arris-io` | STEP AP214 Part 21 writer and reader (`step::write`, `step::read`, ADR-0025) over the Part 21 parser (`step::part21`), the native format (`native`), STL and OBJ mesh writers (`stl`, `obj`, ADR-0013); re-exports `arris-check` and `arris-mesh` | `arris-check`, `arris-mesh`, `thiserror`, `serde`, `serde_json`, `postcard` (the last three behind the `serde` feature) | 2 — algorithms |
-| `arris-debug` | Text dump, the hand-built sample bodies (`sample`), PNG render (own software rasteriser over `image`), Rerun stream (feature), the fixture loader and corpus lint, the corpus runner (`corpus`), the part fixtures' runner and lint (`part`) and the oracle seam (`oracle`), the seeded property-test runner and strategies (`prop`, `prop::recipe` among them), the differential over both kernels (`differential`), the benchmark timer (`bench`) | `arris-ops`, `arris-mesh`, `arris-io`, `arris-topo`, `arris-geom`, `arris-math`, `image`, `serde`, `serde_json`, `sha2`, `thiserror`, `proptest` (not on `wasm32`), `rerun` (feature) | 3 — dev-facing |
+| `arris-debug` | Text dump, the hand-built sample bodies (`sample`), PNG render (own software rasteriser over `image`), Rerun stream (feature), the fixture loader and corpus lint, the corpus runner (`corpus`), the part fixtures' runner and lint (`part`), the battery run on every part's solid (`battery`), the refusal histogram and ADR-0026's table (`histogram`), a fetched part surveyed (`survey`), a STEP file seen solid by solid (`step_file`) and the oracle seam (`oracle`), the seeded property-test runner and strategies (`prop`, `prop::recipe` among them), the differential over both kernels (`differential`), the benchmark timer (`bench`) | `arris-ops`, `arris-mesh`, `arris-io`, `arris-topo`, `arris-geom`, `arris-math`, `image`, `serde`, `serde_json`, `sha2`, `thiserror`, `proptest` (not on `wasm32`), `rerun` (feature) | 3 — dev-facing |
 | `arris` | Facade: re-exports | `math` through `io`; `debug` as a dev-dependency only | 4 |
 
 `math`, `geom` and `topo` are the representation: they change rarely and a
@@ -1348,6 +1348,23 @@ B-Rep).
   slower: CTC-05 in 0.97 s, the fits of a solid refused for a gap, and
   FTC-07 in 19.5 s, its fitted pcurves on B-spline faces. The checker at
   `Fast` is 0.1% to 13% of a read: 0.074 s of the 20.99 s.
+- **The real-part corpus** (ADR-0026). Its committed tier is the
+  `part` fixtures under `real/`, run by `cargo test`
+  (`tests/fixtures/README.md` §Part fixtures). Its fetched tier is
+  `tools/real-parts.sh`: NIST's archives fetched into
+  `target/real-parts/`, every file held to `tools/real-parts.sha256`,
+  and each surveyed in its own process under a timeout
+  (`arris_debug::survey`: Arris's read held to Open CASCADE's through
+  the oracle's cache, then the battery). A failure is a panic, a
+  checker-rejected `Ok`, an `Ok` outside the oracle's measures or a
+  battery stage that is a kernel fault. It writes `histogram.md`,
+  `failures.md` and `both.md`, the histogram over both tiers, and exits
+  1 on a failure no line of `tools/real-parts.waits` excludes by a
+  fixture still under `regression/`. `cargo run -p arris-debug
+  --example real_parts -- --committed` prints the committed tier's
+  histogram from its fixtures, which record the cycle of each refusal
+  (`arris_debug::histogram`). `--example battery -- --write|--record`
+  derives a part's battery operands and records each stage's class.
 - **The fuzz targets** (`fuzz/`, ADR-0024 §5): a crate outside the
   workspace (`exclude = ["fuzz"]`), unpublished, on nightly under
   `cargo fuzz` with `libfuzzer-sys` and `arbitrary`, none of them
@@ -1374,8 +1391,10 @@ B-Rep).
   seed it runs every property at 5000 cases, five times CI's, in six
   jobs split by nextest filterset along the suite's per-test timings. It also runs the differential at 1000 recipes with the
   corpus's ignored tests, the corpus benchmark against the last night's
-  report, and each fuzz target for 30 minutes from a corpus kept in the
-  Actions cache. A failure is a red run and nothing else.
+  report, each fuzz target for 30 minutes from a corpus kept in the
+  Actions cache, and `tools/real-parts.sh` with the NIST archives cached
+  by the manifest's hash, its histogram and failure list uploaded. A
+  failure is a red run and nothing else.
 - **The oracle** (`tools/oracle/`, Python 3.12, Open CASCADE through the
   `cadquery-ocp` wheels in a `uv` environment): `expected.py` builds each
   fixture's recipe in OCCT and writes `expected.json`; `compare.py` reads

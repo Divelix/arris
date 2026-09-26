@@ -78,6 +78,18 @@ Tolerances are the fixture's: relative 1e-9 on volume and area for
 analytic results, exact on counts and classifications. The oracle is run,
 never linked (`SEED.md` §7).
 
+A third kind, `part` (ADR-0026), is the one fixture that is a file and
+not a recipe: a STEP file Arris did not write, under `real/`, its licence
+and SHA-256 in `fixture.json`. It records each solid's outcome, `read` or
+the `RefusalKind` it is refused as, and for each solid read the battery's
+operands and the class each stage lands in: tessellate and measure,
+write and read back, a box cut, three drills along the principal axes,
+and a fillet. Each refusal it holds records the cycle it blocks. A read
+solid is held to Open CASCADE's healed reading of the same file and has
+a dump. A part waiting on a kernel bug names its `regression/` fixture
+and is not read until that fixture moves. The format is
+`tests/fixtures/README.md` §Part fixtures.
+
 ---
 
 ## C1 — the vertical slice
@@ -419,8 +431,13 @@ as describing no solid), and so does its B-spline conversion of every
 fixture (168; one variant Open CASCADE cannot convert); Arris's own STEP
 round-trips as a property at 256, 1000 and 5000 cases; the reader's fuzz
 target ran 11.4 million inputs without a crash, after the parser's hour
-of 298 million. Open: `real-part-corpus` — the corpus of real parts, the
-battery of operations run on every part read, and the histogram.**
+of 298 million. The real-part corpus is done (2026-09-26, ADR-0026):
+eleven NIST parts committed as `part` fixtures and 27 more fetched by
+`tools/real-parts.sh`, 70 solids, 29 read checker-green within the
+oracle's measures and 41 refused by kind, and every read solid put
+through the battery. Nothing panics over either tier, and no solid is
+wrong except in six fetched parts, each waiting on its kernel bug under
+`regression/`. The histogram below is what `/close-cycle` reads.**
 
 **The refusal histogram** (ADR-0026 §5), *cycle → parts blocked*, each
 part counted once per cycle at the first stage that cycle blocks it. A

@@ -37,12 +37,13 @@ elliptic profiles. ADR-0006 to 0017.
 **C3 done (2026-09-24): every quadric pair.** Every analytic face is a
 boolean operand in any pose — sections exact or traced and fitted to
 NURBS, "the same within a tolerance" an equivalence. ADR-0018 to 0022.
-**Beside C4 (2026-09-25): the measuring harness** — cached oracle,
-differential, nightly tier, benchmarks, fuzzing (ADR-0024).
-**C4, first half (2026-09-26): the STEP reader** — every solid a
-checker-green body or a counted refusal, assemblies flattened (ADR-0025).
-**Next:** C4's `real-part-corpus` and its refusal histogram, with the
-first-party binding beside it (ADR-0020).
+**C4 done (2026-09-26): the reader and the real-part corpus.** The STEP
+reader returns a checker-green body or a counted refusal per solid; 38
+NIST parts are read or refused, with a battery run on every solid read.
+The measuring harness stands beside it. The histogram's top line is the
+blend network (17 parts), then healing (14). ADR-0023 to 0026.
+**Next:** `/close-cycle` picks the next cycle from that histogram, with
+the first-party binding beside it (ADR-0020).
 
 ## Rules that are not derivable from the code
 

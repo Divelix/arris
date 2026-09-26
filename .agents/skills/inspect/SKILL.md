@@ -28,6 +28,17 @@ report at `Full` and its dump, and renders it to
 prints its `Refusal` and kind instead. From Rust it is
 `arris_debug::step_file::inspect(&mut model, path, name)`.
 
+A real part is seen by its fixture name. `cargo test -p arris --test
+corpus real_<slug>` (dashes as underscores: `real_nist_ctc_01`) runs
+`tests/fixtures/real/<slug>/` whole: every
+solid held to its recorded outcome, then its battery. To look at one,
+run `inspect_step` on the STEP file its `fixture.json` names, beside it
+in that directory, with `<slug>` as the name. Its `expected.json` holds
+Open CASCADE's healed reading of each solid by `#id`, and `occt_heals`
+says where healing changed the topology. A fetched part is seen the same
+way from `target/real-parts/files/`, and its survey's log is
+`target/real-parts/work/<stem>.log`.
+
 A sketch that `Profile::edges` refuses has no edges to dump or render, and
 its `ProfileError` names a loop and a segment in the consumer's own
 indices (`loop_index` 0 the outer, holes from 1). Draw the raw loops in

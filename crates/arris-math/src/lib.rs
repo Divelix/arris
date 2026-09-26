@@ -69,8 +69,9 @@ pub const RELATIVE_ROUNDING: f64 = 8.0 * f64::EPSILON;
 /// of the model's size, so `2e-4` admits every file an exporting kernel
 /// called valid by its own tolerances, the largest seen with `1.8×` to
 /// spare, and refuses the gaps a healer would have to sew. A tolerance
-/// policy, not a rounding slack; `real-part-corpus` revisits it against
-/// real parts.
+/// policy, not a rounding slack. Over the real-part corpus it refuses
+/// gaps in 7 of NIST's 38 parts, which count for the healing cycle
+/// (ADR-0026 §5, `docs/ROADMAP.md` §C4).
 pub const READ_GAP_FRACTION: f64 = 2e-4;
 
 /// `|x| ≤ RELATIVE_ROUNDING · |scale|`: `x` is zero to rounding at
