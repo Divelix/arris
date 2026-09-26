@@ -77,8 +77,8 @@ use std::collections::BTreeMap;
 use std::f64::consts::TAU;
 
 use arris_check::arris_topo::arris_geom::{
-    Curve, Curve2, GeomError, PCURVE_SAMPLES, PCURVE_SINGULAR_BAND, Singularity, Surface,
-    pcurve_ending_on, pcurve_on,
+    Curve, Curve2, GeomError, NurbsCurve2, PCURVE_SAMPLES, PCURVE_SINGULAR_BAND, Singularity,
+    Surface, pcurve_ending_on, pcurve_on,
 };
 use arris_check::arris_topo::arris_math::{
     Aabb, Frame, Interval, Point2, Point3, Precision, READ_GAP_FRACTION, RELATIVE_ROUNDING,
@@ -794,6 +794,9 @@ impl Geometry<'_> {
             let mut specs = Vec::with_capacity(faces.len());
             for (surface, surface_id, flipped, mut loops) in faces {
                 place_loops(&mut loops, surface.period(), surface.domain());
+                for u in loops.iter_mut().flatten() {
+                    hold_in_domain(&mut u.pcurve, u.range, &surface, precision);
+                }
                 for uses in &loops {
                     gaps.measure_uses(&surface, uses, &points, &edges, &rebuilt, model, precision);
                 }
@@ -1894,6 +1897,55 @@ fn through(edge: &Edge, point: Point3, band: f64) -> Option<f64> {
     (lo < t && t < hi).then_some(t)
 }
 
+/// Holds `pcurve` over `range` inside a NURBS surface's domain where it
+/// leaves it — past the parametric band at the checker's samples, F1's
+/// test — in a direction the surface does not close in: its control
+/// points moved into the domain, which holds the whole curve there, since
+/// a B-spline of positive weights lies in its control points' hull. A
+/// fit between projections the domain clamps overshoots it on an edge
+/// along the surface's border, by a fraction of the fit's tolerance —
+/// NIST's FTC-07, 6e-7 of a unit domain on edges fitted at 5.5e-3 — and
+/// the move is of that order, in the gap the pcurve leaves, which is
+/// measured after it. A pcurve inside its domain is left as it is, even
+/// where its control polygon is not.
+fn hold_in_domain(pcurve: &mut Curve2, range: Interval, surface: &Surface, precision: Precision) {
+    let (Surface::Nurbs(_), Curve2::Nurbs(c)) = (surface, &*pcurve) else {
+        return;
+    };
+    let (domain, period) = (surface.domain(), surface.period());
+    let leaves = samples(range, precision.check_samples)
+        .into_iter()
+        .any(|t| {
+            let uv = c.eval(t).point;
+            let band = bands(surface, uv, precision.parametric_tolerance);
+            (0..2).any(|k| {
+                period[k].is_none()
+                    && !(domain[k].lo() - band[k] <= uv[k] && uv[k] <= domain[k].hi() + band[k])
+            })
+        });
+    if !leaves {
+        return;
+    }
+    let points: Vec<Point2> = (c.control_points().iter())
+        .map(|p| {
+            let mut q = *p;
+            for k in 0..2 {
+                if period[k].is_none() {
+                    q[k] = domain[k].clamp(q[k]);
+                }
+            }
+            q
+        })
+        .collect();
+    if points == c.control_points() {
+        return;
+    }
+    if let Ok(held) = NurbsCurve2::new(c.degree(), c.knots().to_vec(), points, c.weights().to_vec())
+    {
+        *pcurve = Curve2::Nurbs(held);
+    }
+}
+
 /// The index a band's seam walks under while its arc is tried, before it
 /// is entered in `rebuilt`: no rebuilt edge has it.
 const TRIED_SEAM: usize = usize::MAX;
@@ -2369,6 +2421,47 @@ fn loop_box(uses: &[Use]) -> [[f64; 2]; 2] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_pcurve_past_a_nurbs_domain_is_held_inside_it() {
+        use arris_check::arris_topo::arris_geom::NurbsSurface;
+        let corners = [(0.0, 0.0), (0.0, 1.0), (1.0, 0.0), (1.0, 1.0)];
+        let sheet = Surface::Nurbs(
+            NurbsSurface::new(
+                [1, 1],
+                [vec![0.0, 0.0, 1.0, 1.0], vec![0.0, 0.0, 1.0, 1.0]],
+                corners.map(|(x, y)| Point3::new(x, y, 0.0)).to_vec(),
+                vec![1.0; 4],
+            )
+            .unwrap(),
+        );
+        // Along the border u = 0, dipping 6e-7 below it half way.
+        let dip = vec![
+            Point2::new(0.0, 0.0),
+            Point2::new(-6e-7, 0.5),
+            Point2::new(0.0, 1.0),
+        ];
+        let mut pcurve = Curve2::Nurbs(
+            NurbsCurve2::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], dip, vec![1.0; 3]).unwrap(),
+        );
+        let unit = Interval::new(0.0, 1.0).unwrap();
+        hold_in_domain(&mut pcurve, unit, &sheet, Precision::DEFAULT);
+        for i in 0..=64 {
+            let q = pcurve.point(f64::from(i) / 64.0);
+            assert!(
+                (0.0..=1.0).contains(&q.x) && (0.0..=1.0).contains(&q.y),
+                "{q}"
+            );
+        }
+        // Inside already, a pcurve is left as it is.
+        let inside = Curve2::Line {
+            origin: Point2::new(0.5, 0.0),
+            direction: UnitVec2::new_normalize(Vec2::new(0.0, 1.0)),
+        };
+        let mut same = inside.clone();
+        hold_in_domain(&mut same, unit, &sheet, Precision::DEFAULT);
+        assert_eq!(same, inside);
+    }
 
     #[test]
     fn a_gap_peaking_between_samples_is_measured_at_its_top() {

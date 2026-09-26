@@ -484,3 +484,15 @@ is a reader bug under §4, not a timing to accommodate.
   four times it. CTC-05 reads to its right refusals in 1 s. A fit that
   passes on its first try is as it was, and the committed dumps moved
   only in pcurves fitted after a miss, and the tolerances they carry.
+- **A fitted pcurve on a B-spline face is held inside its knot domain.**
+  With its fits fixed, FTC-07 read to eight faces whose fitted pcurves
+  dipped 6e-7 past a unit knot domain, fitted between projections the
+  domain clamps, and the checker refused it (F1). The reader moves a
+  pcurve's control points into the domain in each direction the surface
+  does not close in, which holds the curve there, and measures the gap
+  afterwards as for any pcurve. FTC-07 then reads in 19 s, but the checker
+  at `Full` cannot decide S5 for a fillet torus beside a plane nearly
+  tangent to its rim: `intersect_surfaces` refuses the section. That is
+  the intersector's limit, not the reader's. It is a backlog line, its
+  operands an ignored test in `arris-geom`, and FTC-07 waits on
+  `regression/torus-plane-section-undecided`.

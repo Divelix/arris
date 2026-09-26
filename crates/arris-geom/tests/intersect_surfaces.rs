@@ -2625,3 +2625,40 @@ fn two_planes_a_hair_from_parallel_meet_in_a_finite_line_on_both() {
         }
     }
 }
+
+/// NIST's FTC-07 (ADR-0026's amendment of step 5): a fillet torus, tube
+/// 0.43 about a centre circle of 11.42, whose rim sits within 0.08 of a
+/// plane tilted 2° from its equator's normal. The checker's S5 asks for
+/// the section and `intersect_surfaces` refuses it: "turning points of the
+/// section that cannot be told apart". The desired answer is the section,
+/// or empty, decided.
+#[test]
+#[ignore = "a torus beside a plane nearly tangent to its rim is left undecided (docs/BACKLOG.md; real/nist-ftc-07 waits on regression/torus-plane-section-undecided)"]
+fn a_torus_rim_beside_a_tilted_plane_is_decided() {
+    let torus = Surface::Torus {
+        frame: Frame::from_orthonormal(
+            Point3::new(-116.08298424713472, 10.4902, -94.74199999999995),
+            Vec3::new(0.0, 0.0, -1.0),
+            Vec3::new(1.0, 0.0, 0.0),
+            Vec3::new(0.0, -1.0, 0.0),
+        )
+        .unwrap(),
+        major_radius: 11.419415587038413,
+        minor_radius: 0.4318,
+    };
+    let plane = Surface::Plane {
+        frame: Frame::from_orthonormal(
+            Point3::new(-116.08298424713479, 12.7, -106.67064670468945),
+            Vec3::new(-1.0, 0.0, 0.0),
+            Vec3::new(0.0, 0.999390827019096, -0.034899496702496),
+            Vec3::new(0.0, -0.034899496702496, -0.999390827019096),
+        )
+        .unwrap(),
+    };
+    let within = Aabb {
+        min: [-128.0, 9.5, -107.0],
+        max: [-104.0, 11.5, -82.0],
+    };
+    let tol = Tolerance::new(1e-7, 1e-12);
+    intersect_surfaces(&torus, &plane, &within, tol).unwrap();
+}

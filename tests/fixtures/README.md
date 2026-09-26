@@ -549,9 +549,10 @@ and this is it: the parts under `real/nist-*` are NIST's.
   `real/nist-ctc-01` to `-05` and `real/nist-ftc-06` to `-11`. Ten run
   today: CTC-01, CTC-03, CTC-04, FTC-06 and FTC-08 to FTC-11 read, and
   CTC-02's and CTC-05's solids are refused for real gaps (every surface
-  body refused as a surface). FTC-07 waits on
-  `regression/nurbs-pcurve-leaves-domain`, its own file: fitted pcurves
-  past the knot domain of its B-spline faces.
+  body refused as a surface). FTC-07 reads, but waits on
+  `regression/torus-plane-section-undecided`, its own file: the checker at
+  `Full` cannot decide a torus against a plane nearly tangent to its rim,
+  an intersector limit and a backlog line, not a reader bug.
 - A bug fixed moves its part into `real/` beside the NIST parts:
   `real/axis-placement-along-x-without-reference`, a cylinder whose
   circles are placed on an axis along `-X` to rounding with no reference

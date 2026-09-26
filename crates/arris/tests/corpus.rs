@@ -1605,7 +1605,7 @@ fn real_nist_ftc_06() {
     run_part("real/nist-ftc-06");
 }
 
-/// NIST's FTC-07: waits on regression/nurbs-pcurve-leaves-domain.
+/// NIST's FTC-07: waits on regression/torus-plane-section-undecided.
 #[test]
 fn real_nist_ftc_07() {
     run_part("real/nist-ftc-07");
@@ -1630,7 +1630,7 @@ fn real_nist_ftc_11() {
 }
 
 #[test]
-#[ignore = "FTC-07's fitted pcurves on B-spline faces leave the surface's knot domain, and the reader's checker refuses the solid (ADR-0026 §4)"]
-fn regression_nurbs_pcurve_leaves_domain() {
-    run_part("regression/nurbs-pcurve-leaves-domain");
+#[ignore = "the checker at Full leaves FTC-07's torus against a nearly tangent plane undecided (S5), the intersector refusing the section (ADR-0026 §4)"]
+fn regression_torus_plane_section_undecided() {
+    run_part("regression/torus-plane-section-undecided");
 }

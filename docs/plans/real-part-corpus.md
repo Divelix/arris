@@ -230,8 +230,13 @@ part to an oracle.
   - [x] `axis-placement-along-x-without-reference` (CTC-04, FTC-08);
   - [x] `pcurve-fit-reported-as-gap` (CTC-01; FTC-07 then meets the
     next);
-  - [ ] `nurbs-pcurve-leaves-domain` (FTC-07; new at step 5, behind the
+  - [x] `nurbs-pcurve-leaves-domain` (FTC-07; new at step 5, behind the
     fit: fitted pcurves past a B-spline face's knot domain);
+  - [ ] `torus-plane-section-undecided` (FTC-07; new at step 5, behind the
+    domain: the checker's S5 cannot decide a torus beside a plane nearly
+    tangent to its rim, `intersect_surfaces` refusing the section. An
+    intersector limit outside this plan, a backlog line; the part waits
+    on it, see Open questions);
   - [x] `edge-through-sphere-pole` (FTC-06; new at step 4, a half sphere
     bounded by one meridian circle through both poles);
   - [x] `slow-gap-refusal` (CTC-05, 66 s in release; 1 s now).
@@ -369,6 +374,11 @@ C4's accept line, second half:
   stay in the hook, at 2.7 s with the waiting parts skipped. A slow read
   is a fixture with a `read_seconds` budget, and no other fixture has
   one.
+- ⚠ OPEN: step 5's test is "no exclusion left", and FTC-07 now reads
+  but waits on `regression/torus-plane-section-undecided`, which is the
+  torus–plane intersector's (`UnresolvedTurning`), not the reader's.
+  **Agent**, before step 6: fix the tracer inside this plan, or let the
+  acceptance carry that one exclusion to the backlog line that names it.
 - ⚠ OPEN: a `SHELL_BASED_SURFACE_MODEL` under a
   `CONSTRUCTIVE_GEOMETRY_REPRESENTATION` ('supplemental geometry', two
   in CTC-04) is the exporter's construction geometry, not a body of the
