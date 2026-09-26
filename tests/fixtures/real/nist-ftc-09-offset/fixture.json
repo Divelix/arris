@@ -6,6 +6,18 @@
   "licence": "NIST: \"The test cases, CAD models, and STEP files can be used without any restrictions.\"",
   "sha256": "9b406ed7e43cc7dcc5d762196ca5352a49ffb598af19ee7c8b9c27de311ec742",
   "solids": [
-    {"id": 5384, "instance": 0, "outcome": {"refused": {"kind": "offset", "why": "face #2920 lies on OFFSET_SURFACE #5849: Arris has no offset surface, and a fitted one would not be the part (ADR-0025 §2)"}}}
+    {
+      "id": 5384,
+      "instance": 0,
+      "outcome": {
+        "refused": {
+          "kind": "offset",
+          "why": "face #2920 lies on OFFSET_SURFACE #5849: Arris has no offset surface, and a fitted one would not be the part (ADR-0025 §2)"
+        }
+      },
+      "blocks": {
+        "read": "sweep"
+      }
+    }
   ]
 }

@@ -119,6 +119,51 @@ impl Class {
     }
 }
 
+/// What Arris refused a stage with, typed: what the histogram's table
+/// maps to a cycle (`crate::histogram`).
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Debug, Clone, PartialEq)]
+pub enum Refused {
+    /// The reader's refusal: of the solid, or of the file written and
+    /// read back.
+    Read(Box<step::Refusal>),
+    /// An operation's error.
+    Op(Box<OpError>),
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl Refused {
+    /// The cycle it blocks at `stage`, by ADR-0026 §5's table; `None` for
+    /// an internal fault, which is never a count.
+    pub fn blocks(&self, stage: crate::histogram::Stage) -> Option<crate::histogram::Cycle> {
+        match self {
+            Refused::Read(r) => Some(crate::histogram::blocks_refusal(r)),
+            Refused::Op(e) => crate::histogram::blocks_reason(stage, e),
+        }
+    }
+}
+
+/// A stage judged: its outcome, and the refusal behind it where Arris
+/// refused.
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Debug, Clone, PartialEq)]
+pub struct Judged {
+    /// The differential's class.
+    pub outcome: Outcome,
+    /// What Arris refused with, typed; `None` where it built.
+    pub refused: Option<Refused>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl From<Outcome> for Judged {
+    fn from(outcome: Outcome) -> Judged {
+        Judged {
+            outcome,
+            refused: None,
+        }
+    }
+}
+
 /// One operation stage over a solid: a recipe whose first step is the
 /// `step` operand naming the solid.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -411,7 +456,7 @@ pub fn judge(
     oracle: &OracleCase,
     hold_counts: bool,
     read: Option<(&Model, &ReadBody)>,
-) -> Outcome {
+) -> Judged {
     let expected = match oracle {
         OracleCase::Built(m) => Some(&**m),
         OracleCase::Refused { .. } => None,
@@ -450,13 +495,13 @@ pub fn judge(
         None => corpus::chain_of(&built_fixture, "default"),
     })) {
         Ok(built) => built,
-        Err(payload) => return panicked(&*payload),
+        Err(payload) => return panicked(&*payload).into(),
     };
     let oracle_solid = expected.is_some_and(|m| !m.degenerate);
     let chain = match built {
         Ok(chain) => chain,
         Err(CorpusError::Op { source, .. }) => {
-            return match &source {
+            let outcome = match &source {
                 OpError::InvalidInput { .. } | OpError::Internal(arris_ops::Fault::Checker(_)) => {
                     Outcome::CheckerViolation(source.to_string())
                 }
@@ -464,23 +509,29 @@ pub fn judge(
                 _ if oracle_solid => Outcome::ArrisRefuses(refusal(&source)),
                 _ => Outcome::BothRefuse,
             };
+            return Judged {
+                outcome,
+                refused: Some(Refused::Op(Box::new(source))),
+            };
         }
         Err(e) => {
             return Outcome::Disagree {
                 stage: e.stage(),
                 what: format!("the case does not build as written: {e}"),
-            };
+            }
+            .into();
         }
     };
     let expected = match oracle {
-        OracleCase::Refused { refused } => return Outcome::OracleRefuses(refused.clone()),
+        OracleCase::Refused { refused } => return Outcome::OracleRefuses(refused.clone()).into(),
         OracleCase::Built(m) => m,
     };
     if expected.degenerate {
         return Outcome::Disagree {
             stage: Stage::Build,
             what: "Open CASCADE records no solid and Arris builds a body".into(),
-        };
+        }
+        .into();
     }
     let mut held = built_fixture.clone();
     held.recipe.tolerances = held_to(&held, &chain, expected);
@@ -508,6 +559,7 @@ pub fn judge(
         },
         Err(payload) => panicked(&*payload),
     }
+    .into()
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -518,8 +570,8 @@ pub fn judge(
 /// `tolerances` widened to the body's own (ADR-0023). A refusal of the
 /// file read back is `ArrisRefuses` by its kind; Open CASCADE takes no
 /// part. Never panics on the kernel's behalf.
-pub fn write_read(name: &str, m: &Model, body: Body, tolerances: &Tolerances) -> Outcome {
-    let run = || -> Result<Outcome, (Stage, String)> {
+pub fn write_read(name: &str, m: &Model, body: Body, tolerances: &Tolerances) -> Judged {
+    let run = || -> Result<Judged, (Stage, String)> {
         let fail = |stage: Stage| move |e: String| (stage, e);
         let text = step::write(m, &[body]).map_err(|e| (Stage::Step, e.to_string()))?;
         let mut back = Model::new(m.precision()).map_err(|e| (Stage::Step, e.to_string()))?;
@@ -533,7 +585,12 @@ pub fn write_read(name: &str, m: &Model, body: Body, tolerances: &Tolerances) ->
         };
         let read = match &solid.result {
             Ok(read) => read,
-            Err(refusal) => return Ok(Outcome::ArrisRefuses(refusal.kind().to_string())),
+            Err(refusal) => {
+                return Ok(Judged {
+                    outcome: Outcome::ArrisRefuses(refusal.kind().to_string()),
+                    refused: Some(Refused::Read(Box::new(refusal.clone()))),
+                });
+            }
         };
         let was = check_leaving_nurbs(name, m, body).map_err(|e| (Stage::Check, e.to_string()))?;
         let is = check_leaving_nurbs(name, &back, read.body)
@@ -580,13 +637,13 @@ pub fn write_read(name: &str, m: &Model, body: Body, tolerances: &Tolerances) ->
         };
         compare_mass(&back, read.body, &written, "the body written", &own)
             .map_err(fail(Stage::Measure))?;
-        Ok(Outcome::Agree)
+        Ok(Outcome::Agree.into())
     };
     match catch_unwind(AssertUnwindSafe(run)) {
-        Ok(Ok(outcome)) => outcome,
-        Ok(Err((Stage::Check, what))) => Outcome::CheckerViolation(what),
-        Ok(Err((stage, what))) => Outcome::Disagree { stage, what },
-        Err(payload) => panicked(&*payload),
+        Ok(Ok(judged)) => judged,
+        Ok(Err((Stage::Check, what))) => Outcome::CheckerViolation(what).into(),
+        Ok(Err((stage, what))) => Outcome::Disagree { stage, what }.into(),
+        Err(payload) => panicked(&*payload).into(),
     }
 }
 
@@ -595,14 +652,24 @@ pub fn write_read(name: &str, m: &Model, body: Body, tolerances: &Tolerances) ->
 /// [`derive()`] would have it and `part::run` holds it: each `read` solid
 /// the fixture has a battery for, read by Arris, `write_read` run on it
 /// and each case of its battery judged against `expected.json`. A solid
-/// the reader refuses has no battery. Errors: a file that does not read,
+/// the reader refuses has no battery, and its refusal is its `read`
+/// stage, `ArrisRefuses` by its kind. Errors: a file that does not read,
 /// or a battery case with no oracle answer (a stale `expected.json`).
-pub fn outcomes(fixture: &PartFixture) -> Result<BTreeMap<(String, String), Outcome>, String> {
+pub fn outcomes(fixture: &PartFixture) -> Result<BTreeMap<(String, String), Judged>, String> {
     let mut m = Model::new(fixture.part.precision.precision()).map_err(|e| e.to_string())?;
     let read = read_file(fixture, &mut m)?;
     let mut out = BTreeMap::new();
     for (solid, spec) in read.solids.iter().zip(&fixture.part.solids) {
         let key = key(spec.id, spec.instance);
+        if let Err(r) = &solid.result {
+            out.insert(
+                (key.clone(), "read".to_string()),
+                Judged {
+                    outcome: Outcome::ArrisRefuses(r.kind().to_string()),
+                    refused: Some(Refused::Read(Box::new(r.clone()))),
+                },
+            );
+        }
         let Some(cases) = fixture.part.battery.get(&key) else {
             continue;
         };

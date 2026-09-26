@@ -19,6 +19,9 @@
           "arris-refuses": "Unsupported(circle curve × plane surface)"
         },
         "write_read": "agree"
+      },
+      "blocks": {
+        "fillet": "blend network"
       }
     }
   ],

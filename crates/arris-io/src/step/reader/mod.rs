@@ -155,7 +155,10 @@ pub enum Refusal {
     Unsupported {
         /// The entity.
         entity: u64,
-        /// Its type, or what about it is outside.
+        /// Its type, or what about it is outside. A surface model that
+        /// only a `CONSTRUCTIVE_GEOMETRY_REPRESENTATION` holds — the exporter's
+        /// construction geometry, not a body of the part — is its type
+        /// followed by `in a CONSTRUCTIVE_GEOMETRY_REPRESENTATION`.
         name: String,
     },
     /// Geometry of the subset whose values describe nothing Arris can
@@ -457,6 +460,10 @@ const REFUSED_SOLIDS: [&str; 3] = [
     "FACE_BASED_SURFACE_MODEL",
 ];
 
+/// The representation an exporter's construction geometry sits in: what
+/// it alone holds is no body of the part.
+const SUPPLEMENTAL: &str = "CONSTRUCTIVE_GEOMETRY_REPRESENTATION";
+
 /// Reads every solid of the Part 21 file `text` into `model`, lengths in
 /// `options.length_unit` (ADR-0025).
 ///
@@ -506,6 +513,31 @@ pub fn read(model: &mut Model, text: &str, options: &ReadOptions) -> Result<Read
             refused.insert(id);
         }
     }
+    // What a `CONSTRUCTIVE_GEOMETRY_REPRESENTATION` alone holds is the
+    // exporter's construction geometry, not a body of the part: a
+    // refusal of it says so, and a histogram counts it apart (ADR-0026,
+    // amendment of step 8).
+    let mut constructive: BTreeSet<u64> = BTreeSet::new();
+    let mut represented: BTreeSet<u64> = BTreeSet::new();
+    for instance in exchange.instances.values() {
+        for record in instance.records() {
+            if !record.name.ends_with("REPRESENTATION") {
+                continue;
+            }
+            let Some(part21::Param::List(items)) = record.params.get(1) else {
+                continue;
+            };
+            let into = if record.name == SUPPLEMENTAL {
+                &mut constructive
+            } else {
+                &mut represented
+            };
+            into.extend(items.iter().filter_map(|i| match i {
+                part21::Param::Ref(r) => Some(*r),
+                _ => None,
+            }));
+        }
+    }
     let mut units: BTreeMap<u64, Result<Units, Refusal>> = BTreeMap::new();
     let mut units_of = |context: u64| {
         units
@@ -526,12 +558,18 @@ pub fn read(model: &mut Model, text: &str, options: &ReadOptions) -> Result<Read
             _ => None,
         };
         let result = if refused.contains(&p.solid) {
+            let name = exchange
+                .instances
+                .get(&p.solid)
+                .map_or_else(String::new, entities::describe);
+            let supplemental = constructive.contains(&p.solid) && !represented.contains(&p.solid);
             Err(Refusal::Unsupported {
                 entity: p.solid,
-                name: exchange
-                    .instances
-                    .get(&p.solid)
-                    .map_or_else(String::new, entities::describe),
+                name: if supplemental {
+                    format!("{name} in a {SUPPLEMENTAL}")
+                } else {
+                    name
+                },
             })
         } else {
             match (context_units, p.motion) {

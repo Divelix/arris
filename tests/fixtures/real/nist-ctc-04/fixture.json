@@ -19,6 +19,9 @@
           "arris-refuses": "Degenerate(TangentChain)"
         },
         "write_read": "agree"
+      },
+      "blocks": {
+        "fillet": "blend network"
       }
     },
     {
@@ -29,6 +32,9 @@
           "kind": "unsupported entity",
           "why": "a SHELL_BASED_SURFACE_MODEL of one OPEN_SHELL of one face, a surface and not a solid: sheet bodies are the healing cycle's (ADR-0025 §2)"
         }
+      },
+      "blocks": {
+        "read": "healing"
       }
     },
     {
@@ -37,8 +43,11 @@
       "outcome": {
         "refused": {
           "kind": "unsupported entity",
-          "why": "a SHELL_BASED_SURFACE_MODEL of one OPEN_SHELL of one face, the file's 'supplemental geometry', a surface and not a solid: sheet bodies are the healing cycle's (ADR-0025 §2)"
+          "why": "a SHELL_BASED_SURFACE_MODEL of one OPEN_SHELL of one face that only the file's CONSTRUCTIVE_GEOMETRY_REPRESENTATION 'supplemental geometry' holds: the exporter's construction geometry, no body of the part, counted as itself (ADR-0026, amendment of step 8)"
         }
+      },
+      "blocks": {
+        "read": "itself: supplemental geometry"
       }
     },
     {
@@ -47,8 +56,11 @@
       "outcome": {
         "refused": {
           "kind": "unsupported entity",
-          "why": "a SHELL_BASED_SURFACE_MODEL of one OPEN_SHELL of one face, the file's 'supplemental geometry', a surface and not a solid: sheet bodies are the healing cycle's (ADR-0025 §2)"
+          "why": "a SHELL_BASED_SURFACE_MODEL of one OPEN_SHELL of one face that only the file's CONSTRUCTIVE_GEOMETRY_REPRESENTATION 'supplemental geometry' holds: the exporter's construction geometry, no body of the part, counted as itself (ADR-0026, amendment of step 8)"
         }
+      },
+      "blocks": {
+        "read": "itself: supplemental geometry"
       }
     }
   ],

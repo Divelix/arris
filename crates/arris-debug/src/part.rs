@@ -69,6 +69,13 @@ pub struct PartSolid {
     /// solid the fixture has no battery for.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub battery: BTreeMap<String, Class>,
+    /// The cycle each refusal of this solid blocks, as
+    /// `crate::histogram::Cycle` prints it, by stage: `read` for a solid
+    /// the reader refuses, and each battery stage recorded as
+    /// [`Class::ArrisRefuses`]. What the histogram counts from; the runner
+    /// holds it to ADR-0026 §5's table on every run.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub blocks: BTreeMap<String, String>,
 }
 
 /// A part fixture's `fixture.json`.
@@ -315,6 +322,13 @@ pub fn run(dir: &Path) -> Result<(), CorpusError> {
                         expected.kind
                     )));
                 }
+                let cycle = crate::histogram::blocks_refusal(refusal).to_string();
+                if spec.blocks.get("read") != Some(&cycle) {
+                    return Err(fail(format!(
+                        "{at} is refused as blocking {cycle} (ADR-0026 §5), but records {:?}",
+                        spec.blocks.get("read")
+                    )));
+                }
                 *refused.entry(spec.id).or_default() += 1;
             }
             (Outcome::Refused(expected), Ok(_)) => {
@@ -331,6 +345,11 @@ pub fn run(dir: &Path) -> Result<(), CorpusError> {
                 });
             }
             (Outcome::Read, Ok(back)) => {
+                if spec.blocks.contains_key("read") {
+                    return Err(fail(format!(
+                        "{at} reads, but records the cycle its read refusal blocks"
+                    )));
+                }
                 read_stages(&fixture, &model, back.body, spec, &mut taken)?;
                 #[cfg(not(target_arch = "wasm32"))]
                 battery_stages(&fixture, &model, back, spec)?;
@@ -472,7 +491,12 @@ fn battery_stages(
     };
     let cases = fixture.part.battery.get(&key);
     if cases.is_none() && spec.battery.is_empty() {
-        return Ok(());
+        return match spec.blocks.keys().next() {
+            Some(stage) => Err(fail(format!(
+                "records the cycle {stage} blocks, and has no battery"
+            ))),
+            None => Ok(()),
+        };
     }
     let stages: Vec<&str> = STAGES
         .into_iter()
@@ -505,14 +529,30 @@ fn battery_stages(
             continue;
         }
         let name = format!("{} {key} {stage}", fixture.name);
-        let outcome = match cases.and_then(|c| c.get(stage)) {
+        let judged = match cases.and_then(|c| c.get(stage)) {
             None => battery::write_read(&name, m, back.body, &fixture.part.tolerances),
             Some(case) => {
                 let oracle = battery::oracle_case(fixture, &key, stage).map_err(&fail)?;
                 battery::judge(fixture, &name, case, oracle, hold, Some((m, back)))
             }
         };
-        match Class::of(&outcome) {
+        let outcome = &judged.outcome;
+        // The cycle an Arris refusal blocks, held to the table.
+        let cycle = match (outcome, &judged.refused) {
+            (crate::differential::Outcome::ArrisRefuses(_), Some(refused)) => {
+                crate::histogram::Stage::of_name(stage)
+                    .and_then(|s| refused.blocks(s))
+                    .map(|c| c.to_string())
+            }
+            _ => None,
+        };
+        if spec.blocks.get(stage) != cycle.as_ref() {
+            return Err(fail(format!(
+                "{stage} blocks {cycle:?} by ADR-0026 §5's table, but records {:?}",
+                spec.blocks.get(stage)
+            )));
+        }
+        match Class::of(outcome) {
             None => {
                 return Err(fail(format!(
                     "{stage}: {outcome} — a kernel bug, shrunk to regression/ (ADR-0026 §4)"
@@ -730,6 +770,23 @@ mod tests {
             lint(&scratch)
                 .iter()
                 .any(|p| p.contains("regression/no-such-fixture"))
+        );
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    /// A refusal is held to the cycle it records, by ADR-0026 §5's table.
+    #[test]
+    fn a_refusal_is_held_to_the_cycle_it_blocks() {
+        let scratch = edited(
+            "real/nist-ctc-02",
+            "blocks",
+            r#""read": "healing""#,
+            r#""read": "NURBS""#,
+        );
+        let e = run(&scratch).expect_err("a gap blocks healing");
+        assert!(
+            matches!(&e, CorpusError::Part { what, .. } if what.contains("blocking healing")),
+            "{e}"
         );
         let _ = std::fs::remove_dir_all(&scratch);
     }

@@ -500,7 +500,8 @@ and this is it: the parts under `real/nist-*` are NIST's.
   "sha256": "<of the file>",
   "solids": [
     {"id": 5384, "instance": 0, "outcome": "read"},
-    {"id": 6073, "instance": 0, "outcome": {"refused": {"kind": "unsupported entity", "why": "…"}}}
+    {"id": 6073, "instance": 0, "outcome": {"refused": {"kind": "unsupported entity", "why": "…"}},
+     "blocks": {"read": "healing"}}
   ]
 }
 ```
@@ -509,6 +510,13 @@ and this is it: the parts under `real/nist-*` are NIST's.
   order (`FileEntity`'s `#id` and placement), with the outcome it is held
   to. A change of outcome is a `fixtures:` commit. A refusal that starts
   to read fails its test until the fixture says so.
+- **A solid's `blocks`** records the cycle each of its refusals blocks,
+  as `arris_debug::histogram::Cycle` prints it (ADR-0026 §5): under
+  `read` for a refused solid, and under each battery stage recorded
+  `arris-refuses`. The runner holds it to the table, and the refusal
+  histogram (`cargo run -p arris-debug --example real_parts --
+  --committed`) counts from it. The battery example's `--record` writes
+  it.
 - **A refusal's `why` says why the refusal is right**, not which it is: the
   file holds an entity outside the subset, or describes no solid. A
   refusal of something the reader should map is a reader bug. It is
@@ -591,7 +599,8 @@ sorted into the differential's classes (ADR-0024 §2):
 ```json
 "solids": [
   {"id": 189, "instance": 0, "outcome": "read",
-   "battery": {"box_cut": "agree", "fillet": "oracle-refuses", "drill_x": {"arris-refuses": "Degenerate(TangentChain)"}, …}}
+   "battery": {"box_cut": "agree", "fillet": "oracle-refuses", "drill_x": {"arris-refuses": "Degenerate(TangentChain)"}, …},
+   "blocks": {"drill_x": "blend network"}}
 ],
 "battery": {
   "#189[0]": {

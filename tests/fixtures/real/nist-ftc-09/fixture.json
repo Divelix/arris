@@ -19,6 +19,9 @@
           "arris-refuses": "Unsupported(cylinder surface × cone surface)"
         },
         "write_read": "agree"
+      },
+      "blocks": {
+        "fillet": "blend network"
       }
     }
   ],

@@ -538,3 +538,29 @@ is a reader bug under §4, not a timing to accommodate.
   cut part took 300 s for FTC-06 and 520 s for CTC-04, which is the
   reader's cost on a large all-B-spline file (the fetched tier's slow
   reads, step 9). That cost is a backlog line.
+
+## Amendment (2026-09-26, plan `real-part-corpus` step 8)
+
+- **The table is `arris_debug::histogram`.** `blocks_refusal`,
+  `blocks_parse` and `blocks_reason` are §5's rows as exhaustive matches
+  with no wildcard arm, over `Refusal`, `ReadError`, `OpError` and every
+  `Reason`. A `Reason` counted "by its name" is the variant's name.
+- **Construction geometry counts as itself.** A surface model that only a
+  `CONSTRUCTIVE_GEOMETRY_REPRESENTATION` holds — the exporter's
+  'supplemental geometry', two of CTC-04's three — is no body of the
+  part, and healing would not make it one. The reader now says so in the
+  refusal's `name` (`SHELL_BASED_SURFACE_MODEL in a
+  CONSTRUCTIVE_GEOMETRY_REPRESENTATION`), and the table counts it as
+  *itself: supplemental geometry*. No type changes: the refusal is still
+  `Unsupported`, and only the text of its `name` grows. A surface model
+  any other representation holds stays the healing cycle's.
+- **A part fixture records the cycle of each refusal it holds** (`blocks`,
+  by stage: `read`, or a battery stage recorded `arris-refuses`), and the
+  part runner holds the record to the table on every run. So the
+  committed tier's histogram counts from its fixtures in milliseconds,
+  while `cargo test` proves each count against the kernel. The battery
+  example's `--record` writes it.
+- **Only a stage Open CASCADE builds and Arris refuses blocks a part.** A
+  stage both kernels refuse is counted as a class, never under a cycle:
+  the fillet whose radius neither can fit says nothing about which cycle
+  Arris lacks.

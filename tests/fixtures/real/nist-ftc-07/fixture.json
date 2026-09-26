@@ -25,6 +25,12 @@
         },
         "fillet": "both-refuse",
         "write_read": "agree"
+      },
+      "blocks": {
+        "box_cut": "NURBS",
+        "drill_x": "NURBS",
+        "drill_y": "NURBS",
+        "drill_z": "NURBS"
       }
     }
   ],

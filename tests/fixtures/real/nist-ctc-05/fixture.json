@@ -14,6 +14,9 @@
           "kind": "gap past the cap",
           "why": "edge #4444 lies 0.0182 from a face it bounds, past the model's max_tolerance of 0.01: closing that is sewing, which is healing (ADR-0025 §4); Open CASCADE carries the part at tolerances of up to 0.086"
         }
+      },
+      "blocks": {
+        "read": "healing"
       }
     },
     {
@@ -24,6 +27,9 @@
           "kind": "unsupported entity",
           "why": "a SHELL_BASED_SURFACE_MODEL of one OPEN_SHELL of one face, a surface and not a solid: sheet bodies are the healing cycle's (ADR-0025 §2)"
         }
+      },
+      "blocks": {
+        "read": "healing"
       }
     }
   ]

@@ -130,7 +130,9 @@ closes on it.
   - `ExpectError::Nurbs` (`"nurbs"`): an `OpError::Unsupported` with a
     NURBS surface or curve in the pair, the refusal a regression fixture
     can now desire.
-- **`arris_debug::histogram`** (step 8):
+- **`arris_debug::histogram`** (step 8, as built: ADR-0026's amendment of
+  step 8; `Cycle` also has `NAMED`, `Stage` is the battery's with `read`
+  and `measure`, and the fixture's `blocks` is what it counts):
   - `enum Cycle { Healing, Nurbs, BlendNetwork, Sweep, Itself(&'static
     str) }`, with `fn blocks_refusal(&Refusal) -> Cycle` and `fn
     blocks_reason(Stage, &OpError) -> Option<Cycle>` (`None` for
@@ -143,7 +145,7 @@ closes on it.
     markdown. The test is that every `RefusalKind::ALL` entry and every
     `Reason` has a row, which the compiler holds.
 - **`tools/real-parts.sh`**, with its Rust side
-  `crates/arris/examples/real_parts.rs` (step 9). It fetches the pinned
+  `crates/arris-debug/examples/real_parts.rs` (step 9). It fetches the pinned
   sample into `target/real-parts/`, checks each `sha256`, runs the reader,
   the oracle and the battery on every part, and writes the histogram and
   a failure list. A failure is a panic, a checker-rejected `Ok`, or an
@@ -326,16 +328,26 @@ part to an oracle.
   98 s in the test profile.
 
   Test: no battery stage waits; step 6's test green.
-- [ ] Step 8 **[1]** — `arris_debug::histogram`: ADR-0026's table as
+- [x] Step 8 **[1]** — `arris_debug::histogram`: ADR-0026's table as
   exhaustive matches.
   - `Histogram` over the committed tier: read refusals by kind, battery
     refusals by `Reason` and stage, each mapped to its cycle.
-  - `cargo run -p arris --example real_parts -- --committed` prints it as
-    markdown.
+  - `cargo run -p arris-debug --example real_parts -- --committed` prints
+    it as markdown.
 
   Test: every `RefusalKind::ALL` entry maps (a loop over the array), the
   `Reason` match compiles without a wildcard (the kernel rule), and the
   printed histogram of the committed tier is byte-identical on two runs.
+
+  Found: counting the committed tier by running it takes 3.5 minutes in
+  release, too slow for a test run twice. So each part fixture records
+  the cycle of every refusal it holds (`blocks`), the part runner holds
+  that record to the table, and the histogram counts from the fixtures
+  (ADR-0026, amendment of step 8). The example lives in `arris-debug`
+  beside `battery` and `inspect_step`, not in the published `arris`.
+  The committed tier: 11 parts, 16 solids (9 read, 7 refused), 54 stages.
+  Blend network blocks 6 parts (all at the fillet), healing 3 (at the
+  read), NURBS 2 (at the box cut), and supplemental geometry 1.
 - [ ] Step 9 **[2]** — The fetched tier, if ADR-0026 kept one.
   - `tools/real-parts.sh` fetches the pinned sample into
     `target/real-parts/`, checks every hash, and runs
@@ -425,9 +437,8 @@ C4's accept line, second half:
   stay in the hook, at 2.7 s with the waiting parts skipped. A slow read
   is a fixture with a `read_seconds` budget, and no other fixture has
   one.
-- ⚠ OPEN: a `SHELL_BASED_SURFACE_MODEL` under a
-  `CONSTRUCTIVE_GEOMETRY_REPRESENTATION` ('supplemental geometry', two
-  in CTC-04) is the exporter's construction geometry, not a body of the
-  part, yet ADR-0026 §5 counts it against the healing cycle. **Agent**,
-  at step 8: whether the table counts it as itself, which would take the
-  reader telling it apart and so a new kind or field, a design delta.
+- Decided at step 8 (ADR-0026, amendment of step 8): a surface model only
+  a `CONSTRUCTIVE_GEOMETRY_REPRESENTATION` holds counts as itself,
+  *supplemental geometry*. The reader tells it apart in the text of the
+  refusal's `name`, so no kind or field is added. A stage both kernels
+  refuse blocks no part.
