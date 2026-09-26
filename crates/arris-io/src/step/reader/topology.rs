@@ -47,7 +47,9 @@
 //!   in 3D — are ended on one point, the seam's end where one of them is
 //!   a seam, else the vertex's own (u, v), as a boolean ends a section edge on its
 //!   vertex. Each edge then takes the largest distance of its pcurves'
-//!   images from its curve at the checker's samples, a closed edge also
+//!   images from its curve — at the checker's samples and at the
+//!   [`PCURVE_SAMPLES`] a fit is held to, each peak climbed to its top
+//!   between them — a closed edge also
 //!   its curve's own gap; each vertex the largest distance from its point
 //!   to each edge curve's end and each pcurve's image there, and the span
 //!   of a degenerate edge's image; each face the model's default. Every
@@ -61,8 +63,8 @@
 use std::collections::BTreeMap;
 
 use arris_check::arris_topo::arris_geom::{
-    Curve, Curve2, GeomError, PCURVE_SINGULAR_BAND, Singularity, Surface, pcurve_ending_on,
-    pcurve_on,
+    Curve, Curve2, GeomError, PCURVE_SAMPLES, PCURVE_SINGULAR_BAND, Singularity, Surface,
+    pcurve_ending_on, pcurve_on,
 };
 use arris_check::arris_topo::arris_math::{
     Aabb, Frame, Interval, Point2, Point3, Precision, READ_GAP_FRACTION, RELATIVE_ROUNDING,
@@ -1313,6 +1315,46 @@ fn samples(range: Interval, n: usize) -> Vec<f64> {
         .collect()
 }
 
+/// The largest of `gap` over the span of the sorted parameters `ts`: its
+/// largest value at them, each local peak past `floor` climbed by golden
+/// section between its neighbours. A peak at or below `floor` is left as
+/// sampled, since the tolerance is floored there anyway — every exact
+/// pcurve's gap is rounding, and costs nothing more.
+fn worst_gap(ts: &[f64], floor: f64, gap: impl Fn(f64) -> f64) -> f64 {
+    let gaps: Vec<f64> = ts.iter().map(|&t| gap(t)).collect();
+    let mut worst = gaps.iter().copied().fold(0.0, f64::max);
+    let last = gaps.len().saturating_sub(1);
+    for (i, &g) in gaps.iter().enumerate() {
+        let (before, after) = (i.saturating_sub(1), (i + 1).min(last));
+        if g <= floor || g < gaps[before] || g < gaps[after] || before == after {
+            continue;
+        }
+        let ratio = 0.5 * (5f64.sqrt() - 1.0);
+        let (mut a, mut b) = (ts[before], ts[after]);
+        let (mut x1, mut x2) = (b - ratio * (b - a), a + ratio * (b - a));
+        let (mut g1, mut g2) = (gap(x1), gap(x2));
+        for _ in 0..PEAK_STEPS {
+            if g1 >= g2 {
+                (b, x2, g2) = (x2, x1, g1);
+                x1 = b - ratio * (b - a);
+                g1 = gap(x1);
+            } else {
+                (a, x1, g1) = (x1, x2, g2);
+                x2 = a + ratio * (b - a);
+                g2 = gap(x2);
+            }
+        }
+        worst = worst.max(g1).max(g2);
+    }
+    worst
+}
+
+/// Golden-section steps of [`worst_gap`]'s climb: each shrinks the
+/// bracket by 0.618, so forty take two sample intervals to below `1e-8`
+/// of one, where a smooth peak's value has settled to rounding. An
+/// iteration count, not a tolerance.
+const PEAK_STEPS: usize = 40;
+
 /// A distance between `a` and `b`, raised by the rounding at their own
 /// scale: what keeps an entity within its tolerance when the body is
 /// moved, which rounds every point it compares.
@@ -1383,9 +1425,17 @@ impl Gaps {
             let ts = samples(u.range, precision.check_samples);
             match curve {
                 Some(c) => {
-                    let worst = (ts.iter())
-                        .map(|&t| distance(image(t), c.point(t)))
-                        .fold(0.0, f64::max);
+                    // The checker's samples, and the ones a fit is held
+                    // to, each peak then climbed: between samples a
+                    // fitted pcurve strays as far as the fit allows it,
+                    // and a finer look — the mesh's — finds it there.
+                    let mut ts = ts;
+                    ts.extend(samples(u.range, PCURVE_SAMPLES + 1));
+                    ts.sort_by(f64::total_cmp);
+                    ts.dedup();
+                    let worst = worst_gap(&ts, precision.default_tolerance, |t| {
+                        distance(image(t), c.point(t))
+                    });
                     self.raise_edge(key, worst);
                 }
                 None => {
@@ -1681,4 +1731,22 @@ fn loop_box(uses: &[Use]) -> [[f64; 2]; 2] {
         }
     }
     b
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_gap_peaking_between_samples_is_measured_at_its_top() {
+        // A bump of height 3 centred between the samples at 0.5 and 0.75,
+        // which see it at a fraction of its top.
+        let bump = |t: f64| 3.0 * (-((t - 0.6) / 0.08).powi(2)).exp();
+        let ts = samples(Interval::new(0.0, 1.0).unwrap(), 5);
+        assert!(ts.iter().all(|&t| bump(t) < 1.0));
+        assert!((worst_gap(&ts, 1e-7, bump) - 3.0).abs() < 1e-12);
+        // At or below the floor, the samples stand.
+        let low = |t: f64| 1e-8 * bump(t);
+        assert!(worst_gap(&ts, 1e-7, low) < 1e-8);
+    }
 }

@@ -1531,8 +1531,11 @@ may carry different tolerances.
   band it ends them on one point (`pcurve_ending_on`) — the seam's end
   where one is a seam, else the vertex's own (u, v), as a boolean ends a
   section edge. Each edge then carries the largest distance of its
-  pcurves' images from its curve at the checker's samples (and a closed
-  edge its curve's own gap), each vertex the largest distance from its
+  pcurves' images from its curve — sampled at the checker's samples and
+  at the `PCURVE_SAMPLES` a fit is held to, each peak past the default
+  climbed to its top between them, since a fitted pcurve strays furthest
+  between samples and a finer look, the mesh's, finds it there (and a
+  closed edge its curve's own gap), each vertex the largest distance from its
   point to the curves' ends and the pcurves' images there and the span of
   a degenerate edge's image, each face the default; every value is
   floored at `default_tolerance` and raised to keep the ordering. A gap

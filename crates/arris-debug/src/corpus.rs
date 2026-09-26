@@ -1895,7 +1895,11 @@ fn reference<'a>(
 
 /// ADR-0012's invariants on every face-local vertex of the mesh: the
 /// face's surface at the corner's own (u, v) is the shared position it
-/// stands on, within the face's tolerance, and its normal is the
+/// stands on, within the largest tolerance of the face and the edges and
+/// vertices bounding it — a corner on an edge stands on the edge's curve
+/// and takes its (u, v) from the pcurve, which agree to the edge's
+/// tolerance and not the face's (docs/DATA-MODEL.md §Tolerances,
+/// ADR-0026's amendment of step 5) — and its normal is the
 /// surface's own in the face use's sense — outward — wherever the
 /// parametrisation is not singular, and a unit vector in the tangent
 /// plane where it is.
@@ -1921,6 +1925,14 @@ fn corners_stage(m: &Model, body: Body, mesh: &TriMesh) -> Result<(), String> {
         let face = m.face(used.id).map_err(|e| e.to_string())?;
         let surface = m.surface(face.surface()).map_err(|e| e.to_string())?;
         let reversed = used.orientation == Orientation::Reversed;
+        let mut within = face.tolerance();
+        for coedge in face.loops().iter().flat_map(|l| l.coedges()) {
+            let edge = m.edge(coedge.edge()).map_err(|e| e.to_string())?;
+            within = within.max(edge.tolerance());
+            for v in [edge.start(), edge.end()] {
+                within = within.max(m.vertex(v).map_err(|e| e.to_string())?.tolerance());
+            }
+        }
         for i in cf.vertices.clone() {
             let ([u, v], normal, shared) = (
                 corners.uvs()[i],
@@ -1930,12 +1942,11 @@ fn corners_stage(m: &Model, body: Body, mesh: &TriMesh) -> Result<(), String> {
             let at = Point3::from(mesh.positions()[shared]);
             let on_surface = surface.point(u, v);
             let off = (on_surface - at).norm();
-            if off.is_nan() || off > face.tolerance() {
+            if off.is_nan() || off > within {
                 return Err(format!(
                     "{}: ({u}, {v}) evaluates to {on_surface}, {off:e} from the {at} it stands on, \
-                     above the face's tolerance {:e}",
-                    cf.face,
-                    face.tolerance()
+                     above the face's and its boundary's tolerance {within:e}",
+                    cf.face
                 ));
             }
             let n = Vec3::from(normal);

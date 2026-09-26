@@ -389,3 +389,19 @@ is a reader bug under §4, not a timing to accommodate.
   The last is the slow read (CTC-05). Every `SHELL_BASED_SURFACE_MODEL` of
   the tier is a one-face open shell, and its refusal is right.
 
+
+## Amendment (2026-09-26, plan `real-part-corpus` step 5)
+
+- **An edge's measured gap is the fitted pcurve's worst, not its worst at
+  the checker's samples.** CTC-04 and FTC-08 read once their placements
+  did, and then failed at the mesh. A corner on a fitted pcurve stood
+  1.2e-7 to 9.3e-6 off its shared position. The edge's tolerance, measured
+  at the checker's 23 samples, fell short of the fit's deviation between
+  them by up to 15%. The reader now samples each use at the checker's
+  samples and at the `PCURVE_SAMPLES` the fit is held to, and climbs each
+  peak past the model's default to its top by golden section. An exact
+  pcurve's gap is rounding, below the default, and is not climbed.
+- **A mesh corner is held to its face's boundary tolerance.** The corpus
+  runner held every corner to the face's tolerance, which only a kernel
+  built model satisfied. It now holds each to the largest tolerance of
+  the face and the edges and vertices bounding it (ADR-0012's amendment).

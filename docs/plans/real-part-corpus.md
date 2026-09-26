@@ -229,6 +229,10 @@ part to an oracle.
   - [ ] `edge-through-sphere-pole` (FTC-06; new at step 4, a half sphere
     bounded by one meridian circle through both poles);
   - [ ] `slow-gap-refusal` (CTC-05, 66 s in release).
+  - [x] an edge's tolerance measured only at the checker's samples, a
+    fitted pcurve straying past it between them, and the mesh's corners
+    held to the face's tolerance alone (CTC-04, FTC-08; found at step 5
+    behind the placement, ADR-0026's amendment of step 5).
 
   The rest are the fetched tier's: the camera, the tessellated solid, the
   phantom placements, FTC-06 AP242's `Full` failure, and the 790 s and

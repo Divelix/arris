@@ -202,3 +202,15 @@ own, written at the writer and computed in nothing but `f64`.
   STEP export and the whole fixture corpus would carry the arrays for
   nothing. A request flag is one bool, and `tessellate(m, body, chord)`
   stays for the callers that only want the watertight buffer.
+
+## Amendment (2026-09-26, plan `real-part-corpus` step 5)
+
+A corner evaluates back to its shared position within the largest
+tolerance of its face and the edges and vertices bounding it, not the
+face's alone. A corner on an edge stands on the edge's curve and takes its
+(u, v) from the edge's pcurve, and those two agree to the edge's
+tolerance, which is at least the face's (docs/DATA-MODEL.md
+§Tolerances). Every fixture the kernel built had its edges at their
+faces' tolerance, so the two bounds were one. A part read from a file
+does not: NIST's FTC-08 has a fitted pcurve on a sphere at 6e-6 in a face
+at 1e-7 (ADR-0026's amendment of step 5).
