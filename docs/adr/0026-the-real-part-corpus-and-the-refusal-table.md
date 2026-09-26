@@ -348,3 +348,16 @@ is a reader bug under §4, not a timing to accommodate.
 - **Recording every refusal as the reader returns it.** It would count
   the reader's own bugs as the healing cycle's demand and rank the next
   cycle on them.
+
+## Amendment (2026-09-26, plan `real-part-corpus` step 3)
+
+- **Counts are held wherever healing changed no topology**, not only
+  where `occt_heals` is false. The first part read, `nist_ftc_09_asme1_rd`,
+  is healed: unhealed, Open CASCADE's reading of it fails
+  `BRepCheck_Analyzer` with a volume of 902 599 against 136 445. Yet its
+  counts are the same either way (300/454/158/228). §3 skips counts
+  because healing adds seams and splits edges, and it has done neither
+  here. So `expected.json` records the unhealed reading's counts beside
+  `occt_heals`, and a read solid's counts are held wherever the two
+  readings' counts agree.
+

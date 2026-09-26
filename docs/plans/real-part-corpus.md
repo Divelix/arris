@@ -175,7 +175,7 @@ part to an oracle.
   Test: a fixture under `boolean/` whose `step` operand is Arris's own
   STEP of an existing fixture's result, committed beside it, cut by a
   box. Both kernels agree through the whole corpus runner.
-- [ ] Step 3 **[1]** — The `part` fixture kind.
+- [x] Step 3 **[1]** — The `part` fixture kind.
   - `Kind::Part` in `arris_debug::fixtures` and in Python's `fixture.py`.
   - `expected.py` measures each solid of the file (counts, genus, volume,
     area, centroid, inertia).

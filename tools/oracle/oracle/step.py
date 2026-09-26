@@ -11,7 +11,9 @@ from OCP.STEPControl import STEPControl_AsIs, STEPControl_Reader, STEPControl_Wr
 from OCP.TopAbs import TopAbs_SOLID
 from OCP.TopExp import TopExp_Explorer
 from OCP.TopLoc import TopLoc_Location
+from OCP.TCollection import TCollection_AsciiString
 from OCP.TopoDS import TopoDS_Shape
+from OCP.collections import DataMap_TCollection_AsciiString_TCollection_AsciiString
 
 from . import OracleError
 
@@ -167,10 +169,30 @@ def _entity_point(entity) -> tuple[int, tuple[float, ...]]:
     return shell.NbCfsFaces(), tuple(point.CoordinatesValue(i) for i in (1, 2, 3))
 
 
-def solids(path: Path) -> list[tuple[int, TopoDS_Shape]]:
+# Every switch of the transfer's `FixShape` (Open CASCADE's
+# `XSAlgo_ShapeProcessor`, `FixShape.<name>`): all `0` is its healing off.
+FIX_MODES = (
+    "AutoCorrectPrecisionMode", "ClosedWireMode", "CreateOpenSolidMode", "FixAddCurve3dMode",
+    "FixAddNaturalBoundMode", "FixAddPCurveMode", "FixConnectedMode", "FixDegeneratedMode",
+    "FixEdgeCurvesMode", "FixEdgeSameParameterMode", "FixFaceMode", "FixFaceOrientationMode",
+    "FixFreeFaceMode", "FixFreeShellMode", "FixFreeWireMode", "FixIntersectingEdgesMode",
+    "FixIntersectingWiresMode", "FixLackingMode", "FixLoopWiresMode", "FixMissingSeamMode",
+    "FixNonAdjacentIntersectingEdgesMode", "FixNotchedEdgesMode", "FixOrientationMode",
+    "FixRemoveCurve3dMode", "FixRemovePCurveMode", "FixReorderMode", "FixReversed2dMode",
+    "FixSameParameterMode", "FixSeamMode", "FixSelfIntersectingEdgeMode",
+    "FixSelfIntersectionMode", "FixShellMode", "FixShellOrientationMode", "FixShiftedMode",
+    "FixSmallAreaWireMode", "FixSmallMode", "FixSolidMode", "FixSplitFaceMode", "FixTailMode",
+    "FixVertexPositionMode", "FixVertexToleranceMode", "FixWireMode", "ModifyGeometryMode",
+    "ModifyTopologyMode", "PreferencePCurveMode", "RemoveLoopMode", "RemoveSmallAreaFaceMode",
+)
+
+
+def solids(path: Path, heal: bool = True) -> list[tuple[int, TopoDS_Shape]]:
     """Every solid Open CASCADE's reader transfers from `path`, placed where
     the product structure puts it and healed as its reader heals by default
-    (ADR-0026 §3), each with the `#id` of the `MANIFOLD_SOLID_BREP` or
+    (ADR-0026 §3) — or, with `heal` false, with every `FixShape` switch
+    off, which only takes once `ReadFile` has made the transfer's actor —
+    each with the `#id` of the `MANIFOLD_SOLID_BREP` or
     `BREP_WITH_VOIDS` it came from, in the order the transfer gives them.
 
     The entity behind a solid is `EntityFromShapeResult`'s for the solid
@@ -193,6 +215,11 @@ def solids(path: Path) -> list[tuple[int, TopoDS_Shape]]:
     r = STEPControl_Reader()
     if r.ReadFile(str(path)) != IFSelect_RetDone:
         raise OracleError(f"STEP read failed for {path}")
+    if not heal:
+        switches = DataMap_TCollection_AsciiString_TCollection_AsciiString()
+        for name in FIX_MODES:
+            switches.Bind(TCollection_AsciiString(f"FixShape.{name}"), TCollection_AsciiString("0"))
+        r.SetShapeFixParameters(switches)
     r.TransferRoots()
     transfer = r.WS().TransferReader()
     out = []

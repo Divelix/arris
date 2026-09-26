@@ -329,6 +329,63 @@ fn a_geometry_fixture_is_linted_for_presence_hash_and_shape() {
     );
 }
 
+/// A part fixture (ADR-0026) is linted for its file's hash, the dump of
+/// every solid it reads and a reason for every refusal it records.
+#[test]
+fn a_part_is_linted_for_its_file_its_dumps_and_its_reasons() {
+    let scratch = tempdir("part");
+    let from = corpus_root().join("real/nist-ftc-09");
+    let files = [
+        "fixture.json",
+        "expected.json",
+        "nist_ftc_09_asme1_rd.stp",
+        "dump.5384.0.txt",
+    ];
+    for file in files {
+        std::fs::copy(from.join(file), scratch.join(file)).unwrap();
+    }
+    assert!(lint(&scratch).is_empty(), "{:?}", lint(&scratch));
+
+    let dump = scratch.join("dump.5384.0.txt");
+    std::fs::remove_file(&dump).unwrap();
+    let problems = lint(&scratch);
+    assert!(
+        problems
+            .iter()
+            .any(|p| p.contains("reads but dump.5384.0.txt is not committed")),
+        "{problems:?}"
+    );
+    std::fs::copy(from.join("dump.5384.0.txt"), &dump).unwrap();
+
+    let step = scratch.join("nist_ftc_09_asme1_rd.stp");
+    let mut bytes = std::fs::read(&step).unwrap();
+    bytes.push(b'\n');
+    std::fs::write(&step, &bytes).unwrap();
+    let problems = lint(&scratch);
+    assert!(
+        problems.iter().any(|p| p.contains("not the fixture's")),
+        "{problems:?}"
+    );
+    std::fs::copy(from.join("nist_ftc_09_asme1_rd.stp"), &step).unwrap();
+
+    let recipe = scratch.join("fixture.json");
+    let text = std::fs::read_to_string(&recipe).unwrap();
+    let reasonless = text.replace(
+        r#""outcome": "read""#,
+        r#""outcome": {"refused": {"kind": "offset", "why": " "}}"#,
+    );
+    assert_ne!(reasonless, text);
+    std::fs::write(&recipe, reasonless).unwrap();
+    let problems = lint(&scratch);
+    assert!(
+        problems
+            .iter()
+            .any(|p| p.contains("with no reason why the refusal is right")),
+        "{problems:?}"
+    );
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
 fn tempdir(tag: &str) -> std::path::PathBuf {
     let dir = std::env::temp_dir().join(format!("arris-corpus-lint-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);

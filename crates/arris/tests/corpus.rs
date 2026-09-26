@@ -17,6 +17,15 @@ fn run(name: &str) {
     }
 }
 
+/// A part fixture (ADR-0026): every solid of its file read and held to
+/// its recorded outcome.
+fn run_part(name: &str) {
+    let dir = fixtures::corpus_root().join(name);
+    if let Err(e) = arris_debug::part::run(&dir) {
+        panic!("{name}: {e}");
+    }
+}
+
 /// One variant of a fixture, for a recipe whose variants are worth
 /// failing apart.
 fn run_variant(name: &str, variant: &str) {
@@ -1495,4 +1504,17 @@ fn tempdir(tag: &str) -> std::path::PathBuf {
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     dir
+}
+
+/// NIST's FTC-09, AP203 geometry only: one solid of 158 faces, read whole.
+#[test]
+fn real_nist_ftc_09() {
+    run_part("real/nist-ftc-09");
+}
+
+/// `real/nist-ftc-09` with one plane wrapped in an `OFFSET_SURFACE` by
+/// hand: the refusal path, held to the refusal it records.
+#[test]
+fn real_nist_ftc_09_offset() {
+    run_part("real/nist-ftc-09-offset");
 }

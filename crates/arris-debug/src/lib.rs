@@ -22,6 +22,7 @@ pub mod dump;
 pub mod fixtures;
 pub mod geom;
 pub mod oracle;
+pub mod part;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod prop;
 pub mod render;

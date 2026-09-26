@@ -1,0 +1,11 @@
+{
+  "kind": "part",
+  "description": "real/nist-ftc-09 spoiled by hand, the runner's refusal path under test (plans/real-part-corpus step 3): face #2920's PLANE #2621 wrapped in #5849 = OFFSET_SURFACE('',#2621,0.,.F.), the one line added and the one reference changed. Open CASCADE reads the offset and the part is its old self; Arris holds no offset surface and refuses the solid",
+  "file": "nist_ftc_09_asme1_rd-offset.stp",
+  "source": "https://www.nist.gov/document/nist-pmi-step-files — NIST-PMI-STEP-Files.zip (sha256 8fa78429e6d8d9b0d7681d223b6aa9ec98c3772185c55b1a0e3679b21c181911), AP203 geometry only/nist_ftc_09_asme1_rd.stp, modified as the description says",
+  "licence": "NIST: \"The test cases, CAD models, and STEP files can be used without any restrictions.\"",
+  "sha256": "9b406ed7e43cc7dcc5d762196ca5352a49ffb598af19ee7c8b9c27de311ec742",
+  "solids": [
+    {"id": 5384, "instance": 0, "outcome": {"refused": {"kind": "offset", "why": "face #2920 lies on OFFSET_SURFACE #5849: Arris has no offset surface, and a fitted one would not be the part (ADR-0025 §2)"}}}
+  ]
+}

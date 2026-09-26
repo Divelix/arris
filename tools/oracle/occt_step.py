@@ -24,8 +24,8 @@ from oracle.recipe import build, fixture_kind  # noqa: E402
 def write(directory: Path, out: Path, variant: str = "default", nurbs: bool = False) -> None:
     """Writes the result of `directory`'s recipe under `variant` to `out`."""
     fixture = load_fixture(directory)
-    if fixture_kind(fixture) == "geometry":
-        raise OracleError(f"{directory} is a geometry fixture: it has no solid to write")
+    if fixture_kind(fixture) in ("geometry", "part"):
+        raise OracleError(f"{directory} is a {fixture_kind(fixture)} fixture: it has no recipe result to write")
     shape, _ = build(fixture, variant)
     if nurbs:
         shape = step.nurbs(shape)

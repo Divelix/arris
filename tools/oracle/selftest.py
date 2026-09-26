@@ -542,6 +542,8 @@ def main(argv: list[str]) -> int:
                 ok &= check_committed(name, fresh, load_expected(directory))
                 if fixture_kind(fixture) == "geometry":
                     print(f"  {name}: geometry, no STEP round trip")
+                elif fixture_kind(fixture) == "part":
+                    print(f"  {name}: a part, read from its own STEP file; no round trip")
                 else:
                     ok &= round_trip(name, fixture, fresh, tmp)
             except OracleError as e:

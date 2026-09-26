@@ -1,0 +1,11 @@
+{
+  "kind": "part",
+  "description": "NIST MBE PMI fully-toleranced test case 09, the AP203 geometry-only edition (ADR-0026 §1): one manifold solid of 158 faces, planes, cylinders and cones, read whole",
+  "file": "nist_ftc_09_asme1_rd.stp",
+  "source": "https://www.nist.gov/document/nist-pmi-step-files — NIST-PMI-STEP-Files.zip (sha256 8fa78429e6d8d9b0d7681d223b6aa9ec98c3772185c55b1a0e3679b21c181911), AP203 geometry only/nist_ftc_09_asme1_rd.stp",
+  "licence": "NIST: \"The test cases, CAD models, and STEP files can be used without any restrictions.\"",
+  "sha256": "e29c09bd2d454601ff1a0d77c4c4ffaf2ed78eee71031ce49f7b7bb5a6d1d4e8",
+  "solids": [
+    {"id": 5384, "instance": 0, "outcome": "read"}
+  ]
+}

@@ -1,7 +1,10 @@
 """Fixture directories on disk."""
 
+import hashlib
 import json
 from pathlib import Path
+
+from OCP.BRepCheck import BRepCheck_Analyzer
 
 from . import OracleError, occt_version, step
 from .measure import DEFAULT_TOLERANCES, measure, own_measures
@@ -54,6 +57,8 @@ def compute_expected(fixture: dict, own: bool = False) -> dict:
     fixture."""
     if fixture_kind(fixture) == "geometry":
         return {"occt": occt_version(), "recipe_sha256": recipe_hash(fixture), "kind": "geometry", **compute_geometry(fixture)}
+    if fixture_kind(fixture) == "part":
+        return {"occt": occt_version(), "recipe_sha256": recipe_hash(fixture), "kind": "part", "solids": compute_part(fixture)}
     tol = {**DEFAULT_TOLERANCES, **fixture.get("tolerances", {})}
     # A result Arris refuses as non-manifold is Open CASCADE's compound of
     # solids sharing an edge or a vertex, and one it refuses as a tangent
@@ -79,6 +84,55 @@ def compute_expected(fixture: dict, own: bool = False) -> dict:
     return {"occt": occt_version(), "recipe_sha256": recipe_hash(fixture), "results": results}
 
 
+def compute_part(fixture: dict) -> list[dict]:
+    """A part fixture's solids as Open CASCADE reads its file: each solid of
+    the healed reading (ADR-0026 §3), in the transfer's order, with the
+    `#id` it came from, what `measure` records of it, and `occt_heals`.
+    That is true where the solid needed healing to be one: with healing
+    off, a solid of that `#id` fails `BRepCheck_Analyzer`, has other
+    counts, or is not read at all. `unhealed_counts` are the counts of the
+    unhealed reading, `None` where there is none to count: where they are
+    the healed ones, healing changed no topology, and Arris's counts are
+    held to them even under `occt_heals`."""
+    path = Path(fixture[DIR_KEY]) / fixture["file"]
+    if not path.exists():
+        raise OracleError(f"no such STEP file: {path}")
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    if digest != fixture["sha256"]:
+        raise OracleError(f"{path} hashes to {digest}, not the fixture's {fixture['sha256']}")
+    tol = {**DEFAULT_TOLERANCES, **fixture.get("tolerances", {})}
+    healed = [(label, measure(shape, [], tol["probe"])) for label, shape in step.solids(path)]
+    try:
+        unhealed = [(label, shape) for label, shape in step.solids(path, heal=False)]
+    except Exception:  # OracleError, or Open CASCADE's own on a file it cannot take unhealed
+        unhealed = []
+    heals: dict[int, bool] = {}
+    raw_counts: dict[int, dict | None] = {}
+    for label, result in healed:
+        raw = [shape for other, shape in unhealed if other == label]
+        counts = [_counts_of(shape, tol) for shape in raw]
+        heals[label] = heals.get(label, False) or not raw or any(
+            not BRepCheck_Analyzer(shape).IsValid() or c != result["counts"] for shape, c in zip(raw, counts)
+        )
+        # One count for the entity: the unhealed readings' where they all
+        # agree, else none.
+        same = counts and all(c == counts[0] for c in counts)
+        raw_counts[label] = counts[0] if same else None
+    return [
+        {"id": label, "occt_heals": heals[label], "unhealed_counts": raw_counts[label], **result}
+        for label, result in healed
+    ]
+
+
+def _counts_of(shape, tol: dict) -> dict | None:
+    """The counts `measure` records of a shape, or `None` where it cannot
+    measure it (an unhealed solid may not close)."""
+    try:
+        return measure(shape, [], tol["probe"], manifold=False)["counts"]
+    except Exception:  # OracleError, or Open CASCADE's own on a shape it cannot measure
+        return None
+
+
 def dump_expected(expected: dict, path: Path) -> None:
     # sort_keys and a trailing newline: the file diffs cleanly; floats are
     # repr'd by json, full precision.
@@ -87,6 +141,8 @@ def dump_expected(expected: dict, path: Path) -> None:
 
 def summary_lines(name: str, expected: dict) -> list[str]:
     """One line per result: per variant for a solid, one for a geometry."""
+    if expected.get("kind") == "part":
+        return [summary_line(f"{name}[#{s['id']}{', healed' if s['occt_heals'] else ''}]", s) for s in expected["solids"]]
     if expected.get("kind") == "geometry":
         evals = sum(len(s["evaluations"]) for s in expected["samples"])
         projs = sum(len(s["projections"]) for s in expected["samples"])

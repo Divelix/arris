@@ -1,10 +1,12 @@
 # The fixture corpus
 
 The unit of acceptance (`docs/ROADMAP.md` §Fixtures). One directory per
-fixture, `<area>/<slug>/`, of one of two kinds — a **solid** (the default:
-a recipe built and measured) or **geometry** (`"kind": "geometry"`, under
-`geom/`: analytic surfaces and curves evaluated, projected onto and
-intersected; §Geometry fixtures below) — holding:
+fixture, `<area>/<slug>/`, of one of three kinds — a **solid** (the
+default: a recipe built and measured), **geometry** (`"kind": "geometry"`,
+under `geom/`: analytic surfaces and curves evaluated, projected onto and
+intersected; §Geometry fixtures below) or a **part** (`"kind": "part"`,
+under `real/`: a STEP file Arris did not write, read; §Part fixtures
+below) — holding:
 
 | File | Written by | Holds |
 |---|---|---|
@@ -471,6 +473,67 @@ oracle's sampled points on Arris's curves to 1e-9.
   of the ruling rather than in the quadric, the quadratic's vanishing
   coefficients being rounding there, so the oracle test holds those
   points to the line Arris calls `Coincident`.
+
+## Part fixtures (`"kind": "part"`)
+
+A real part (ADR-0026): a STEP file Arris did not write, in the directory
+beside `fixture.json`, `expected.json` and one `dump.<id>.<instance>.txt`
+per solid read. The committed tier is NIST's MBE PMI test models, which
+NIST lets anyone use without restriction; NIST asks for acknowledgement,
+and this is it: the parts under `real/nist-*` are NIST's.
+
+```json
+{
+  "kind": "part",
+  "description": "what the part is",
+  "file": "nist_ftc_09_asme1_rd.stp",
+  "source": "the URL and archive it came from",
+  "licence": "the licence, quoted from the source",
+  "sha256": "<of the file>",
+  "solids": [
+    {"id": 5384, "instance": 0, "outcome": "read"},
+    {"id": 6073, "instance": 0, "outcome": {"refused": {"kind": "unsupported entity", "why": "…"}}}
+  ]
+}
+```
+
+- **`solids`** lists every solid instance Arris's reader returns, in its
+  order (`FileEntity`'s `#id` and placement), with the outcome it is held
+  to. A change of outcome is a `fixtures:` commit. A refusal that starts
+  to read fails its test until the fixture says so.
+- **A refusal's `why` says why the refusal is right**, not which it is: the
+  file holds an entity outside the subset, or describes no solid. A
+  refusal of something the reader should map is a reader bug. It is
+  shrunk to `regression/` like a wrong solid (ADR-0026 §4), and is never
+  recorded here.
+- **`expected.json`** is the oracle's reading of the file (`expected.py`),
+  healed as Open CASCADE's reader heals by default. It holds one entry
+  per solid, with the `#id` it came from, what a solid result records,
+  `occt_heals` (the unhealed reading of that entity is not a valid solid,
+  has other counts, or is missing), and `unhealed_counts`. The hash
+  covers `kind`, `file` and `sha256`, so a changed file stales it.
+- **The runner** (`arris_debug::part::run`, `real_<slug>` in
+  `crates/arris/tests/corpus.rs`) reads the file into a model of the
+  fixture's `precision`, holds the list of instances and each refusal's
+  kind exactly, and puts every `read` solid through these stages:
+  - the checker at `Full`, what it cannot decide on a NURBS face left
+    unchecked;
+  - matched to the oracle's solid of its `#id` nearest by centroid, each
+    taken once; a read with no such solid is a solid the file does not
+    have;
+  - counts and genus, where healing changed no topology (`unhealed_counts`
+    equal to `counts`);
+  - volume, area, centroid and inertia within `tolerances`, widened to
+    the body's own (ADR-0023);
+  - the mesh at `mesh_chord`, closed and within `mesh_volume_rel`;
+  - the dump.
+
+  A solid the oracle reads and Arris neither reads nor refuses fails too.
+- **The lint** holds the file to its `sha256`, `expected.json` to the
+  hash, the oracle's solids to the Euler line, every refusal to a reason,
+  and every `read` solid to its committed dump — none under `regression/`.
+- `real/nist-ftc-09-offset` is `real/nist-ftc-09` with one plane wrapped
+  in an `OFFSET_SURFACE` by hand: the refusal path under test.
 
 ## `expected.json`
 

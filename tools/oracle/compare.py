@@ -24,6 +24,8 @@ def compare_step(directory: Path, step_file: Path, variant: str = "default") -> 
     fixture = load_fixture(directory)
     if fixture_kind(fixture) == "geometry":
         raise OracleError(f"{directory} is a geometry fixture: Arris compares it in crates/arris-geom/tests/oracle.rs, not from a STEP file")
+    if fixture_kind(fixture) == "part":
+        raise OracleError(f"{directory} is a part fixture: Arris holds its reading to expected.json itself")
     expected = load_expected(directory)
     if expected is None:
         raise OracleError(f"no expected.json in {directory}; run expected.py first")

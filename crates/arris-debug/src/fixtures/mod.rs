@@ -17,10 +17,10 @@ pub mod geom;
 
 pub use expr::{ExprError, eval};
 
-/// The two fixture kinds: a solid built by a recipe and measured, or
-/// analytic geometry evaluated, projected onto and intersected
-/// (`tests/fixtures/README.md`). `fixture.json` names it in `"kind"`;
-/// absent means solid.
+/// The three fixture kinds: a solid built by a recipe and measured,
+/// analytic geometry evaluated, projected onto and intersected, or a part
+/// read from a STEP file Arris did not write (`tests/fixtures/README.md`).
+/// `fixture.json` names it in `"kind"`; absent means solid.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
@@ -29,6 +29,10 @@ pub enum Kind {
     Solid,
     /// Named surfaces and curves with samples and pairs; [`geom`].
     Geometry,
+    /// A STEP file beside the fixture, every solid of it read and held to
+    /// the oracle's reading or to its recorded refusal
+    /// (`crate::part`, ADR-0026).
+    Part,
 }
 
 /// The kind of the fixture in `dir`, from its `fixture.json`.
@@ -41,12 +45,13 @@ pub fn kind_of(dir: &Path) -> Result<Kind, FixtureError> {
 }
 
 /// `"kind"` absent or `"solid"` is [`Kind::Solid`], `"geometry"` is
-/// [`Kind::Geometry`]; anything else is `Err` with the string found, as
-/// the oracle's `fixture_kind` also refuses it.
+/// [`Kind::Geometry`], `"part"` is [`Kind::Part`]; anything else is `Err`
+/// with the string found, as the oracle's `fixture_kind` also refuses it.
 fn kind_of_raw(raw: &serde_json::Value) -> Result<Kind, String> {
     match raw.get("kind").and_then(|k| k.as_str()) {
         None | Some("solid") => Ok(Kind::Solid),
         Some("geometry") => Ok(Kind::Geometry),
+        Some("part") => Ok(Kind::Part),
         Some(other) => Err(other.to_string()),
     }
 }
@@ -928,9 +933,14 @@ fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T, FixtureEr
 pub const SOLID_KEYS: [&str; 5] = ["params", "variants", "steps", "result", "probes"];
 /// The keys of a geometry recipe the oracle evaluates and hashes.
 pub const GEOMETRY_KEYS: [&str; 6] = ["kind", "params", "surfaces", "curves", "samples", "pairs"];
+/// The keys of a part fixture the oracle reads and hashes: the file, by
+/// name and by content. The solids' outcomes are Arris's, not the
+/// oracle's.
+pub const PART_KEYS: [&str; 3] = ["kind", "file", "sha256"];
 
 /// The SHA-256 the oracle records: over the recipe's evaluated keys as
-/// parsed — [`SOLID_KEYS`] or [`GEOMETRY_KEYS`] by [`Kind`] — encoded
+/// parsed — [`SOLID_KEYS`], [`GEOMETRY_KEYS`] or [`PART_KEYS`] by
+/// [`Kind`] — encoded
 /// with sorted keys and no whitespace (serde_json's float formatting; the
 /// oracle matches it). Editing `analytic` or `description` does not
 /// change it. `Err` is the unknown `"kind"` string, when there is one.
@@ -938,6 +948,7 @@ pub fn recipe_hash(raw: &serde_json::Value) -> Result<String, String> {
     let keys: &[&str] = match kind_of_raw(raw)? {
         Kind::Solid => &SOLID_KEYS,
         Kind::Geometry => &GEOMETRY_KEYS,
+        Kind::Part => &PART_KEYS,
     };
     let mut evaluated = serde_json::Map::new();
     for key in keys {
@@ -976,6 +987,8 @@ pub fn load(dir: &Path) -> Result<Fixture, FixtureError> {
 /// The areas of the corpus whose comparable solid fixtures must carry a
 /// committed dump per variant: every area a corpus test runs, so a
 /// fixture there has passed and been blessed, and none is `#[ignore]`d.
+/// `real/` holds parts, whose lint holds their dumps the same way
+/// (`crate::part::lint`).
 pub const DUMPED_AREAS: [&str; 6] = [
     "primitive",
     "transform",
@@ -1018,6 +1031,7 @@ pub const ANALYTIC_REL: f64 = 1e-6;
 pub fn lint(dir: &Path) -> Vec<String> {
     match kind_of(dir) {
         Ok(Kind::Geometry) => return geom::lint(dir),
+        Ok(Kind::Part) => return crate::part::lint(dir),
         Ok(Kind::Solid) => {}
         Err(e) => return vec![format!("{}: {e}", dir.display())],
     }

@@ -313,6 +313,16 @@ pub enum CorpusError {
         /// The reader's refusal.
         refusal: Box<step::Refusal>,
     },
+    /// A part fixture's solid is not what the fixture records: another
+    /// set of solid instances, another outcome, or a solid one reading of
+    /// the file has and the other does not (`crate::part`).
+    #[error("{fixture}: {what}")]
+    Part {
+        /// The fixture.
+        fixture: String,
+        /// What differs.
+        what: String,
+    },
     /// A file could not be read or written.
     #[error("{path}: {source}")]
     Io {
@@ -653,7 +663,8 @@ impl CorpusError {
             | CorpusError::Expectation { .. }
             | CorpusError::Op { .. }
             | CorpusError::StepFile { .. }
-            | CorpusError::Refused { .. } => Stage::Build,
+            | CorpusError::Refused { .. }
+            | CorpusError::Part { .. } => Stage::Build,
             CorpusError::Check { .. } | CorpusError::Lumps { .. } => Stage::Check,
             CorpusError::Counts { .. } | CorpusError::Genus { .. } => Stage::Counts,
             CorpusError::Measure { .. } => Stage::Measure,
@@ -771,32 +782,49 @@ pub fn run(dir: &Path, variant: &str) -> Result<(), CorpusError> {
         path: dump_path(dir, variant),
         what: e.to_string(),
     })?;
-    let path = dump_path(dir, variant);
-    if blessing() {
-        std::fs::write(&path, &dump).map_err(|source| CorpusError::Io {
-            path: path.clone(),
+    check_dump(&name, &dump_path(dir, variant), &dump, blessing())
+}
+
+/// `dump` against the file committed at `path` — or, when `bless`,
+/// written there instead. `name` is what the error calls the fixture.
+/// Errors: [`CorpusError::Dump`] for a dump that differs or is not
+/// committed, [`CorpusError::Io`] for a file that cannot be read or
+/// written.
+pub(crate) fn check_dump(
+    name: &str,
+    path: &Path,
+    dump: &str,
+    bless: bool,
+) -> Result<(), CorpusError> {
+    if bless {
+        return std::fs::write(path, dump).map_err(|source| CorpusError::Io {
+            path: path.to_path_buf(),
             source,
-        })?;
-        return Ok(());
+        });
     }
-    let committed = match std::fs::read_to_string(&path) {
+    let committed = match std::fs::read_to_string(path) {
         Ok(text) => text,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             return Err(CorpusError::Dump {
-                fixture: name,
-                path,
+                fixture: name.to_string(),
+                path: path.to_path_buf(),
                 what: format!("is not committed yet; run with {BLESS_VAR}=1 to write it"),
             });
         }
-        Err(source) => return Err(CorpusError::Io { path, source }),
+        Err(source) => {
+            return Err(CorpusError::Io {
+                path: path.to_path_buf(),
+                source,
+            });
+        }
     };
     if committed != dump {
         return Err(CorpusError::Dump {
-            fixture: name,
-            path,
+            fixture: name.to_string(),
+            path: path.to_path_buf(),
             what: format!(
                 "differs from the dump of this build:\n{}",
-                diff(&committed, &dump)
+                diff(&committed, dump)
             ),
         });
     }
@@ -954,36 +982,7 @@ fn read_back(
     held.recipe.tolerances =
         within_own_tolerance(&fixture.recipe.tolerances, &chain.model, body).map_err(fail)?;
     let report = if nurbs {
-        // What the checker leaves undecided on a NURBS face, and nothing
-        // else.
-        let report = check(&chain.model, body, Level::Full);
-        let has_nurbs = |f: FaceId| {
-            (chain.model.face(f))
-                .and_then(|f| chain.model.surface(f.surface()))
-                .is_ok_and(|s| matches!(s, Surface::Nurbs(_)))
-        };
-        let any_nurbs = (chain
-            .model
-            .closure(body)
-            .map_err(|e| fail(e.to_string()))?
-            .faces)
-            .into_iter()
-            .any(has_nurbs);
-        let undecidable = |u: &Unchecked| match u {
-            Unchecked::FacePair { kinds, .. } | Unchecked::ShellFacePair { kinds, .. } => {
-                kinds.0 == SurfaceKind::Nurbs || kinds.1 == SurfaceKind::Nurbs
-            }
-            Unchecked::ShellNesting { .. } => any_nurbs,
-            // A row added later is not known to be a NURBS limit.
-            _ => false,
-        };
-        if !report.is_ok() || !report.unchecked().iter().all(undecidable) {
-            return Err(CorpusError::Check {
-                fixture: held.name.clone(),
-                report: Box::new(report),
-            });
-        }
-        report
+        check_leaving_nurbs(&held.name, &chain.model, body)?
     } else {
         check_stage(&held, &chain)?.1
     };
@@ -1018,6 +1017,43 @@ fn read_back(
     }
     measure_stage(&held, &chain, expected)?;
     Ok(())
+}
+
+/// The checker at `Full` on a body read from a file, with nothing
+/// violated and nothing left undecided but what the checker cannot decide
+/// on a NURBS face: S5's and B1's face pairs with one in them, and B1's
+/// nesting of a shell no ray is cast from, which a NURBS face never
+/// answers (ADR-0025). `name` is what the error calls the body. Errors:
+/// [`CorpusError::Check`].
+pub(crate) fn check_leaving_nurbs(
+    name: &str,
+    m: &Model,
+    body: Body,
+) -> Result<Report, CorpusError> {
+    let report = check(m, body, Level::Full);
+    let has_nurbs = |f: FaceId| {
+        (m.face(f))
+            .and_then(|f| m.surface(f.surface()))
+            .is_ok_and(|s| matches!(s, Surface::Nurbs(_)))
+    };
+    let any_nurbs = m
+        .closure(body)
+        .is_ok_and(|closure| closure.faces.into_iter().any(has_nurbs));
+    let undecidable = |u: &Unchecked| match u {
+        Unchecked::FacePair { kinds, .. } | Unchecked::ShellFacePair { kinds, .. } => {
+            kinds.0 == SurfaceKind::Nurbs || kinds.1 == SurfaceKind::Nurbs
+        }
+        Unchecked::ShellNesting { .. } => any_nurbs,
+        // A row added later is not known to be a NURBS limit.
+        _ => false,
+    };
+    if !report.is_ok() || !report.unchecked().iter().all(undecidable) {
+        return Err(CorpusError::Check {
+            fixture: name.to_string(),
+            report: Box::new(report),
+        });
+    }
+    Ok(report)
 }
 
 /// Every stage of [`run`] that reads no file and starts no process, in
@@ -1258,10 +1294,26 @@ pub fn within_own_tolerance(
 /// [`CorpusError::Mesh`].
 pub fn mesh_stage(fixture: &Fixture, chain: &Chain, target: &Target) -> Result<(), CorpusError> {
     let body = result_of(fixture, chain)?;
-    let m = &chain.model;
-    let tolerances = fixture.recipe.tolerances;
+    mesh_check(
+        &fixture.name,
+        &chain.model,
+        body,
+        &fixture.recipe.tolerances,
+        target,
+    )
+}
+
+/// [`mesh_stage`] of `body` in `m`, at `tolerances`; `name` is what the
+/// error calls it.
+pub(crate) fn mesh_check(
+    name: &str,
+    m: &Model,
+    body: Body,
+    tolerances: &Tolerances,
+    target: &Target,
+) -> Result<(), CorpusError> {
     let mesh_failure = |what: String| CorpusError::Mesh {
-        fixture: fixture.name.clone(),
+        fixture: name.to_string(),
         chord: tolerances.mesh_chord,
         what,
     };
@@ -1981,7 +2033,7 @@ fn measure_target(
 /// not compared against itself. A quantity the oracle did not record is
 /// skipped. Errors: the first quantity that differs, named with both
 /// values.
-fn compare_mass(
+pub(crate) fn compare_mass(
     m: &Model,
     body: Body,
     expected: &Measured,
