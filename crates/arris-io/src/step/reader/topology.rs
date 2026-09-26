@@ -616,7 +616,28 @@ impl Geometry<'_> {
                     let samples = precision.check_samples;
                     let cut = band(&at, &edges, model, &mut loops, &mut rebuilt, tol, samples)
                         .map_err(unsupported)?;
-                    if let Some(cut) = cut {
+                    if let Some(Fix::Apex { face_loop, row }) = cut {
+                        let apex = points.len();
+                        points.push(row.point);
+                        vertex_ids.push(face.id);
+                        let at = junctions(&surface, &singular, &points, cap, precision, flipped);
+                        let mut uses = std::mem::take(&mut loops[face_loop]);
+                        let seam = seam_to(model, &surface, row, apex, &uses, &points, tol)
+                            .map_err(unsupported)?;
+                        let i = seam.join(&mut uses, &mut rebuilt);
+                        let mut uses = at.walk(uses, &mut rebuilt).map_err(|_| {
+                            unsupported("a face of one wrapping loop whose seam to its apex jumps")
+                        })?;
+                        at.meet(&mut uses).map_err(|_| {
+                            unsupported("a face of one wrapping loop whose seam to its apex does not meet it")
+                        })?;
+                        if seam_crosses(&uses, i, &surface, at.parametric, samples) {
+                            return Err(unsupported(
+                                "a face of one wrapping loop whose seam to its apex crosses it",
+                            ));
+                        }
+                        loops[face_loop] = uses;
+                    } else if let Some(Fix::Cut(cut)) = cut {
                         // The seam's far end is a vertex on the other
                         // loop's edge, which is split there.
                         if cut.edge >= file.edges.len() || splits.iter().any(|s| s.edge == cut.edge)
@@ -1751,18 +1772,33 @@ fn band(
     rebuilt: &mut Vec<Rebuilt>,
     tol: Tolerance,
     check_samples: usize,
-) -> Result<Option<Cut>, &'static str> {
+) -> Result<Option<Fix>, &'static str> {
     let period = at.surface.period();
+    // A loop that does not chain vertex to vertex is no loop, and is left
+    // to the builder to refuse.
     let wraps = |uses: &[Use]| -> Option<usize> {
+        let chains = (uses.iter().zip(uses.iter().cycle().skip(1)))
+            .all(|(u, next)| u.vertices[1] == next.vertices[0]);
+        if !chains {
+            return None;
+        }
         let (first, last) = (uses.first()?, uses.last()?);
+        // Once round, in one parameter: a loop wound twice is no band.
         let turns = whole_periods(last.ends().1 - first.ends().0, period);
-        (0..2).find(|&k| turns[k] != 0.0)
+        let once = |k: usize| period[k].is_some_and(|p| (turns[k].abs() / p - 1.0).abs() < 0.5);
+        match (turns[0] != 0.0, turns[1] != 0.0) {
+            (true, false) if once(0) => Some(0),
+            (false, true) if once(1) => Some(1),
+            _ => None,
+        }
     };
     let wrapping: Vec<(usize, usize)> = (loops.iter().enumerate())
         .filter_map(|(i, l)| Some((i, wraps(l)?)))
         .collect();
-    let [(i, k), (j, other)] = wrapping[..] else {
-        return Ok(None);
+    let (i, k, j, other) = match wrapping[..] {
+        [(i, k), (j, other)] => (i, k, j, other),
+        [(i, k)] => return apex(at, &loops[i], i, k).map(Some),
+        _ => return Ok(None),
     };
     if k != other {
         return Err("a face of two loops wrapping different periods of its surface");
@@ -1863,7 +1899,7 @@ fn band(
                 .ok_or("a band's edge the solid does not list")?
                 .geometry
                 .point(t);
-            return Ok(Some(Cut { edge, t, point }));
+            return Ok(Some(Fix::Cut(Cut { edge, t, point })));
         }
     }
     Err("a band whose two loops have no vertices on one isocurve of its surface")
@@ -1873,6 +1909,43 @@ fn band(
 /// the other: sixty-four halve a sampling interval past the spacing of
 /// `f64` parameters. An iteration count, not a tolerance.
 const ROOT_STEPS: usize = 64;
+
+/// What a face of wrapping loops needs before [`band`] can make it one
+/// loop: an edge cut, or a vertex at its apex.
+enum Fix {
+    /// The other loop's edge split where the seam meets it.
+    Cut(Cut),
+    /// The one wrapping loop `face_loop` joined to the singular point
+    /// `row`, a vertex the file left out, as a `VERTEX_LOOP` is.
+    Apex { face_loop: usize, row: Singularity },
+}
+
+/// The singular point a face of one loop wrapping the period `k` closes
+/// at: its surface's, on the side of the loop the face lies on — a cone
+/// bounded by its base circle alone, its apex implicit, or a sphere by one
+/// parallel. The side is the walk's: the face is on its left about the
+/// effective normal ([`Junctions::sense`]). Errors: no singular point on
+/// that side, where the face would be unbounded.
+fn apex(at: &Junctions<'_>, uses: &[Use], face_loop: usize, k: usize) -> Result<Fix, &'static str> {
+    let (Some(first), Some(last)) = (uses.first(), uses.last()) else {
+        return Err("a face of one wrapping loop of no use");
+    };
+    let (start, end) = (first.ends().0, last.ends().1);
+    let heading = (end[k] - start[k]).signum();
+    let free = 1 - k;
+    // `sense(k, side)` is the heading that keeps a face on `side` of the
+    // loop on its left; it is ±1, so this is the side it keeps.
+    let side = heading * at.sense(k, 1.0);
+    (at.singular.iter())
+        .filter(|s| s.fixed == free && (s.value - start[free]) * side > 0.0)
+        .min_by(|a, b| {
+            (a.value - start[free])
+                .abs()
+                .total_cmp(&(b.value - start[free]).abs())
+        })
+        .map(|&row| Fix::Apex { face_loop, row })
+        .ok_or("a face of one loop wrapping a period, with no singular point on its side")
+}
 
 /// Where a band's seam cuts the other loop: the file edge, at its
 /// parameter `t`, where its curve is at `point`.

@@ -546,20 +546,22 @@ and this is it: the parts under `real/nist-*` are NIST's.
   (`regression/slow-gap-refusal`), since timing on a shared machine is no
   assertion anywhere else (ADR-0026 §6).
 - **The committed tier** is NIST's eleven AP203 geometry-only files,
-  `real/nist-ctc-01` to `-05` and `real/nist-ftc-06` to `-11`. Six run
-  today: FTC-09, CTC-03, CTC-04, FTC-08 and FTC-11 read, and CTC-02's
-  solid is refused for a real gap (every surface body refused as a
-  surface). The other five wait on four reader bugs, in
-  `regression/cone-face-without-its-apex`, `edge-through-sphere-pole`,
-  `pcurve-fit-reported-as-gap` and `slow-gap-refusal`. The first two are
-  small files written by hand. The last two are the NIST files
-  themselves: the fit's edge is the exporter's between two of the part's
-  own cylinders, and the time is the whole read's.
+  `real/nist-ctc-01` to `-05` and `real/nist-ftc-06` to `-11`. Seven run
+  today: FTC-09, CTC-03, CTC-04, FTC-08, FTC-10 and FTC-11 read, and
+  CTC-02's solid is refused for a real gap (every surface body refused as
+  a surface). The other four wait on three reader bugs, in
+  `regression/edge-through-sphere-pole`, `pcurve-fit-reported-as-gap` and
+  `slow-gap-refusal`. The first is a small file written by hand. The last
+  two are the NIST files themselves: the fit's edge is the exporter's
+  between two of the part's own cylinders, and the time is the whole
+  read's.
 - A bug fixed moves its hand-written part into `real/` beside the NIST
   parts: `real/axis-placement-along-x-without-reference`, a cylinder whose
   circles are placed on an axis along `-X` to rounding with no reference
-  direction, and `real/seamless-cylinder-band`, a cylinder whose side is
-  bounded by its two circles and no seam.
+  direction; `real/seamless-cylinder-band`, a cylinder whose side is
+  bounded by its two circles and no seam; and
+  `real/cone-face-without-its-apex`, a cone bounded by its base circle
+  alone.
 - `real/nist-ftc-09-offset` is `real/nist-ftc-09` with one plane wrapped
   in an `OFFSET_SURFACE` by hand: the refusal path under test.
 

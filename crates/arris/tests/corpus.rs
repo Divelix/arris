@@ -1523,6 +1523,14 @@ fn real_seamless_cylinder_band() {
     run_part("real/seamless-cylinder-band");
 }
 
+/// A cone bounded by its base circle alone, its apex implicit, as NIST's
+/// FTC-10 writes its drill points: the reader adds the apex and its seam
+/// (ADR-0026's amendment of step 5).
+#[test]
+fn real_cone_face_without_its_apex() {
+    run_part("real/cone-face-without-its-apex");
+}
+
 /// NIST's FTC-09, AP203 geometry only: one solid of 158 faces, read whole.
 #[test]
 fn real_nist_ftc_09() {
@@ -1584,7 +1592,7 @@ fn real_nist_ftc_08() {
     run_part("real/nist-ftc-08");
 }
 
-/// NIST's FTC-10: waits on regression/cone-face-without-its-apex.
+/// NIST's FTC-10: one solid read whole, its bands joined and its cones given their apex.
 #[test]
 fn real_nist_ftc_10() {
     run_part("real/nist-ftc-10");
@@ -1594,12 +1602,6 @@ fn real_nist_ftc_10() {
 #[test]
 fn real_nist_ftc_11() {
     run_part("real/nist-ftc-11");
-}
-
-#[test]
-#[ignore = "the reader leaves a cone face bounded by its base circle alone without a seam to its apex, and its checker refuses the body (ADR-0026 §4)"]
-fn regression_cone_face_without_its_apex() {
-    run_part("regression/cone-face-without-its-apex");
 }
 
 #[test]

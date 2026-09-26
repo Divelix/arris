@@ -445,3 +445,11 @@ is a reader bug under §4, not a timing to accommodate.
   there. A part now takes Gauss–Kronrod, as an extrusion's result does.
   Every other part's numbers moved by 1e-12 at most, and are regenerated
   with it. A recipe's result keeps its integration and its numbers.
+- **A face of one wrapping loop is closed at its apex.** A cone bounded by
+  its base circle alone, its apex written nowhere, as FTC-10's drill
+  points are, is one loop wrapping a period. The reader adds a vertex at
+  the singular point on the side of the loop the face lies on, and joins
+  it by a seam as it joins a `VERTEX_LOOP` (a ruling to a cone's apex, a
+  meridian to a sphere's pole). A face with no singular point on that
+  side would be unbounded, and is refused. FTC-10 reads, in 20 s in the
+  test profile.

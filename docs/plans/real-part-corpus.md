@@ -225,7 +225,7 @@ part to an oracle.
   one box each:
   - [x] `seamless-cylinder-band` (CTC-03, FTC-11; FTC-10 then meets
     the next);
-  - [ ] `cone-face-without-its-apex` (FTC-10; new at step 5, behind the
+  - [x] `cone-face-without-its-apex` (FTC-10; new at step 5, behind the
     band: a cone bounded by its base circle alone, the apex implicit);
   - [x] `axis-placement-along-x-without-reference` (CTC-04, FTC-08);
   - [ ] `pcurve-fit-reported-as-gap` (CTC-01, FTC-07);

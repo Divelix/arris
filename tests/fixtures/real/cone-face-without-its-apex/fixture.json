@@ -1,0 +1,15 @@
+{
+  "kind": "part",
+  "description": "a cone r 4 whose side face runs from its base circle down to its apex 4 below, bounded by the circle alone, the apex left implicit — no VERTEX_LOOP, no degenerate edge — as NIST's FTC-10 writes its drill points (faces #5417, #5569, #5986 and five more): the reader gives the face a vertex at the apex on the side it lies, and joins it by a seam as a VERTEX_LOOP's is. Shrunk from FTC-10 (ADR-0026 §4); Open CASCADE reads it, healed, to π·16·4/3",
+  "file": "cone-tip.stp",
+  "source": "written by hand for this fixture, shrunk from NIST parts (ADR-0026 §4)",
+  "licence": "the project's own",
+  "sha256": "0dad60226c3141818fe8d094bcf200c4420708cfec7df56de74fbfa6b7a72129",
+  "solids": [
+    {
+      "id": 22,
+      "instance": 0,
+      "outcome": "read"
+    }
+  ]
+}
