@@ -1556,6 +1556,14 @@ fn real_slow_gap_refusal() {
     run_part("real/slow-gap-refusal");
 }
 
+/// NIST's FTC-07 whole, whose torus is tangent to a plane on its seam:
+/// the checker's S5 decides the pair as one touch (ADR-0026's amendment
+/// of step 5).
+#[test]
+fn real_torus_plane_section_undecided() {
+    run_part("real/torus-plane-section-undecided");
+}
+
 /// NIST's FTC-09, AP203 geometry only: one solid of 158 faces, read whole.
 #[test]
 fn real_nist_ftc_09() {
@@ -1605,7 +1613,7 @@ fn real_nist_ftc_06() {
     run_part("real/nist-ftc-06");
 }
 
-/// NIST's FTC-07: waits on regression/torus-plane-section-undecided.
+/// NIST's FTC-07: one solid read whole.
 #[test]
 fn real_nist_ftc_07() {
     run_part("real/nist-ftc-07");
@@ -1627,10 +1635,4 @@ fn real_nist_ftc_10() {
 #[test]
 fn real_nist_ftc_11() {
     run_part("real/nist-ftc-11");
-}
-
-#[test]
-#[ignore = "the checker at Full leaves FTC-07's torus against a nearly tangent plane undecided (S5), the intersector refusing the section (ADR-0026 §4)"]
-fn regression_torus_plane_section_undecided() {
-    run_part("regression/torus-plane-section-undecided");
 }

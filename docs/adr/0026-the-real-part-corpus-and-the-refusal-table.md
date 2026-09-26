@@ -496,3 +496,13 @@ is a reader bug under §4, not a timing to accommodate.
   the intersector's limit, not the reader's. It is a backlog line, its
   operands an ignored test in `arris-geom`, and FTC-07 waits on
   `regression/torus-plane-section-undecided`.
+- **A seam root beside a tangency is the tangency.** FTC-07's plane is not
+  near its torus but tangent to it, on the rim, on the torus's seam. The
+  tracer's root search along the seam landed 6.8e-7 from the singular
+  point, outside the cell the point's own precision sizes, and could not
+  prove the root alone: the distance is quadratic there, within the
+  tolerance over a run some 1e-3 wide. A root joined to a singular point
+  on the seam by a run within the tolerance is now that point. The pair
+  is one touch, S5 decides it, and FTC-07 reads whole, in 35 s in the test
+  profile with the checker at `Full`. Every part of the committed tier
+  runs, and none waits.

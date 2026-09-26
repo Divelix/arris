@@ -163,6 +163,12 @@ const CIRCLE_REFINED: usize = 5;
 /// How many golden sections look for the tube circle nearest the other
 /// surface inside [`CIRCLE_BRACKET`]: forty take the bracket to `1e-12`
 /// radians, below anything a tolerance tells apart.
+/// The points `Tracer::seed` samples along the seam between a
+/// root it cannot prove alone and a singular point, to tell whether the
+/// run between them is within the tolerance: a sampling count, not a
+/// tolerance.
+const SEAM_RUN_SAMPLES: usize = 16;
+
 const GOLDEN_STEPS: usize = 40;
 
 /// A tube circle this near a column's edge, in radians, is put on it: a
@@ -1733,8 +1739,26 @@ impl Tracer<'_> {
             half *= 0.5;
         }
         // Off the other surface by more than the tolerance, the candidate
-        // was no root; a root that cannot be proven alone is a fault.
-        if walker.value(0.0, candidate).0.abs() > self.tol.linear {
+        // was no root. Joined along the seam to a singular point on it by
+        // a run within the tolerance, it is that point: where the two
+        // surfaces are tangent their distance is quadratic, within the
+        // tolerance over a run far wider than the point's own cell, and
+        // the seam's root search lands anywhere on it (NIST's FTC-07, a
+        // plane tangent to a torus's rim on its seam). A root that cannot
+        // be proven alone otherwise is a fault.
+        let within = |v: f64| walker.value(0.0, v).0.abs() <= self.tol.linear;
+        if !within(candidate) {
+            return Ok(None);
+        }
+        let touch = walker.singular.iter().any(|s| {
+            let du = wrap_angle(s.at[0]);
+            du.min(TAU - du) <= s.half[0]
+                && (0..=SEAM_RUN_SAMPLES).all(|i| {
+                    let f = i as f64 / SEAM_RUN_SAMPLES as f64;
+                    within(candidate + f * (s.at[1] - candidate))
+                })
+        });
+        if touch {
             Ok(None)
         } else {
             Err(SectionFault::UnresolvedTurning)

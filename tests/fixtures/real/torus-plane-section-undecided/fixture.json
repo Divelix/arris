@@ -1,0 +1,15 @@
+{
+  "kind": "part",
+  "description": "NIST's FTC-07 whole. It reads: edge #1963 fitted past the cap (real/pcurve-fit-reported-as-gap), and the pcurves of its B-spline faces, once 6e-7 past their knot domain, held inside it. The checker at Full then left S5 undecided for the fillet torus f30 (and f32) against the plane f197, tilted 2° and tangent to the torus's rim on its seam: the tracer's seam root landed 6.8e-7 from the tangency, outside its cell, and was refused as UnresolvedTurning. It is the tangency, one touch (ADR-0026's amendment of step 5)",
+  "file": "nist_ftc_07_asme1_rd.stp",
+  "source": "the file of real/nist-ftc-07, https://www.nist.gov/document/nist-pmi-step-files — NIST-PMI-STEP-Files.zip (sha256 8fa78429e6d8d9b0d7681d223b6aa9ec98c3772185c55b1a0e3679b21c181911), AP203 geometry only/nist_ftc_07_asme1_rd.stp",
+  "licence": "NIST: \"The test cases, CAD models, and STEP files can be used without any restrictions.\"",
+  "sha256": "a0bc551656780b26d7a0ee1beedbc07d43f41efa092f74f3c2d8383417f04481",
+  "solids": [
+    {
+      "id": 7820,
+      "instance": 0,
+      "outcome": "read"
+    }
+  ]
+}

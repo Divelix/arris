@@ -2627,14 +2627,13 @@ fn two_planes_a_hair_from_parallel_meet_in_a_finite_line_on_both() {
 }
 
 /// NIST's FTC-07 (ADR-0026's amendment of step 5): a fillet torus, tube
-/// 0.43 about a centre circle of 11.42, whose rim sits within 0.08 of a
-/// plane tilted 2° from its equator's normal. The checker's S5 asks for
-/// the section and `intersect_surfaces` refuses it: "turning points of the
-/// section that cannot be told apart". The desired answer is the section,
-/// or empty, decided.
+/// 0.43 about a centre circle of 11.42, and a plane tilted 2° that is
+/// tangent to its rim on the torus's seam, at `v` = 2°. The seam's root
+/// search landed 6.8e-7 from the singular point, outside its cell, where
+/// the distance is quadratic and within the tolerance, and the tracer
+/// refused the section as `UnresolvedTurning`. It is one touch.
 #[test]
-#[ignore = "a torus beside a plane nearly tangent to its rim is left undecided (docs/BACKLOG.md; real/nist-ftc-07 waits on regression/torus-plane-section-undecided)"]
-fn a_torus_rim_beside_a_tilted_plane_is_decided() {
+fn a_plane_tangent_to_a_torus_rim_on_its_seam_touches_it_once() {
     let torus = Surface::Torus {
         frame: Frame::from_orthonormal(
             Point3::new(-116.08298424713472, 10.4902, -94.74199999999995),
@@ -2660,5 +2659,16 @@ fn a_torus_rim_beside_a_tilted_plane_is_decided() {
         max: [-104.0, 11.5, -82.0],
     };
     let tol = Tolerance::new(1e-7, 1e-12);
-    intersect_surfaces(&torus, &plane, &within, tol).unwrap();
+    let r = intersect_surfaces(&torus, &plane, &within, tol).unwrap();
+    let SurfaceIntersection::Meets { curves, points } = &r else {
+        panic!("{r:?}");
+    };
+    assert!(curves.is_empty(), "{r:?}");
+    assert_eq!(points.len(), 1, "{r:?}");
+    assert_eq!(points[0].kind, MeetKind::Touch);
+    let p = points[0].point;
+    assert!(
+        implicit_distance(&torus, p).max(implicit_distance(&plane, p)) <= 1e-7,
+        "{p}"
+    );
 }

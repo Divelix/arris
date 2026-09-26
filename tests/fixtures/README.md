@@ -546,13 +546,10 @@ and this is it: the parts under `real/nist-*` are NIST's.
   (`real/slow-gap-refusal`, once it passed), since timing on a shared machine is no
   assertion anywhere else (ADR-0026 §6).
 - **The committed tier** is NIST's eleven AP203 geometry-only files,
-  `real/nist-ctc-01` to `-05` and `real/nist-ftc-06` to `-11`. Ten run
-  today: CTC-01, CTC-03, CTC-04, FTC-06 and FTC-08 to FTC-11 read, and
+  `real/nist-ctc-01` to `-05` and `real/nist-ftc-06` to `-11`. All eleven
+  run, none waits: CTC-01, CTC-03, CTC-04 and FTC-06 to FTC-11 read, and
   CTC-02's and CTC-05's solids are refused for real gaps (every surface
-  body refused as a surface). FTC-07 reads, but waits on
-  `regression/torus-plane-section-undecided`, its own file: the checker at
-  `Full` cannot decide a torus against a plane nearly tangent to its rim,
-  an intersector limit and a backlog line, not a reader bug.
+  body refused as a surface).
 - A bug fixed moves its part into `real/` beside the NIST parts:
   `real/axis-placement-along-x-without-reference`, a cylinder whose
   circles are placed on an axis along `-X` to rounding with no reference
@@ -562,8 +559,10 @@ and this is it: the parts under `real/nist-*` are NIST's.
   alone; `real/edge-through-sphere-pole`, a half ball bounded by one
   meridian circle through both poles; and
   `real/pcurve-fit-reported-as-gap`, CTC-01's file, whose edge #1864 lies
-  0.0065 off its cylinders; and `real/slow-gap-refusal`, CTC-05's file,
-  held to its time budget.
+  0.0065 off its cylinders; `real/slow-gap-refusal`, CTC-05's file,
+  held to its time budget; and `real/torus-plane-section-undecided`,
+  FTC-07's file, whose B-spline pcurves overshot their domain and whose
+  torus is tangent to a plane on its seam.
 - `real/nist-ftc-09-offset` is `real/nist-ftc-09` with one plane wrapped
   in an `OFFSET_SURFACE` by hand: the refusal path under test.
 
