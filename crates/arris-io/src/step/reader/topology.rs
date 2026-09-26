@@ -1451,7 +1451,16 @@ impl PcurveFault {
 /// where its pcurve, fitted past the cap, lies within 0.0066 of it
 /// (NIST's CTC-01). So the fit may be asked for more than the cap, and
 /// the gap its pcurve leaves, measured afterwards, is what the cap judges
-/// ([`Gaps::tolerances`]). Errors: the curve farther from the surface
+/// ([`Gaps::tolerances`]).
+///
+/// For the same reason, a fit asked for less than twice the curve's
+/// farthest distance from the surface cannot pass, and on a NURBS surface
+/// such a miss costs seconds: a fit refined to thousands of spans before
+/// it gives up. So after the first miss the curve's farthest distance is
+/// measured ([`off_surface`]), and the next fit is asked for
+/// [`GAP_GROWTH`]² of it, which a smooth projection meets at once, rather
+/// than climbing to it one miss at a time (NIST's FTC-07 and CTC-05).
+/// Errors: the curve farther from the surface
 /// than the cap, as [`PcurveFault::Gap`] with the distance; a fit that
 /// fails even past the cap, as [`PcurveFault::Geom`] with the fit's own
 /// error — a fit, not a gap.
@@ -1464,6 +1473,7 @@ fn fitted(
 ) -> Result<Curve2, PcurveFault> {
     let ceiling = GAP_GROWTH * cap;
     let mut linear = precision.default_tolerance;
+    let mut measured = false;
     loop {
         let tol = Tolerance::new(linear, precision.angular_tolerance);
         let needed = match pcurve_on(curve, range, surface, tol) {
@@ -1483,8 +1493,29 @@ fn fitted(
         if linear >= ceiling {
             return Err(PcurveFault::Gap(needed));
         }
+        let needed = if measured {
+            needed
+        } else {
+            measured = true;
+            let off = off_surface(curve, range, surface, precision.default_tolerance);
+            if off > cap {
+                return Err(PcurveFault::Gap(off));
+            }
+            needed.max(GAP_GROWTH * GAP_GROWTH * off)
+        };
         linear = needed.min(ceiling);
     }
+}
+
+/// The farthest `curve` lies from `surface` over `range`: at the
+/// [`PCURVE_SAMPLES`] a fit is checked at, each peak past `floor` climbed
+/// to its top ([`worst_gap`]). A parameter whose point does not project
+/// counts as on the surface, and the fit that follows says otherwise.
+fn off_surface(curve: &Curve, range: Interval, surface: &Surface, floor: f64) -> f64 {
+    let ts = samples(range, PCURVE_SAMPLES + 1);
+    worst_gap(&ts, floor, |t| {
+        surface.project(curve.point(t)).map_or(0.0, |p| p.distance)
+    })
 }
 
 /// A vertex or an edge of the solid, by its index: an edge past the

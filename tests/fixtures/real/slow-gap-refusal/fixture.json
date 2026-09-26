@@ -1,6 +1,6 @@
 {
   "kind": "part",
-  "description": "NIST's CTC-05 whole: both of its refusals are right — edge #4444 is 0.0182 off a face, a surface body is no solid — but the read takes 66 s in a release build and 88 s in the test profile, past ADR-0026 §6's 60 s. Not shrunk: where the time goes is step 5's to find, and the whole read is the case",
+  "description": "NIST's CTC-05 whole: both of its refusals are right — edge #4444 is 0.0182 off a face, a surface body is no solid — and the read took 66 s in a release build and 88 s in the test profile, past ADR-0026 §6's 60 s: pcurve fits on its B-spline faces climbed to the tolerance they needed one miss at a time, each miss a fit of thousands of spans. The reader now measures the curve's farthest distance after the first miss and asks for enough at once, and the read takes 1 s. The whole read is the case",
   "file": "nist_ctc_05_asme1_rd.stp",
   "source": "https://www.nist.gov/document/nist-pmi-step-files — NIST-PMI-STEP-Files.zip (sha256 8fa78429e6d8d9b0d7681d223b6aa9ec98c3772185c55b1a0e3679b21c181911), AP203 geometry only/nist_ctc_05_asme1_rd.stp",
   "licence": "NIST: \"The test cases, CAD models, and STEP files can be used without any restrictions.\"",

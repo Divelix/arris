@@ -473,3 +473,14 @@ is a reader bug under §4, not a timing to accommodate.
   the fit's own error, never as a gap. CTC-01 reads. FTC-07 then meets
   fitted pcurves past the knot domain of eight B-spline faces, shrunk for
   now to its own file, `regression/nurbs-pcurve-leaves-domain`.
+- **A fit that must miss is not tried.** A fit holds its image to half the
+  tolerance it is asked for, so one asked for less than twice the curve's
+  farthest distance from its surface misses, and on a B-spline face a
+  miss is a fit refined to thousands of spans, seconds each. CTC-05's 66 s
+  and FTC-07's 170 s were those misses, the tolerance climbing to what the
+  curve needed one miss at a time. After the first miss, the reader now
+  measures the curve's farthest distance at the fit's samples, each peak
+  climbed, refuses it as a gap if it is past the cap, and asks next for
+  four times it. CTC-05 reads to its right refusals in 1 s. A fit that
+  passes on its first try is as it was, and the committed dumps moved
+  only in pcurves fitted after a miss, and the tolerances they carry.

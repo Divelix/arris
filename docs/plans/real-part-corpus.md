@@ -234,7 +234,7 @@ part to an oracle.
     fit: fitted pcurves past a B-spline face's knot domain);
   - [x] `edge-through-sphere-pole` (FTC-06; new at step 4, a half sphere
     bounded by one meridian circle through both poles);
-  - [ ] `slow-gap-refusal` (CTC-05, 66 s in release).
+  - [x] `slow-gap-refusal` (CTC-05, 66 s in release; 1 s now).
   - [x] an edge's tolerance measured only at the checker's samples, a
     fitted pcurve straying past it between them, and the mesh's corners
     held to the face's tolerance alone (CTC-04, FTC-08; found at step 5

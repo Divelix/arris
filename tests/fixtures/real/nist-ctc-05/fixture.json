@@ -1,6 +1,6 @@
 {
   "kind": "part",
-  "description": "NIST MBE PMI combined test case 05, the AP203 geometry-only edition (ADR-0026 §1): both refusals are right, but the read takes 66 s in a release build, past ADR-0026 §6's 60",
+  "description": "NIST MBE PMI combined test case 05, the AP203 geometry-only edition (ADR-0026 §1): both refusals are right, and the read that took 66 s in a release build takes 1 s (real/slow-gap-refusal)",
   "file": "nist_ctc_05_asme1_rd.stp",
   "source": "https://www.nist.gov/document/nist-pmi-step-files — NIST-PMI-STEP-Files.zip (sha256 8fa78429e6d8d9b0d7681d223b6aa9ec98c3772185c55b1a0e3679b21c181911), AP203 geometry only/nist_ctc_05_asme1_rd.stp",
   "licence": "NIST: \"The test cases, CAD models, and STEP files can be used without any restrictions.\"",
@@ -26,8 +26,5 @@
         }
       }
     }
-  ],
-  "waits_on": [
-    "regression/slow-gap-refusal"
   ]
 }

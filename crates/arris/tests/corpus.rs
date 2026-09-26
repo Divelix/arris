@@ -1548,6 +1548,14 @@ fn real_pcurve_fit_reported_as_gap() {
     run_part("real/pcurve-fit-reported-as-gap");
 }
 
+/// NIST's CTC-05 whole, held to the time budget its read once broke:
+/// fits that climbed to their tolerance one costly miss at a time
+/// (ADR-0026's amendment of step 5).
+#[test]
+fn real_slow_gap_refusal() {
+    run_part("real/slow-gap-refusal");
+}
+
 /// NIST's FTC-09, AP203 geometry only: one solid of 158 faces, read whole.
 #[test]
 fn real_nist_ftc_09() {
@@ -1585,7 +1593,7 @@ fn real_nist_ctc_04() {
     run_part("real/nist-ctc-04");
 }
 
-/// NIST's CTC-05: waits on regression/slow-gap-refusal.
+/// NIST's CTC-05: its solid refused for a real gap of 0.0182, its surface body as a surface.
 #[test]
 fn real_nist_ctc_05() {
     run_part("real/nist-ctc-05");
@@ -1625,10 +1633,4 @@ fn real_nist_ftc_11() {
 #[ignore = "FTC-07's fitted pcurves on B-spline faces leave the surface's knot domain, and the reader's checker refuses the solid (ADR-0026 §4)"]
 fn regression_nurbs_pcurve_leaves_domain() {
     run_part("regression/nurbs-pcurve-leaves-domain");
-}
-
-#[test]
-#[ignore = "CTC-05's right refusals take 88 s in the test profile, past its 60 (ADR-0026 §6)"]
-fn regression_slow_gap_refusal() {
-    run_part("regression/slow-gap-refusal");
 }
