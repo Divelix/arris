@@ -9,7 +9,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use arris_check::arris_topo::arris_geom::{GeomKind, MeetKind, Surface, SurfaceIntersection};
+use arris_check::arris_topo::arris_geom::{
+    GeomError, GeomKind, MeetKind, Surface, SurfaceIntersection,
+};
 use arris_check::arris_topo::arris_math::{Interval, Point2, Point3, Precision, Tolerance, Vec3};
 use arris_check::arris_topo::builder::Builder;
 use arris_check::arris_topo::entity::BodyKind;
@@ -17,7 +19,7 @@ use arris_check::arris_topo::{
     Body, Curve2Id, CurveId, EdgeId, EntityId, Face as FaceHandle, FaceId, Model, Provenance,
     Shape, ShellId, VertexId,
 };
-use arris_check::{Classification, Classifier, lumps};
+use arris_check::{Classification, Classifier, ClassifyError, lumps};
 
 use super::pieces::{Alias, ERef, EdgeOnFace, PieceUse, SplitFace, SubEdge, VRef, split_face};
 use super::{Interferences, VertexSource, meet_curves};
@@ -97,6 +99,29 @@ fn unsupported(m: &Model, face: FaceId, on: Shape) -> OpError {
         a: (kind(a), a),
         b: (kind(on), on),
     }
+}
+
+/// A piece of `face` that `body`'s classifier could not classify. A ray
+/// has no closed form against a NURBS face (`arris_check::classify_point`),
+/// and meets the first one of `body`'s faces in the classifier's order
+/// on every direction it does not abandon, so that face is the one the
+/// error is about: the pair is named as the unsupported one it is, the
+/// NURBS cycle's (ADR-0026 §5), never an internal fault. Anything else
+/// the classifier reports is one.
+fn classify_fault(m: &Model, face: FaceId, body: Body, e: ClassifyError) -> OpError {
+    if let ClassifyError::Geometry(GeomError::Unsupported { .. }) = e {
+        let nurbs = m.closure(body).ok().and_then(|c| {
+            c.faces.into_iter().find(|&g| {
+                m.face(g)
+                    .and_then(|g| m.surface(g.surface()))
+                    .is_ok_and(|s| matches!(s, Surface::Nurbs(_)))
+            })
+        });
+        if let Some(g) = nurbs {
+            return unsupported(m, face, forward(g));
+        }
+    }
+    OpError::Internal(Fault::Classify(e))
 }
 
 /// The whole build, over the pave model.
@@ -681,6 +706,7 @@ impl<'m> Build<'m> {
         // of the other operand's faces.
         let m = self.m;
         let fault = |e| OpError::Internal(Fault::Classify(e));
+        let bodies = self.bodies;
         let classifiers = [
             Classifier::of_body(m, self.bodies[0]).map_err(fault)?,
             Classifier::of_body(m, self.bodies[1]).map_err(fault)?,
@@ -692,7 +718,9 @@ impl<'m> Build<'m> {
             let policy = self.op.policy(side);
             let mut pieces = Vec::new();
             for piece in split.pieces {
-                let class = other.classify(piece.interior).map_err(fault)?;
+                let class = other
+                    .classify(piece.interior)
+                    .map_err(|e| classify_fault(m, f.id, bodies[1 - side], e))?;
                 let (flip, stands_for) = match class {
                     Classification::Inside | Classification::Outside => {
                         let inside = class == Classification::Inside;

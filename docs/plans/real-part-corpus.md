@@ -302,12 +302,13 @@ part to an oracle.
 - [ ] Step 7 **[3]** — The battery's kernel faults fixed, one commit per
   root cause, each moving its `regression/` fixture into its area and
   recording the class its stages then have:
-  - [ ] `nurbs-box-cavity-cut` (FTC-07, FTC-10): a boolean classifies
+  - [x] `nurbs-box-cavity-cut` (FTC-07, FTC-10): a boolean classifies
     pieces by a ray, which has no closed form against a NURBS face, and
     returns `Internal(Classify)`. The fixture desires the typed
     `Unsupported` naming the pair (`"nurbs"`), the NURBS cycle's count;
     a classification that avoids or answers NURBS faces would instead
-    record the oracle's solid.
+    record the oracle's solid. Fixed as the refusal: the eight cuts and
+    drills of FTC-07 and FTC-10 record `arris-refuses`, plane × NURBS.
   - [ ] `nist-ctc-04-face-arrangement-turn`: CTC-04's plane f393, bounded
     by B-spline edges and four circles, fails to split (`Fault::Split`,
     `Turn`) with no section on it.

@@ -743,12 +743,12 @@ fn regression_nist_ftc_06_face_arrangement_turn() {
 
 /// An all-NURBS box cut by a box inside it: the tool's faces are
 /// classified by a ray against NURBS faces, which has no closed form, and
-/// the boolean returns an internal fault where the typed refusal the
-/// NURBS cycle counts belongs (ADR-0026 §5).
+/// the boolean refuses the pair by name, the NURBS cycle's count
+/// (ADR-0026 §5) — the battery's every cut and drill of FTC-07 and
+/// FTC-10.
 #[test]
-#[ignore = "OpError::Internal(Classify), no closed form for a line against a NURBS surface, where OpError::Unsupported naming the pair is desired (ADR-0026 §4, the battery)"]
-fn regression_nurbs_box_cavity_cut() {
-    run("regression/nurbs-box-cavity-cut");
+fn boolean_nurbs_box_cavity_cut() {
+    run("boolean/nurbs-box-cavity-cut");
 }
 
 /// A tee of equal radii: the branch's rim circle touches the main wall

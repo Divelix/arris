@@ -12,16 +12,16 @@
       "outcome": "read",
       "battery": {
         "box_cut": {
-          "waits-on": "regression/nurbs-box-cavity-cut"
+          "arris-refuses": "Unsupported(plane surface × NURBS surface)"
         },
         "drill_x": {
-          "waits-on": "regression/nurbs-box-cavity-cut"
+          "arris-refuses": "Unsupported(plane surface × NURBS surface)"
         },
         "drill_y": {
-          "waits-on": "regression/nurbs-box-cavity-cut"
+          "arris-refuses": "Unsupported(plane surface × NURBS surface)"
         },
         "drill_z": {
-          "waits-on": "regression/nurbs-box-cavity-cut"
+          "arris-refuses": "Unsupported(plane surface × NURBS surface)"
         },
         "fillet": {
           "arris-refuses": "Unsupported(cylinder surface × cylinder surface)"
